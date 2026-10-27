@@ -95,6 +95,9 @@ func PrepareSafetyTransitions(module *Module, options SafetyPipelineOptions) (Sa
 	for _, name := range configured.Predicates.Persistent {
 		persistent[name] = struct{}{}
 	}
+	for _, name := range append(append([]string(nil), configured.Predicates.StateConstraints...), configured.Predicates.ActionConstraints...) {
+		persistent[name] = struct{}{}
+	}
 	transitions, err := FindTransitions(preprocessed, TransitionPassOptions{
 		Init: configured.Predicates.Init, Next: configured.Predicates.Next,
 		ConstantInit: configured.Predicates.ConstantInit, Invariants: configured.Predicates.Invariants,

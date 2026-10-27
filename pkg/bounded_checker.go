@@ -76,6 +76,14 @@ func CheckBoundedSafetyWithOptions(
 		}
 		invariants[index] = namedExpression{name: name, expression: body}
 	}
+	stateConstraints, err := namedOperatorExpressions(module, predicates.StateConstraints, "state constraint")
+	if err != nil {
+		return BoundedSafetyResult{}, err
+	}
+	actionConstraints, err := namedOperatorExpressions(module, predicates.ActionConstraints, "action constraint")
+	if err != nil {
+		return BoundedSafetyResult{}, err
+	}
 	constants := declarationNameSlice(module.ConstDeclarations())
 	variables := declarationNameSlice(module.VarDeclarations())
 	constantInit, hasConstantInit := OperatorBody(module, NormalizedConstInit)
@@ -89,6 +97,7 @@ func CheckBoundedSafetyWithOptions(
 			hasConstantInit: hasConstantInit, assumptions: assumptions,
 			initTransitions: initTransitions, nextTransitions: nextTransitions,
 			invariants: invariants, maxSteps: options.MaxSteps, checkDeadlocks: options.CheckDeadlocks,
+			stateConstraints: stateConstraints, actionConstraints: actionConstraints,
 		}, path, &result)
 		if err != nil {
 			return BoundedSafetyResult{}, err
@@ -111,16 +120,18 @@ type boundedPath struct {
 }
 
 type modulePathInputs struct {
-	constants       []string
-	variables       []string
-	constantInit    Expr
-	hasConstantInit bool
-	assumptions     []*AssumeDecl
-	initTransitions []Expr
-	nextTransitions []Expr
-	invariants      []namedExpression
-	maxSteps        int
-	checkDeadlocks  bool
+	constants         []string
+	variables         []string
+	constantInit      Expr
+	hasConstantInit   bool
+	assumptions       []*AssumeDecl
+	initTransitions   []Expr
+	nextTransitions   []Expr
+	invariants        []namedExpression
+	stateConstraints  []namedExpression
+	actionConstraints []namedExpression
+	maxSteps          int
+	checkDeadlocks    bool
 }
 
 func searchSafetyPath(
@@ -241,11 +252,20 @@ func replaySafetyPath(inputs modulePathInputs, path boundedPath) (*TransitionExe
 	if err := executor.NextState(); err != nil {
 		return nil, err
 	}
+	if err := assertNamedExpressions(executor, inputs.stateConstraints); err != nil {
+		return nil, err
+	}
 	for depth, number := range path.next {
 		if err := selectPathTransition(executor, number, inputs.nextTransitions, fmt.Sprintf("next at depth %d", depth+1)); err != nil {
 			return nil, err
 		}
+		if err := assertNamedExpressions(executor, inputs.actionConstraints); err != nil {
+			return nil, err
+		}
 		if err := executor.NextState(); err != nil {
+			return nil, err
+		}
+		if err := assertNamedExpressions(executor, inputs.stateConstraints); err != nil {
 			return nil, err
 		}
 	}
@@ -267,6 +287,27 @@ func selectPathTransition(executor *TransitionExecutor, number int, transitions 
 }
 
 var errDisabledTransition = errors.New("disabled transition")
+
+func namedOperatorExpressions(module *Module, names []string, role string) ([]namedExpression, error) {
+	result := make([]namedExpression, len(names))
+	for index, name := range names {
+		body, found := OperatorBody(module, name)
+		if !found {
+			return nil, fmt.Errorf("%s %s was not found", role, name)
+		}
+		result[index] = namedExpression{name: name, expression: body}
+	}
+	return result, nil
+}
+
+func assertNamedExpressions(executor *TransitionExecutor, expressions []namedExpression) error {
+	for _, expression := range expressions {
+		if err := executor.AssertState(expression.expression); err != nil {
+			return fmt.Errorf("assert %s: %w", expression.name, err)
+		}
+	}
+	return nil
+}
 
 func declarationNameSlice[T interface{ Name() string }](declarations []T) []string {
 	result := make([]string, len(declarations))

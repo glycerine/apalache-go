@@ -157,6 +157,49 @@ func TestCheckBoundedSafetyDetectsAndCanIgnoreDeadlocks(t *testing.T) {
 	}
 }
 
+func TestCheckBoundedSafetyEnforcesConfiguredConstraints(t *testing.T) {
+	for _, test := range []struct {
+		name              string
+		stateConstraints  []string
+		actionConstraints []string
+	}{
+		{name: "state", stateConstraints: []string{"StateOK"}},
+		{name: "action", actionConstraints: []string{"ActionOK"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			x := NewNameExpr("x", Typed(IntT1))
+			prime := MustOperExpr(Op("PRIME"), Typed(IntT1), NewNameExpr("x", Typed(IntT1)))
+			constantInit := boolDefinition("CInit", NewValueExpr(BoolValue(true), Typed(BoolT1)))
+			init := boolDefinition("Init", MustOperExpr(Op("EQ"), Typed(BoolT1), x, intLiteral(0)))
+			next := boolDefinition("Next", MustOperExpr(Op("EQ"), Typed(BoolT1), prime,
+				MustOperExpr(Op("PLUS"), Typed(IntT1), x, intLiteral(1))))
+			stateOK := boolDefinition("StateOK", MustOperExpr(Op("LT"), Typed(BoolT1), x, intLiteral(1)))
+			actionOK := boolDefinition("ActionOK", MustOperExpr(Op("EQ"), Typed(BoolT1), prime, x))
+			invariant := boolDefinition("Inv", NewValueExpr(BoolValue(true), Typed(BoolT1)))
+			module := configuredTestModule(NewVarDecl("x", Typed(IntT1)), constantInit, init, next, stateOK, actionOK, invariant)
+			prepared, err := PrepareSafetyTransitions(module, SafetyPipelineOptions{Specification: SpecificationConfiguration{
+				Behavior: InitNextSpec{Init: "Init", Next: "Next"}, ConstantInit: "CInit", Invariants: []string{"Inv"},
+				StateConstraints: test.stateConstraints, ActionConstraints: test.actionConstraints,
+			}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, name := range append(append([]string(nil), test.stateConstraints...), test.actionConstraints...) {
+				if _, found := OperatorBody(prepared.Module, name); !found {
+					t.Fatalf("constraint %s was not retained", name)
+				}
+			}
+			result, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, 1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Outcome != SafetyDeadlock || result.Depth != 0 {
+				t.Fatalf("constrained result = %#v", result)
+			}
+		})
+	}
+}
+
 func TestCheckBoundedSafetyValidatesInputs(t *testing.T) {
 	if _, err := CheckBoundedSafety(context.Background(), nil, DerivedPredicates{}, 0); err == nil {
 		t.Fatal("nil module was accepted")

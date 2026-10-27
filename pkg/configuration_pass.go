@@ -9,6 +9,8 @@ type SpecificationConfiguration struct {
 	Behavior           BehaviorSpec
 	ConstantInit       string
 	Invariants         []string
+	StateConstraints   []string
+	ActionConstraints  []string
 	TemporalProperties []string
 	View               string
 	Persistent         []string
@@ -22,6 +24,8 @@ type DerivedPredicates struct {
 	Next               string
 	ConstantInit       string
 	Invariants         []string
+	StateConstraints   []string
+	ActionConstraints  []string
 	TemporalProperties []string
 	View               string
 	Persistent         []string
@@ -35,6 +39,8 @@ func (predicates DerivedPredicates) OperatorNames() []string {
 		}
 	}
 	result = append(result, predicates.Invariants...)
+	result = append(result, predicates.StateConstraints...)
+	result = append(result, predicates.ActionConstraints...)
 	result = append(result, predicates.TemporalProperties...)
 	result = append(result, predicates.Persistent...)
 	return result
@@ -68,6 +74,8 @@ func ConfigureModule(module *Module, options SpecificationConfiguration) (Config
 	predicates := DerivedPredicates{
 		ConstantInit:       options.ConstantInit,
 		Invariants:         append([]string(nil), options.Invariants...),
+		StateConstraints:   append([]string(nil), options.StateConstraints...),
+		ActionConstraints:  append([]string(nil), options.ActionConstraints...),
 		TemporalProperties: append([]string(nil), options.TemporalProperties...),
 		View:               options.View,
 		Persistent:         append([]string(nil), options.Persistent...),
@@ -111,6 +119,12 @@ func ConfigureModule(module *Module, options SpecificationConfiguration) (Config
 		if len(predicates.Invariants) == 0 {
 			predicates.Invariants = append([]string(nil), options.TLCConfig.Invariants...)
 		}
+		if len(predicates.StateConstraints) == 0 {
+			predicates.StateConstraints = append([]string(nil), options.TLCConfig.StateConstraints...)
+		}
+		if len(predicates.ActionConstraints) == 0 {
+			predicates.ActionConstraints = append([]string(nil), options.TLCConfig.ActionConstraints...)
+		}
 		if len(predicates.TemporalProperties) == 0 {
 			predicates.TemporalProperties = append([]string(nil), options.TLCConfig.TemporalProperties...)
 		}
@@ -152,6 +166,8 @@ func ConfigureModule(module *Module, options SpecificationConfiguration) (Config
 		{"the transition predicate", []string{predicates.Next}},
 		{"the constant initialization predicate", compactNames(predicates.ConstantInit)},
 		{"an invariant", predicates.Invariants},
+		{"a state constraint", predicates.StateConstraints},
+		{"an action constraint", predicates.ActionConstraints},
 		{"a temporal property", predicates.TemporalProperties},
 	}
 	for _, check := range checks {
