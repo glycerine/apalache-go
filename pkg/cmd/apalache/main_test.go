@@ -164,6 +164,30 @@ Inv == x = 0
 	}
 }
 
+func TestRunCheckReportsDeadlockWithoutInvariant(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "Deadlock.tla")
+	if err := os.WriteFile(path, []byte(`---- MODULE Deadlock ----
+EXTENDS Integers
+\* @type: Int;
+VARIABLE x
+Init == x = 0
+Next == /\ x' = x + 1
+        /\ x < 0
+====
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	code := run(context.Background(), []string{
+		"check", "-init=Init", "-next=Next", "-length=1", path,
+	}, &stdout, &stderr)
+	if code != exitCounterexample || !strings.Contains(stdout.String(), "Deadlock found at depth 0") ||
+		!strings.Contains(stdout.String(), "State 0: x = 0") {
+		t.Fatalf("deadlock check = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
+	}
+}
+
 func TestRunCheckValidatesConfigurationFlags(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := run(context.Background(), []string{"check", "-init=Init", "M.tla"}, &stdout, &stderr)

@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"sort"
+	"strconv"
 	"strings"
 
 	pal "github.com/glycerine/apalache-go"
@@ -63,6 +64,7 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	initName := flags.String("init", "", "initial-state operator")
 	nextName := flags.String("next", "", "next-state operator")
 	constantInit := flags.String("cinit", "", "constant initializer operator")
+	deadlockFlag := flags.String("deadlock", "", "check deadlocks: true or false (default true)")
 	useRows := flags.Bool("rows", false, "enable row types")
 	disablePolytypes := flags.Bool("no-polytypes", false, "disable let-polymorphism")
 	var invariants stringList
@@ -109,6 +111,18 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		fmt.Fprintln(stderr, "check requires either -config or both -init and -next")
 		return exitUsage
 	}
+	checkDeadlocks := true
+	if configuration.TLCConfig != nil && configuration.TLCConfig.CheckDeadlock != nil {
+		checkDeadlocks = *configuration.TLCConfig.CheckDeadlock
+	}
+	if *deadlockFlag != "" {
+		parsed, err := strconv.ParseBool(*deadlockFlag)
+		if err != nil {
+			fmt.Fprintf(stderr, "invalid -deadlock value %q (want true or false)\n", *deadlockFlag)
+			return exitUsage
+		}
+		checkDeadlocks = parsed
+	}
 
 	frontend := pal.ParseAndTypeCheckFile(ctx, flags.Arg(0), pal.FrontendOptions{
 		LibraryPaths: libraryPaths,
@@ -127,11 +141,13 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		fmt.Fprintf(stderr, "cannot prepare safety transitions: %v\n", err)
 		return exitTool
 	}
-	if len(prepared.Predicates.Invariants) == 0 {
-		fmt.Fprintln(stderr, "check requires at least one invariant")
+	if len(prepared.Predicates.Invariants) == 0 && !checkDeadlocks {
+		fmt.Fprintln(stderr, "check requires at least one invariant when deadlock checking is disabled")
 		return exitUsage
 	}
-	result, err := pal.CheckBoundedSafety(ctx, prepared.Module, prepared.Predicates, *length)
+	result, err := pal.CheckBoundedSafetyWithOptions(ctx, prepared.Module, prepared.Predicates, pal.BoundedSafetyOptions{
+		MaxSteps: *length, CheckDeadlocks: checkDeadlocks,
+	})
 	if err != nil {
 		fmt.Fprintf(stderr, "bounded safety check failed: %v\n", err)
 		return exitTool
@@ -143,20 +159,16 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 			fmt.Fprintf(stdout, ", Next$%04d", number)
 		}
 		fmt.Fprintln(stdout, ").")
-		for index, state := range result.States {
-			names := make([]string, 0, len(state.Values))
-			for name := range state.Values {
-				names = append(names, name)
-			}
-			sort.Strings(names)
-			for _, name := range names {
-				value, formatErr := pal.FormatTLAExpression(state.Values[name])
-				if formatErr != nil {
-					fmt.Fprintf(stderr, "cannot format counterexample state: %v\n", formatErr)
-					return exitTool
-				}
-				fmt.Fprintf(stdout, "State %d: %s = %s\n", index, name, value)
-			}
+		if formatErr := printDecodedStates(stdout, result.States); formatErr != nil {
+			fmt.Fprintf(stderr, "cannot format counterexample state: %v\n", formatErr)
+			return exitTool
+		}
+		return exitCounterexample
+	case pal.SafetyDeadlock:
+		fmt.Fprintf(stdout, "Deadlock found at depth %d.\n", result.Depth)
+		if formatErr := printDecodedStates(stdout, result.States); formatErr != nil {
+			fmt.Fprintf(stderr, "cannot format deadlock state: %v\n", formatErr)
+			return exitTool
 		}
 		return exitCounterexample
 	case pal.SafetyNoCounterexample:
@@ -166,6 +178,24 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		fmt.Fprintln(stderr, "solver returned unknown")
 		return exitTool
 	}
+}
+
+func printDecodedStates(output io.Writer, states []pal.DecodedState) error {
+	for index, state := range states {
+		names := make([]string, 0, len(state.Values))
+		for name := range state.Values {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			value, err := pal.FormatTLAExpression(state.Values[name])
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(output, "State %d: %s = %s\n", index, name, value)
+		}
+	}
+	return nil
 }
 
 func runTypeCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int {

@@ -123,6 +123,40 @@ func TestCheckBoundedSafetySkipsUnsatisfiablePaths(t *testing.T) {
 	}
 }
 
+func TestCheckBoundedSafetyDetectsAndCanIgnoreDeadlocks(t *testing.T) {
+	x := NewNameExpr("x", Typed(IntT1))
+	constantInit := boolDefinition("CInit", NewValueExpr(BoolValue(true), Typed(BoolT1)))
+	init := boolDefinition("Init", MustOperExpr(Op("EQ"), Typed(BoolT1), x, intLiteral(0)))
+	next := boolDefinition("Next", MustOperExpr(Op("AND"), Typed(BoolT1),
+		MustOperExpr(Op("EQ"), Typed(BoolT1),
+			MustOperExpr(Op("PRIME"), Typed(IntT1), NewNameExpr("x", Typed(IntT1))),
+			MustOperExpr(Op("PLUS"), Typed(IntT1), x, intLiteral(1))),
+		MustOperExpr(Op("LT"), Typed(BoolT1), x, intLiteral(0))))
+	invariant := boolDefinition("Inv", NewValueExpr(BoolValue(true), Typed(BoolT1)))
+	module := configuredTestModule(NewVarDecl("x", Typed(IntT1)), constantInit, init, next, invariant)
+	prepared, err := PrepareSafetyTransitions(module, SafetyPipelineOptions{Specification: SpecificationConfiguration{
+		Behavior: InitNextSpec{Init: "Init", Next: "Next"}, ConstantInit: "CInit", Invariants: []string{"Inv"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadlock, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deadlock.Outcome != SafetyDeadlock || deadlock.Depth != 0 || len(deadlock.States) != 1 {
+		t.Fatalf("deadlock result = %#v", deadlock)
+	}
+	ignored, err := CheckBoundedSafetyWithOptions(context.Background(), prepared.Module, prepared.Predicates,
+		BoundedSafetyOptions{MaxSteps: 1, CheckDeadlocks: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ignored.Outcome != SafetyNoCounterexample {
+		t.Fatalf("ignored deadlock result = %#v", ignored)
+	}
+}
+
 func TestCheckBoundedSafetyValidatesInputs(t *testing.T) {
 	if _, err := CheckBoundedSafety(context.Background(), nil, DerivedPredicates{}, 0); err == nil {
 		t.Fatal("nil module was accepted")

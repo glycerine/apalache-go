@@ -12,7 +12,13 @@ const (
 	SafetyUnknown SafetyOutcome = iota
 	SafetyNoCounterexample
 	SafetyCounterexample
+	SafetyDeadlock
 )
+
+type BoundedSafetyOptions struct {
+	MaxSteps       int
+	CheckDeadlocks bool
+}
 
 // BoundedSafetyResult describes either a completed bounded search or the
 // first counterexample found in normalized transition order.
@@ -34,13 +40,24 @@ func CheckBoundedSafety(
 	predicates DerivedPredicates,
 	maxSteps int,
 ) (BoundedSafetyResult, error) {
+	return CheckBoundedSafetyWithOptions(ctx, module, predicates, BoundedSafetyOptions{
+		MaxSteps: maxSteps, CheckDeadlocks: true,
+	})
+}
+
+func CheckBoundedSafetyWithOptions(
+	ctx context.Context,
+	module *Module,
+	predicates DerivedPredicates,
+	options BoundedSafetyOptions,
+) (BoundedSafetyResult, error) {
 	if module == nil {
 		return BoundedSafetyResult{}, fmt.Errorf("cannot check a nil module")
 	}
 	if !module.HasProperty(PropertyTransitionsFound) {
 		return BoundedSafetyResult{}, fmt.Errorf("bounded safety checking requires normalized transitions")
 	}
-	if maxSteps < 0 {
+	if options.MaxSteps < 0 {
 		return BoundedSafetyResult{}, fmt.Errorf("maximum step count cannot be negative")
 	}
 	if ctx == nil {
@@ -51,9 +68,6 @@ func CheckBoundedSafety(
 		return BoundedSafetyResult{}, fmt.Errorf("module has no normalized initial transitions")
 	}
 	nextTransitions := TransitionsFromModule(module, NormalizedNextPrefix)
-	if maxSteps > 0 && len(nextTransitions) == 0 {
-		return BoundedSafetyResult{}, fmt.Errorf("module has no normalized next transitions")
-	}
 	invariants := make([]namedExpression, len(predicates.Invariants))
 	for index, name := range predicates.Invariants {
 		body, found := OperatorBody(module, name)
@@ -74,7 +88,7 @@ func CheckBoundedSafety(
 			constants: constants, variables: variables, constantInit: constantInit,
 			hasConstantInit: hasConstantInit, assumptions: assumptions,
 			initTransitions: initTransitions, nextTransitions: nextTransitions,
-			invariants: invariants, maxSteps: maxSteps,
+			invariants: invariants, maxSteps: options.MaxSteps, checkDeadlocks: options.CheckDeadlocks,
 		}, path, &result)
 		if err != nil {
 			return BoundedSafetyResult{}, err
@@ -106,6 +120,7 @@ type modulePathInputs struct {
 	nextTransitions []Expr
 	invariants      []namedExpression
 	maxSteps        int
+	checkDeadlocks  bool
 }
 
 func searchSafetyPath(
@@ -154,15 +169,54 @@ func searchSafetyPath(
 			return true, nil
 		}
 	}
-	if len(path.next) == inputs.maxSteps {
+	if len(path.next) == inputs.maxSteps && !inputs.checkDeadlocks {
 		return false, nil
 	}
+	enabledNext := false
 	for nextNumber := range inputs.nextTransitions {
 		child := boundedPath{init: path.init, next: append(append([]int(nil), path.next...), nextNumber)}
-		found, childErr := searchSafetyPath(ctx, inputs, child, result)
-		if childErr != nil || found {
-			return found, childErr
+		childExecutor, childErr := replaySafetyPath(inputs, child)
+		if childErr != nil {
+			if errors.Is(childErr, errDisabledTransition) {
+				continue
+			}
+			return false, childErr
 		}
+		childStatus, childErr := childExecutor.Check(ctx)
+		if childErr != nil {
+			return false, childErr
+		}
+		if childStatus == SMTUnknown {
+			result.Outcome = SafetyUnknown
+			return true, nil
+		}
+		if childStatus == SMTUnsatisfiable {
+			continue
+		}
+		enabledNext = true
+		if len(path.next) < inputs.maxSteps {
+			found, searchErr := searchSafetyPath(ctx, inputs, child, result)
+			if searchErr != nil || found {
+				return found, searchErr
+			}
+		}
+	}
+	if inputs.checkDeadlocks && !enabledNext {
+		truth := NewValueExpr(BoolValue(true), Typed(BoolT1))
+		status, states, decodeErr := executor.CheckAndDecode(ctx, truth)
+		if decodeErr != nil {
+			return false, decodeErr
+		}
+		if status == SMTUnknown {
+			result.Outcome = SafetyUnknown
+			return true, nil
+		}
+		result.Outcome = SafetyDeadlock
+		result.Depth = len(path.next)
+		result.InitTransition = path.init
+		result.NextTransitions = append([]int(nil), path.next...)
+		result.States = states
+		return true, nil
 	}
 	return false, nil
 }
