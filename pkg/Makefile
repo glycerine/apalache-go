@@ -8,7 +8,7 @@ RELEASE_NAME := apalache-go_$(VERSION)_$(GOOS_VALUE)-$(GOARCH_VALUE)
 STAGING_DIR := $(BUILD_ROOT)/$(RELEASE_NAME)
 ARCHIVE := $(DIST_ROOT)/$(RELEASE_NAME).tar.gz
 
-.PHONY: build dist test test-race test-oracle
+.PHONY: build dist test test-race test-oracle test-corpus test-release
 
 build:
 	mkdir -p $(BUILD_ROOT)
@@ -28,3 +28,9 @@ test-race:
 
 test-oracle: build
 	APALACHE_GO=$(abspath $(BUILD_ROOT)/apalache) GOFLAGS='-p=8' $(GO) test -tags=oracle -run TestScalaDifferentialSafetyManifest .
+
+test-corpus:
+	GOFLAGS='-p=8' $(GO) test -tags=corpus -run TestAnnotatedTopLevelScalaFixtureCorpus .
+
+test-release:
+	GOFLAGS='-p=8' $(GO) test -tags=release -run TestReleaseArchiveRunsWithoutSourceOrExternalRuntime .
