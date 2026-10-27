@@ -25,6 +25,12 @@
       "go_args": ["check", "-length", "0", "-deadlock=false", "-inv", "AllTests", "test/tla/TestSets.tla"]
     },
     {
+      "name": "finite-sets-extensions",
+      "dir": "..",
+      "scala_args": ["check", "--length=0", "--no-deadlock", "--inv=AllTests", "test/tla/TestFiniteSetsExt.tla"],
+      "go_args": ["check", "--length=0", "--no-deadlock", "--inv=AllTests", "test/tla/TestFiniteSetsExt.tla"]
+    },
+    {
       "name": "community-functions",
       "dir": "..",
       "scala_args": ["check", "--length=0", "--no-deadlock", "--inv=AllTests", "test/tla/TestCommunityFunctions.tla"],
@@ -77,6 +83,42 @@
       "dir": "..",
       "scala_args": ["check", "--length=1", "test/tla/Except617.tla"],
       "go_args": ["check", "-length", "1", "test/tla/Except617.tla"]
+    },
+    {
+      "name": "function-except-record",
+      "dir": "..",
+      "scala_args": ["check", "--length=0", "--no-deadlock", "--inv=Sanity", "test/tla/FunExcept1.tla"],
+      "go_args": ["check", "--length=0", "--no-deadlock", "--inv=Sanity", "test/tla/FunExcept1.tla"]
+    },
+    {
+      "name": "function-except-tuple",
+      "dir": "..",
+      "scala_args": ["check", "--length=0", "--no-deadlock", "--inv=Sanity", "test/tla/FunExcept2.tla"],
+      "go_args": ["check", "--length=0", "--no-deadlock", "--inv=Sanity", "test/tla/FunExcept2.tla"]
+    },
+    {
+      "name": "function-except-nested",
+      "dir": "..",
+      "scala_args": ["check", "--length=0", "--no-deadlock", "--inv=Sanity", "test/tla/FunExcept3.tla"],
+      "go_args": ["check", "--length=0", "--no-deadlock", "--inv=Sanity", "test/tla/FunExcept3.tla"]
+    },
+    {
+      "name": "recursive-record-membership",
+      "dir": "..",
+      "scala_args": ["check", "--length=0", "--no-deadlock", "--inv=TypeOK", "test/tla/RecMem1627.tla"],
+      "go_args": ["check", "--length=0", "--no-deadlock", "--inv=TypeOK", "test/tla/RecMem1627.tla"]
+    },
+    {
+      "name": "unchanged-as-invariant",
+      "dir": "..",
+      "scala_args": ["check", "--length=0", "--no-deadlock", "--inv=Inv", "test/tla/UnchangedAsInv1663.tla"],
+      "go_args": ["check", "--length=0", "--no-deadlock", "--inv=Inv", "test/tla/UnchangedAsInv1663.tla"]
+    },
+    {
+      "name": "consensus-epr",
+      "dir": "..",
+      "scala_args": ["check", "--length=0", "--no-deadlock", "--inv=Safety", "test/tla/Consensus_epr.tla"],
+      "go_args": ["check", "--length=0", "--no-deadlock", "--inv=Safety", "test/tla/Consensus_epr.tla"]
     },
     {
       "name": "tlc-integer-constant",
