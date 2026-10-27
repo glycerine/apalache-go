@@ -9,6 +9,7 @@ import (
 // PureArena graph and records the ground constraints separately.
 type StratifiedRewriter struct {
 	integers    *IntValueCache
+	ranges      *IntRangeCache
 	literals    *UninterpretedLiteralCache
 	defaults    *DefaultValueCache
 	equality    *LazyEquality
@@ -17,6 +18,7 @@ type StratifiedRewriter struct {
 
 func NewStratifiedRewriter() *StratifiedRewriter {
 	result := &StratifiedRewriter{integers: NewIntValueCache(), literals: NewUninterpretedLiteralCache()}
+	result.ranges = NewIntRangeCache(result.integers)
 	result.equality = NewLazyEquality(result.assert, func(tag string) (ArenaCell, bool) {
 		return result.literals.Get(UninterpretedLiteral{Type: StrT1, Index: tag})
 	})
@@ -39,6 +41,7 @@ func (rewriter *StratifiedRewriter) ResetConstraints() {
 	rewriter.constraints = nil
 	rewriter.equality.Dispose()
 	rewriter.defaults.Dispose()
+	rewriter.ranges.Dispose()
 }
 
 func (rewriter *StratifiedRewriter) assert(expression Expr) {
@@ -66,6 +69,8 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 			return rewriter.rewriteBasicEquality(typed, scope)
 		case "PLUS", "MINUS", "MULT", "DIV", "MOD", "UNARY_MINUS":
 			return rewriter.rewriteArithmetic(typed, scope)
+		case "INT_RANGE":
+			return rewriter.rewriteIntegerRange(typed, scope)
 		case "LT", "LE", "GT", "GE":
 			return rewriter.rewriteComparison(typed, scope)
 		case "IF_THEN_ELSE":
