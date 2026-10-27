@@ -120,6 +120,8 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 			return rewriter.rewriteVariantFilter(typed, scope)
 		case "FUN_APP":
 			return rewriter.rewriteApplication(typed, scope)
+		case "EXCEPT":
+			return rewriter.rewriteExcept(typed, scope)
 		}
 	}
 	return scope, ArenaCell{}, fmt.Errorf("no stratified rule is applicable to %T", expression)

@@ -1,0 +1,108 @@
+package apalache
+
+import "testing"
+
+func exceptExpression(targetType Type, target, key, value Expr) Expr {
+	accessorType, _ := NewTupleType(mustTagType(key.Tag()))
+	accessor := MustOperExpr(Op("TUPLE"), Typed(accessorType), key)
+	return MustOperExpr(Op("EXCEPT"), Typed(targetType), target, accessor, value)
+}
+
+func TestStratifiedExceptUpdatesTuplesRecordsAndSequences(t *testing.T) {
+	intValue := func(value int64) Expr { return NewValueExpr(Int64Value(value), Typed(IntT1)) }
+	key := func(value string) Expr { return NewValueExpr(StringValue(value), Typed(StrT1)) }
+	tupleType, _ := NewTupleType(IntT1, BoolT1)
+	tuple := MustOperExpr(Op("TUPLE"), Typed(tupleType), intValue(1), NewValueExpr(BoolValue(false), Typed(BoolT1)))
+	updatedTuple := exceptExpression(tupleType, tuple, intValue(2), NewValueExpr(BoolValue(true), Typed(BoolT1)))
+	expectedTuple := MustOperExpr(Op("TUPLE"), Typed(tupleType), intValue(1), NewValueExpr(BoolValue(true), Typed(BoolT1)))
+
+	recordType, _ := NewRecordType(map[string]Type{"a": IntT1, "b": BoolT1})
+	record := MustOperExpr(Op("RECORD"), Typed(recordType), key("a"), intValue(1), key("b"), NewValueExpr(BoolValue(false), Typed(BoolT1)))
+	updatedRecord := exceptExpression(recordType, record, key("a"), intValue(8))
+	expectedRecord := MustOperExpr(Op("RECORD"), Typed(recordType), key("a"), intValue(8), key("b"), NewValueExpr(BoolValue(false), Typed(BoolT1)))
+
+	sequenceType, _ := NewSeqType(IntT1)
+	sequence := MustOperExpr(Op("TUPLE"), Typed(sequenceType), intValue(1), intValue(2), intValue(3))
+	symbolicIndex := MustOperExpr(Op("PLUS"), Typed(IntT1), intValue(1), intValue(1))
+	updatedSequence := exceptExpression(sequenceType, sequence, symbolicIndex, intValue(9))
+	expectedSequence := MustOperExpr(Op("TUPLE"), Typed(sequenceType), intValue(1), intValue(9), intValue(3))
+
+	tests := []struct {
+		name         string
+		actual, want Expr
+	}{
+		{"tuple", updatedTuple, expectedTuple},
+		{"record", updatedRecord, expectedRecord},
+		{"sequence symbolic index", updatedSequence, expectedSequence},
+		{"sequence outside capacity", exceptExpression(sequenceType, sequence, intValue(5), intValue(9)), sequence},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			rewriter := NewStratifiedRewriter()
+			equal := MustOperExpr(Op("EQ"), Typed(BoolT1), test.actual, test.want)
+			scope, result, err := rewriter.Rewrite(equal, InitialRewriterScope())
+			if err != nil {
+				t.Fatal(err)
+			}
+			checkRewrittenTruth(t, rewriter, scope, result, true)
+		})
+	}
+}
+
+func TestStratifiedFunctionExceptThroughG3(t *testing.T) {
+	intValue := func(value int64) Expr { return NewValueExpr(Int64Value(value), Typed(IntT1)) }
+	functionType, _ := NewFunType(IntT1, IntT1)
+	domainType := mustSet(IntT1)
+	domain := MustOperExpr(Op("SET_ENUM"), Typed(domainType), intValue(1), intValue(2))
+	binder := NewNameExpr("x", Typed(IntT1))
+	body := MustOperExpr(Op("MULT"), Typed(IntT1), binder, intValue(10))
+	function := MustOperExpr(Op("FUN_CTOR"), Typed(functionType), body, binder, domain)
+	updated := exceptExpression(functionType, function, intValue(1), intValue(99))
+	apply := func(function Expr, argument int64) Expr {
+		return MustOperExpr(Op("FUN_APP"), Typed(IntT1), function, intValue(argument))
+	}
+	claim := MustOperExpr(Op("AND"), Typed(BoolT1),
+		MustOperExpr(Op("EQ"), Typed(BoolT1), apply(updated, 1), intValue(99)),
+		MustOperExpr(Op("EQ"), Typed(BoolT1), apply(updated, 2), intValue(20)),
+		MustOperExpr(Op("EQ"), Typed(BoolT1),
+			MustOperExpr(Op("DOMAIN"), Typed(domainType), updated), domain),
+	)
+	rewriter := NewStratifiedRewriter()
+	scope, result, err := rewriter.Rewrite(claim, InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkRewrittenTruth(t, rewriter, scope, result, true)
+}
+
+func TestStratifiedFunctionExceptSupportsStructuralKeys(t *testing.T) {
+	intValue := func(value int64) Expr { return NewValueExpr(Int64Value(value), Typed(IntT1)) }
+	keyType, _ := NewTupleType(IntT1, IntT1)
+	key := func(left, right int64) Expr {
+		return MustOperExpr(Op("TUPLE"), Typed(keyType), intValue(left), intValue(right))
+	}
+	functionType, _ := NewFunType(keyType, IntT1)
+	domainType := mustSet(keyType)
+	domain := MustOperExpr(Op("SET_ENUM"), Typed(domainType), key(1, 2), key(3, 4))
+	binder := NewNameExpr("pair", Typed(keyType))
+	function := MustOperExpr(Op("FUN_CTOR"), Typed(functionType), intValue(0), binder, domain)
+	updated := exceptExpression(functionType, function, key(3, 4), intValue(7))
+	application := MustOperExpr(Op("FUN_APP"), Typed(IntT1), updated, key(3, 4))
+	claim := MustOperExpr(Op("EQ"), Typed(BoolT1), application, intValue(7))
+	rewriter := NewStratifiedRewriter()
+	scope, result, err := rewriter.Rewrite(claim, InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkRewrittenTruth(t, rewriter, scope, result, true)
+}
+
+func TestStratifiedExceptRejectsInvalidLiteralSelectors(t *testing.T) {
+	intValue := func(value int64) Expr { return NewValueExpr(Int64Value(value), Typed(IntT1)) }
+	tupleType, _ := NewTupleType(IntT1)
+	tuple := MustOperExpr(Op("TUPLE"), Typed(tupleType), intValue(1))
+	if _, _, err := NewStratifiedRewriter().Rewrite(
+		exceptExpression(tupleType, tuple, intValue(2), intValue(3)), InitialRewriterScope()); err == nil {
+		t.Fatal("out-of-bounds tuple EXCEPT was accepted")
+	}
+}
