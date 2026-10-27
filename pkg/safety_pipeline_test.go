@@ -43,7 +43,7 @@ func TestPrepareSafetyTransitionsEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, property := range []ModuleProperty{PropertyConfigured, PropertyDesugared, PropertyInlined, PropertyPrimed, PropertyPreprocessed, PropertyTransitionsFound, PropertyOptimized} {
+	for _, property := range []ModuleProperty{PropertyConfigured, PropertyDesugared, PropertyInlined, PropertyPrimed, PropertyPreprocessed, PropertyTransitionsFound, PropertyOptimized, PropertyAnalyzed} {
 		if !result.Module.HasProperty(property) {
 			t.Errorf("pipeline result lacks property %d", property)
 		}

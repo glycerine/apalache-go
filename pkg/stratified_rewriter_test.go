@@ -153,6 +153,73 @@ func TestStratifiedConstantExponentiationThroughG3(t *testing.T) {
 	}
 }
 
+func TestStratifiedSkolemizedExistentialSupportsAssignments(t *testing.T) {
+	setType := mustSet(IntT1)
+	binder := NewNameExpr("i", Typed(IntT1))
+	prime := MustOperExpr(Op("PRIME"), Typed(IntT1), NewNameExpr("y", Typed(IntT1)))
+	predicate := MustOperExpr(Op("AND"), Typed(BoolT1),
+		MustOperExpr(Op("Apalache!:="), Typed(BoolT1), prime, binder),
+		MustOperExpr(Op("EQ"), Typed(BoolT1), binder, intLiteral(2)))
+	exists := MustOperExpr(Op("EXISTS3"), Typed(BoolT1), binder,
+		MustOperExpr(Op("SET_ENUM"), Typed(setType), intLiteral(1), intLiteral(2)), predicate)
+	skolem := MustOperExpr(Op("Apalache!Skolem"), Typed(BoolT1), exists)
+	rewriter := NewStratifiedRewriter()
+	scope, result, err := rewriter.Rewrite(skolem, InitialRewriterScope())
+	if err != nil || !scope.Binding.Contains("y'") || scope.Binding.Contains("i") {
+		t.Fatalf("Skolem rewrite = %v, binding %v, %v", result, scope.Binding.Map(), err)
+	}
+	solver, err := NewG3SolverContext()
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoder, err := EncodeRewriterScope(solver, scope, rewriter.Constraints())
+	if err != nil {
+		solver.Close()
+		t.Fatal(err)
+	}
+	if err = encoder.Assert(result.NameExpr()); err != nil {
+		solver.Close()
+		t.Fatal(err)
+	}
+	assigned := scope.Binding.MustGet("y'")
+	if err = encoder.Assert(MustOperExpr(Op("NE"), Typed(BoolT1), assigned.NameExpr(), intLiteral(2))); err != nil {
+		solver.Close()
+		t.Fatal(err)
+	}
+	status, err := solver.Check(context.Background())
+	solver.Close()
+	if err != nil || status != SMTUnsatisfiable {
+		t.Fatalf("Skolem assignment = %v, %v", status, err)
+	}
+
+	emptyExists := MustOperExpr(Op("EXISTS3"), Typed(BoolT1), binder,
+		MustOperExpr(Op("SET_ENUM"), Typed(setType)), NewValueExpr(BoolValue(true), Typed(BoolT1)))
+	emptyRewriter := NewStratifiedRewriter()
+	emptyScope, emptyResult, err := emptyRewriter.Rewrite(
+		MustOperExpr(Op("Apalache!Skolem"), Typed(BoolT1), emptyExists), InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	emptySolver, err := NewG3SolverContext()
+	if err != nil {
+		t.Fatal(err)
+	}
+	emptyEncoder, err := EncodeRewriterScope(emptySolver, emptyScope, emptyRewriter.Constraints())
+	if err != nil {
+		emptySolver.Close()
+		t.Fatal(err)
+	}
+	if err = emptyEncoder.Assert(emptyResult.NameExpr()); err != nil {
+		emptySolver.Close()
+		t.Fatal(err)
+	}
+	status, err = emptySolver.Check(context.Background())
+	emptySolver.Close()
+	if err != nil || status != SMTUnsatisfiable {
+		t.Fatalf("empty Skolem existential = %v, %v", status, err)
+	}
+}
+
 func TestStratifiedPrimeAndConstCardinalityWrapper(t *testing.T) {
 	intValue := func(value int64) Expr { return NewValueExpr(Int64Value(value), Typed(IntT1)) }
 	rewriter := NewStratifiedRewriter()

@@ -119,6 +119,8 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 			return rewriter.rewriteBoundedChoice(typed, scope)
 		case "EXISTS3", "FORALL3":
 			return rewriter.rewriteFiniteQuantifier(typed, scope)
+		case "Apalache!Skolem":
+			return rewriter.rewriteSkolemizedExistential(typed, scope)
 		case "FUN_CTOR":
 			return rewriter.rewriteFunctionConstructor(typed, scope)
 		case "DOMAIN":
@@ -357,6 +359,61 @@ func (rewriter *StratifiedRewriter) rewriteFiniteQuantifier(expression *OperExpr
 		condition = booleanOr(terms...)
 	}
 	scope, result := rewriter.bindBoolean(scope, condition)
+	return scope, result, nil
+}
+
+func (rewriter *StratifiedRewriter) rewriteSkolemizedExistential(
+	expression *OperExpr,
+	scope RewriterScope,
+) (RewriterScope, ArenaCell, error) {
+	arguments := expression.Arguments()
+	if len(arguments) != 1 {
+		return scope, ArenaCell{}, fmt.Errorf("Skolem requires one existential expression")
+	}
+	exists, ok := arguments[0].(*OperExpr)
+	if !ok || exists.Operator().Name() != "EXISTS3" || len(exists.Arguments()) != 3 {
+		return scope, ArenaCell{}, fmt.Errorf("Skolem requires a bounded existential expression")
+	}
+	existsArguments := exists.Arguments()
+	binder, ok := existsArguments[0].(*NameExpr)
+	if !ok {
+		return scope, ArenaCell{}, fmt.Errorf("Skolem existential binder must be a name")
+	}
+	scope, setCell, err := rewriter.Rewrite(existsArguments[1], scope)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	setType, ok := setCell.Type.TLAType().(SetType)
+	if !ok {
+		return scope, ArenaCell{}, fmt.Errorf("Skolem existential bound has non-set type %s", setCell.Type)
+	}
+	guess := MustOperExpr(Op("Apalache!Guess"), Typed(setType.Element()), setCell.NameExpr())
+	scope, picked, err := rewriter.Rewrite(guess, scope)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	membership := MustOperExpr(Op("SET_IN"), Typed(BoolT1), picked.NameExpr(), setCell.NameExpr())
+	scope, memberCell, err := rewriter.Rewrite(membership, scope)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	previous, shadowed := scope.Binding.Get(binder.Name())
+	scope.Binding = scope.Binding.With(binder.Name(), picked)
+	scope, predicate, err := rewriter.Rewrite(existsArguments[2], scope)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	if !EqualTypes(predicate.Type.TLAType(), BoolT1) {
+		return scope, ArenaCell{}, fmt.Errorf("Skolem existential predicate has non-Boolean type %s", predicate.Type)
+	}
+	binding := scope.Binding.Map()
+	if shadowed {
+		binding[binder.Name()] = previous
+	} else {
+		delete(binding, binder.Name())
+	}
+	scope.Binding = NewBinding(binding)
+	scope, result := rewriter.bindBoolean(scope, booleanAnd(memberCell.NameExpr(), predicate.NameExpr()))
 	return scope, result, nil
 }
 

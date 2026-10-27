@@ -231,6 +231,43 @@ func TestCheckBoundedSafetyChecksActionInvariantsOnPendingState(t *testing.T) {
 	}
 }
 
+func TestCheckBoundedSafetySkolemizesExistentialAssignments(t *testing.T) {
+	x := NewNameExpr("x", Typed(IntT1))
+	prime := MustOperExpr(Op("PRIME"), Typed(IntT1), NewNameExpr("x", Typed(IntT1)))
+	binder := NewNameExpr("i", Typed(IntT1))
+	setType := mustSet(IntT1)
+	constantInit := boolDefinition("CInit", NewValueExpr(BoolValue(true), Typed(BoolT1)))
+	init := boolDefinition("Init", MustOperExpr(Op("EQ"), Typed(BoolT1), x, intLiteral(0)))
+	next := boolDefinition("Next", MustOperExpr(Op("EXISTS3"), Typed(BoolT1), binder,
+		MustOperExpr(Op("SET_ENUM"), Typed(setType), intLiteral(1), intLiteral(2)),
+		MustOperExpr(Op("AND"), Typed(BoolT1),
+			MustOperExpr(Op("EQ"), Typed(BoolT1), prime, binder),
+			MustOperExpr(Op("EQ"), Typed(BoolT1), binder, intLiteral(2)))))
+	invariant := boolDefinition("Inv", MustOperExpr(Op("LT"), Typed(BoolT1), x, intLiteral(2)))
+	module := configuredTestModule(NewVarDecl("x", Typed(IntT1)), constantInit, init, next, invariant)
+	prepared, err := PrepareSafetyTransitions(module, SafetyPipelineOptions{Specification: SpecificationConfiguration{
+		Behavior: InitNextSpec{Init: "Init", Next: "Next"}, ConstantInit: "CInit", Invariants: []string{"Inv"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	nextTransitions := TransitionsFromModule(prepared.Module, NormalizedNextPrefix)
+	if len(nextTransitions) != 1 || countOperator(nextTransitions[0], "Apalache!Skolem") != 1 {
+		t.Fatalf("analyzed Next transitions = %v", nextTransitions)
+	}
+	result, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Outcome != SafetyCounterexample || result.Depth != 1 || len(result.States) != 2 {
+		t.Fatalf("existential assignment result = %#v", result)
+	}
+	value, formatErr := FormatTLAExpression(result.States[1].Values["x"])
+	if formatErr != nil || value != "2" {
+		t.Fatalf("existentially assigned x = %q, %v", value, formatErr)
+	}
+}
+
 func TestCheckBoundedSafetyValidatesInputs(t *testing.T) {
 	if _, err := CheckBoundedSafety(context.Background(), nil, DerivedPredicates{}, 0); err == nil {
 		t.Fatal("nil module was accepted")
