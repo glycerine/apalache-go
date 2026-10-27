@@ -50,7 +50,22 @@ func (rewriter *StratifiedRewriter) rewriteIntegerRange(expression *OperExpr, sc
 	left, leftOK := constantInteger(arguments[0])
 	right, rightOK := constantInteger(arguments[1])
 	if !leftOK || !rightOK {
-		return scope, ArenaCell{}, fmt.Errorf("integer range requires constant integer bounds")
+		var lower, upper ArenaCell
+		var err error
+		scope, lower, err = rewriter.Rewrite(arguments[0], scope)
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+		scope, upper, err = rewriter.Rewrite(arguments[1], scope)
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+		if !EqualTypes(lower.Type.TLAType(), IntT1) || !EqualTypes(upper.Type.TLAType(), IntT1) {
+			return scope, ArenaCell{}, fmt.Errorf("integer range bounds must be integers, found %s and %s", lower.Type, upper.Type)
+		}
+		newArena, result := scope.Arena.AppendCellType(IntegerRangeCellType{})
+		scope.Arena = newArena.SetDomain(result, lower).SetCodomain(result, upper)
+		return scope, result, nil
 	}
 	if !left.IsInt64() || !right.IsInt64() || int64(int(left.Int64())) != left.Int64() || int64(int(right.Int64())) != right.Int64() {
 		return scope, ArenaCell{}, fmt.Errorf("integer range bounds must fit in an int")

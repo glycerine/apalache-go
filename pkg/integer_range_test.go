@@ -38,13 +38,64 @@ func TestStratifiedIntegerRangesThroughG3(t *testing.T) {
 	}
 }
 
-func TestStratifiedIntegerRangeRejectsSymbolicBounds(t *testing.T) {
-	expression := MustOperExpr(Op("INT_RANGE"), Typed(mustSet(IntT1)),
-		NewNameExpr("a", Typed(IntT1)), NewValueExpr(Int64Value(3), Typed(IntT1)))
+func TestStratifiedSymbolicIntegerRangeChoiceThroughG3(t *testing.T) {
+	rewriter := NewStratifiedRewriter()
 	scope := InitialRewriterScope()
-	newArena, bound := scope.Arena.AppendCellType(BasicCellType{Type: IntT1})
-	scope.Arena, scope.Binding = newArena, scope.Binding.With("a", bound)
-	if _, _, err := NewStratifiedRewriter().Rewrite(expression, scope); err == nil {
-		t.Fatal("symbolic integer range bound was accepted")
+	var err error
+	scope, bound, err := rewriter.Rewrite(NewValueExpr(Int64Value(2), Typed(IntT1)), scope)
+	if err != nil {
+		t.Fatal(err)
 	}
+	scope.Binding = scope.Binding.With("a", bound)
+	rangeExpression := MustOperExpr(Op("INT_RANGE"), Typed(mustSet(IntT1)),
+		NewNameExpr("a", Typed(IntT1)), NewValueExpr(Int64Value(3), Typed(IntT1)))
+	choice := MustOperExpr(Op("Apalache!Guess"), Typed(IntT1), rangeExpression)
+	inRange := MustOperExpr(Op("AND"), Typed(BoolT1),
+		MustOperExpr(Op("LE"), Typed(BoolT1), NewValueExpr(Int64Value(2), Typed(IntT1)), choice),
+		MustOperExpr(Op("LE"), Typed(BoolT1), choice, NewValueExpr(Int64Value(3), Typed(IntT1))))
+	scope, result, err := rewriter.Rewrite(inRange, scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkRewrittenTruth(t, rewriter, scope, result, true)
+}
+
+func TestStratifiedSymbolicIntegerRangeMembershipThroughG3(t *testing.T) {
+	rewriter := NewStratifiedRewriter()
+	scope := InitialRewriterScope()
+	var err error
+	scope, bound, err := rewriter.Rewrite(NewValueExpr(Int64Value(1), Typed(IntT1)), scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope.Binding = scope.Binding.With("a", bound)
+	rangeExpression := MustOperExpr(Op("INT_RANGE"), Typed(mustSet(IntT1)),
+		NewNameExpr("a", Typed(IntT1)), NewValueExpr(Int64Value(3), Typed(IntT1)))
+	membership := MustOperExpr(Op("SET_IN"), Typed(BoolT1),
+		NewValueExpr(Int64Value(2), Typed(IntT1)), rangeExpression)
+	scope, result, err := rewriter.Rewrite(membership, scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkRewrittenTruth(t, rewriter, scope, result, true)
+}
+
+func TestStratifiedEmptySymbolicIntegerRangeChoiceUsesDefault(t *testing.T) {
+	rewriter := NewStratifiedRewriter()
+	scope := InitialRewriterScope()
+	var err error
+	scope, bound, err := rewriter.Rewrite(NewValueExpr(Int64Value(3), Typed(IntT1)), scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope.Binding = scope.Binding.With("a", bound)
+	rangeExpression := MustOperExpr(Op("INT_RANGE"), Typed(mustSet(IntT1)),
+		NewValueExpr(Int64Value(4), Typed(IntT1)), NewNameExpr("a", Typed(IntT1)))
+	choice := MustOperExpr(Op("Apalache!Guess"), Typed(IntT1), rangeExpression)
+	equalZero := MustOperExpr(Op("EQ"), Typed(BoolT1), choice, NewValueExpr(Int64Value(0), Typed(IntT1)))
+	scope, result, err := rewriter.Rewrite(equalZero, scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkRewrittenTruth(t, rewriter, scope, result, true)
 }

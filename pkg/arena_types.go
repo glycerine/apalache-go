@@ -74,6 +74,15 @@ func (cell InfiniteSetCellType) Signature() string { return "Z" + cell.Element.S
 func (cell InfiniteSetCellType) String() string    { return "InfSet[" + cell.Element.String() + "]" }
 func (cell InfiniteSetCellType) TLAType() Type     { return mustSet(cell.Element.TLAType()) }
 
+// IntegerRangeCellType represents a finite integer interval whose bounds are
+// symbolic arena cells stored as the range cell's domain and codomain edges.
+type IntegerRangeCellType struct{}
+
+func (IntegerRangeCellType) cellTypeNode()     {}
+func (IntegerRangeCellType) Signature() string { return "ZRange" }
+func (IntegerRangeCellType) String() string    { return "IntRange" }
+func (IntegerRangeCellType) TLAType() Type     { return mustSet(IntT1) }
+
 type PowerSetCellType struct{ Domain Type }
 
 func (PowerSetCellType) cellTypeNode() {}
@@ -199,6 +208,9 @@ func EqualCellTypes(left, right CellType) bool {
 	case InfiniteSetCellType:
 		r, ok := right.(InfiniteSetCellType)
 		return ok && EqualCellTypes(l.Element, r.Element)
+	case IntegerRangeCellType:
+		_, ok := right.(IntegerRangeCellType)
+		return ok
 	case PowerSetCellType:
 		r, ok := right.(PowerSetCellType)
 		return ok && EqualTypes(l.Domain, r.Domain)

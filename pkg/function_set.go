@@ -186,6 +186,29 @@ func (rewriter *StratifiedRewriter) pickFromCompactCollection(scope RewriterScop
 	switch set.Type.(type) {
 	case FiniteFunctionSetCellType:
 		return rewriter.pickFunctionFromSet(scope, set)
+	case IntegerRangeCellType:
+		lower, err := scope.Arena.Domain(set)
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+		upper, err := scope.Arena.Codomain(set)
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+		newArena, candidate := scope.Arena.AppendCellType(BasicCellType{Type: IntT1})
+		scope.Arena = newArena
+		nonemptyCondition := MustOperExpr(Op("LE"), Typed(BoolT1), lower.NameExpr(), upper.NameExpr())
+		scope, nonempty := rewriter.bindBoolean(scope, nonemptyCondition)
+		inRange := booleanAnd(
+			MustOperExpr(Op("LE"), Typed(BoolT1), lower.NameExpr(), candidate.NameExpr()),
+			MustOperExpr(Op("LE"), Typed(BoolT1), candidate.NameExpr(), upper.NameExpr()))
+		rewriter.assert(booleanOr(MustOperExpr(Op("NOT"), Typed(BoolT1), nonempty.NameExpr()), inRange))
+		var fallback ArenaCell
+		scope, fallback, err = rewriter.defaults.GetOrCreate(scope, IntT1)
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+		return rewriter.chooseConditional(scope, nonempty, candidate, fallback)
 	case PowerSetCellType:
 		domain, err := scope.Arena.Domain(set)
 		if err != nil {

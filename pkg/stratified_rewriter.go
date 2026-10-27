@@ -451,7 +451,7 @@ func (rewriter *StratifiedRewriter) rewriteBoundedChoice(expression *OperExpr, s
 		return scope, ArenaCell{}, err
 	}
 	switch setCell.Type.(type) {
-	case FiniteFunctionSetCellType, PowerSetCellType, InfiniteSetCellType:
+	case FiniteFunctionSetCellType, IntegerRangeCellType, PowerSetCellType, InfiniteSetCellType:
 		if expression.Operator().Name() != "Apalache!Guess" {
 			return scope, ArenaCell{}, fmt.Errorf("bounded CHOOSE over compact or infinite sets is not yet implemented")
 		}
@@ -1841,6 +1841,24 @@ func (rewriter *StratifiedRewriter) rewriteMembership(expression *OperExpr, scop
 		zero := NewValueExpr(Int64Value(0), Typed(IntT1))
 		comparison := MustOperExpr(Op("GE"), Typed(BoolT1), element.NameExpr(), zero)
 		rewriter.assert(MustOperExpr(Op("EQ"), Typed(BoolT1), result.NameExpr(), comparison))
+		return scope, result, nil
+	}
+	if _, integerRange := setCell.Type.(IntegerRangeCellType); integerRange {
+		if !EqualTypes(element.Type.TLAType(), IntT1) {
+			return scope, ArenaCell{}, fmt.Errorf("integer range membership requires an integer element")
+		}
+		lower, rangeErr := scope.Arena.Domain(setCell)
+		if rangeErr != nil {
+			return scope, ArenaCell{}, rangeErr
+		}
+		upper, rangeErr := scope.Arena.Codomain(setCell)
+		if rangeErr != nil {
+			return scope, ArenaCell{}, rangeErr
+		}
+		condition := booleanAnd(
+			MustOperExpr(Op("LE"), Typed(BoolT1), lower.NameExpr(), element.NameExpr()),
+			MustOperExpr(Op("LE"), Typed(BoolT1), element.NameExpr(), upper.NameExpr()))
+		scope, result := rewriter.bindBoolean(scope, condition)
 		return scope, result, nil
 	}
 	if _, powerSet := setCell.Type.(PowerSetCellType); powerSet {
