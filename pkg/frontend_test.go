@@ -130,6 +130,22 @@ Value == ChooseOne({1, 2}, LAMBDA x: x = 2)
 	}
 }
 
+func TestParseAndTypeCheckSourceLowersTupleSetFilters(t *testing.T) {
+	result := ParseAndTypeCheckSource(context.Background(), "TupleFilter.tla", `---- MODULE TupleFilter ----
+EXTENDS Integers
+\* @type: Set(<<Int, Int>>) => Set(<<Int, Int>>);
+Positive(S) == {<<x, y>> \in S: x > 0 /\ y > 0}
+====
+`, FrontendOptions{}, TypeCheckOptions{})
+	if !result.OK() {
+		t.Fatalf("ParseAndTypeCheckSource() diagnostics = %v", result.Diagnostics)
+	}
+	body, found := OperatorBody(result.Native, "Positive")
+	if !found || countOperator(body, "SET_FILTER") != 1 {
+		t.Fatalf("lowered tuple filter = %#v", body)
+	}
+}
+
 func TestParseAndTypeCheckSourceWrapsBuiltinOperatorArguments(t *testing.T) {
 	result := ParseAndTypeCheckSource(context.Background(), "BuiltinArguments.tla", `---- MODULE BuiltinArguments ----
 EXTENDS Integers

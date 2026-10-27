@@ -198,8 +198,49 @@ func normalizeTlagoLambdaExpr(expression tlago.Expr, next *int) tlago.Expr {
 			typed.Bounds[index].Set = normalizeTlagoLambdaExpr(typed.Bounds[index].Set, next)
 		}
 		typed.Predicate = normalizeTlagoLambdaExpr(typed.Predicate, next)
+		if lowered, ok := lowerTlagoTupleSetFilter(typed, next); ok {
+			return lowered
+		}
 	}
 	return expression
+}
+
+func lowerTlagoTupleSetFilter(expression *tlago.SetComprehensionExpr, next *int) (tlago.Expr, bool) {
+	if expression == nil || expression.Predicate == nil || len(expression.Bounds) < 2 {
+		return nil, false
+	}
+	tuple, ok := expression.Element.(*tlago.TupleExpr)
+	if !ok || len(tuple.Elems) != len(expression.Bounds) {
+		return nil, false
+	}
+	domain := expression.Bounds[0].Set
+	for index, bound := range expression.Bounds {
+		name, named := tuple.Elems[index].(*tlago.IdentExpr)
+		if !named || name.Name != bound.Name || !bound.TupleBound || bound.Set != domain {
+			return nil, false
+		}
+	}
+	*next++
+	tupleName := fmt.Sprintf("__tlago_tuple_filter_%d", *next)
+	definitions := make([]tlago.Definition, len(expression.Bounds))
+	for index, bound := range expression.Bounds {
+		projection := &tlago.FunctionAppExpr{
+			Function: &tlago.IdentExpr{Name: tupleName, Pos: expression.Pos},
+			Args:     []tlago.Expr{&tlago.LiteralExpr{Kind: "number", Value: fmt.Sprintf("%d", index+1), Pos: bound.Pos}},
+			Pos:      bound.Pos,
+		}
+		definitions[index] = tlago.Definition{
+			Name: bound.Name, ParamArities: map[string]int{}, Expr: projection,
+			Pos: bound.Pos, Source: bound.Pos, LHSPos: bound.Pos,
+		}
+	}
+	predicate := &tlago.LetExpr{Definitions: definitions, Body: expression.Predicate, Pos: expression.Pos}
+	return &tlago.SetComprehensionExpr{
+		Element:   &tlago.IdentExpr{Name: tupleName, Pos: expression.Pos},
+		Bounds:    []tlago.BoundVar{{Name: tupleName, Set: domain, Pos: expression.Pos}},
+		Predicate: predicate,
+		Pos:       expression.Pos,
+	}, true
 }
 
 func normalizeTlagoLambdaValues(module *Module, sources *SourceStore) *Module {
