@@ -214,6 +214,25 @@ func (executor *TransitionExecutor) NextState() error {
 
 // Check tests the complete accumulated symbolic path for satisfiability.
 func (executor *TransitionExecutor) Check(ctx context.Context) (SMTStatus, error) {
+	return executor.check(ctx, nil)
+}
+
+// CheckState tests whether expression can hold on the current path without
+// permanently adding it as a path constraint. Definitions introduced while
+// rewriting the expression remain reusable in subsequent checks.
+func (executor *TransitionExecutor) CheckState(ctx context.Context, expression Expr) (SMTStatus, error) {
+	if err := requireBooleanExpression(expression, "state expression"); err != nil {
+		return SMTUnknown, err
+	}
+	scope, assertion, err := executor.rewriter.Rewrite(expression, executor.scope)
+	if err != nil {
+		return SMTUnknown, fmt.Errorf("rewrite state expression: %w", err)
+	}
+	executor.scope = scope
+	return executor.check(ctx, []Expr{assertion.NameExpr()})
+}
+
+func (executor *TransitionExecutor) check(ctx context.Context, temporary []Expr) (SMTStatus, error) {
 	solver, err := NewG3SolverContext()
 	if err != nil {
 		return SMTUnknown, err
@@ -225,6 +244,9 @@ func (executor *TransitionExecutor) Check(ctx context.Context) (SMTStatus, error
 	}
 	if err = encoder.AssertAll(executor.asserted); err != nil {
 		return SMTUnknown, fmt.Errorf("assert symbolic path: %w", err)
+	}
+	if err = encoder.AssertAll(temporary); err != nil {
+		return SMTUnknown, fmt.Errorf("assert temporary state expression: %w", err)
 	}
 	return solver.Check(ctx)
 }
