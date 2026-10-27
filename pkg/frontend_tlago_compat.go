@@ -65,6 +65,177 @@ type tlagoBinderLayout struct {
 	groups   []tlagoBinderGroup
 }
 
+// normalizeTlagoLambdas works around tlago v0.1.9's ApalacheIR exporter
+// treating a domainless LAMBDA like a function constructor. An operator-valued
+// lambda is equivalently represented as a local operator definition whose
+// name is the value of the surrounding LET expression.
+func normalizeTlagoLambdas(spec *tlago.Spec) {
+	if spec == nil || spec.Root == nil {
+		return
+	}
+	next := 0
+	for index := range spec.Root.Definitions {
+		spec.Root.Definitions[index].Expr = normalizeTlagoLambdaExpr(spec.Root.Definitions[index].Expr, &next)
+	}
+	for index := range spec.Root.Assumptions {
+		spec.Root.Assumptions[index].Expr = normalizeTlagoLambdaExpr(spec.Root.Assumptions[index].Expr, &next)
+	}
+	for index := range spec.Root.Theorems {
+		spec.Root.Theorems[index].Expr = normalizeTlagoLambdaExpr(spec.Root.Theorems[index].Expr, &next)
+	}
+}
+
+func normalizeTlagoLambdaExpr(expression tlago.Expr, next *int) tlago.Expr {
+	if expression == nil {
+		return nil
+	}
+	transformAll := func(expressions []tlago.Expr) {
+		for index := range expressions {
+			expressions[index] = normalizeTlagoLambdaExpr(expressions[index], next)
+		}
+	}
+	switch typed := expression.(type) {
+	case *tlago.IdentExpr, *tlago.LiteralExpr:
+	case *tlago.UnaryExpr:
+		typed.Expr = normalizeTlagoLambdaExpr(typed.Expr, next)
+	case *tlago.BinaryExpr:
+		typed.Left = normalizeTlagoLambdaExpr(typed.Left, next)
+		typed.Right = normalizeTlagoLambdaExpr(typed.Right, next)
+	case *tlago.CallExpr:
+		typed.Callee = normalizeTlagoLambdaExpr(typed.Callee, next)
+		transformAll(typed.Args)
+	case *tlago.IfExpr:
+		typed.Cond = normalizeTlagoLambdaExpr(typed.Cond, next)
+		typed.Then = normalizeTlagoLambdaExpr(typed.Then, next)
+		typed.Else = normalizeTlagoLambdaExpr(typed.Else, next)
+	case *tlago.LetExpr:
+		for index := range typed.Definitions {
+			typed.Definitions[index].Expr = normalizeTlagoLambdaExpr(typed.Definitions[index].Expr, next)
+		}
+		for index := range typed.Instances {
+			for substitutionIndex := range typed.Instances[index].SubstitutionList {
+				substitution := &typed.Instances[index].SubstitutionList[substitutionIndex]
+				substitution.Expr = normalizeTlagoLambdaExpr(substitution.Expr, next)
+			}
+		}
+		typed.Body = normalizeTlagoLambdaExpr(typed.Body, next)
+	case *tlago.QuantifierExpr:
+		typed.Set = normalizeTlagoLambdaExpr(typed.Set, next)
+		typed.Body = normalizeTlagoLambdaExpr(typed.Body, next)
+	case *tlago.CaseExpr:
+		for index := range typed.Arms {
+			typed.Arms[index].Test = normalizeTlagoLambdaExpr(typed.Arms[index].Test, next)
+			typed.Arms[index].Value = normalizeTlagoLambdaExpr(typed.Arms[index].Value, next)
+		}
+		typed.Other = normalizeTlagoLambdaExpr(typed.Other, next)
+	case *tlago.ChooseExpr:
+		typed.Set = normalizeTlagoLambdaExpr(typed.Set, next)
+		typed.Body = normalizeTlagoLambdaExpr(typed.Body, next)
+	case *tlago.TupleExpr:
+		transformAll(typed.Elems)
+	case *tlago.SetExpr:
+		transformAll(typed.Elems)
+	case *tlago.RecordExpr:
+		for index := range typed.Fields {
+			typed.Fields[index].Value = normalizeTlagoLambdaExpr(typed.Fields[index].Value, next)
+		}
+	case *tlago.RecordComponentExpr:
+		typed.Record = normalizeTlagoLambdaExpr(typed.Record, next)
+	case *tlago.RecordSetExpr:
+		for index := range typed.Fields {
+			typed.Fields[index].Set = normalizeTlagoLambdaExpr(typed.Fields[index].Set, next)
+		}
+	case *tlago.FunctionExpr:
+		for index := range typed.Bounds {
+			typed.Bounds[index].Set = normalizeTlagoLambdaExpr(typed.Bounds[index].Set, next)
+		}
+		typed.Body = normalizeTlagoLambdaExpr(typed.Body, next)
+		if typed.IsLambda {
+			*next++
+			name := fmt.Sprintf("__tlago_lambda_%d", *next)
+			parameters := make([]string, len(typed.Bounds))
+			arities := make(map[string]int, len(typed.Bounds))
+			positions := make(map[string]tlago.Position, len(typed.Bounds))
+			for index, bound := range typed.Bounds {
+				parameters[index] = bound.Name
+				arities[bound.Name] = 0
+				positions[bound.Name] = bound.Pos
+			}
+			definition := tlago.Definition{
+				Name: name, Params: parameters, ParamArities: arities, ParamPositions: positions,
+				Expr: typed.Body, Pos: typed.Pos, Source: typed.Pos, LHSPos: typed.Pos,
+			}
+			return &tlago.LetExpr{
+				Definitions: []tlago.Definition{definition},
+				Body:        &tlago.IdentExpr{Name: name, Pos: typed.Pos}, Pos: typed.Pos,
+			}
+		}
+	case *tlago.FunctionAppExpr:
+		typed.Function = normalizeTlagoLambdaExpr(typed.Function, next)
+		transformAll(typed.Args)
+	case *tlago.ExceptExpr:
+		typed.Base = normalizeTlagoLambdaExpr(typed.Base, next)
+		for specIndex := range typed.Specs {
+			for componentIndex := range typed.Specs[specIndex].Components {
+				transformAll(typed.Specs[specIndex].Components[componentIndex].Indices)
+			}
+			typed.Specs[specIndex].Value = normalizeTlagoLambdaExpr(typed.Specs[specIndex].Value, next)
+		}
+	case *tlago.LabelExpr:
+		typed.Body = normalizeTlagoLambdaExpr(typed.Body, next)
+	case *tlago.ActionExpr:
+		typed.Action = normalizeTlagoLambdaExpr(typed.Action, next)
+		typed.Subscript = normalizeTlagoLambdaExpr(typed.Subscript, next)
+	case *tlago.FairnessExpr:
+		typed.Subscript = normalizeTlagoLambdaExpr(typed.Subscript, next)
+		typed.Action = normalizeTlagoLambdaExpr(typed.Action, next)
+	case *tlago.FunctionSetExpr:
+		typed.Domain = normalizeTlagoLambdaExpr(typed.Domain, next)
+		typed.Range = normalizeTlagoLambdaExpr(typed.Range, next)
+	case *tlago.SetComprehensionExpr:
+		typed.Element = normalizeTlagoLambdaExpr(typed.Element, next)
+		for index := range typed.Bounds {
+			typed.Bounds[index].Set = normalizeTlagoLambdaExpr(typed.Bounds[index].Set, next)
+		}
+		typed.Predicate = normalizeTlagoLambdaExpr(typed.Predicate, next)
+	}
+	return expression
+}
+
+func normalizeTlagoLambdaValues(module *Module, sources *SourceStore) *Module {
+	if module == nil {
+		return nil
+	}
+	var tracker TransformationTracker = IdleTracker{}
+	if sources != nil {
+		tracker = NewListenerTracker(sources)
+	}
+	rewrite := RewriteExpressions(tracker, func(expression Expr) (Expr, bool) {
+		let, ok := expression.(*LetInExpr)
+		if !ok || len(let.Declarations()) != 1 {
+			return nil, false
+		}
+		declaration := let.Declarations()[0]
+		if len(declaration.FormalParams()) == 0 {
+			return nil, false
+		}
+		application, ok := let.Body().(*OperExpr)
+		if !ok || application.Operator().Name() != "OPER_APP" {
+			return nil, false
+		}
+		arguments := application.Arguments()
+		if len(arguments) != 1 {
+			return nil, false
+		}
+		name, ok := arguments[0].(*NameExpr)
+		if !ok || name.Name() != declaration.Name() || !strings.HasPrefix(name.Name(), "__tlago_lambda_") {
+			return nil, false
+		}
+		return NewLetInExpr(NewNameExpr(name.Name(), name.Tag()), let.Tag(), declaration), true
+	})
+	return transformTlagoModuleExpressions(module, rewrite, sources)
+}
+
 // normalizeTlagoApalacheAssignments works around tlago v0.1.9's ApalacheIR
 // exporter rejecting the imported infix := operator. Replacing it by its
 // standard-library definition is semantics-preserving: x := e is defined as

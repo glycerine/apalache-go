@@ -75,6 +75,7 @@ func ParseSource(ctx context.Context, filename, source string, opts FrontendOpti
 		return canceledResult(err)
 	}
 
+	normalizeTlagoLambdas(spec)
 	binderLayouts := normalizeTlagoApalacheAssignments(spec)
 	ir, irDiags := tlago.ApalacheIRJSON(spec, tlago.ApalacheIROptions{IncludeSource: opts.IncludeSource})
 	result.Diagnostics = append(result.Diagnostics, frontendDiagnostics(irDiags)...)
@@ -82,7 +83,8 @@ func ParseSource(ctx context.Context, filename, source string, opts FrontendOpti
 		result.IR = json.RawMessage(ir)
 		result.Sources = NewSourceStore()
 		native, conversionErr := UnmarshalSingleModuleIRJSON(ir, result.Sources)
-		result.Native = normalizeTlagoApalacheBuiltinCalls(native, result.Sources)
+		result.Native = normalizeTlagoLambdaValues(native, result.Sources)
+		result.Native = normalizeTlagoApalacheBuiltinCalls(result.Native, result.Sources)
 		result.Native = normalizeTlagoTupleBinders(result.Native, result.Sources, binderLayouts)
 		result.Native = normalizeTlagoTupleQuantifiers(result.Native, result.Sources)
 		if conversionErr != nil {

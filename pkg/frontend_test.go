@@ -117,6 +117,19 @@ Next == UNCHANGED x
 	}
 }
 
+func TestParseAndTypeCheckSourcePassesLambdaOperatorArguments(t *testing.T) {
+	result := ParseAndTypeCheckSource(context.Background(), "LambdaCallback.tla", `---- MODULE LambdaCallback ----
+EXTENDS Integers
+\* @type: (Set(Int), (Int) => Bool) => Int;
+ChooseOne(S, P(_)) == CHOOSE x \in S: P(x)
+Value == ChooseOne({1, 2}, LAMBDA x: x = 2)
+====
+`, FrontendOptions{}, TypeCheckOptions{})
+	if !result.OK() {
+		t.Fatalf("ParseAndTypeCheckSource() diagnostics = %v", result.Diagnostics)
+	}
+}
+
 func TestParseAndTypeCheckSourceWrapsBuiltinOperatorArguments(t *testing.T) {
 	result := ParseAndTypeCheckSource(context.Background(), "BuiltinArguments.tla", `---- MODULE BuiltinArguments ----
 EXTENDS Integers
