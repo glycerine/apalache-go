@@ -157,6 +157,13 @@
       "go_args": ["check", "-rows", "-length", "0", "-deadlock=false", "-inv", "AllTests", "test/tla/TestRecordsNew.tla"]
     },
     {
+      "name": "row-record-counterexample",
+      "dir": "..",
+      "compare_trace": true,
+      "scala_args": ["check", "--features=rows", "--length=2", "--no-deadlock", "--inv=Inv", "pkg/testdata/oracle/RowRecordTrace.tla"],
+      "go_args": ["check", "-rows", "-length", "2", "-deadlock=false", "-inv", "Inv", "pkg/testdata/oracle/RowRecordTrace.tla"]
+    },
+    {
       "name": "variants",
       "dir": "..",
       "scala_args": ["check", "--features=rows", "--length=0", "--no-deadlock", "--inv=AllTests", "test/tla/TestVariants.tla"],
