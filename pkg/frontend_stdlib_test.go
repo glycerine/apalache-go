@@ -132,3 +132,44 @@ Inv ==
 		t.Fatalf("FiniteSetsExt result = %#v", result)
 	}
 }
+
+func TestBundledSequencesExtChecksFiniteSequenceOperators(t *testing.T) {
+	frontend := ParseAndTypeCheckSource(context.Background(), "BundledSequencesExt.tla", `---- MODULE BundledSequencesExt ----
+EXTENDS SequencesExt
+Init == TRUE
+Next == TRUE
+ConversionsOK ==
+  /\ ToSet(<<1, 2, 1>>) = {1, 2}
+  /\ ToSet(SetToSeq({1, 2})) = {1, 2}
+ReverseOK == Reverse(<<1, 2, 3>>) = <<3, 2, 1>>
+RemoveOK == Remove(<<1, 2, 1>>, 1) = <<2>>
+ReplaceAllOK == ReplaceAll(<<1, 2, 1>>, 1, 4) = <<4, 2, 4>>
+InsertAtOK == InsertAt(<<1, 3>>, 2, 2) = <<1, 2, 3>>
+FoldOK == FoldLeft(LAMBDA acc, x: acc + x, 0, <<1, 2, 3>>) = 6
+ZipOK == Zip(<<1, 2>>, <<"a", "b">>) = <<<<1, "a">>, <<2, "b">>>>
+====
+`, FrontendOptions{}, TypeCheckOptions{UseRows: true})
+	if !frontend.OK() {
+		t.Fatalf("bundled SequencesExt diagnostics = %v", frontend.Diagnostics)
+	}
+	prepared, err := PrepareSafetyTransitions(frontend.Native, SafetyPipelineOptions{
+		Specification: SpecificationConfiguration{
+			Behavior: InitNextSpec{Init: "Init", Next: "Next"},
+			Invariants: []string{
+				"ConversionsOK", "ReverseOK", "RemoveOK", "ReplaceAllOK", "InsertAtOK", "FoldOK", "ZipOK",
+			},
+		},
+		Sources: frontend.Sources,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := CheckBoundedSafetyWithOptions(context.Background(), prepared.Module, prepared.Predicates,
+		BoundedSafetyOptions{MaxSteps: 0, CheckDeadlocks: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Outcome != SafetyNoCounterexample || result.ExploredExecutions != 1 {
+		t.Fatalf("SequencesExt result = %#v", result)
+	}
+}

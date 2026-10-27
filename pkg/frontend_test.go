@@ -280,7 +280,7 @@ Test == SelectSeq(<<2, 3, 4>>, IsOdd) = <<3>>
 	}
 }
 
-func TestParseAndTypeCheckSourceNormalizesSequenceToSet(t *testing.T) {
+func TestParseAndTypeCheckSourceImportsSequenceToSet(t *testing.T) {
 	result := ParseAndTypeCheckSource(context.Background(), "SequenceToSet.tla", `---- MODULE SequenceToSet ----
 EXTENDS SequencesExt
 Test == ToSet(<<1>>) = {1}
@@ -290,8 +290,9 @@ Test == ToSet(<<1>>) = {1}
 		t.Fatalf("ParseAndTypeCheckSource() diagnostics = %v", result.Diagnostics)
 	}
 	body, found := OperatorBody(result.Native, "Test")
-	if !found || countOperator(body, "SequencesExt!ToSet") != 1 {
-		t.Fatalf("normalized ToSet body = %#v", body)
+	_, imported := OperatorBody(result.Native, "ToSet")
+	if !found || !imported || countNamed(body, "ToSet") != 1 {
+		t.Fatalf("imported ToSet body = %#v", body)
 	}
 }
 
@@ -325,7 +326,7 @@ Test == L!First(<<1, 2>>) = 1
 	}
 }
 
-func TestParseAndTypeCheckSourceExpandsSetToSequence(t *testing.T) {
+func TestParseAndTypeCheckSourceImportsSetToSequence(t *testing.T) {
 	result := ParseAndTypeCheckSource(context.Background(), "SetToSequence.tla", `---- MODULE SetToSequence ----
 EXTENDS Sequences, SequencesExt, Integers
 Test == LET s == SetToSeq({1, 2}) IN Len(s) = 2 /\ ToSet(s) = {1, 2}
@@ -335,8 +336,9 @@ Test == LET s == SetToSeq({1, 2}) IN Len(s) = 2 /\ ToSet(s) = {1, 2}
 		t.Fatalf("ParseAndTypeCheckSource() diagnostics = %v", result.Diagnostics)
 	}
 	body, found := OperatorBody(result.Native, "Test")
-	if !found || countOperator(body, "Apalache!ApaFoldSet") != 1 || countOperator(body, "SequencesExt!ToSet") != 1 {
-		t.Fatalf("expanded SetToSeq body = %#v", body)
+	_, imported := OperatorBody(result.Native, "SetToSeq")
+	if !found || !imported || countNamed(body, "SetToSeq") != 1 || countNamed(body, "ToSet") != 1 {
+		t.Fatalf("imported SetToSeq body = %#v", body)
 	}
 }
 

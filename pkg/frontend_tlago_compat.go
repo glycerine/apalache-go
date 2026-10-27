@@ -8,29 +8,35 @@ import (
 )
 
 var tlagoApalacheBuiltinCalls = map[string]string{
-	"Guess":            "Apalache!Guess",
-	"Gen":              "Apalache!Gen",
-	"Expand":           "Apalache!Expand",
-	"MkSeq":            "Apalache!MkSeq",
-	"SetAsFun":         "Apalache!SetAsFun",
-	"Repeat":           "Apalache!Repeat",
-	"ApaFoldSet":       "Apalache!ApaFoldSet",
-	"ApaFoldSeqLeft":   "Apalache!ApaFoldSeqLeft",
-	"Distinct":         "Apalache!Distinct",
-	"Variant":          "Variants!Variant",
-	"VariantFilter":    "Variants!VariantFilter",
-	"VariantTag":       "Variants!VariantTag",
-	"VariantGetOrElse": "Variants!VariantGetOrElse",
-	"VariantGetUnsafe": "Variants!VariantGetUnsafe",
+	"Guess":                        "Apalache!Guess",
+	"Gen":                          "Apalache!Gen",
+	"Expand":                       "Apalache!Expand",
+	"MkSeq":                        "Apalache!MkSeq",
+	"SetAsFun":                     "Apalache!SetAsFun",
+	"Repeat":                       "Apalache!Repeat",
+	"ApaFoldSet":                   "Apalache!ApaFoldSet",
+	"ApaFoldSeqLeft":               "Apalache!ApaFoldSeqLeft",
+	"Distinct":                     "Apalache!Distinct",
+	"__ApalacheSeqCapacity":        "ApalacheInternal!__ApalacheSeqCapacity",
+	"__NotSupportedByModelChecker": "ApalacheInternal!__NotSupportedByModelChecker",
+	"Variant":                      "Variants!Variant",
+	"VariantFilter":                "Variants!VariantFilter",
+	"VariantTag":                   "Variants!VariantTag",
+	"VariantGetOrElse":             "Variants!VariantGetOrElse",
+	"VariantGetUnsafe":             "Variants!VariantGetUnsafe",
 }
 
 var tlagoNativeVariantDeclarations = map[string]struct{}{
 	"Variant": {}, "VariantFilter": {}, "VariantTag": {}, "VariantGetOrElse": {}, "VariantGetUnsafe": {},
 }
 
+var tlagoInternalBuiltinCalls = map[string]struct{}{
+	"__ApalacheSeqCapacity": {}, "__NotSupportedByModelChecker": {},
+}
+
 var tlagoOpaqueBuiltinModules = map[string]struct{}{
 	"Naturals": {}, "Integers": {}, "Reals": {}, "Sequences": {}, "FiniteSets": {},
-	"TLC": {}, "TLCExt": {}, "Apalache": {},
+	"TLC": {}, "TLCExt": {}, "Apalache": {}, "__apalache_internal": {},
 }
 
 var tlagoBuiltinOperatorArguments = map[string]map[int]string{
@@ -853,7 +859,8 @@ func normalizeTlagoApalacheBuiltinCalls(module *Module, sources *SourceStore) *M
 			}
 			return nil, false
 		}
-		if _, shadowed := declared[callee.Name()]; shadowed {
+		_, internalBuiltin := tlagoInternalBuiltinCalls[callee.Name()]
+		if _, shadowed := declared[callee.Name()]; shadowed && !internalBuiltin {
 			return nil, false
 		}
 		builtinArguments := arguments[1:]
