@@ -101,6 +101,12 @@ func normalizeTlagoLambdaExpr(expression tlago.Expr, next *int) tlago.Expr {
 	case *tlago.BinaryExpr:
 		typed.Left = normalizeTlagoLambdaExpr(typed.Left, next)
 		typed.Right = normalizeTlagoLambdaExpr(typed.Right, next)
+		if typed.Op == "@@" {
+			return lowerTlagoFunctionOverride(typed, next)
+		}
+		if typed.Op == ":>" {
+			return lowerTlagoSingletonFunction(typed, next)
+		}
 	case *tlago.CallExpr:
 		typed.Callee = normalizeTlagoLambdaExpr(typed.Callee, next)
 		transformAll(typed.Args)
@@ -179,6 +185,11 @@ func normalizeTlagoLambdaExpr(expression tlago.Expr, next *int) tlago.Expr {
 			for componentIndex := range typed.Specs[specIndex].Components {
 				transformAll(typed.Specs[specIndex].Components[componentIndex].Indices)
 			}
+			if nested, ok := typed.Specs[specIndex].Value.(*tlago.ExceptExpr); ok {
+				if base, isAt := nested.Base.(*tlago.IdentExpr); isAt && base.Name == "@" {
+					nested.Base = tlagoExceptOldValue(typed.Base, typed.Specs[specIndex])
+				}
+			}
 			typed.Specs[specIndex].Value = normalizeTlagoLambdaExpr(typed.Specs[specIndex].Value, next)
 		}
 	case *tlago.LabelExpr:
@@ -203,6 +214,59 @@ func normalizeTlagoLambdaExpr(expression tlago.Expr, next *int) tlago.Expr {
 		}
 	}
 	return expression
+}
+
+func tlagoExceptOldValue(base tlago.Expr, specification tlago.ExceptSpec) tlago.Expr {
+	current := base
+	for _, component := range specification.Components {
+		var path []tlago.Expr
+		if component.Field != "" {
+			path = []tlago.Expr{&tlago.LiteralExpr{Kind: "string", Value: component.Field, Pos: component.FieldPos}}
+		} else if len(component.Indices) == 1 {
+			path = []tlago.Expr{component.Indices[0]}
+		} else if len(component.Indices) > 1 {
+			path = []tlago.Expr{&tlago.TupleExpr{Elems: append([]tlago.Expr(nil), component.Indices...), Pos: component.Pos}}
+		}
+		for _, index := range path {
+			current = &tlago.FunctionAppExpr{Function: current, Args: []tlago.Expr{index}, Pos: specification.Pos}
+		}
+	}
+	return current
+}
+
+func lowerTlagoFunctionOverride(expression *tlago.BinaryExpr, next *int) tlago.Expr {
+	*next++
+	name := fmt.Sprintf("__tlago_override_arg_%d", *next)
+	bound := func() tlago.Expr { return &tlago.IdentExpr{Name: name, Pos: expression.Pos} }
+	domain := func(function tlago.Expr) tlago.Expr {
+		return &tlago.UnaryExpr{Op: "DOMAIN", Expr: function, Pos: expression.Pos}
+	}
+	application := func(function tlago.Expr) tlago.Expr {
+		return &tlago.FunctionAppExpr{Function: function, Args: []tlago.Expr{bound()}, Pos: expression.Pos}
+	}
+	combinedDomain := &tlago.BinaryExpr{
+		Op: "\\union", Left: domain(expression.Left), Right: domain(expression.Right), Pos: expression.Pos,
+	}
+	inLeftDomain := &tlago.BinaryExpr{
+		Op: "\\in", Left: bound(), Right: domain(expression.Left), Pos: expression.Pos,
+	}
+	body := &tlago.IfExpr{
+		Cond: inLeftDomain, Then: application(expression.Left), Else: application(expression.Right), Pos: expression.Pos,
+	}
+	return &tlago.FunctionExpr{
+		Bounds: []tlago.BoundVar{{Name: name, Set: combinedDomain, Pos: expression.Pos}},
+		Body:   body, Pos: expression.Pos,
+	}
+}
+
+func lowerTlagoSingletonFunction(expression *tlago.BinaryExpr, next *int) tlago.Expr {
+	*next++
+	name := fmt.Sprintf("__tlago_singleton_arg_%d", *next)
+	domain := &tlago.SetExpr{Elems: []tlago.Expr{expression.Left}, Pos: expression.Pos}
+	return &tlago.FunctionExpr{
+		Bounds: []tlago.BoundVar{{Name: name, Set: domain, Pos: expression.Pos}},
+		Body:   expression.Right, Pos: expression.Pos,
+	}
 }
 
 func lowerTlagoTupleSetFilter(expression *tlago.SetComprehensionExpr, next *int) (tlago.Expr, bool) {

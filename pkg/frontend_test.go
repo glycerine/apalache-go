@@ -146,6 +146,51 @@ Positive(S) == {<<x, y>> \in S: x > 0 /\ y > 0}
 	}
 }
 
+func TestParseAndTypeCheckSourceLowersFunctionOverride(t *testing.T) {
+	result := ParseAndTypeCheckSource(context.Background(), "FunctionOverride.tla", `---- MODULE FunctionOverride ----
+EXTENDS TLC, Integers
+\* @type: Int -> Int;
+F == [x \in {1, 2} |-> x]
+\* @type: Int -> Int;
+G == [x \in {2, 3} |-> 10 * x]
+\* @type: Int -> Int;
+H == F @@ G
+\* @type: Int -> Int;
+K == 4 :> 40
+====
+`, FrontendOptions{}, TypeCheckOptions{})
+	if !result.OK() {
+		t.Fatalf("ParseAndTypeCheckSource() diagnostics = %v", result.Diagnostics)
+	}
+	body, found := OperatorBody(result.Native, "H")
+	if !found || countOperator(body, "FUN_CTOR") != 1 || countOperator(body, "IF_THEN_ELSE") != 1 {
+		t.Fatalf("lowered function override = %#v", body)
+	}
+	singleton, found := OperatorBody(result.Native, "K")
+	if !found || countOperator(singleton, "FUN_CTOR") != 1 || countOperator(singleton, "SET_ENUM") != 1 {
+		t.Fatalf("lowered singleton function = %#v", singleton)
+	}
+}
+
+func TestParseAndTypeCheckSourcePreservesNestedExceptAt(t *testing.T) {
+	result := ParseAndTypeCheckSource(context.Background(), "NestedExcept.tla", `---- MODULE NestedExcept ----
+EXTENDS Integers
+VARIABLE
+  \* @type: Str -> { cnt: Int };
+  f
+Init == f = [s \in {"a"} |-> [cnt |-> 0]]
+Next == f' = [f EXCEPT !["a"] = [@ EXCEPT !.cnt = @ + 1]]
+====
+`, FrontendOptions{}, TypeCheckOptions{})
+	if !result.OK() {
+		t.Fatalf("ParseAndTypeCheckSource() diagnostics = %v", result.Diagnostics)
+	}
+	body, found := OperatorBody(result.Native, "Next")
+	if !found || countOperator(body, "EXCEPT") != 2 {
+		t.Fatalf("nested EXCEPT body = %#v", body)
+	}
+}
+
 func TestParseAndTypeCheckSourceWrapsBuiltinOperatorArguments(t *testing.T) {
 	result := ParseAndTypeCheckSource(context.Background(), "BuiltinArguments.tla", `---- MODULE BuiltinArguments ----
 EXTENDS Integers
