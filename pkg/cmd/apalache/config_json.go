@@ -198,8 +198,8 @@ func (source *jsonInputSource) materializeTrace() (string, func(), error) {
 		if format == "" {
 			format = inferSourceFormat(path)
 		}
-		if format != "itf" {
-			return "", noCleanup, fmt.Errorf("Go trace evaluation currently requires an itf trace source")
+		if format != "itf" && format != "json" {
+			return "", noCleanup, fmt.Errorf("Go trace evaluation requires an itf or json trace source")
 		}
 		if inferSourceFormat(path) == format {
 			return path, noCleanup, nil
@@ -208,24 +208,27 @@ func (source *jsonInputSource) materializeTrace() (string, func(), error) {
 		if err != nil {
 			return "", noCleanup, err
 		}
-		return materializeTraceFile(contents)
+		return materializeTraceFile(contents, format)
 	}
 	if source.Aux != nil && len(*source.Aux) != 0 {
 		return "", noCleanup, fmt.Errorf("trace source cannot contain auxiliary modules")
 	}
-	if format != "itf" {
-		return "", noCleanup, fmt.Errorf("Go trace evaluation currently requires an itf trace source")
+	if format != "itf" && format != "json" {
+		return "", noCleanup, fmt.Errorf("Go trace evaluation requires an itf or json trace source")
 	}
-	return materializeTraceFile([]byte(*source.Content))
+	return materializeTraceFile([]byte(*source.Content), format)
 }
 
-func materializeTraceFile(content []byte) (string, func(), error) {
+func materializeTraceFile(content []byte, format string) (string, func(), error) {
 	directory, err := os.MkdirTemp("", "apalache-trace-")
 	if err != nil {
 		return "", func() {}, err
 	}
 	cleanup := func() { _ = os.RemoveAll(directory) }
-	name := "trace.itf.json"
+	name := "trace.json"
+	if format == "itf" {
+		name = "trace.itf.json"
+	}
 	path := filepath.Join(directory, name)
 	if err = os.WriteFile(path, content, 0o600); err != nil {
 		cleanup()

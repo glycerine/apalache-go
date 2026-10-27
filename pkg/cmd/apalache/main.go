@@ -314,9 +314,14 @@ func runTracee(ctx context.Context, args []string, stdout, stderr io.Writer) int
 			parameterTypes[declaration.Name()] = typ
 		}
 	}
-	states, err := pal.UnmarshalITFTraceWithParams(traceData, parameterTypes)
+	var states []pal.TraceState
+	if inferSourceFormat(*tracePath) == "json" {
+		states, err = pal.UnmarshalApalacheJSONTrace(traceData)
+	} else {
+		states, err = pal.UnmarshalITFTraceWithParams(traceData, parameterTypes)
+	}
 	if err != nil {
-		fmt.Fprintf(stderr, "cannot decode ITF trace: %v\n", err)
+		fmt.Fprintf(stderr, "cannot decode trace: %v\n", err)
 		return exitFrontend
 	}
 	evaluation, err := pal.EvaluateTrace(ctx, frontend.Native, states, expressions)

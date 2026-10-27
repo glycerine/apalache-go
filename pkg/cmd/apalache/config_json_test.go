@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	pal "github.com/glycerine/apalache-go"
 )
 
 func TestLoadCommandConfigIsStrict(t *testing.T) {
@@ -347,14 +349,36 @@ Double == x + x
 		t.Fatalf("in-memory tracee = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
 	}
 
-	unsupported := bytes.ReplaceAll(configuration, []byte(`"format":"itf"`), []byte(`"format":"json"`))
-	if err = os.WriteFile("trace-json.json", unsupported, 0o600); err != nil {
+	x := pal.NewNameExpr("x", pal.Typed(pal.IntT1))
+	assignment := pal.MustOperExpr(pal.Op("EQ"), pal.Typed(pal.BoolT1), x,
+		pal.NewValueExpr(pal.Int64Value(6), pal.Typed(pal.IntT1)))
+	truth := pal.NewValueExpr(pal.BoolValue(true), pal.Typed(pal.BoolT1))
+	traceModule := pal.NewModule("LegacyTrace", []pal.Decl{
+		pal.NewOperDecl("CInit", nil, truth, pal.Typed(pal.BoolT1)),
+		pal.NewOperDecl("State0", nil, assignment, pal.Typed(pal.BoolT1)),
+		pal.NewOperDecl("Inv", nil, truth, pal.Typed(pal.BoolT1)),
+	})
+	legacyTrace, err := pal.MarshalSingleModuleIRJSON(traceModule, pal.IRJSONOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyConfiguration, err := json.Marshal(map[string]any{
+		"source": "TraceMemory.tla",
+		"tracee": map[string]any{
+			"trace":       map[string]any{"kind": "string", "content": string(legacyTrace), "format": "json"},
+			"expressions": []string{"Double"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile("trace-json.json", legacyConfiguration, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	stdout.Reset()
 	stderr.Reset()
-	if code := run(context.Background(), []string{"tracee", "--config-file=trace-json.json"}, &stdout, &stderr); code != exitUsage ||
-		!strings.Contains(stderr.String(), "currently requires an itf trace") {
-		t.Fatalf("unsupported Apalache JSON trace = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
+	if code := run(context.Background(), []string{"tracee", "--config-file=trace-json.json"}, &stdout, &stderr); code != exitOK ||
+		!bytes.Contains(stdout.Bytes(), []byte(`"Double":{"#bigint":"12"}`)) {
+		t.Fatalf("in-memory Apalache JSON tracee = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
 	}
 }
