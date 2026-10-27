@@ -114,3 +114,51 @@ Next == x' = x + 1
 		t.Fatalf("simulation CLI override = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
 	}
 }
+
+func TestRunFrontendCommandsLoadJSONSourceAndOutput(t *testing.T) {
+	directory := t.TempDir()
+	t.Setenv("HOME", filepath.Join(directory, "home"))
+	t.Chdir(directory)
+	if err := os.WriteFile("Frontend.tla", []byte(`---- MODULE Frontend ----
+EXTENDS Integers
+\* @type: Int;
+CONSTANT N
+Value == N + 1
+====
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		command, output string
+	}{
+		{"parse", "parsed.json"},
+		{"typecheck", "typed.json"},
+	}
+	for _, test := range tests {
+		t.Run(test.command, func(t *testing.T) {
+			configPath := test.command + ".json"
+			configuration := `{"source":"Frontend.tla","output":"` + test.output + `","features":[],"typechecker":{"infer-poly":true}}`
+			if err := os.WriteFile(configPath, []byte(configuration), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			var stdout, stderr bytes.Buffer
+			if code := run(context.Background(), []string{test.command, "--config-file=" + configPath}, &stdout, &stderr); code != exitOK {
+				t.Fatalf("configured %s = %d, stdout = %q, stderr = %q", test.command, code, &stdout, &stderr)
+			}
+			data, err := os.ReadFile(test.output)
+			if err != nil || !bytes.Contains(data, []byte(`"name": "ApalacheIR"`)) {
+				t.Fatalf("configured %s output = %v, %v\n%s", test.command, data, err, data)
+			}
+			if test.command == "typecheck" && !bytes.Contains(data, []byte(`"type": "Int"`)) {
+				t.Fatalf("typed output lacks inferred types:\n%s", data)
+			}
+
+			stdout.Reset()
+			stderr.Reset()
+			if code := run(context.Background(), []string{test.command, "--config-file=" + configPath, "--output=summary"}, &stdout, &stderr); code != exitOK ||
+				!strings.Contains(stdout.String(), "module Frontend") {
+				t.Fatalf("%s CLI output override = %d, stdout = %q, stderr = %q", test.command, code, &stdout, &stderr)
+			}
+		})
+	}
+}

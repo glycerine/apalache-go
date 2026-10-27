@@ -108,6 +108,68 @@ func (config jsonCommandConfig) validateForSimulate() error {
 	return config.validateForModelCommand("simulate", false)
 }
 
+func (config jsonCommandConfig) validateForFrontend(command string) error {
+	unsupported := []struct {
+		set  bool
+		name string
+	}{
+		{config.Command != nil, "command"},
+		{config.ConfigFile != nil, "config-file"},
+		{config.OutDir != nil, "out-dir"},
+		{config.RunDir != nil, "run-dir"},
+		{config.Debug != nil, "debug"},
+		{config.SMTProfile != nil, "smtprof"},
+		{config.WriteIntermediate != nil, "write-intermediate"},
+		{config.Profiling != nil, "profiling"},
+	}
+	for _, field := range unsupported {
+		if field.set {
+			return fmt.Errorf("JSON configuration field %s is not supported by the Go %s command", field.name, command)
+		}
+	}
+	if config.Features != nil {
+		for _, feature := range *config.Features {
+			if feature != "rows" {
+				return fmt.Errorf("unsupported JSON feature %q (want rows)", feature)
+			}
+		}
+	}
+	return nil
+}
+
+func applyJSONFrontendDefaults(
+	config jsonCommandConfig,
+	visited map[string]bool,
+	output, features *string,
+	useRows, disablePolytypes *bool,
+) error {
+	if !visited["output"] && config.Output != nil {
+		path, _, err := expandHomePath(*config.Output)
+		if err != nil {
+			return err
+		}
+		*output = path
+	}
+	if !visited["rows"] && !visited["features"] && config.Features != nil {
+		*features = ""
+		if useRows != nil {
+			*useRows = false
+		}
+		for _, feature := range *config.Features {
+			if feature == "rows" {
+				*features = "rows"
+				if useRows != nil {
+					*useRows = true
+				}
+			}
+		}
+	}
+	if disablePolytypes != nil && !visited["no-polytypes"] && config.Typechecker.InferPoly != nil {
+		*disablePolytypes = !*config.Typechecker.InferPoly
+	}
+	return nil
+}
+
 type jsonModelConfigTargets struct {
 	backend            *checkerBackendOptions
 	length             *int

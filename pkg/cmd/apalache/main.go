@@ -767,6 +767,7 @@ func runTypeCheck(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	flags := flag.NewFlagSet("typecheck", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	output := flags.String("output", "summary", "output format (summary/json) or .tla/.json file")
+	configFile := flags.String("config-file", "", "Apalache JSON configuration file")
 	includeSource := flags.Bool("source", false, "include source positions in JSON IR")
 	useRows := flags.Bool("rows", false, "enable row types")
 	features := flags.String("features", "", "typechecker features: rows or no-rows")
@@ -776,9 +777,36 @@ func runTypeCheck(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
 	}
-	if flags.NArg() != 1 {
-		fmt.Fprintln(stderr, "typecheck requires exactly one TLA+ file")
+	visited := make(map[string]bool)
+	flags.Visit(func(flag *flag.Flag) { visited[flag.Name] = true })
+	applicationConfig, selectedConfig, err := loadCommandConfig(*configFile)
+	if err != nil {
+		fmt.Fprintf(stderr, "cannot load Apalache configuration: %v\n", err)
 		return exitUsage
+	}
+	if selectedConfig != "" {
+		if err = applicationConfig.validateForFrontend("typecheck"); err != nil {
+			fmt.Fprintln(stderr, err)
+			return exitUsage
+		}
+		if err = applyJSONFrontendDefaults(applicationConfig, visited, output, features, useRows, disablePolytypes); err != nil {
+			fmt.Fprintln(stderr, err)
+			return exitUsage
+		}
+	}
+	if flags.NArg() > 1 || (flags.NArg() == 0 && applicationConfig.Source == nil) {
+		fmt.Fprintln(stderr, "typecheck requires one TLA+ file from the CLI or JSON configuration")
+		return exitUsage
+	}
+	sourcePath := ""
+	if flags.NArg() == 1 {
+		sourcePath = flags.Arg(0)
+	} else {
+		sourcePath, _, err = expandHomePath(*applicationConfig.Source)
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return exitUsage
+		}
 	}
 	if !validModuleOutput(*output) {
 		fmt.Fprintf(stderr, "invalid output %q (want summary, json, or a .tla/.json file)\n", *output)
@@ -790,7 +818,7 @@ func runTypeCheck(ctx context.Context, args []string, stdout, stderr io.Writer) 
 		return exitUsage
 	}
 
-	result := pal.ParseAndTypeCheckFile(ctx, flags.Arg(0), pal.FrontendOptions{
+	result := pal.ParseAndTypeCheckFile(ctx, sourcePath, pal.FrontendOptions{
 		LibraryPaths: libraryPaths,
 	}, pal.TypeCheckOptions{UseRows: rows, DisablePolytypes: *disablePolytypes})
 	for _, diagnostic := range result.Diagnostics {
@@ -865,6 +893,7 @@ func runParse(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	flags := flag.NewFlagSet("parse", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	output := flags.String("output", "summary", "output format (summary/json) or .tla/.json file")
+	configFile := flags.String("config-file", "", "Apalache JSON configuration file")
 	includeSource := flags.Bool("source", false, "include source positions in JSON IR")
 	features := flags.String("features", "", "typechecker features: rows or no-rows")
 	var libraryPaths stringList
@@ -872,9 +901,36 @@ func runParse(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
 	}
-	if flags.NArg() != 1 {
-		fmt.Fprintln(stderr, "parse requires exactly one TLA+ file")
+	visited := make(map[string]bool)
+	flags.Visit(func(flag *flag.Flag) { visited[flag.Name] = true })
+	applicationConfig, selectedConfig, err := loadCommandConfig(*configFile)
+	if err != nil {
+		fmt.Fprintf(stderr, "cannot load Apalache configuration: %v\n", err)
 		return exitUsage
+	}
+	if selectedConfig != "" {
+		if err = applicationConfig.validateForFrontend("parse"); err != nil {
+			fmt.Fprintln(stderr, err)
+			return exitUsage
+		}
+		if err = applyJSONFrontendDefaults(applicationConfig, visited, output, features, nil, nil); err != nil {
+			fmt.Fprintln(stderr, err)
+			return exitUsage
+		}
+	}
+	if flags.NArg() > 1 || (flags.NArg() == 0 && applicationConfig.Source == nil) {
+		fmt.Fprintln(stderr, "parse requires one TLA+ file from the CLI or JSON configuration")
+		return exitUsage
+	}
+	sourcePath := ""
+	if flags.NArg() == 1 {
+		sourcePath = flags.Arg(0)
+	} else {
+		sourcePath, _, err = expandHomePath(*applicationConfig.Source)
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return exitUsage
+		}
 	}
 	if !validModuleOutput(*output) {
 		fmt.Fprintf(stderr, "invalid output %q (want summary, json, or a .tla/.json file)\n", *output)
@@ -885,7 +941,7 @@ func runParse(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		return exitUsage
 	}
 
-	result := pal.ParseFile(ctx, flags.Arg(0), pal.FrontendOptions{
+	result := pal.ParseFile(ctx, sourcePath, pal.FrontendOptions{
 		LibraryPaths:  libraryPaths,
 		IncludeSource: *includeSource || strings.EqualFold(filepath.Ext(*output), ".tla"),
 	})
@@ -909,12 +965,12 @@ func runParse(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		return exitOK
 	}
 	if strings.EqualFold(filepath.Ext(*output), ".tla") {
-		source, err := os.ReadFile(flags.Arg(0))
+		source, err := os.ReadFile(sourcePath)
 		if err != nil {
 			fmt.Fprintf(stderr, "cannot recover source annotations: %v\n", err)
 			return exitFrontend
 		}
-		annotations := pal.ExtractTypeAnnotations(flags.Arg(0), string(source), result.Native, result.Sources)
+		annotations := pal.ExtractTypeAnnotations(sourcePath, string(source), result.Native, result.Sources)
 		formatted, err := pal.FormatTLAModule(result.Native, pal.TLAFormatOptions{
 			ExtendedModules: result.Extends, Annotations: annotations.Annotations,
 		})
