@@ -79,6 +79,24 @@
       "go_args": ["check", "--length=2", "--no-deadlock", "--temporal=ExplicitInvariant", "test/tla/NoTemporalOperatorsInTemporalProp.tla"]
     },
     {
+      "name": "temporal-no-short-loop",
+      "dir": "..",
+      "scala_args": ["check", "--length=3", "--no-deadlock", "--temporal=FalseLiveness", "test/tla/NoLoopsNoProblems.tla"],
+      "go_args": ["check", "--length=3", "--no-deadlock", "--temporal=FalseLiveness", "test/tla/NoLoopsNoProblems.tla"]
+    },
+    {
+      "name": "multi-state-loop-temporal-safe",
+      "dir": "..",
+      "scala_args": ["check", "--length=3", "--no-deadlock", "--temporal=Liveness", "test/tla/LongLoops.tla"],
+      "go_args": ["check", "--length=3", "--no-deadlock", "--temporal=Liveness", "test/tla/LongLoops.tla"]
+    },
+    {
+      "name": "multi-state-loop-temporal-violation",
+      "dir": "..",
+      "scala_args": ["check", "--length=3", "--no-deadlock", "--temporal=FalseLiveness", "test/tla/LongLoops.tla"],
+      "go_args": ["check", "--length=3", "--no-deadlock", "--temporal=FalseLiveness", "test/tla/LongLoops.tla"]
+    },
+    {
       "name": "finite-sets",
       "dir": "..",
       "scala_args": ["check", "--length=0", "--no-deadlock", "--inv=AllTests", "test/tla/TestSets.tla"],
