@@ -378,6 +378,9 @@ func (config jsonCommandConfig) validateForModelCommand(command string, checkSpe
 	if config.Checker.Tuning != nil && len(*config.Checker.Tuning) != 0 {
 		return fmt.Errorf("JSON checker.tuning is not supported by the g3 backend")
 	}
+	if config.Checker.DiscardDisabled != nil && !*config.Checker.DiscardDisabled {
+		return fmt.Errorf("JSON checker.discard-disabled currently supports only true")
+	}
 	if config.Features != nil {
 		for _, feature := range *config.Features {
 			if feature != "rows" {

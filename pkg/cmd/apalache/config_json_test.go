@@ -35,6 +35,25 @@ func TestLoadCommandConfigIsStrict(t *testing.T) {
 	}
 }
 
+func TestJSONModelConfigRejectsKeepingDisabledTransitions(t *testing.T) {
+	keepDisabled := false
+	config := jsonCommandConfig{Checker: jsonCheckerConfig{DiscardDisabled: &keepDisabled}}
+	for _, command := range []struct {
+		name     string
+		validate func() error
+	}{
+		{"check", config.validateForCheck},
+		{"simulate", config.validateForSimulate},
+		{"test", func() error { return config.validateForModelCommand("test", false) }},
+	} {
+		t.Run(command.name, func(t *testing.T) {
+			if err := command.validate(); err == nil || !strings.Contains(err.Error(), "supports only true") {
+				t.Fatalf("discard-disabled=false validation = %v", err)
+			}
+		})
+	}
+}
+
 func TestRunCheckLoadsInMemoryJSONSourceWithAuxiliaryModule(t *testing.T) {
 	directory := t.TempDir()
 	t.Setenv("HOME", filepath.Join(directory, "home"))
