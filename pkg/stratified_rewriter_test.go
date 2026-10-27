@@ -513,6 +513,25 @@ func TestStratifiedSequenceConstructionLengthAndEqualityThroughG3(t *testing.T) 
 	if err != nil || !secondFound || secondValue.Int64() != 2 {
 		t.Fatalf("sequence[2] = %v, %v, %v", secondValue, secondFound, err)
 	}
+	dynamicIndex := MustOperExpr(Op("PLUS"), Typed(IntT1),
+		NewValueExpr(Int64Value(1), Typed(IntT1)), NewValueExpr(Int64Value(1), Typed(IntT1)))
+	dynamicApplication := MustOperExpr(Op("FUN_APP"), Typed(IntT1), first.NameExpr(), dynamicIndex)
+	scope, dynamicElement, err := rewriter.Rewrite(dynamicApplication, scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dynamicSolver := newTestG3Solver(t)
+	dynamicEncoder, err := EncodeRewriterScope(dynamicSolver, scope, rewriter.Constraints())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := dynamicEncoder.Assert(MustOperExpr(Op("NE"), Typed(BoolT1),
+		dynamicElement.NameExpr(), NewValueExpr(Int64Value(2), Typed(IntT1)))); err != nil {
+		t.Fatal(err)
+	}
+	if status, err := dynamicSolver.Check(context.Background()); err != nil || status != SMTUnsatisfiable {
+		t.Fatalf("sequence[1 + 1] differs from 2 = %v, %v", status, err)
+	}
 	outOfCapacity := MustOperExpr(Op("FUN_APP"), Typed(IntT1), first.NameExpr(), NewValueExpr(Int64Value(9), Typed(IntT1)))
 	scope, defaultElement, err := rewriter.Rewrite(outOfCapacity, scope)
 	defaultValue, defaultFound := rewriter.IntegerCache().FindValue(defaultElement)

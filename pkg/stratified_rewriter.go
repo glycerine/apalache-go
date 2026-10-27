@@ -468,11 +468,11 @@ func (rewriter *StratifiedRewriter) rewriteApplication(expression *OperExpr, sco
 	if !typed {
 		return scope, ArenaCell{}, fmt.Errorf("function application must be typed")
 	}
-	project := func(cell ArenaCell) (RewriterScope, ArenaCell, error) {
+	project := func(current RewriterScope, cell ArenaCell) (RewriterScope, ArenaCell, error) {
 		if !EqualTypes(cell.Type.TLAType(), expectedType) {
-			return scope, ArenaCell{}, fmt.Errorf("application result has type %s, expected %s", cell.Type, expectedType)
+			return current, ArenaCell{}, fmt.Errorf("application result has type %s, expected %s", cell.Type, expectedType)
 		}
-		return scope, cell, nil
+		return current, cell, nil
 	}
 	scope, collection, err := rewriter.Rewrite(arguments[0], scope)
 	if err != nil {
@@ -492,7 +492,7 @@ func (rewriter *StratifiedRewriter) rewriteApplication(expression *OperExpr, sco
 		if index < 1 || index > int64(len(fields)) {
 			return scope, ArenaCell{}, fmt.Errorf("tuple index %d is outside 1..%d", index, len(fields))
 		}
-		return project(fields[index-1].Element())
+		return project(scope, fields[index-1].Element())
 	}
 	if isRecordCellType(collection.Type) {
 		keyExpression, ok := arguments[1].(*ValueExpr)
@@ -513,32 +513,61 @@ func (rewriter *StratifiedRewriter) rewriteApplication(expression *OperExpr, sco
 		if index == len(keys) || keys[index] != key || index >= len(fields) {
 			return scope, ArenaCell{}, fmt.Errorf("record key %q is absent", key)
 		}
-		return project(fields[index].Element())
+		return project(scope, fields[index].Element())
 	}
 	if isSequenceCellType(collection.Type) {
-		indexExpression, ok := arguments[1].(*ValueExpr)
-		if !ok {
-			return scope, ArenaCell{}, fmt.Errorf("symbolic sequence indices require oracle rewriting, which is not yet implemented")
-		}
-		indexValue, ok := indexExpression.Value().(IntValue)
-		if !ok || !indexValue.BigInt().IsInt64() {
-			return scope, ArenaCell{}, fmt.Errorf("sequence application requires an integer index")
-		}
 		_, _, elements, unpackErr := unpackSequence(scope.Arena, collection)
 		if unpackErr != nil {
 			return scope, ArenaCell{}, unpackErr
 		}
-		index := indexValue.BigInt().Int64()
-		if index >= 1 && index <= int64(len(elements)) {
-			return project(elements[index-1].Element())
+		if indexExpression, literal := arguments[1].(*ValueExpr); literal {
+			indexValue, ok := indexExpression.Value().(IntValue)
+			if !ok || !indexValue.BigInt().IsInt64() {
+				return scope, ArenaCell{}, fmt.Errorf("sequence application requires an integer index")
+			}
+			index := indexValue.BigInt().Int64()
+			if index >= 1 && index <= int64(len(elements)) {
+				return project(scope, elements[index-1].Element())
+			}
+			sequenceType := collection.Type.TLAType().(SeqType)
+			defaultScope, defaultCell, defaultErr := rewriter.defaults.GetOrCreate(scope, sequenceType.Element())
+			if defaultErr != nil {
+				return scope, ArenaCell{}, defaultErr
+			}
+			scope = defaultScope
+			return project(scope, defaultCell)
 		}
-		sequenceType := collection.Type.TLAType().(SeqType)
-		defaultScope, defaultCell, defaultErr := rewriter.defaults.GetOrCreate(scope, sequenceType.Element())
-		if defaultErr != nil {
-			return scope, ArenaCell{}, defaultErr
+		scope, indexCell, err := rewriter.Rewrite(arguments[1], scope)
+		if err != nil {
+			return scope, ArenaCell{}, err
 		}
-		scope = defaultScope
-		return project(defaultCell)
+		if !EqualTypes(indexCell.Type.TLAType(), IntT1) {
+			return scope, ArenaCell{}, fmt.Errorf("sequence application requires an integer index")
+		}
+		if len(elements) == 0 {
+			sequenceType := collection.Type.TLAType().(SeqType)
+			return rewriter.defaults.GetOrCreate(scope, sequenceType.Element())
+		}
+		candidates := make([]ArenaCell, len(elements))
+		for index, pointer := range elements {
+			candidates[index] = pointer.Element()
+		}
+		scope, oracle, err := CreateIntOracle(scope, len(candidates))
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+		scope, picked, err := NewCherryPicker(rewriter).Pick(scope, oracle, candidates)
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+		indexMinusOne := MustOperExpr(Op("MINUS"), Typed(IntT1), indexCell.NameExpr(), NewValueExpr(Int64Value(1), Typed(IntT1)))
+		oracleMatches := MustOperExpr(Op("EQ"), Typed(BoolT1), indexMinusOne, oracle.Cell.NameExpr())
+		inRange := booleanAnd(
+			MustOperExpr(Op("LT"), Typed(BoolT1), NewValueExpr(Int64Value(0), Typed(IntT1)), indexCell.NameExpr()),
+			MustOperExpr(Op("LE"), Typed(BoolT1), indexCell.NameExpr(), NewValueExpr(Int64Value(int64(len(candidates))), Typed(IntT1))),
+		)
+		rewriter.assert(MustOperExpr(Op("EQUIV"), Typed(BoolT1), oracleMatches, inRange))
+		return project(scope, picked)
 	}
 	return scope, ArenaCell{}, fmt.Errorf("application is not yet implemented for %s", collection.Type)
 }
