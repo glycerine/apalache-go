@@ -1,0 +1,214 @@
+package apalache
+
+import (
+	"bytes"
+	"encoding/json"
+	"testing"
+)
+
+func TestMarshalITFTraceMergesConstantInitialization(t *testing.T) {
+	module := NewModule("M", []Decl{NewConstDecl("N", Typed(IntT1)), NewVarDecl("x", Typed(IntT1))})
+	states := []TraceState{{"N": NewValueExpr(Int64Value(3), Typed(IntT1))}, {"x": NewValueExpr(Int64Value(1), Typed(IntT1))}, {"x": NewValueExpr(Int64Value(2), Typed(IntT1))}}
+	data, err := MarshalITFTrace(module, states, ITFOptions{Description: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var root map[string]any
+	if err = json.Unmarshal(data, &root); err != nil {
+		t.Fatal(err)
+	}
+	encodedStates := root[ITFStatesField].([]any)
+	if len(encodedStates) != 2 {
+		t.Fatalf("states=%v", encodedStates)
+	}
+	first := encodedStates[0].(map[string]any)
+	if first["N"].(map[string]any)[ITFBigIntField] != "3" || first["x"].(map[string]any)[ITFBigIntField] != "1" {
+		t.Fatalf("merged state=%v", first)
+	}
+	if root[ITFParamsField].([]any)[0] != "N" {
+		t.Fatalf("params=%v", root[ITFParamsField])
+	}
+}
+
+func TestEncodeITFCollectionValues(t *testing.T) {
+	intValue := func(value int64) Expr { return NewValueExpr(Int64Value(value), Typed(IntT1)) }
+	strValue := func(value string) Expr { return NewValueExpr(StringValue(value), Typed(StrT1)) }
+	seqType, _ := NewSeqType(IntT1)
+	sequence := MustOperExpr(Op("TUPLE"), Typed(seqType), intValue(1), intValue(2))
+	assertITFJSON(t, sequence, `[{"#bigint":"1"},{"#bigint":"2"}]`)
+	tupleType, _ := NewTupleType(IntT1, StrT1)
+	tuple := MustOperExpr(Op("TUPLE"), Typed(tupleType), intValue(1), strValue("A"))
+	assertITFJSON(t, tuple, `{"#tup":[{"#bigint":"1"},"A"]}`)
+	setType, _ := NewSetType(IntT1)
+	set := MustOperExpr(Op("SET_ENUM"), Typed(setType), intValue(1), intValue(2))
+	assertITFJSON(t, set, `{"#set":[{"#bigint":"1"},{"#bigint":"2"}]}`)
+	recordType, _ := NewRecordType(map[string]Type{"x": IntT1, "name": StrT1})
+	record := MustOperExpr(Op("RECORD"), Typed(recordType), strValue("x"), intValue(1), strValue("name"), strValue("A"))
+	assertITFJSON(t, record, `{"name":"A","x":{"#bigint":"1"}}`)
+}
+
+func TestEncodeITFVariantAndFunction(t *testing.T) {
+	intValue := func(value int64) Expr { return NewValueExpr(Int64Value(value), Typed(IntT1)) }
+	strValue := func(value string) Expr { return NewValueExpr(StringValue(value), Typed(StrT1)) }
+	row, _ := NewRowType(map[string]Type{"Some": IntT1}, nil)
+	variantType := NewVariantType(row)
+	variant := MustOperExpr(Op("Variants!Variant"), Typed(variantType), strValue("Some"), intValue(5))
+	assertITFJSON(t, variant, `{"tag":"Some","value":{"#bigint":"5"}}`)
+	pairType, _ := NewTupleType(IntT1, IntT1)
+	pair := MustOperExpr(Op("TUPLE"), Typed(pairType), intValue(1), intValue(2))
+	pairSetType, _ := NewSetType(pairType)
+	pairs := MustOperExpr(Op("SET_ENUM"), Typed(pairSetType), pair)
+	funType, _ := NewFunType(IntT1, IntT1)
+	function := MustOperExpr(Op("Apalache!SetAsFun"), Typed(funType), pairs)
+	assertITFJSON(t, function, `{"#map":[[{"#bigint":"1"},{"#bigint":"2"}]]}`)
+}
+
+func TestMarshalITFTraceRejectsMissingStatesAndUntypedVariables(t *testing.T) {
+	if _, err := MarshalITFTrace(NewModule("M", nil), nil, ITFOptions{}); err == nil {
+		t.Fatal("accepted empty trace")
+	}
+	module := NewModule("M", []Decl{NewVarDecl("x", Untyped())})
+	if _, err := MarshalITFTrace(module, []TraceState{{}}, ITFOptions{}); err == nil {
+		t.Fatal("accepted untyped variable")
+	}
+}
+
+func assertITFJSON(t *testing.T, expression Expr, want string) {
+	t.Helper()
+	got, err := EncodeITFValue(expression)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotData, err := json.Marshal(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertJSONEqual(t, gotData, []byte(want))
+}
+
+func TestITFValueRoundTripSupportedTypes(t *testing.T) {
+	intValue := func(value int64) Expr { return NewValueExpr(Int64Value(value), Typed(IntT1)) }
+	strValue := func(value string) Expr { return NewValueExpr(StringValue(value), Typed(StrT1)) }
+	seqType, _ := NewSeqType(IntT1)
+	tupleType, _ := NewTupleType(IntT1, StrT1)
+	setType, _ := NewSetType(BoolT1)
+	recordRow, _ := NewRowType(map[string]Type{"x": IntT1, "name": StrT1}, nil)
+	recordType := NewRecordRowType(recordRow)
+	variantRow, _ := NewRowType(map[string]Type{"Some": IntT1, "None": BoolT1}, nil)
+	variantType := NewVariantType(variantRow)
+	pairType, _ := NewTupleType(IntT1, StrT1)
+	pairSetType, _ := NewSetType(pairType)
+	funType, _ := NewFunType(IntT1, StrT1)
+	cases := []Expr{
+		intValue(123), NewValueExpr(BoolValue(true), Typed(BoolT1)), strValue("hello"),
+		NewValueExpr(StringValue("one_OF_NODE"), Typed(mustConstType(t, "NODE"))),
+		MustOperExpr(Op("TUPLE"), Typed(seqType), intValue(1), intValue(2)),
+		MustOperExpr(Op("TUPLE"), Typed(tupleType), intValue(1), strValue("A")),
+		MustOperExpr(Op("SET_ENUM"), Typed(setType), NewValueExpr(BoolValue(true), Typed(BoolT1))),
+		MustOperExpr(Op("RECORD"), Typed(recordType), strValue("x"), intValue(1), strValue("name"), strValue("A")),
+		MustOperExpr(Op("Variants!Variant"), Typed(variantType), strValue("Some"), intValue(1)),
+		MustOperExpr(Op("Apalache!SetAsFun"), Typed(funType), MustOperExpr(Op("SET_ENUM"), Typed(pairSetType),
+			MustOperExpr(Op("TUPLE"), Typed(pairType), intValue(1), strValue("one")))),
+	}
+	for _, expression := range cases {
+		raw, err := EncodeITFValue(expression)
+		if err != nil {
+			t.Fatalf("encode %s: %v", expression.Tag(), err)
+		}
+		typ, _ := expression.Tag().Type()
+		decoded, err := DecodeITFValue(normalizeITFJSON(t, raw), typ)
+		if err != nil {
+			t.Fatalf("decode %s from %#v: %v", typ, raw, err)
+		}
+		decodedType, _ := decoded.Tag().Type()
+		if !EqualTypes(typ, decodedType) {
+			t.Fatalf("round trip type differs: %s -> %s", typ, decodedType)
+		}
+		reencoded, err := EncodeITFValue(decoded)
+		if err != nil {
+			t.Fatal(err)
+		}
+		left, _ := json.Marshal(raw)
+		right, _ := json.Marshal(reencoded)
+		assertJSONEqual(t, left, right)
+	}
+}
+
+func TestUnmarshalITFTrace(t *testing.T) {
+	input := []byte(`{
+  "#meta":{"format":"ITF","varTypes":{"x":"Int","s":"Seq(Bool)"}},
+  "vars":["x","s"],
+  "states":[
+    {"#meta":{"index":0},"x":{"#bigint":"12345678901234567890"},"s":[true,false]},
+    {"#meta":{"index":1},"x":2,"s":[]}
+  ]}`)
+	states, err := UnmarshalITFTrace(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(states) != 2 || states[0]["x"].(*ValueExpr).Value().(IntValue).String() != "12345678901234567890" ||
+		len(states[0]["s"].(*OperExpr).Arguments()) != 2 || states[1]["x"].(*ValueExpr).Value().(IntValue).String() != "2" {
+		t.Fatalf("states = %#v", states)
+	}
+}
+
+func TestUnmarshalITFTraceRejectsMalformedContent(t *testing.T) {
+	cases := []string{
+		`{}`,
+		`{"#meta":{"varTypes":{"x":"Int"}},"vars":[],"states":[]}`,
+		`{"#meta":{"varTypes":{}},"vars":["x"],"states":[]}`,
+		`{"#meta":{"varTypes":{"x":"Int"}},"vars":["x"],"states":[{}]}`,
+		`{"#meta":{"varTypes":{"x":"Int"}},"vars":["x"],"states":[{"x":true}]}`,
+		`{"#meta":{"varTypes":{"x":"Int"}},"vars":["x"],"states":[{"x":{"#unserializable":"Int"}}]}`,
+		`{"#meta":{"varTypes":{"x":"Int"}},"vars":["x"],"states":[{"x":1,"y":2}]}`,
+	}
+	for _, input := range cases {
+		if _, err := UnmarshalITFTrace([]byte(input)); err == nil {
+			t.Errorf("accepted malformed ITF: %s", input)
+		}
+	}
+}
+
+func TestDecodeITFRejectsShapeAndTypeMismatches(t *testing.T) {
+	setType, _ := NewSetType(IntT1)
+	tupleType, _ := NewTupleType(IntT1, BoolT1)
+	funType, _ := NewFunType(IntT1, BoolT1)
+	cases := []struct {
+		raw any
+		typ Type
+	}{
+		{true, IntT1}, {"one_OF_A", StrT1}, {"one_OF_A", mustConstType(t, "B")},
+		{map[string]any{ITFSetField: []any{}, "junk": true}, setType},
+		{map[string]any{ITFTupleField: []any{json.Number("1")}}, tupleType},
+		{map[string]any{ITFMapField: []any{[]any{json.Number("1")}}}, funType},
+	}
+	for _, test := range cases {
+		if _, err := DecodeITFValue(test.raw, test.typ); err == nil {
+			t.Errorf("accepted %#v as %s", test.raw, test.typ)
+		}
+	}
+}
+
+func normalizeITFJSON(t *testing.T, value any) any {
+	t.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	var normalized any
+	if err := decoder.Decode(&normalized); err != nil {
+		t.Fatal(err)
+	}
+	return normalized
+}
+
+func mustConstType(t *testing.T, name string) ConstType {
+	t.Helper()
+	typ, err := NewConstType(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return typ
+}
