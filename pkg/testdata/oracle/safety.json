@@ -95,6 +95,12 @@
       "dir": "..",
       "scala_args": ["check", "--config=pkg/testdata/oracle/CigaretteSmokersTyped.cfg", "--length=3", "test/tla/CigaretteSmokersTyped.tla"],
       "go_args": ["check", "-config", "pkg/testdata/oracle/CigaretteSmokersTyped.cfg", "-length", "3", "test/tla/CigaretteSmokersTyped.tla"]
+    },
+    {
+      "name": "lamport-mutex-typed",
+      "dir": "..",
+      "scala_args": ["check", "--config=pkg/testdata/oracle/LamportMutexTyped.cfg", "--length=1", "test/tla/LamportMutexTyped.tla"],
+      "go_args": ["check", "-config", "pkg/testdata/oracle/LamportMutexTyped.cfg", "-length", "1", "test/tla/LamportMutexTyped.tla"]
     }
   ]
 }
