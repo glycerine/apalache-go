@@ -14,7 +14,9 @@ func TestNormalizeCheckerOutcomes(t *testing.T) {
 		{"Go violation", "Invariant Inv violated at depth 2 (Init$0000).", 12, VerdictViolation, "Inv", 2},
 		{"Go deadlock", "Deadlock found at depth 1.", 12, VerdictDeadlock, "", 1},
 		{"Scala safe", "The outcome is: NoError\nChecker reports no error up to computation length 10", 0, VerdictSafe, "", -1},
-		{"Scala violation", "The outcome is: Error\nEXITCODE: ERROR (12)", 12, VerdictViolation, "", -1},
+		{"Scala violation", "State 2: state invariant 0 violated.\nThe outcome is: Error\nEXITCODE: ERROR (12)", 12, VerdictViolation, "", 2},
+		{"Scala action violation", "State 3: action invariant 1 [line 4] violated.\nThe outcome is: Error", 12, VerdictViolation, "", 4},
+		{"Scala trace violation", "State 4: trace invariant 0 violated.\nThe outcome is: Error", 12, VerdictViolation, "", 4},
 		{"Scala deadlock", "The outcome is: Deadlock", 12, VerdictDeadlock, "", -1},
 		{"unknown", "solver returned unknown", 1, VerdictUnknown, "", -1},
 	}
@@ -36,5 +38,8 @@ func TestCompareUsesAvailablePrecision(t *testing.T) {
 	}
 	if err := Compare(goResult, Outcome{Verdict: VerdictSafe, Depth: -1}); err == nil {
 		t.Fatal("accepted mismatched verdicts")
+	}
+	if err := Compare(goResult, Outcome{Verdict: VerdictViolation, Depth: 3}); err == nil {
+		t.Fatal("accepted mismatched violation depths")
 	}
 }

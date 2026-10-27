@@ -75,10 +75,11 @@ func RunDifferential(ctx context.Context, scalaExecutable, goExecutable string, 
 }
 
 var (
-	goViolation = regexp.MustCompile(`(?m)^(?:Invariant|Trace invariant|Action invariant)\s+(\S+)\s+violated at depth\s+(\d+)`)
-	goDeadlock  = regexp.MustCompile(`(?m)^Deadlock found at depth\s+(\d+)`)
-	scalaResult = regexp.MustCompile(`(?m)^The outcome is:\s*(NoError|Error|Deadlock)\b`)
-	scalaSafe   = regexp.MustCompile(`Checker reports no error up to computation length\s+(\d+)`)
+	goViolation         = regexp.MustCompile(`(?m)^(?:Invariant|Trace invariant|Action invariant)\s+(\S+)\s+violated at depth\s+(\d+)`)
+	goDeadlock          = regexp.MustCompile(`(?m)^Deadlock found at depth\s+(\d+)`)
+	scalaViolationDepth = regexp.MustCompile(`(?m)^State\s+(\d+):\s+(state|action|trace) invariant\b.*\bviolated\.`)
+	scalaResult         = regexp.MustCompile(`(?m)^The outcome is:\s*(NoError|Error|Deadlock)\b`)
+	scalaSafe           = regexp.MustCompile(`Checker reports no error up to computation length\s+(\d+)`)
 )
 
 func Run(ctx context.Context, command Command) (Outcome, error) {
@@ -133,6 +134,16 @@ func Normalize(stdout, stderr string, exitCode int) Outcome {
 	}
 	if strings.Contains(combined, "No counterexample found through depth") {
 		outcome.Verdict = VerdictSafe
+		return outcome
+	}
+	if match := scalaViolationDepth.FindStringSubmatch(combined); match != nil {
+		outcome.Verdict = VerdictViolation
+		outcome.Depth, _ = strconv.Atoi(match[1])
+		// Scala reports an action invariant against its source state, whereas
+		// traces and the Go checker number the transition's target state.
+		if match[2] == "action" {
+			outcome.Depth++
+		}
 		return outcome
 	}
 	if match := scalaResult.FindStringSubmatch(combined); match != nil {
