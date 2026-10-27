@@ -67,3 +67,32 @@ func TestEvaluateTraceRejectsUndefinedParameterizedAndMissingValues(t *testing.T
 		t.Fatal("missing trace variable was accepted")
 	}
 }
+
+func TestEvaluateTraceEnforcesSourceAssumptions(t *testing.T) {
+	frontend := ParseAndTypeCheckSource(context.Background(), "TraceAssume.tla", `---- MODULE TraceAssume ----
+EXTENDS Integers
+\* @type: Int;
+CONSTANT N
+ASSUME N > 0
+\* @type: Int;
+VARIABLE x
+Value == x + N
+====
+`, FrontendOptions{}, TypeCheckOptions{})
+	if !frontend.OK() {
+		t.Fatalf("frontend diagnostics = %v", frontend.Diagnostics)
+	}
+	valid := TraceState{"N": intLiteral(2), "x": intLiteral(3)}
+	result, err := EvaluateTrace(context.Background(), frontend.Native, []TraceState{valid}, []string{"Value"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	formatted, _ := FormatTLAExpression(result.States[0]["Value"])
+	if formatted != "5" {
+		t.Fatalf("Value = %s", formatted)
+	}
+	invalid := TraceState{"N": intLiteral(-1), "x": intLiteral(3)}
+	if _, err = EvaluateTrace(context.Background(), frontend.Native, []TraceState{invalid}, []string{"Value"}); err == nil {
+		t.Fatal("trace violating source ASSUME was evaluated")
+	}
+}

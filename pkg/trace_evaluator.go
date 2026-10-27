@@ -32,7 +32,7 @@ func EvaluateTrace(ctx context.Context, module *Module, states []TraceState, nam
 		return TraceEvaluation{}, fmt.Errorf("cannot evaluate an empty expression list")
 	}
 
-	expressions, outputModule, err := prepareTraceExpressions(module, names)
+	expressions, assumptions, outputModule, err := prepareTraceExpressions(module, names)
 	if err != nil {
 		return TraceEvaluation{}, err
 	}
@@ -41,7 +41,7 @@ func EvaluateTrace(ctx context.Context, module *Module, states []TraceState, nam
 		if err := ctx.Err(); err != nil {
 			return TraceEvaluation{}, err
 		}
-		values, evalErr := evaluateTraceState(ctx, state, expressions)
+		values, evalErr := evaluateTraceState(ctx, state, expressions, assumptions)
 		if evalErr != nil {
 			return TraceEvaluation{}, fmt.Errorf("state %d: %w", index, evalErr)
 		}
@@ -50,23 +50,23 @@ func EvaluateTrace(ctx context.Context, module *Module, states []TraceState, nam
 	return TraceEvaluation{Module: outputModule, States: result}, nil
 }
 
-func prepareTraceExpressions(module *Module, names []string) (map[string]Expr, *Module, error) {
+func prepareTraceExpressions(module *Module, names []string) (map[string]Expr, []Expr, *Module, error) {
 	requested := make(map[string]struct{}, len(names))
 	for _, name := range names {
 		if name == "" {
-			return nil, nil, fmt.Errorf("trace expression name cannot be empty")
+			return nil, nil, nil, fmt.Errorf("trace expression name cannot be empty")
 		}
 		if _, duplicate := requested[name]; duplicate {
-			return nil, nil, fmt.Errorf("trace expression %s is repeated", name)
+			return nil, nil, nil, fmt.Errorf("trace expression %s is repeated", name)
 		}
 		requested[name] = struct{}{}
 		declaration, found := declarationNamed(module, name)
 		operator, ok := declaration.(*OperDecl)
 		if !found || !ok {
-			return nil, nil, fmt.Errorf("operator %s is undefined in module %s", name, module.Name())
+			return nil, nil, nil, fmt.Errorf("operator %s is undefined in module %s", name, module.Name())
 		}
 		if len(operator.FormalParams()) != 0 {
-			return nil, nil, fmt.Errorf("trace expression %s requires %d arguments", name, len(operator.FormalParams()))
+			return nil, nil, nil, fmt.Errorf("trace expression %s requires %d arguments", name, len(operator.FormalParams()))
 		}
 	}
 
@@ -75,28 +75,28 @@ func prepareTraceExpressions(module *Module, names []string) (map[string]Expr, *
 	renamer := NewIncrementalRenamer(tracker)
 	desugared, err := DesugarModule(module, namesGenerator, tracker)
 	if err != nil {
-		return nil, nil, fmt.Errorf("desugar trace expressions: %w", err)
+		return nil, nil, nil, fmt.Errorf("desugar trace expressions: %w", err)
 	}
 	inlined, err := NewInliner(tracker, renamer, true, KeepOnlyInlinedDeclarations(requested)).Module(desugared)
 	if err != nil {
-		return nil, nil, fmt.Errorf("inline trace expressions: %w", err)
+		return nil, nil, nil, fmt.Errorf("inline trace expressions: %w", err)
 	}
 	inlined.AddProperty(PropertyInlined)
 	prepared, err := PreprocessModule(inlined, PreprocessOptions{Names: namesGenerator, Renamer: renamer, Tracker: tracker})
 	if err != nil {
-		return nil, nil, fmt.Errorf("preprocess trace expressions: %w", err)
+		return nil, nil, nil, fmt.Errorf("preprocess trace expressions: %w", err)
 	}
 	prepared, err = OptimizeModule(prepared, PreprocessOptions{Names: namesGenerator, Renamer: renamer, Tracker: tracker})
 	if err != nil {
-		return nil, nil, fmt.Errorf("optimize trace expressions: %w", err)
+		return nil, nil, nil, fmt.Errorf("optimize trace expressions: %w", err)
 	}
 	prepared, err = MarkSkolemizableModule(prepared, tracker)
 	if err != nil {
-		return nil, nil, fmt.Errorf("analyze trace expressions: %w", err)
+		return nil, nil, nil, fmt.Errorf("analyze trace expressions: %w", err)
 	}
 	prepared, err = MarkSetExpansionsModule(prepared, tracker)
 	if err != nil {
-		return nil, nil, fmt.Errorf("analyze trace expansions: %w", err)
+		return nil, nil, nil, fmt.Errorf("analyze trace expansions: %w", err)
 	}
 
 	expressions := make(map[string]Expr, len(names))
@@ -104,19 +104,23 @@ func prepareTraceExpressions(module *Module, names []string) (map[string]Expr, *
 	for _, name := range names {
 		body, found := OperatorBody(prepared, name)
 		if !found {
-			return nil, nil, fmt.Errorf("prepared trace expression %s is missing", name)
+			return nil, nil, nil, fmt.Errorf("prepared trace expression %s is missing", name)
 		}
 		typ, typed := body.Tag().Type()
 		if !typed {
-			return nil, nil, fmt.Errorf("trace expression %s is untyped", name)
+			return nil, nil, nil, fmt.Errorf("trace expression %s is untyped", name)
 		}
 		expressions[name] = body
 		declarations = append(declarations, NewVarDecl(name, Typed(typ)))
 	}
-	return expressions, NewModule(module.Name()+"TraceEvaluation", declarations), nil
+	assumptions := make([]Expr, len(prepared.AssumeDeclarations()))
+	for index, assumption := range prepared.AssumeDeclarations() {
+		assumptions[index] = assumption.Body()
+	}
+	return expressions, assumptions, NewModule(module.Name()+"TraceEvaluation", declarations), nil
 }
 
-func evaluateTraceState(ctx context.Context, state TraceState, expressions map[string]Expr) (TraceState, error) {
+func evaluateTraceState(ctx context.Context, state TraceState, expressions map[string]Expr, assumptions []Expr) (TraceState, error) {
 	rewriter := NewStratifiedRewriter()
 	scope := InitialRewriterScope()
 	for _, name := range sortedStringKeys(state) {
@@ -137,6 +141,15 @@ func evaluateTraceState(ctx context.Context, state TraceState, expressions map[s
 		if err != nil {
 			return nil, fmt.Errorf("evaluate %s: %w", name, err)
 		}
+	}
+	for index, assumption := range assumptions {
+		var cell ArenaCell
+		var err error
+		scope, cell, err = rewriter.Rewrite(assumption, scope)
+		if err != nil {
+			return nil, fmt.Errorf("evaluate assumption %d: %w", index+1, err)
+		}
+		rewriter.assert(cell.NameExpr())
 	}
 	solver, err := NewG3SolverContext()
 	if err != nil {
