@@ -73,6 +73,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 func runTranspile(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("transpile", flag.ContinueOnError)
 	flags.SetOutput(stderr)
+	configFile := flags.String("config-file", "", "Apalache JSON configuration file")
 	configPath := flags.String("config", "", "TLC configuration file")
 	initName := flags.String("init", "", "initial-state operator")
 	nextName := flags.String("next", "", "next-state operator")
@@ -89,9 +90,47 @@ func runTranspile(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
 	}
-	if flags.NArg() != 1 {
-		fmt.Fprintln(stderr, "transpile requires exactly one TLA+ file")
+	visited := make(map[string]bool)
+	flags.Visit(func(flag *flag.Flag) { visited[flag.Name] = true })
+	applicationConfig, selectedConfig, err := loadCommandConfig(*configFile)
+	if err != nil {
+		fmt.Fprintf(stderr, "cannot load Apalache configuration: %v\n", err)
 		return exitUsage
+	}
+	if selectedConfig != "" {
+		if err = applicationConfig.validateForFrontend("transpile"); err != nil {
+			fmt.Fprintln(stderr, err)
+			return exitUsage
+		}
+		if err = applyJSONFrontendDefaults(applicationConfig, visited, outputPath, features, useRows, disablePolytypes); err != nil {
+			fmt.Fprintln(stderr, err)
+			return exitUsage
+		}
+		if err = applyJSONModelDefaults(applicationConfig, visited, jsonModelConfigTargets{
+			TLCConfig: configPath, constantInit: constantInit, init: initName, next: nextName,
+			invariants: &invariants, temporalProperties: &temporalProperties,
+		}); err != nil {
+			fmt.Fprintln(stderr, err)
+			return exitUsage
+		}
+	}
+	if visited["init"] != visited["next"] {
+		fmt.Fprintln(stderr, "-init and -next must be provided together")
+		return exitUsage
+	}
+	if flags.NArg() > 1 || (flags.NArg() == 0 && applicationConfig.Source == nil) {
+		fmt.Fprintln(stderr, "transpile requires one TLA+ file from the CLI or JSON configuration")
+		return exitUsage
+	}
+	sourcePath := ""
+	if flags.NArg() == 1 {
+		sourcePath = flags.Arg(0)
+	} else {
+		sourcePath, _, err = expandHomePath(*applicationConfig.Source)
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return exitUsage
+		}
 	}
 	if *outputPath == "" {
 		fmt.Fprintln(stderr, "transpile output path cannot be empty")
@@ -130,7 +169,7 @@ func runTranspile(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	} else if configuration.TLCConfig == nil {
 		configuration.Behavior = pal.InitNextSpec{Init: "Init", Next: "Next"}
 	}
-	frontend := pal.ParseAndTypeCheckFile(ctx, flags.Arg(0), pal.FrontendOptions{
+	frontend := pal.ParseAndTypeCheckFile(ctx, sourcePath, pal.FrontendOptions{
 		LibraryPaths: libraryPaths,
 	}, pal.TypeCheckOptions{UseRows: rows, DisablePolytypes: *disablePolytypes})
 	for _, diagnostic := range frontend.Diagnostics {

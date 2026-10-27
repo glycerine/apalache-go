@@ -162,3 +162,49 @@ Value == N + 1
 		})
 	}
 }
+
+func TestRunTranspileLoadsJSONConfiguration(t *testing.T) {
+	directory := t.TempDir()
+	t.Setenv("HOME", filepath.Join(directory, "home"))
+	t.Chdir(directory)
+	if err := os.WriteFile("ConfiguredVMT.tla", []byte(`---- MODULE ConfiguredVMT ----
+\* @type: Int;
+VARIABLE x
+Init == x = 0
+Next == x' = x
+Inv == x = x
+====
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	configuration := `{
+  "source":"ConfiguredVMT.tla",
+  "output":"configured.vmt",
+  "checker":{"init":"Init","next":"Next","inv":["Inv"]},
+  "typechecker":{"infer-poly":true}
+}`
+	if err := os.WriteFile("transpile.json", []byte(configuration), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	if code := run(context.Background(), []string{"transpile", "--config-file=transpile.json"}, &stdout, &stderr); code != exitOK {
+		t.Fatalf("configured transpile = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
+	}
+	data, err := os.ReadFile("configured.vmt")
+	if err != nil || !bytes.Contains(data, []byte(":action Next$0000")) || !bytes.Contains(data, []byte(":invar-property 0")) {
+		t.Fatalf("configured VMT = %v, %v\n%s", data, err, data)
+	}
+
+	if err = os.Remove("configured.vmt"); err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := run(context.Background(), []string{"transpile", "--config-file=transpile.json", "--output=-"}, &stdout, &stderr); code != exitOK ||
+		!strings.Contains(stdout.String(), ":action Next$0000") {
+		t.Fatalf("transpile output override = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
+	}
+	if _, err = os.Stat("configured.vmt"); !os.IsNotExist(err) {
+		t.Fatalf("configured output was used despite CLI override: %v", err)
+	}
+}

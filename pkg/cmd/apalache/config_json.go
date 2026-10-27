@@ -187,35 +187,35 @@ type jsonModelConfigTargets struct {
 
 func applyJSONModelDefaults(config jsonCommandConfig, visited map[string]bool, targets jsonModelConfigTargets) error {
 	checker := config.Checker
-	if !visited["algo"] && checker.Algorithm != nil {
+	if targets.backend != nil && !visited["algo"] && checker.Algorithm != nil {
 		targets.backend.algorithm = *checker.Algorithm
 	}
-	if !visited["smt-encoding"] && checker.SMTEncoding != nil {
+	if targets.backend != nil && !visited["smt-encoding"] && checker.SMTEncoding != nil {
 		targets.backend.encoding = *checker.SMTEncoding
 	}
-	if !visited["smt-solver"] && checker.SMTSolver != nil {
+	if targets.backend != nil && !visited["smt-solver"] && checker.SMTSolver != nil {
 		targets.backend.solver = *checker.SMTSolver
 	}
-	if !visited["length"] && checker.Length != nil {
+	if targets.length != nil && !visited["length"] && checker.Length != nil {
 		*targets.length = *checker.Length
 	}
-	if !visited["timeout-smt"] && checker.TimeoutSMT != nil {
+	if targets.timeoutSMT != nil && !visited["timeout-smt"] && checker.TimeoutSMT != nil {
 		*targets.timeoutSMT = *checker.TimeoutSMT
 	}
-	if !visited["config"] && checker.TLCConfig != nil {
+	if targets.TLCConfig != nil && !visited["config"] && checker.TLCConfig != nil {
 		path, _, err := expandHomePath(*checker.TLCConfig)
 		if err != nil {
 			return err
 		}
 		*targets.TLCConfig = path
 	}
-	if !visited["cinit"] && checker.ConstantInit != nil {
+	if targets.constantInit != nil && !visited["cinit"] && checker.ConstantInit != nil {
 		*targets.constantInit = *checker.ConstantInit
 	}
-	if !visited["init"] && checker.Init != nil {
+	if targets.init != nil && !visited["init"] && checker.Init != nil {
 		*targets.init = *checker.Init
 	}
-	if !visited["next"] && checker.Next != nil {
+	if targets.next != nil && !visited["next"] && checker.Next != nil {
 		*targets.next = *checker.Next
 	}
 	if targets.invariants != nil && !visited["inv"] && checker.Invariants != nil {
@@ -224,10 +224,10 @@ func applyJSONModelDefaults(config jsonCommandConfig, visited map[string]bool, t
 	if targets.temporalProperties != nil && !visited["temporal"] && checker.TemporalProperties != nil {
 		*targets.temporalProperties = append((*targets.temporalProperties)[:0], (*checker.TemporalProperties)...)
 	}
-	if !visited["no-polytypes"] && config.Typechecker.InferPoly != nil {
+	if targets.disablePolytypes != nil && !visited["no-polytypes"] && config.Typechecker.InferPoly != nil {
 		*targets.disablePolytypes = !*config.Typechecker.InferPoly
 	}
-	if !visited["rows"] && !visited["features"] && config.Features != nil {
+	if targets.useRows != nil && !visited["rows"] && !visited["features"] && config.Features != nil {
 		*targets.useRows = false
 		for _, feature := range *config.Features {
 			*targets.useRows = *targets.useRows || feature == "rows"
