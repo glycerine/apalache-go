@@ -58,11 +58,90 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return runSimulate(ctx, args[1:], stdout, stderr)
 	case "test":
 		return runTest(ctx, args[1:], stdout, stderr)
+	case "tracee":
+		return runTracee(ctx, args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command %q\n", args[0])
 		printUsage(stderr)
 		return exitUsage
 	}
+}
+
+func runTracee(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	flags := flag.NewFlagSet("tracee", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	tracePath := flags.String("trace", "", "input ITF trace")
+	itfPath := flags.String("itf", "", "write evaluated ITF trace to this file (default stdout)")
+	useRows := flags.Bool("rows", false, "enable row types")
+	disablePolytypes := flags.Bool("no-polytypes", false, "disable let-polymorphism")
+	var expressions csvStringList
+	var libraryPaths stringList
+	flags.Var(&expressions, "expressions", "nullary operators to evaluate (repeatable or comma-separated)")
+	flags.Var(&libraryPaths, "I", "add a TLA+ module search directory (repeatable)")
+	if err := flags.Parse(args); err != nil {
+		return exitUsage
+	}
+	if flags.NArg() != 1 {
+		fmt.Fprintln(stderr, "tracee requires exactly one TLA+ source file")
+		return exitUsage
+	}
+	if *tracePath == "" || len(expressions) == 0 {
+		fmt.Fprintln(stderr, "tracee requires -trace and at least one -expressions operator")
+		return exitUsage
+	}
+	frontend := pal.ParseAndTypeCheckFile(ctx, flags.Arg(0), pal.FrontendOptions{
+		LibraryPaths: libraryPaths,
+	}, pal.TypeCheckOptions{UseRows: *useRows, DisablePolytypes: *disablePolytypes})
+	for _, diagnostic := range frontend.Diagnostics {
+		fmt.Fprintln(stderr, diagnostic.Error())
+	}
+	if !frontend.OK() {
+		return exitFrontend
+	}
+	traceData, err := os.ReadFile(*tracePath)
+	if err != nil {
+		fmt.Fprintf(stderr, "cannot read ITF trace: %v\n", err)
+		return exitFrontend
+	}
+	parameterTypes := make(map[string]pal.Type)
+	for _, declaration := range frontend.Native.ConstDeclarations() {
+		if typ, typed := declaration.Tag().Type(); typed {
+			parameterTypes[declaration.Name()] = typ
+		}
+	}
+	states, err := pal.UnmarshalITFTraceWithParams(traceData, parameterTypes)
+	if err != nil {
+		fmt.Fprintf(stderr, "cannot decode ITF trace: %v\n", err)
+		return exitFrontend
+	}
+	evaluation, err := pal.EvaluateTrace(ctx, frontend.Native, states, expressions)
+	if err != nil {
+		fmt.Fprintf(stderr, "trace evaluation failed: %v\n", err)
+		return exitTool
+	}
+	outputStates := make([]pal.TraceState, 1, len(evaluation.States)+1)
+	outputStates = append(outputStates, evaluation.States...)
+	data, err := pal.MarshalITFTrace(evaluation.Module, outputStates, pal.ITFOptions{
+		Description: "Trace expressions evaluated by Apalache Go",
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "cannot encode evaluated ITF trace: %v\n", err)
+		return exitTool
+	}
+	data = append(data, '\n')
+	if *itfPath == "" {
+		if _, err = stdout.Write(data); err != nil {
+			fmt.Fprintf(stderr, "cannot write evaluated trace: %v\n", err)
+			return exitTool
+		}
+	} else {
+		if err = os.WriteFile(*itfPath, data, 0o644); err != nil {
+			fmt.Fprintf(stderr, "cannot write evaluated trace: %v\n", err)
+			return exitTool
+		}
+		fmt.Fprintf(stdout, "Wrote evaluated ITF trace to %s.\n", *itfPath)
+	}
+	return exitOK
 }
 
 func runConfig(args []string, stdout, stderr io.Writer) int {
@@ -573,6 +652,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  parse FILE    parse and semantically check TLA+")
 	fmt.Fprintln(w, "  simulate FILE generate one bounded behavior")
 	fmt.Fprintln(w, "  test FILE BEFORE ACTION ASSERTION run a one-step test")
+	fmt.Fprintln(w, "  tracee FILE   evaluate operators over an ITF trace")
 	fmt.Fprintln(w, "  typecheck FILE parse and type-check annotated TLA+")
 	fmt.Fprintln(w, "  version       print build version")
 }

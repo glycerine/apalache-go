@@ -325,6 +325,17 @@ func itfContent(format string, args ...any) error {
 }
 
 func UnmarshalITFTrace(data []byte) ([]TraceState, error) {
+	return unmarshalITFTrace(data, nil)
+}
+
+// UnmarshalITFTraceWithParams decodes an ITF trace whose params receive their
+// types from the source module. ITF deliberately records varTypes only for
+// vars; parameter values occur in state zero and are constant thereafter.
+func UnmarshalITFTraceWithParams(data []byte, parameterTypes map[string]Type) ([]TraceState, error) {
+	return unmarshalITFTrace(data, parameterTypes)
+}
+
+func unmarshalITFTrace(data []byte, parameterTypes map[string]Type) ([]TraceState, error) {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.UseNumber()
 	var root map[string]any
@@ -363,6 +374,32 @@ func UnmarshalITFTrace(data []byte) ([]TraceState, error) {
 			return nil, itfFormat("type annotation for unknown variable %s", name)
 		}
 	}
+	parameters := make([]string, 0)
+	parameterSet := make(map[string]struct{})
+	if rawParams, found := root[ITFParamsField]; found {
+		array, ok := rawParams.([]any)
+		if !ok {
+			return nil, itfFormat("%s must be an array", ITFParamsField)
+		}
+		parameters = make([]string, len(array))
+		for index, raw := range array {
+			name, ok := raw.(string)
+			if !ok {
+				return nil, itfFormat("parameter name %d is not a string", index)
+			}
+			if _, variable := variableSet[name]; variable {
+				return nil, itfContent("%s is declared as both a variable and parameter", name)
+			}
+			if _, duplicate := parameterSet[name]; duplicate {
+				return nil, itfContent("parameter %s is repeated", name)
+			}
+			if parameterTypes[name] == nil {
+				return nil, itfContent("missing source type for parameter %s", name)
+			}
+			parameters[index] = name
+			parameterSet[name] = struct{}{}
+		}
+	}
 	types := make(map[string]Type, len(rawTypes))
 	for name, raw := range rawTypes {
 		text, ok := raw.(string)
@@ -389,7 +426,9 @@ func UnmarshalITFTrace(data []byte) ([]TraceState, error) {
 			if name == ITFMetaField {
 				continue
 			}
-			if _, ok := variableSet[name]; !ok {
+			_, variable := variableSet[name]
+			_, parameter := parameterSet[name]
+			if !variable && !parameter {
 				return nil, itfFormat("undeclared variable %s in state %d", name, index)
 			}
 		}
@@ -405,7 +444,29 @@ func UnmarshalITFTrace(data []byte) ([]TraceState, error) {
 			}
 			state[name] = value
 		}
+		for _, name := range parameters {
+			rawValue, present := object[name]
+			if index == 0 && !present {
+				return nil, itfFormat("parameter %s missing from state 0", name)
+			}
+			if !present {
+				continue
+			}
+			value, err := DecodeITFValue(rawValue, parameterTypes[name])
+			if err != nil {
+				return nil, fmt.Errorf("state %d parameter %s: %w", index, name, err)
+			}
+			state[name] = value
+		}
 		states[index] = state
+	}
+	if len(states) > 0 {
+		for _, name := range parameters {
+			value := states[0][name]
+			for index := 1; index < len(states); index++ {
+				states[index][name] = value
+			}
+		}
 	}
 	return states, nil
 }

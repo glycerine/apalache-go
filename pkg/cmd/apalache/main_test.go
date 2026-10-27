@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	pal "github.com/glycerine/apalache-go"
 )
 
 func TestRunConfigControlsSharedTLAStatisticsMarker(t *testing.T) {
@@ -60,6 +62,59 @@ func TestRunConfigRejectsInvalidStatisticsChoice(t *testing.T) {
 	code := run(context.Background(), []string{"config", "--enable-stats=maybe"}, &stdout, &stderr)
 	if code != exitUsage || !strings.Contains(stderr.String(), "must be true or false") {
 		t.Fatalf("config = %d, stderr = %q", code, &stderr)
+	}
+}
+
+func TestRunTraceeEvaluatesExpressionsToITF(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "TraceEval.tla")
+	tracePath := filepath.Join(dir, "input.itf.json")
+	if err := os.WriteFile(sourcePath, []byte(`---- MODULE TraceEval ----
+EXTENDS Integers
+\* @type: Int;
+CONSTANT N
+\* @type: Int;
+VARIABLE x
+Square == x * x
+Even == x % 2 = 0
+PlusN == x + N
+====
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(tracePath, []byte(`{
+  "#meta":{"format":"ITF","varTypes":{"x":"Int"}},
+  "params":["N"],
+  "vars":["x"],
+  "states":[{"N":10,"x":2},{"x":3}]
+}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	code := run(context.Background(), []string{
+		"tracee", "-trace", tracePath, "-expressions", "Square,Even,PlusN", sourcePath,
+	}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("tracee = %d, stderr = %q", code, &stderr)
+	}
+	states, err := pal.UnmarshalITFTrace(stdout.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(states) != 2 {
+		t.Fatalf("evaluated states = %#v", states)
+	}
+	firstSquare, _ := pal.FormatTLAExpression(states[0]["Square"])
+	secondSquare, _ := pal.FormatTLAExpression(states[1]["Square"])
+	firstEven, _ := pal.FormatTLAExpression(states[0]["Even"])
+	secondEven, _ := pal.FormatTLAExpression(states[1]["Even"])
+	firstPlusN, _ := pal.FormatTLAExpression(states[0]["PlusN"])
+	secondPlusN, _ := pal.FormatTLAExpression(states[1]["PlusN"])
+	if firstSquare != "4" || secondSquare != "9" || firstEven != "TRUE" || secondEven != "FALSE" {
+		t.Fatalf("evaluated states = %#v", states)
+	}
+	if firstPlusN != "12" || secondPlusN != "13" {
+		t.Fatalf("constant evaluation = %q, %q", firstPlusN, secondPlusN)
 	}
 }
 

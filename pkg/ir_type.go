@@ -442,7 +442,7 @@ func joinFields(fields map[string]Type, separator string) string {
 	return strings.Join(parts, separator)
 }
 
-func sortedStringKeys(fields map[string]Type) []string {
+func sortedStringKeys[V any](fields map[string]V) []string {
 	keys := make([]string, 0, len(fields))
 	for key := range fields {
 		keys = append(keys, key)

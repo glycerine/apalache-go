@@ -211,6 +211,30 @@ func TestUnmarshalITFTrace(t *testing.T) {
 	}
 }
 
+func TestUnmarshalITFTraceWithSourceTypedParams(t *testing.T) {
+	input := []byte(`{
+  "#meta":{"format":"ITF","varTypes":{"x":"Int"}},
+  "params":["N"],
+  "vars":["x"],
+  "states":[
+    {"N":{"#bigint":"3"},"x":{"#bigint":"1"}},
+    {"x":{"#bigint":"2"}}
+  ]}`)
+	if _, err := UnmarshalITFTrace(input); err == nil {
+		t.Fatal("parameter trace was accepted without a source type")
+	}
+	states, err := UnmarshalITFTraceWithParams(input, map[string]Type{"N": IntT1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index, state := range states {
+		value, ok := state["N"].(*ValueExpr)
+		if !ok || value.Value().(IntValue).String() != "3" {
+			t.Fatalf("state %d parameter = %v", index, state["N"])
+		}
+	}
+}
+
 func TestUnmarshalITFTraceRejectsMalformedContent(t *testing.T) {
 	cases := []string{
 		`{}`,
