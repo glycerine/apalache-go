@@ -50,6 +50,33 @@ func (desugarer *Desugarer) Expression(expression Expr) (Expr, error) {
 	case *OperExpr:
 		arguments := typed.Arguments()
 		switch typed.Operator().Name() {
+		case "EXCEPT":
+			transformed := make([]Expr, len(arguments))
+			for index, argument := range arguments {
+				var err error
+				transformed[index], err = desugarer.Expression(argument)
+				if err != nil {
+					return nil, err
+				}
+			}
+			accessors, values := deinterleaveExpressions(transformed[1:])
+			multidimensional := false
+			for _, accessor := range accessors {
+				tuple, ok := accessor.(*OperExpr)
+				if !ok || tuple.Operator().Name() != "TUPLE" {
+					return nil, fmt.Errorf("expected a tuple of keys as an EXCEPT accessor")
+				}
+				multidimensional = multidimensional || len(tuple.Arguments()) > 1
+			}
+			if len(accessors) < 2 && !multidimensional {
+				result = MustOperExpr(Op("EXCEPT"), typed.Tag(), transformed...)
+			} else {
+				expanded, err := desugarer.expandExcept(transformed[0], accessors, values)
+				if err != nil {
+					return nil, err
+				}
+				result = expanded
+			}
 		case "UNCHANGED":
 			transformed := make([]Expr, len(arguments))
 			for index, argument := range arguments {
@@ -217,6 +244,136 @@ func (desugarer *Desugarer) Expression(expression Expr) (Expr, error) {
 		return nil, fmt.Errorf("unsupported expression %T", expression)
 	}
 	return desugarer.tracker.TrackExpression(func(Expr) Expr { return result })(expression), nil
+}
+
+func (desugarer *Desugarer) expandExcept(function Expr, accessors, values []Expr) (Expr, error) {
+	if len(accessors) != len(values) {
+		return nil, fmt.Errorf("EXCEPT accessors and values have different lengths")
+	}
+	functionType, ok := function.Tag().Type()
+	if !ok {
+		return nil, fmt.Errorf("untyped EXCEPT function")
+	}
+	firstName := desugarer.names.NewName()
+	definitions := []*OperDecl{NewOperDecl(firstName, nil, function, Typed(mustOperator(nil, functionType)))}
+	for index, accessor := range accessors {
+		latest := definitions[len(definitions)-1]
+		current := MustOperExpr(Op("OPER_APP"), Typed(functionType), NewNameExpr(latest.Name(), latest.Tag()))
+		one, err := desugarer.expandExceptOne(current, accessor, values[index])
+		if err != nil {
+			return nil, err
+		}
+		definitions = append(definitions, one...)
+	}
+	last := definitions[len(definitions)-1]
+	body := MustOperExpr(Op("OPER_APP"), Typed(functionType), NewNameExpr(last.Name(), last.Tag()))
+	return NewLetInExpr(body, Typed(functionType), definitions...), nil
+}
+
+func (desugarer *Desugarer) expandExceptOne(function, accessor, value Expr) ([]*OperDecl, error) {
+	tuple, ok := accessor.(*OperExpr)
+	if !ok || tuple.Operator().Name() != "TUPLE" {
+		return nil, fmt.Errorf("expected a tuple of keys as an EXCEPT accessor")
+	}
+	keys := tuple.Arguments()
+	if len(keys) == 0 {
+		return nil, fmt.Errorf("expected at least one key in EXCEPT")
+	}
+	var rewrite func(Expr, []Expr) ([]*OperDecl, error)
+	rewrite = func(current Expr, remaining []Expr) ([]*OperDecl, error) {
+		currentType, ok := current.Tag().Type()
+		if !ok {
+			return nil, fmt.Errorf("untyped function in EXCEPT")
+		}
+		key := remaining[0]
+		if len(remaining) == 1 {
+			name := desugarer.names.NewName()
+			path := MustOperExpr(Op("TUPLE"), Typed(mustTuple(mustTagType(key.Tag()))), key)
+			body := MustOperExpr(Op("EXCEPT"), Typed(currentType), current, path, value)
+			return []*OperDecl{NewOperDecl(name, nil, body, Typed(mustOperator(nil, currentType)))}, nil
+		}
+		resultType, err := exceptAccessResultType(currentType, key)
+		if err != nil {
+			return nil, err
+		}
+		nested := MustOperExpr(Op("FUN_APP"), Typed(resultType), current, key)
+		definitions, err := rewrite(nested, remaining[1:])
+		if err != nil {
+			return nil, err
+		}
+		last := definitions[len(definitions)-1]
+		nestedValue := MustOperExpr(Op("OPER_APP"), Typed(resultType), NewNameExpr(last.Name(), last.Tag()))
+		path := MustOperExpr(Op("TUPLE"), Typed(mustTuple(mustTagType(key.Tag()))), key)
+		body := MustOperExpr(Op("EXCEPT"), Typed(currentType), current, path, nestedValue)
+		name := desugarer.names.NewName()
+		definitions = append(definitions, NewOperDecl(name, nil, body, Typed(mustOperator(nil, currentType))))
+		return definitions, nil
+	}
+	return rewrite(function, keys)
+}
+
+func exceptAccessResultType(functionType Type, key Expr) (Type, error) {
+	keyType, typed := key.Tag().Type()
+	if !typed {
+		return nil, fmt.Errorf("untyped EXCEPT key")
+	}
+	switch function := functionType.(type) {
+	case FunType:
+		if !EqualTypes(function.Argument(), keyType) {
+			return nil, fmt.Errorf("expected EXCEPT key of type %s, found %s", function.Argument(), keyType)
+		}
+		return function.Result(), nil
+	case SeqType:
+		if !EqualTypes(keyType, IntT1) {
+			return nil, fmt.Errorf("expected integer sequence index, found %s", keyType)
+		}
+		return function.Element(), nil
+	case TupleType:
+		value, ok := key.(*ValueExpr)
+		if !ok {
+			return nil, fmt.Errorf("expected literal tuple index")
+		}
+		integer, ok := value.Value().(IntValue)
+		if !ok || !integer.BigInt().IsInt64() {
+			return nil, fmt.Errorf("expected integer tuple index")
+		}
+		index := integer.BigInt().Int64()
+		elements := function.Elements()
+		if index <= 0 || index > int64(len(elements)) {
+			return nil, fmt.Errorf("tuple index %d is out of bounds", index)
+		}
+		return elements[index-1], nil
+	case RecordType:
+		value, ok := key.(*ValueExpr)
+		if !ok {
+			return nil, fmt.Errorf("expected literal record key")
+		}
+		text, ok := value.Value().(StringValue)
+		if !ok {
+			return nil, fmt.Errorf("expected string record key")
+		}
+		field, found := function.Fields()[text.Value()]
+		if !found {
+			return nil, fmt.Errorf("record has no field %s", text.Value())
+		}
+		return field, nil
+	case RecordRowType:
+		value, ok := key.(*ValueExpr)
+		if !ok {
+			return nil, fmt.Errorf("expected literal record key")
+		}
+		text, ok := value.Value().(StringValue)
+		if !ok {
+			return nil, fmt.Errorf("expected string record key")
+		}
+		field, found := function.Row().Fields()[text.Value()]
+		if !found {
+			return nil, fmt.Errorf("row record has no field %s", text.Value())
+		}
+		return field, nil
+	default:
+		return nil, fmt.Errorf("unexpected type %s in EXCEPT access", functionType)
+	}
 }
 
 func deinterleaveExpressions(arguments []Expr) ([]Expr, []Expr) {
