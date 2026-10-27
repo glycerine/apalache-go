@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -49,6 +52,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return runTypeCheck(ctx, args[1:], stdout, stderr)
 	case "check":
 		return runCheck(ctx, args[1:], stdout, stderr)
+	case "config":
+		return runConfig(args[1:], stdout, stderr)
 	case "simulate":
 		return runSimulate(ctx, args[1:], stdout, stderr)
 	case "test":
@@ -58,6 +63,50 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		printUsage(stderr)
 		return exitUsage
 	}
+}
+
+func runConfig(args []string, stdout, stderr io.Writer) int {
+	flags := flag.NewFlagSet("config", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	enableStats := flags.String("enable-stats", "", "enable shared TLA+ usage statistics: true or false (default unchanged)")
+	if err := flags.Parse(args); err != nil {
+		return exitUsage
+	}
+	if flags.NArg() != 0 {
+		fmt.Fprintln(stderr, "config does not accept positional arguments")
+		return exitUsage
+	}
+	if *enableStats != "" && *enableStats != "true" && *enableStats != "false" {
+		fmt.Fprintln(stderr, "-enable-stats must be true or false")
+		return exitUsage
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		fmt.Fprintf(stderr, "cannot find the user home directory: %v\n", err)
+		return exitTool
+	}
+	configDir := filepath.Join(home, ".tlaplus")
+	if err = os.MkdirAll(configDir, 0o700); err != nil {
+		fmt.Fprintf(stderr, "cannot create TLA+ configuration directory: %v\n", err)
+		return exitTool
+	}
+	if *enableStats != "" {
+		contents := "NO_STATISTICS"
+		if *enableStats == "true" {
+			identifier := make([]byte, 16)
+			if _, err = rand.Read(identifier); err != nil {
+				fmt.Fprintf(stderr, "cannot generate statistics identifier: %v\n", err)
+				return exitTool
+			}
+			contents = hex.EncodeToString(identifier)
+		}
+		if err = os.WriteFile(filepath.Join(configDir, "esc.txt"), []byte(contents+"\n"), 0o600); err != nil {
+			fmt.Fprintf(stderr, "cannot update statistics configuration: %v\n", err)
+			return exitTool
+		}
+	}
+	fmt.Fprintln(stdout, "Configuration complete")
+	return exitOK
 }
 
 func runTest(ctx context.Context, args []string, stdout, stderr io.Writer) int {
@@ -520,6 +569,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "usage: apalache <command> [options]")
 	fmt.Fprintln(w, "commands:")
 	fmt.Fprintln(w, "  check FILE    bounded safety check")
+	fmt.Fprintln(w, "  config        configure shared TLA+ options")
 	fmt.Fprintln(w, "  parse FILE    parse and semantically check TLA+")
 	fmt.Fprintln(w, "  simulate FILE generate one bounded behavior")
 	fmt.Fprintln(w, "  test FILE BEFORE ACTION ASSERTION run a one-step test")

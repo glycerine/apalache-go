@@ -6,9 +6,62 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
+
+func TestRunConfigControlsSharedTLAStatisticsMarker(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	var stdout, stderr bytes.Buffer
+	if code := run(context.Background(), []string{"config"}, &stdout, &stderr); code != exitOK {
+		t.Fatalf("config = %d, stderr = %q", code, &stderr)
+	}
+	configDir := filepath.Join(home, ".tlaplus")
+	if info, err := os.Stat(configDir); err != nil || !info.IsDir() {
+		t.Fatalf("configuration directory = %v, %v", info, err)
+	}
+	marker := filepath.Join(configDir, "esc.txt")
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("config without an option changed the marker: %v", err)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := run(context.Background(), []string{"config", "--enable-stats=true"}, &stdout, &stderr); code != exitOK {
+		t.Fatalf("enable config = %d, stderr = %q", code, &stderr)
+	}
+	contents, err := os.ReadFile(marker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !regexp.MustCompile(`^[0-9a-f]{32}\n$`).Match(contents) {
+		t.Fatalf("opt-in marker = %q", contents)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := run(context.Background(), []string{"config", "--enable-stats=false"}, &stdout, &stderr); code != exitOK {
+		t.Fatalf("disable config = %d, stderr = %q", code, &stderr)
+	}
+	contents, err = os.ReadFile(marker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(contents), "NO_STATISTICS\n"; got != want {
+		t.Fatalf("opt-out marker = %q, want %q", got, want)
+	}
+}
+
+func TestRunConfigRejectsInvalidStatisticsChoice(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	var stdout, stderr bytes.Buffer
+	code := run(context.Background(), []string{"config", "--enable-stats=maybe"}, &stdout, &stderr)
+	if code != exitUsage || !strings.Contains(stderr.String(), "must be true or false") {
+		t.Fatalf("config = %d, stderr = %q", code, &stderr)
+	}
+}
 
 func TestRunParse(t *testing.T) {
 	dir := t.TempDir()
