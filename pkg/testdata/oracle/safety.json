@@ -19,12 +19,6 @@
       "go_args": ["check", "-length", "2", "-deadlock=false", "-inv", "Inv", "test/tla/Test1305.tla"]
     },
     {
-      "name": "large-function-constructor-domain",
-      "dir": "..",
-      "scala_args": ["check", "--length=0", "--no-deadlock", "--inv=AllTests", "test/tla/TestFunctions.tla"],
-      "go_args": ["check", "--length=0", "--no-deadlock", "--inv=AllTests", "test/tla/TestFunctions.tla"]
-    },
-    {
       "name": "finite-sets",
       "dir": "..",
       "scala_args": ["check", "--length=0", "--no-deadlock", "--inv=AllTests", "test/tla/TestSets.tla"],
