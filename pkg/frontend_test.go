@@ -100,6 +100,21 @@ Inv == LET Op(a, i) == a + i IN Repeat(Op, 2, 0) = 3
 	}
 }
 
+func TestParseAndTypeCheckSourcePassesOperatorArgumentsByName(t *testing.T) {
+	result := ParseAndTypeCheckSource(context.Background(), "Callback.tla", `---- MODULE Callback ----
+EXTENDS Integers
+VARIABLE \* @type: Int;
+  x
+Pick(Cb(_)) == \E i \in 1..10: Cb(i)
+Init == LET Cb(i) == x = i IN Pick(Cb)
+Next == UNCHANGED x
+====
+`, FrontendOptions{}, TypeCheckOptions{})
+	if !result.OK() {
+		t.Fatalf("ParseAndTypeCheckSource() diagnostics = %v", result.Diagnostics)
+	}
+}
+
 func TestParseAndTypeCheckSourceReconstructsTupleQuantifier(t *testing.T) {
 	result := ParseAndTypeCheckSource(context.Background(), "TupleBound.tla", `---- MODULE TupleBound ----
 EXTENDS Integers

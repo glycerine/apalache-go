@@ -249,8 +249,12 @@ func normalizeTlagoApalacheBuiltinCalls(module *Module, sources *SourceStore) *M
 		return nil
 	}
 	declared := make(map[string]struct{}, len(module.Declarations()))
+	parameters := make(map[string][]OperatorParam, len(module.Declarations()))
 	for _, declaration := range module.Declarations() {
 		declared[declaration.Name()] = struct{}{}
+		if operator, ok := declaration.(*OperDecl); ok {
+			parameters[operator.Name()] = operator.FormalParams()
+		}
 	}
 	var tracker TransformationTracker = IdleTracker{}
 	if sources != nil {
@@ -269,8 +273,30 @@ func normalizeTlagoApalacheBuiltinCalls(module *Module, sources *SourceStore) *M
 		if !ok {
 			return nil, false
 		}
+		changed := false
+		if formalParameters, known := parameters[callee.Name()]; known && len(formalParameters) == len(arguments)-1 {
+			for index, parameter := range formalParameters {
+				if !parameter.IsOperator() {
+					continue
+				}
+				application, isApplication := arguments[index+1].(*OperExpr)
+				if !isApplication || application.Operator().Name() != "OPER_APP" {
+					continue
+				}
+				applicationArguments := application.Arguments()
+				if len(applicationArguments) == 1 {
+					if name, isName := applicationArguments[0].(*NameExpr); isName {
+						arguments[index+1] = name
+						changed = true
+					}
+				}
+			}
+		}
 		builtin, found := tlagoApalacheBuiltinCalls[callee.Name()]
 		if !found {
+			if changed {
+				return MustOperExpr(operation.Operator(), operation.Tag(), arguments...), true
+			}
 			return nil, false
 		}
 		if _, shadowed := declared[callee.Name()]; shadowed {
