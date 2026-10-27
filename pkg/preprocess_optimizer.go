@@ -78,6 +78,7 @@ func (optimizer *ExprOptimizer) transform(expression Expr) (Expr, error) {
 		retained := make([]*OperDecl, 0, len(declarations))
 		for index, declaration := range declarations {
 			_, isFunctionConstructor := operNamed(declaration.Body(), "FUN_CTOR")
+			isFunctionConstructor = isFunctionConstructor && len(declaration.FormalParams()) == 0
 			used := expressionCallsOperator(body, declaration.Name())
 			for otherIndex, other := range declarations {
 				if otherIndex != index && expressionCallsOperator(other.Body(), declaration.Name()) {
@@ -301,6 +302,8 @@ func expressionCallsOperator(expression Expr, name string) bool {
 				return true
 			}
 		}
+	case *NameExpr:
+		return typed.Name() == name
 	case *LetInExpr:
 		if expressionCallsOperator(typed.Body(), name) {
 			return true

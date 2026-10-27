@@ -224,3 +224,25 @@ func TestExprOptimizerBetaReducesConstructorApplicationsInDomainQuantifiers(t *t
 		t.Fatalf("application at a different argument was reduced: %v", unreduced.Arguments()[2])
 	}
 }
+
+func TestExprOptimizerPreservesPassByNameOperatorReturningFunction(t *testing.T) {
+	functionType := mustFun(IntT1, IntT1)
+	operatorType := mustOperator([]Type{functionType, functionType}, functionType)
+	left := NewNameExpr("left", Typed(functionType))
+	right := NewNameExpr("right", Typed(functionType))
+	binder := NewNameExpr("x", Typed(IntT1))
+	constructor := MustOperExpr(Op("FUN_CTOR"), Typed(functionType),
+		MustOperExpr(Op("PLUS"), Typed(IntT1),
+			MustOperExpr(Op("FUN_APP"), Typed(IntT1), left, binder),
+			MustOperExpr(Op("FUN_APP"), Typed(IntT1), right, binder)),
+		binder, MustOperExpr(Op("SET_ENUM"), Typed(mustSet(IntT1)), i(1)))
+	declaration := NewOperDecl("Plus",
+		[]OperatorParam{ValueParam("left"), ValueParam("right")}, constructor, Typed(operatorType))
+	passByName := NewLetInExpr(NewNameExpr("Plus", Typed(operatorType)), Typed(operatorType), declaration)
+
+	got := optimizeForTest(t, passByName)
+	let, ok := got.(*LetInExpr)
+	if !ok || len(let.Declarations()) != 1 || let.Declarations()[0].Name() != "Plus" {
+		t.Fatalf("pass-by-name operator was removed: %v", got)
+	}
+}
