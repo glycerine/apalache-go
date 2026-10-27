@@ -124,10 +124,22 @@ type nextModelResult struct {
 	HasNext   string `json:"hasNext"`
 }
 
+type compactParams struct {
+	SessionID  string `json:"sessionId"`
+	SnapshotID int    `json:"snapshotId"`
+	TimeoutSec int    `json:"timeoutSec"`
+}
+
+type compactResult struct {
+	SessionID  string `json:"sessionId"`
+	SnapshotID int    `json:"snapshotId"`
+}
+
 type explorationOperation struct {
 	transition *int
 	advance    bool
 	assertion  Expr
+	synthetic  Expr
 }
 
 type assumeStateParams struct {
@@ -550,6 +562,66 @@ func (service *ExplorationService) nextModel(ctx context.Context, raw json.RawMe
 	})
 }
 
+func (service *ExplorationService) compact(ctx context.Context, raw json.RawMessage) (any, *jsonRPCError) {
+	var params compactParams
+	if err := decodeJSONRPCParams(raw, &params); err != nil || params.SessionID == "" || params.SnapshotID < 0 || params.TimeoutSec < 0 {
+		return nil, invalidParams(fmt.Errorf("compact requires sessionId, non-negative snapshotId, and non-negative timeoutSec"))
+	}
+	return service.withSession(params.SessionID, func(session *explorationSession) (any, *jsonRPCError) {
+		if _, found := session.snapshots[params.SnapshotID]; !found {
+			return nil, invalidParams(fmt.Errorf("Snapshot not found: %d in session %s", params.SnapshotID, params.SessionID))
+		}
+		truth := NewValueExpr(BoolValue(true), Typed(BoolT1))
+		checkContext, cancel := explorationTimeout(ctx, params.TimeoutSec)
+		var status SMTStatus
+		var states []DecodedState
+		var err error
+		if len(session.operations) > 0 && session.operations[len(session.operations)-1].transition != nil {
+			status, states, err = session.executor.CheckPendingAndDecode(checkContext, truth)
+		} else {
+			status, states, err = session.executor.CheckAndDecode(checkContext, truth)
+		}
+		cancel()
+		if err != nil {
+			return nil, &jsonRPCError{Code: JSONRPCInternalError, Message: err.Error()}
+		}
+		if status != SMTSatisfiable || len(states) == 0 {
+			return nil, &jsonRPCError{Code: JSONRPCInternalError, Message: "Cannot compact: current context is not satisfiable"}
+		}
+		last := states[len(states)-1].Values
+		assignments := make([]Expr, 0, len(session.prepared.Module.VarDeclarations()))
+		for _, variable := range session.prepared.Module.VarDeclarations() {
+			value, found := last[variable.Name()]
+			if !found {
+				return nil, &jsonRPCError{Code: JSONRPCInternalError, Message: "Cannot compact: decoded state has no " + variable.Name()}
+			}
+			typ, typed := variable.Tag().Type()
+			if !typed {
+				return nil, &jsonRPCError{Code: JSONRPCInternalError, Message: "Cannot compact: untyped variable " + variable.Name()}
+			}
+			prime := MustOperExpr(Op("PRIME"), Typed(typ), NewNameExpr(variable.Name(), Typed(typ)))
+			assignments = append(assignments, MustOperExpr(Op("Apalache!:="), Typed(BoolT1), prime, value))
+		}
+		synthetic := MustOperExpr(Op("AND"), Typed(BoolT1), assignments...)
+		if err = session.recoverSnapshot(params.SnapshotID); err != nil {
+			return nil, &jsonRPCError{Code: JSONRPCInternalError, Message: err.Error()}
+		}
+		enabled, err := session.executor.PrepareTransition(0, synthetic)
+		if err != nil || !enabled {
+			return nil, &jsonRPCError{Code: JSONRPCInternalError, Message: fmt.Sprintf("Cannot compact: synthetic transition enabled=%v: %v", enabled, err)}
+		}
+		if err = session.executor.AssumeTransition(0); err != nil {
+			return nil, &jsonRPCError{Code: JSONRPCInternalError, Message: err.Error()}
+		}
+		session.operations = append(session.operations, explorationOperation{synthetic: synthetic})
+		if err = session.executor.NextState(); err != nil {
+			return nil, &jsonRPCError{Code: JSONRPCInternalError, Message: err.Error()}
+		}
+		session.operations = append(session.operations, explorationOperation{advance: true})
+		return compactResult{params.SessionID, session.takeSnapshot()}, nil
+	})
+}
+
 func (service *ExplorationService) disposeSpec(raw json.RawMessage) (any, *jsonRPCError) {
 	var params disposeSpecParams
 	if err := decodeJSONRPCParams(raw, &params); err != nil {
@@ -784,6 +856,16 @@ func replayExplorationOperations(prepared SafetyPipelineResult, operations []exp
 		return nil, err
 	}
 	for _, operation := range operations {
+		if operation.synthetic != nil {
+			enabled, prepareErr := executor.PrepareTransition(0, operation.synthetic)
+			if prepareErr != nil || !enabled {
+				return nil, fmt.Errorf("replay synthetic transition enabled=%v: %v", enabled, prepareErr)
+			}
+			if err = executor.AssumeTransition(0); err != nil {
+				return nil, err
+			}
+			continue
+		}
 		if operation.assertion != nil {
 			if err = executor.AssertState(operation.assertion); err != nil {
 				return nil, err

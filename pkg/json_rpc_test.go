@@ -193,6 +193,21 @@ View == x = 0
 	if actionResult["invariantStatus"] != "SATISFIED" || actionResult["trace"] != nil {
 		t.Fatalf("checkInvariant action = %#v", actionSatisfied)
 	}
+	compact := postJSONRPC(t, handler, fmt.Sprintf(
+		`{"jsonrpc":"2.0","method":"compact","params":{"sessionId":%q,"snapshotId":0},"id":7}`,
+		sessionID,
+	))
+	compactResult, _ := compact["result"].(map[string]any)
+	if compactResult["snapshotId"] == nil {
+		t.Fatalf("compact = %#v", compact)
+	}
+	queryCompacted := postJSONRPC(t, handler, fmt.Sprintf(
+		`{"jsonrpc":"2.0","method":"query","params":{"sessionId":%q,"kinds":["OPERATOR"],"operator":"View"},"id":7}`,
+		sessionID,
+	))
+	if result, _ := queryCompacted["result"].(map[string]any); result["operatorValue"] != false {
+		t.Fatalf("query compacted state = %#v", queryCompacted)
+	}
 	rollback := postJSONRPC(t, handler, fmt.Sprintf(
 		`{"jsonrpc":"2.0","method":"rollback","params":{"sessionId":%q,"snapshotId":0},"id":6}`,
 		sessionID,

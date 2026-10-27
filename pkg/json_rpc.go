@@ -139,6 +139,8 @@ func (handler *ExplorationJSONRPCHandler) dispatch(ctx context.Context, method s
 		return handler.service.query(ctx, params)
 	case "nextModel":
 		return handler.service.nextModel(ctx, params)
+	case "compact":
+		return handler.service.compact(ctx, params)
 	default:
 		return nil, &jsonRPCError{Code: JSONRPCMethodNotFound, Message: fmt.Sprintf("Method not found: %s", method)}
 	}
