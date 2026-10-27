@@ -787,6 +787,68 @@ func TestStratifiedFiniteQuantifiersThroughG3(t *testing.T) {
 	}
 }
 
+func TestStratifiedFiniteFunctionsThroughG3(t *testing.T) {
+	functionType, err := NewFunType(IntT1, IntT1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	functionTag := Typed(functionType)
+	setTag := Typed(mustSet(IntT1))
+	x := NewNameExpr("x", Typed(IntT1))
+	constructor := func(offset int64) Expr {
+		domain := MustOperExpr(Op("SET_ENUM"), setTag,
+			NewValueExpr(Int64Value(1), Typed(IntT1)), NewValueExpr(Int64Value(2), Typed(IntT1)))
+		body := MustOperExpr(Op("PLUS"), Typed(IntT1), x, NewValueExpr(Int64Value(offset), Typed(IntT1)))
+		return MustOperExpr(Op("FUN_CTOR"), functionTag, body, x, domain)
+	}
+
+	application := MustOperExpr(Op("FUN_APP"), Typed(IntT1), constructor(10), NewValueExpr(Int64Value(2), Typed(IntT1)))
+	equalTwelve := MustOperExpr(Op("EQ"), Typed(BoolT1), application, NewValueExpr(Int64Value(12), Typed(IntT1)))
+	domain := MustOperExpr(Op("DOMAIN"), setTag, constructor(10))
+	expectedDomain := MustOperExpr(Op("SET_ENUM"), setTag,
+		NewValueExpr(Int64Value(1), Typed(IntT1)), NewValueExpr(Int64Value(2), Typed(IntT1)))
+	domainEquality := MustOperExpr(Op("EQ"), Typed(BoolT1), domain, expectedDomain)
+	reorderedDomain := MustOperExpr(Op("SET_ENUM"), setTag,
+		NewValueExpr(Int64Value(2), Typed(IntT1)), NewValueExpr(Int64Value(1), Typed(IntT1)))
+	reorderedBody := MustOperExpr(Op("PLUS"), Typed(IntT1), NewValueExpr(Int64Value(10), Typed(IntT1)), x)
+	reorderedFunction := MustOperExpr(Op("FUN_CTOR"), functionTag, reorderedBody, x, reorderedDomain)
+	functionEquality := MustOperExpr(Op("EQ"), Typed(BoolT1), constructor(10), reorderedFunction)
+	functionInequality := MustOperExpr(Op("EQ"), Typed(BoolT1), constructor(10), constructor(20))
+	for _, test := range []struct {
+		name       string
+		expression Expr
+		want       bool
+	}{
+		{name: "application", expression: equalTwelve, want: true},
+		{name: "domain", expression: domainEquality, want: true},
+		{name: "equal functions", expression: functionEquality, want: true},
+		{name: "different functions", expression: functionInequality, want: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			rewriter := NewStratifiedRewriter()
+			scope, result, err := rewriter.Rewrite(test.expression, InitialRewriterScope())
+			if err != nil {
+				t.Fatal(err)
+			}
+			solver := newTestG3Solver(t)
+			encoder, err := EncodeRewriterScope(solver, scope, rewriter.Constraints())
+			if err != nil {
+				t.Fatal(err)
+			}
+			contradiction := Expr(result.NameExpr())
+			if test.want {
+				contradiction = MustOperExpr(Op("NOT"), Typed(BoolT1), contradiction)
+			}
+			if err := encoder.Assert(contradiction); err != nil {
+				t.Fatal(err)
+			}
+			if status, err := solver.Check(context.Background()); err != nil || status != SMTUnsatisfiable {
+				t.Fatalf("contradicted function result = %v, %v", status, err)
+			}
+		})
+	}
+}
+
 func TestStratifiedFiniteSetEqualityThroughG3(t *testing.T) {
 	setType := Typed(mustSet(IntT1))
 	set := func(values ...int64) Expr {

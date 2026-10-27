@@ -94,6 +94,10 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 			return rewriter.rewriteBoundedChoice(typed, scope)
 		case "EXISTS3", "FORALL3":
 			return rewriter.rewriteFiniteQuantifier(typed, scope)
+		case "FUN_CTOR":
+			return rewriter.rewriteFunctionConstructor(typed, scope)
+		case "DOMAIN":
+			return rewriter.rewriteDomain(typed, scope)
 		case "SET_FILTER":
 			return rewriter.rewriteSetFilter(typed, scope)
 		case "SET_IN", "Apalache!SelectInSet":
@@ -107,6 +111,75 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 		}
 	}
 	return scope, ArenaCell{}, fmt.Errorf("no stratified rule is applicable to %T", expression)
+}
+
+func (rewriter *StratifiedRewriter) rewriteFunctionConstructor(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
+	arguments := expression.Arguments()
+	if len(arguments) != 3 {
+		return scope, ArenaCell{}, fmt.Errorf("function constructor currently requires one binder and domain")
+	}
+	binder, ok := arguments[1].(*NameExpr)
+	if !ok {
+		return scope, ArenaCell{}, fmt.Errorf("function constructor binder must be a name")
+	}
+	typ, ok := expression.Tag().Type()
+	if !ok {
+		return scope, ArenaCell{}, fmt.Errorf("function constructor must be typed")
+	}
+	functionType, ok := typ.(FunType)
+	if !ok {
+		return scope, ArenaCell{}, fmt.Errorf("function constructor has non-function type %s", typ)
+	}
+	scope, domain, err := rewriter.Rewrite(arguments[2], scope)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	domainType, ok := domain.Type.TLAType().(SetType)
+	if !ok || !EqualTypes(domainType.Element(), functionType.Argument()) {
+		return scope, ArenaCell{}, fmt.Errorf("function domain has type %s, expected Set(%s)", domain.Type, functionType.Argument())
+	}
+	baseBinding := scope.Binding
+	domainPointers := scope.Arena.GetHas(domain)
+	relationPointers := make([]ElementPointer, len(domainPointers))
+	pairType, _ := NewTupleType(functionType.Argument(), functionType.Result())
+	for index, pointer := range domainPointers {
+		mappedScope := RewriterScope{Arena: scope.Arena, Binding: baseBinding.With(binder.Name(), pointer.Element())}
+		mappedScope, result, rewriteErr := rewriter.Rewrite(arguments[0], mappedScope)
+		if rewriteErr != nil {
+			return scope, ArenaCell{}, rewriteErr
+		}
+		if !EqualTypes(result.Type.TLAType(), functionType.Result()) {
+			return scope, ArenaCell{}, fmt.Errorf("function result has type %s, expected %s", result.Type, functionType.Result())
+		}
+		newArena, pair := mappedScope.Arena.AppendCellType(BasicCellType{Type: pairType})
+		mappedScope.Arena = newArena.AppendHas(pair,
+			FixedElementPointer{Cell: pointer.Element()}, FixedElementPointer{Cell: result})
+		scope.Arena = mappedScope.Arena
+		relationPointers[index] = PointerWithSameCondition(pointer, pair)
+	}
+	scope.Binding = baseBinding
+	newArena, relation := scope.Arena.AppendCellType(BasicCellType{Type: functionRelationType(functionType)})
+	scope.Arena = newArena.AppendHas(relation, relationPointers...)
+	rewriter.addMembershipConstraints(scope.Arena, relation)
+	newArena, function := scope.Arena.AppendCellType(BasicCellType{Type: functionType})
+	scope.Arena = newArena.SetDomain(function, domain).SetCodomain(function, relation)
+	return scope, function, nil
+}
+
+func (rewriter *StratifiedRewriter) rewriteDomain(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
+	arguments := expression.Arguments()
+	if len(arguments) != 1 {
+		return scope, ArenaCell{}, fmt.Errorf("DOMAIN requires one operand")
+	}
+	scope, value, err := rewriter.Rewrite(arguments[0], scope)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	if isFunctionCellType(value.Type) {
+		domain, domainErr := scope.Arena.Domain(value)
+		return scope, domain, domainErr
+	}
+	return scope, ArenaCell{}, fmt.Errorf("DOMAIN is not yet implemented for %s", value.Type)
 }
 
 func (rewriter *StratifiedRewriter) rewriteFiniteQuantifier(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
@@ -679,6 +752,70 @@ func (rewriter *StratifiedRewriter) rewriteApplication(expression *OperExpr, sco
 			MustOperExpr(Op("LE"), Typed(BoolT1), indexCell.NameExpr(), NewValueExpr(Int64Value(int64(len(candidates))), Typed(IntT1))),
 		)
 		rewriter.assert(MustOperExpr(Op("EQUIV"), Typed(BoolT1), oracleMatches, inRange))
+		return project(scope, picked)
+	}
+	if isFunctionCellType(collection.Type) {
+		functionType := collection.Type.TLAType().(FunType)
+		scope, argument, err := rewriter.Rewrite(arguments[1], scope)
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+		if !EqualTypes(argument.Type.TLAType(), functionType.Argument()) {
+			return scope, ArenaCell{}, fmt.Errorf("function argument has type %s, expected %s", argument.Type, functionType.Argument())
+		}
+		relation, err := scope.Arena.Codomain(collection)
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+		pointers := scope.Arena.GetHas(relation)
+		if len(pointers) == 0 {
+			defaultScope, defaultCell, defaultErr := rewriter.defaults.GetOrCreate(scope, functionType.Result())
+			if defaultErr != nil {
+				return scope, ArenaCell{}, defaultErr
+			}
+			return project(defaultScope, defaultCell)
+		}
+		results := make([]ArenaCell, len(pointers))
+		matches := make([]Expr, len(pointers))
+		for index, pointer := range pointers {
+			pairArgument, pairResult, pairErr := unpackFunctionPair(scope.Arena, pointer.Element())
+			if pairErr != nil {
+				return scope, ArenaCell{}, pairErr
+			}
+			results[index] = pairResult
+			equal, equalityErr := rewriter.equality.Equal(scope.Arena, argument, pairArgument)
+			if equalityErr != nil {
+				return scope, ArenaCell{}, equalityErr
+			}
+			matches[index] = booleanAnd(pointer.ToSMT(), equal)
+		}
+		scope, oracle, err := CreateIntOracle(scope, len(results)+1)
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+		scope, picked, err := NewCherryPicker(rewriter).Pick(scope, oracle, results)
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+		assertions := make([]Expr, oracle.Size())
+		copy(assertions, matches)
+		notMatches := make([]Expr, len(matches))
+		for index, match := range matches {
+			notMatches[index] = MustOperExpr(Op("NOT"), Typed(BoolT1), match)
+		}
+		assertions[len(matches)] = booleanAnd(notMatches...)
+		matchConstraint, err := oracle.Cases(scope, assertions, nil)
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+		rangeConditions := make([]Expr, oracle.Size())
+		for index := range rangeConditions {
+			rangeConditions[index], err = oracle.Chosen(scope, index)
+			if err != nil {
+				return scope, ArenaCell{}, err
+			}
+		}
+		rewriter.assert(booleanAnd(booleanOr(rangeConditions...), matchConstraint))
 		return project(scope, picked)
 	}
 	return scope, ArenaCell{}, fmt.Errorf("application is not yet implemented for %s", collection.Type)

@@ -75,6 +75,8 @@ func (equality *LazyEquality) Equal(arena *PureArena, left, right ArenaCell) (Ex
 		condition, err = equality.recordEqualityCondition(arena, left, right)
 	case isSequenceCellType(left.Type):
 		condition, err = equality.sequenceEqualityCondition(arena, left, right)
+	case isFunctionCellType(left.Type):
+		condition, err = equality.functionEqualityCondition(arena, left, right)
 	default:
 		err = fmt.Errorf("structural equality is not yet implemented for %s", left.Type)
 	}
@@ -88,6 +90,18 @@ func (equality *LazyEquality) Equal(arena *PureArena, left, right ArenaCell) (Ex
 		return nil, err
 	}
 	return rawEquality, nil
+}
+
+func (equality *LazyEquality) functionEqualityCondition(arena *PureArena, left, right ArenaCell) (Expr, error) {
+	leftRelation, err := arena.Codomain(left)
+	if err != nil {
+		return nil, err
+	}
+	rightRelation, err := arena.Codomain(right)
+	if err != nil {
+		return nil, err
+	}
+	return equality.Equal(arena, leftRelation, rightRelation)
 }
 
 func (equality *LazyEquality) sequenceEqualityCondition(arena *PureArena, left, right ArenaCell) (Expr, error) {
