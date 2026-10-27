@@ -216,12 +216,33 @@ View == x = 0
 	if rollbackResult["snapshotId"] != float64(0) {
 		t.Fatalf("rollback = %#v", rollback)
 	}
-	assumeAgain := postJSONRPC(t, handler, fmt.Sprintf(
-		`{"jsonrpc":"2.0","method":"assumeTransition","params":{"sessionId":%q,"transitionId":0,"checkEnabled":true},"id":7}`,
+	batch := postJSONRPC(t, handler, fmt.Sprintf(
+		`{"jsonrpc":"2.0","method":"applyInOrder","params":{"sessionId":%q,"calls":[`+
+			`{"method":"assumeTransition","params":{"transitionId":0,"checkEnabled":true}},`+
+			`{"method":"nextStep","params":{}},`+
+			`{"method":"query","params":{"kinds":["OPERATOR"],"operator":"View"}}]},"id":7}`,
 		sessionID,
 	))
-	if result, _ := assumeAgain["result"].(map[string]any); result["status"] != "ENABLED" {
-		t.Fatalf("assumeTransition after rollback = %#v", assumeAgain)
+	batchResult, _ := batch["result"].(map[string]any)
+	batchCalls, _ := batchResult["calls"].([]any)
+	if len(batchCalls) != 3 {
+		t.Fatalf("applyInOrder = %#v", batch)
+	}
+	for _, rawCall := range batchCalls {
+		if call := rawCall.(map[string]any); call["ok"] != true || call["error"] != nil {
+			t.Fatalf("applyInOrder call = %#v", call)
+		}
+	}
+	failingBatch := postJSONRPC(t, handler, fmt.Sprintf(
+		`{"jsonrpc":"2.0","method":"applyInOrder","params":{"sessionId":%q,"calls":[`+
+			`{"method":"assumeTransition","params":{"transitionId":99,"checkEnabled":true}},`+
+			`{"method":"nextStep","params":{}}]},"id":8}`,
+		sessionID,
+	))
+	failingResult, _ := failingBatch["result"].(map[string]any)
+	failingCalls, _ := failingResult["calls"].([]any)
+	if len(failingCalls) != 1 || failingCalls[0].(map[string]any)["ok"] != false || failingCalls[0].(map[string]any)["error"] == nil {
+		t.Fatalf("failing applyInOrder = %#v", failingBatch)
 	}
 
 	disposeBody := fmt.Sprintf(

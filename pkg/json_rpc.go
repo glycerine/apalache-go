@@ -128,11 +128,11 @@ func (handler *ExplorationJSONRPCHandler) dispatch(ctx context.Context, method s
 	case "assumeTransition":
 		return handler.service.assumeTransition(ctx, params)
 	case "nextStep":
-		return handler.service.nextStep(params)
+		return handler.service.nextStep(ctx, params)
 	case "assumeState":
 		return handler.service.assumeState(ctx, params)
 	case "rollback":
-		return handler.service.rollback(params)
+		return handler.service.rollback(ctx, params)
 	case "checkInvariant":
 		return handler.service.checkInvariant(ctx, params)
 	case "query":
@@ -141,6 +141,8 @@ func (handler *ExplorationJSONRPCHandler) dispatch(ctx context.Context, method s
 		return handler.service.nextModel(ctx, params)
 	case "compact":
 		return handler.service.compact(ctx, params)
+	case "applyInOrder":
+		return handler.service.applyInOrder(ctx, params)
 	default:
 		return nil, &jsonRPCError{Code: JSONRPCMethodNotFound, Message: fmt.Sprintf("Method not found: %s", method)}
 	}

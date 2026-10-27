@@ -135,6 +135,27 @@ type compactResult struct {
 	SnapshotID int    `json:"snapshotId"`
 }
 
+type applyInOrderCall struct {
+	Method string          `json:"method"`
+	Params json.RawMessage `json:"params"`
+}
+
+type applyInOrderParams struct {
+	SessionID string             `json:"sessionId"`
+	Calls     []applyInOrderCall `json:"calls"`
+}
+
+type applyInOrderCallResult struct {
+	OK     bool          `json:"ok"`
+	Method string        `json:"method"`
+	Result any           `json:"result"`
+	Error  *jsonRPCError `json:"error"`
+}
+
+type applyInOrderResult struct {
+	Calls []applyInOrderCallResult `json:"calls"`
+}
+
 type explorationOperation struct {
 	transition *int
 	advance    bool
@@ -163,6 +184,14 @@ type explorationSession struct {
 	snapshots      map[int][]explorationOperation
 	lastSnapshotID int
 	exports        map[string]struct{}
+}
+
+type lockedExplorationSessionKey struct{}
+
+type lockedExplorationSession struct {
+	service   *ExplorationService
+	sessionID string
+	session   *explorationSession
 }
 
 // ExplorationService owns the independent symbolic exploration sessions used
@@ -227,7 +256,7 @@ func (service *ExplorationService) assumeTransition(ctx context.Context, raw jso
 	if params.SessionID == "" || params.TransitionID < 0 || params.TimeoutSec < 0 {
 		return nil, invalidParams(fmt.Errorf("assumeTransition requires a non-empty sessionId, non-negative transitionId, and non-negative timeoutSec"))
 	}
-	return service.withSession(params.SessionID, func(session *explorationSession) (any, *jsonRPCError) {
+	return service.withSession(ctx, params.SessionID, func(session *explorationSession) (any, *jsonRPCError) {
 		beforeID := session.takeSnapshot()
 		transitions := TransitionsFromModule(session.prepared.Module, NormalizedNextPrefix)
 		if session.executor.Step() == 0 {
@@ -275,12 +304,12 @@ func (service *ExplorationService) assumeTransition(ctx context.Context, raw jso
 	})
 }
 
-func (service *ExplorationService) nextStep(raw json.RawMessage) (any, *jsonRPCError) {
+func (service *ExplorationService) nextStep(ctx context.Context, raw json.RawMessage) (any, *jsonRPCError) {
 	var params nextStepParams
 	if err := decodeJSONRPCParams(raw, &params); err != nil || params.SessionID == "" {
 		return nil, invalidParams(fmt.Errorf("nextStep parameters must contain a non-empty sessionId"))
 	}
-	return service.withSession(params.SessionID, func(session *explorationSession) (any, *jsonRPCError) {
+	return service.withSession(ctx, params.SessionID, func(session *explorationSession) (any, *jsonRPCError) {
 		if err := session.executor.NextState(); err != nil {
 			return nil, &jsonRPCError{Code: JSONRPCInternalError, Message: err.Error()}
 		}
@@ -301,7 +330,7 @@ func (service *ExplorationService) assumeState(ctx context.Context, raw json.Raw
 	if len(params.Equalities) == 0 || decoder.Decode(&equalities) != nil {
 		return nil, invalidParams(fmt.Errorf("assumeState equalities must be a JSON object"))
 	}
-	return service.withSession(params.SessionID, func(session *explorationSession) (any, *jsonRPCError) {
+	return service.withSession(ctx, params.SessionID, func(session *explorationSession) (any, *jsonRPCError) {
 		types := make(map[string]Type)
 		for _, variable := range session.prepared.Module.VarDeclarations() {
 			if variable.IsInternal() {
@@ -358,12 +387,12 @@ func (service *ExplorationService) assumeState(ctx context.Context, raw json.Raw
 	})
 }
 
-func (service *ExplorationService) rollback(raw json.RawMessage) (any, *jsonRPCError) {
+func (service *ExplorationService) rollback(ctx context.Context, raw json.RawMessage) (any, *jsonRPCError) {
 	var params rollbackParams
 	if err := decodeJSONRPCParams(raw, &params); err != nil || params.SessionID == "" || params.SnapshotID < 0 {
 		return nil, invalidParams(fmt.Errorf("rollback requires a non-empty sessionId and non-negative snapshotId"))
 	}
-	return service.withSession(params.SessionID, func(session *explorationSession) (any, *jsonRPCError) {
+	return service.withSession(ctx, params.SessionID, func(session *explorationSession) (any, *jsonRPCError) {
 		if _, found := session.snapshots[params.SnapshotID]; !found {
 			return nil, invalidParams(fmt.Errorf("Snapshot not found: %d in session %s", params.SnapshotID, params.SessionID))
 		}
@@ -380,7 +409,7 @@ func (service *ExplorationService) checkInvariant(ctx context.Context, raw json.
 		(params.Kind != "STATE" && params.Kind != "ACTION") || params.TimeoutSec < 0 {
 		return nil, invalidParams(fmt.Errorf("checkInvariant requires sessionId, a non-negative invariantId, kind STATE or ACTION, and non-negative timeoutSec"))
 	}
-	return service.withSession(params.SessionID, func(session *explorationSession) (any, *jsonRPCError) {
+	return service.withSession(ctx, params.SessionID, func(session *explorationSession) (any, *jsonRPCError) {
 		state, action, err := explorationInvariantViolations(session.prepared)
 		if err != nil {
 			return nil, &jsonRPCError{Code: JSONRPCInternalError, Message: err.Error()}
@@ -447,7 +476,7 @@ func (service *ExplorationService) query(ctx context.Context, raw json.RawMessag
 			return nil, invalidParams(fmt.Errorf("unsupported query kind %q", kind))
 		}
 	}
-	return service.withSession(params.SessionID, func(session *explorationSession) (any, *jsonRPCError) {
+	return service.withSession(ctx, params.SessionID, func(session *explorationSession) (any, *jsonRPCError) {
 		result := queryResult{SessionID: params.SessionID}
 		if wantOperator {
 			if params.Operator == "" {
@@ -519,7 +548,7 @@ func (service *ExplorationService) nextModel(ctx context.Context, raw json.RawMe
 	if err := decodeJSONRPCParams(raw, &params); err != nil || params.SessionID == "" || params.Operator == "" || params.TimeoutSec < 0 {
 		return nil, invalidParams(fmt.Errorf("nextModel requires sessionId, operator, and non-negative timeoutSec"))
 	}
-	return service.withSession(params.SessionID, func(session *explorationSession) (any, *jsonRPCError) {
+	return service.withSession(ctx, params.SessionID, func(session *explorationSession) (any, *jsonRPCError) {
 		if _, exported := session.exports[params.Operator]; !exported {
 			return nil, invalidParams(fmt.Errorf("Operator not found: %s", params.Operator))
 		}
@@ -567,7 +596,7 @@ func (service *ExplorationService) compact(ctx context.Context, raw json.RawMess
 	if err := decodeJSONRPCParams(raw, &params); err != nil || params.SessionID == "" || params.SnapshotID < 0 || params.TimeoutSec < 0 {
 		return nil, invalidParams(fmt.Errorf("compact requires sessionId, non-negative snapshotId, and non-negative timeoutSec"))
 	}
-	return service.withSession(params.SessionID, func(session *explorationSession) (any, *jsonRPCError) {
+	return service.withSession(ctx, params.SessionID, func(session *explorationSession) (any, *jsonRPCError) {
 		if _, found := session.snapshots[params.SnapshotID]; !found {
 			return nil, invalidParams(fmt.Errorf("Snapshot not found: %d in session %s", params.SnapshotID, params.SessionID))
 		}
@@ -620,6 +649,72 @@ func (service *ExplorationService) compact(ctx context.Context, raw json.RawMess
 		session.operations = append(session.operations, explorationOperation{advance: true})
 		return compactResult{params.SessionID, session.takeSnapshot()}, nil
 	})
+}
+
+func (service *ExplorationService) applyInOrder(ctx context.Context, raw json.RawMessage) (any, *jsonRPCError) {
+	var params applyInOrderParams
+	if err := decodeJSONRPCParams(raw, &params); err != nil || params.SessionID == "" || len(params.Calls) == 0 {
+		return nil, invalidParams(fmt.Errorf("applyInOrder requires a non-empty sessionId and calls array"))
+	}
+	allowed := map[string]struct{}{
+		"assumeTransition": {}, "assumeState": {}, "nextStep": {}, "query": {},
+		"checkInvariant": {}, "nextModel": {}, "rollback": {}, "compact": {},
+	}
+	prepared := make([]applyInOrderCall, len(params.Calls))
+	for index, call := range params.Calls {
+		if _, found := allowed[call.Method]; !found {
+			return nil, invalidParams(fmt.Errorf("Unsupported applyInOrder method: %s", call.Method))
+		}
+		var object map[string]json.RawMessage
+		if len(call.Params) == 0 || json.Unmarshal(call.Params, &object) != nil || object == nil {
+			return nil, invalidParams(fmt.Errorf("Parameters for applyInOrder step %q must be a JSON object", call.Method))
+		}
+		sessionJSON, _ := json.Marshal(params.SessionID)
+		object["sessionId"] = sessionJSON
+		encoded, err := json.Marshal(object)
+		if err != nil {
+			return nil, invalidParams(err)
+		}
+		prepared[index] = applyInOrderCall{Method: call.Method, Params: encoded}
+	}
+	return service.withSession(ctx, params.SessionID, func(session *explorationSession) (any, *jsonRPCError) {
+		batchContext := context.WithValue(ctx, lockedExplorationSessionKey{}, &lockedExplorationSession{
+			service: service, sessionID: params.SessionID, session: session,
+		})
+		result := applyInOrderResult{Calls: make([]applyInOrderCallResult, 0, len(prepared))}
+		for _, call := range prepared {
+			value, callErr := service.dispatchApplyInOrder(batchContext, call)
+			one := applyInOrderCallResult{OK: callErr == nil, Method: call.Method, Result: value, Error: callErr}
+			result.Calls = append(result.Calls, one)
+			if callErr != nil {
+				break
+			}
+		}
+		return result, nil
+	})
+}
+
+func (service *ExplorationService) dispatchApplyInOrder(ctx context.Context, call applyInOrderCall) (any, *jsonRPCError) {
+	switch call.Method {
+	case "assumeTransition":
+		return service.assumeTransition(ctx, call.Params)
+	case "assumeState":
+		return service.assumeState(ctx, call.Params)
+	case "nextStep":
+		return service.nextStep(ctx, call.Params)
+	case "query":
+		return service.query(ctx, call.Params)
+	case "checkInvariant":
+		return service.checkInvariant(ctx, call.Params)
+	case "nextModel":
+		return service.nextModel(ctx, call.Params)
+	case "rollback":
+		return service.rollback(ctx, call.Params)
+	case "compact":
+		return service.compact(ctx, call.Params)
+	default:
+		return nil, invalidParams(fmt.Errorf("Unsupported applyInOrder method: %s", call.Method))
+	}
 }
 
 func (service *ExplorationService) disposeSpec(raw json.RawMessage) (any, *jsonRPCError) {
@@ -904,9 +999,16 @@ func replayExplorationOperations(prepared SafetyPipelineResult, operations []exp
 }
 
 func (service *ExplorationService) withSession(
+	ctx context.Context,
 	sessionID string,
 	callback func(*explorationSession) (any, *jsonRPCError),
 ) (any, *jsonRPCError) {
+	if ctx != nil {
+		locked, _ := ctx.Value(lockedExplorationSessionKey{}).(*lockedExplorationSession)
+		if locked != nil && locked.service == service && locked.sessionID == sessionID {
+			return callback(locked.session)
+		}
+	}
 	service.mu.RLock()
 	session, found := service.sessions[sessionID]
 	if !found {
