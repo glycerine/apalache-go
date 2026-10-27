@@ -22,6 +22,12 @@ func TestParseSourceExportsCanonicalApalacheIR(t *testing.T) {
 	if result.Module != "Tiny" {
 		t.Fatalf("ParseSource() module = %q, want Tiny", result.Module)
 	}
+	if result.Native == nil || result.Native.Name() != "Tiny" {
+		t.Fatalf("ParseSource() native module = %#v, want Tiny", result.Native)
+	}
+	if len(result.Native.VarDeclarations()) != 1 || len(result.Native.OperDeclarations()) != 2 {
+		t.Fatalf("unexpected native declarations: %#v", result.Native.Declarations())
+	}
 
 	var root struct {
 		Name    string `json:"name"`
@@ -38,6 +44,24 @@ func TestParseSourceExportsCanonicalApalacheIR(t *testing.T) {
 	}
 	if len(root.Modules) != 1 || root.Modules[0].Name != "Tiny" {
 		t.Fatalf("unexpected IR modules: %#v", root.Modules)
+	}
+}
+
+func TestParseSourcePopulatesNativeSourceLocations(t *testing.T) {
+	result := ParseSource(context.Background(), "Tiny.tla", tinyModule, FrontendOptions{IncludeSource: true})
+	if !result.OK() {
+		t.Fatalf("ParseSource() diagnostics = %v", result.Diagnostics)
+	}
+	if result.Native == nil || result.Sources == nil {
+		t.Fatalf("missing native frontend result: %#v", result)
+	}
+	init := result.Native.OperDeclarations()[0]
+	location, found := result.Sources.Find(init.ID())
+	if !found || location.Filename != "Tiny" || location.Region.Start.Line != 4 {
+		t.Fatalf("Init source location = %#v, %v", location, found)
+	}
+	if _, found := result.Sources.Find(init.Body().ID()); !found {
+		t.Fatal("Init body has no source location")
 	}
 }
 

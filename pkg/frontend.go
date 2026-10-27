@@ -16,14 +16,15 @@ type FrontendOptions struct {
 	IncludeSource bool
 }
 
-// FrontendResult is the checked TLA+ frontend result. IR is canonical
-// ApalacheIR JSON produced from tlago's checked AST. It is intentionally the
-// first interchange boundary; the native Go Apalache IR will replace it as the
-// subsequent port phases land.
+// FrontendResult is the checked TLA+ frontend result. Native is the in-memory
+// Go Apalache IR used by subsequent passes. IR retains the canonical JSON form
+// for interoperability and conformance testing.
 type FrontendResult struct {
 	Module      string          `json:"module,omitempty"`
 	IR          json.RawMessage `json:"ir,omitempty"`
 	Diagnostics []Diagnostic    `json:"diagnostics"`
+	Native      *Module         `json:"-"`
+	Sources     *SourceStore    `json:"-"`
 }
 
 // OK reports whether the frontend completed without errors.
@@ -73,6 +74,19 @@ func ParseSource(ctx context.Context, filename, source string, opts FrontendOpti
 	result.Diagnostics = append(result.Diagnostics, frontendDiagnostics(irDiags)...)
 	if !hasErrors(result.Diagnostics) {
 		result.IR = json.RawMessage(ir)
+		result.Sources = NewSourceStore()
+		native, conversionErr := UnmarshalSingleModuleIRJSON(ir, result.Sources)
+		result.Native = native
+		if conversionErr != nil {
+			result.IR = nil
+			result.Native = nil
+			result.Sources = nil
+			result.Diagnostics = append(result.Diagnostics, Diagnostic{
+				Code:     "E-IR-CONVERSION",
+				Severity: SeverityError,
+				Message:  fmt.Sprintf("cannot convert frontend output to native IR: %v", conversionErr),
+			})
+		}
 	}
 	return result
 }
