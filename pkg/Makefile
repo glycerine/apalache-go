@@ -8,7 +8,9 @@ RELEASE_NAME := apalache-go_$(VERSION)_$(GOOS_VALUE)-$(GOARCH_VALUE)
 STAGING_DIR := $(BUILD_ROOT)/$(RELEASE_NAME)
 ARCHIVE := $(DIST_ROOT)/$(RELEASE_NAME).tar.gz
 
-.PHONY: build dist test test-race test-oracle test-corpus test-release
+.PHONY: build dist test test-race test-fuzz-smoke test-oracle test-corpus test-release
+
+FUZZ_TIME ?= 10s
 
 build:
 	mkdir -p $(BUILD_ROOT)
@@ -25,6 +27,9 @@ test:
 
 test-race:
 	GOFLAGS='-p=8' $(GO) test -race ./...
+
+test-fuzz-smoke:
+	GOFLAGS='-p=8' $(GO) test -run '^$$' -fuzz '^FuzzTypeParserRoundTrip$$' -fuzztime=$(FUZZ_TIME) -parallel=8 .
 
 test-oracle: build
 	APALACHE_GO=$(abspath $(BUILD_ROOT)/apalache) GOFLAGS='-p=8' $(GO) test -tags=oracle -run TestScalaDifferentialSafetyManifest .
