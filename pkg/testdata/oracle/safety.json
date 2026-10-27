@@ -15,6 +15,7 @@
     {
       "name": "function-counterexample",
       "dir": "..",
+      "compare_trace": true,
       "scala_args": ["check", "--length=2", "--no-deadlock", "--inv=Inv", "test/tla/Test1305.tla"],
       "go_args": ["check", "-length", "2", "-deadlock=false", "-inv", "Inv", "test/tla/Test1305.tla"]
     },
@@ -23,6 +24,13 @@
       "dir": "..",
       "scala_args": ["check", "--config=test/tla/HandshakeWithTypes_deadlock.cfg", "--length=5", "test/tla/HandshakeWithTypes.tla"],
       "go_args": ["check", "-config", "test/tla/HandshakeWithTypes_deadlock.cfg", "-length", "5", "test/tla/HandshakeWithTypes.tla"]
+    },
+    {
+      "name": "deterministic-deadlock-trace",
+      "dir": "..",
+      "compare_trace": true,
+      "scala_args": ["check", "--length=3", "--inv=Inv", "pkg/testdata/oracle/DeterministicDeadlock.tla"],
+      "go_args": ["check", "--length=3", "--inv=Inv", "pkg/testdata/oracle/DeterministicDeadlock.tla"]
     },
     {
       "name": "action-invariant-safe",
