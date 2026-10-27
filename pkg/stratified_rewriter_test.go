@@ -477,6 +477,50 @@ func TestStratifiedTupleConstructorPreservesFieldOrder(t *testing.T) {
 	}
 }
 
+func TestStratifiedTupleAndRecordApplication(t *testing.T) {
+	tupleType, err := NewTupleType(BoolT1, IntT1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tuple := MustOperExpr(Op("TUPLE"), Typed(tupleType),
+		NewValueExpr(BoolValue(true), Typed(BoolT1)),
+		NewValueExpr(Int64Value(7), Typed(IntT1)),
+	)
+	second := MustOperExpr(Op("FUN_APP"), Typed(IntT1), tuple, NewValueExpr(Int64Value(2), Typed(IntT1)))
+	rewriter := NewStratifiedRewriter()
+	_, field, err := rewriter.Rewrite(second, InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, found := rewriter.IntegerCache().FindValue(field)
+	if !found || value.Int64() != 7 {
+		t.Fatalf("tuple projection = %v, %v", value, found)
+	}
+	outOfBounds := MustOperExpr(Op("FUN_APP"), Typed(IntT1), tuple, NewValueExpr(Int64Value(3), Typed(IntT1)))
+	if _, _, err := NewStratifiedRewriter().Rewrite(outOfBounds, InitialRewriterScope()); err == nil {
+		t.Fatal("out-of-bounds tuple application was accepted")
+	}
+
+	recordType, err := NewRecordType(map[string]Type{"a": IntT1, "z": BoolT1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := MustOperExpr(Op("RECORD"), Typed(recordType),
+		NewValueExpr(StringValue("z"), Typed(StrT1)), NewValueExpr(BoolValue(false), Typed(BoolT1)),
+		NewValueExpr(StringValue("a"), Typed(StrT1)), NewValueExpr(Int64Value(9), Typed(IntT1)),
+	)
+	access := MustOperExpr(Op("FUN_APP"), Typed(BoolT1), record, NewValueExpr(StringValue("z"), Typed(StrT1)))
+	rewriter = NewStratifiedRewriter()
+	_, field, err = rewriter.Rewrite(access, InitialRewriterScope())
+	if err != nil || field.ID != 0 {
+		t.Fatalf("record projection = %v, %v", field, err)
+	}
+	missing := MustOperExpr(Op("FUN_APP"), Typed(BoolT1), record, NewValueExpr(StringValue("missing"), Typed(StrT1)))
+	if _, _, err := NewStratifiedRewriter().Rewrite(missing, InitialRewriterScope()); err == nil {
+		t.Fatal("missing record field application was accepted")
+	}
+}
+
 func TestStratifiedRecordConstructionAndEqualityThroughG3(t *testing.T) {
 	setType := mustSet(IntT1)
 	recordType, err := NewRecordType(map[string]Type{"a": IntT1, "b": setType})

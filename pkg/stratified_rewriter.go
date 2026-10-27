@@ -72,9 +72,70 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 			return rewriter.rewriteTuple(typed, scope)
 		case "RECORD":
 			return rewriter.rewriteRecord(typed, scope)
+		case "FUN_APP":
+			return rewriter.rewriteApplication(typed, scope)
 		}
 	}
 	return scope, ArenaCell{}, fmt.Errorf("no stratified rule is applicable to %T", expression)
+}
+
+func (rewriter *StratifiedRewriter) rewriteApplication(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
+	arguments := expression.Arguments()
+	if len(arguments) != 2 {
+		return scope, ArenaCell{}, fmt.Errorf("function application requires two arguments")
+	}
+	expectedType, typed := expression.Tag().Type()
+	if !typed {
+		return scope, ArenaCell{}, fmt.Errorf("function application must be typed")
+	}
+	project := func(cell ArenaCell) (RewriterScope, ArenaCell, error) {
+		if !EqualTypes(cell.Type.TLAType(), expectedType) {
+			return scope, ArenaCell{}, fmt.Errorf("application result has type %s, expected %s", cell.Type, expectedType)
+		}
+		return scope, cell, nil
+	}
+	scope, collection, err := rewriter.Rewrite(arguments[0], scope)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	fields := scope.Arena.GetHas(collection)
+	if isTupleCellType(collection.Type) {
+		indexExpression, ok := arguments[1].(*ValueExpr)
+		if !ok {
+			return scope, ArenaCell{}, fmt.Errorf("tuple application requires a constant integer index")
+		}
+		indexValue, ok := indexExpression.Value().(IntValue)
+		if !ok || !indexValue.BigInt().IsInt64() {
+			return scope, ArenaCell{}, fmt.Errorf("tuple application requires a machine-sized integer index")
+		}
+		index := indexValue.BigInt().Int64()
+		if index < 1 || index > int64(len(fields)) {
+			return scope, ArenaCell{}, fmt.Errorf("tuple index %d is outside 1..%d", index, len(fields))
+		}
+		return project(fields[index-1].Element())
+	}
+	if isRecordCellType(collection.Type) {
+		keyExpression, ok := arguments[1].(*ValueExpr)
+		if !ok {
+			return scope, ArenaCell{}, fmt.Errorf("record application requires a constant string key")
+		}
+		keyValue, ok := keyExpression.Value().(StringValue)
+		if !ok {
+			return scope, ArenaCell{}, fmt.Errorf("record application requires a constant string key")
+		}
+		fieldTypes, ok := recordTypeFields(collection.Type)
+		if !ok {
+			return scope, ArenaCell{}, fmt.Errorf("record application requires a closed record type")
+		}
+		keys := sortedStringKeys(fieldTypes)
+		key := string(keyValue)
+		index := sort.SearchStrings(keys, key)
+		if index == len(keys) || keys[index] != key || index >= len(fields) {
+			return scope, ArenaCell{}, fmt.Errorf("record key %q is absent", key)
+		}
+		return project(fields[index].Element())
+	}
+	return scope, ArenaCell{}, fmt.Errorf("application is not yet implemented for %s", collection.Type)
 }
 
 func (rewriter *StratifiedRewriter) rewriteRecord(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
