@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"debug/elf"
 	"io"
 	"os"
 	"os/exec"
@@ -60,6 +61,20 @@ func TestReleaseArchiveRunsWithoutSourceOrExternalRuntime(t *testing.T) {
 	}
 
 	binary := filepath.Join(extractRoot, releaseName, "apalache")
+	if runtime.GOOS == "linux" {
+		executable, openErr := elf.Open(binary)
+		if openErr != nil {
+			t.Fatal(openErr)
+		}
+		libraries, libraryErr := executable.ImportedLibraries()
+		closeErr := executable.Close()
+		if libraryErr != nil || closeErr != nil {
+			t.Fatalf("inspect release native dependencies: %v; close: %v", libraryErr, closeErr)
+		}
+		if len(libraries) != 0 {
+			t.Fatalf("release binary has native library dependencies: %v", libraries)
+		}
+	}
 	versionCommand := exec.CommandContext(ctx, binary, "version")
 	versionCommand.Env = []string{"HOME=" + tempDir, "PATH=" + filepath.Join(tempDir, "no-executables")}
 	if output, err := versionCommand.CombinedOutput(); err != nil || string(output) != version+"\n" {

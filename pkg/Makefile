@@ -1,4 +1,5 @@
 GO ?= go
+CGO_ENABLED ?= 0
 VERSION ?= dev
 BUILD_ROOT ?= build
 DIST_ROOT ?= dist
@@ -16,7 +17,7 @@ FUZZ_TIME ?= 10s
 
 build:
 	mkdir -p $(BUILD_ROOT)
-	GOFLAGS='-p=8' $(CPU_RUN) $(GO) build -trimpath -ldflags '-s -w -X main.version=$(VERSION)' -o $(BUILD_ROOT)/apalache ./cmd/apalache
+	CGO_ENABLED=$(CGO_ENABLED) GOFLAGS='-p=8' $(CPU_RUN) $(GO) build -trimpath -ldflags '-s -w -X main.version=$(VERSION)' -o $(BUILD_ROOT)/apalache ./cmd/apalache
 
 dist: build
 	mkdir -p $(STAGING_DIR) $(DIST_ROOT)
