@@ -172,8 +172,7 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	if *initName != "" {
 		configuration.Behavior = pal.InitNextSpec{Init: *initName, Next: *nextName}
 	} else if configuration.TLCConfig == nil {
-		fmt.Fprintln(stderr, "simulate requires either -config or both -init and -next")
-		return exitUsage
+		configuration.Behavior = pal.InitNextSpec{Init: "Init", Next: "Next"}
 	}
 
 	frontend := pal.ParseAndTypeCheckFile(ctx, flags.Arg(0), pal.FrontendOptions{
@@ -280,8 +279,7 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	if *initName != "" {
 		configuration.Behavior = pal.InitNextSpec{Init: *initName, Next: *nextName}
 	} else if configuration.TLCConfig == nil {
-		fmt.Fprintln(stderr, "check requires either -config or both -init and -next")
-		return exitUsage
+		configuration.Behavior = pal.InitNextSpec{Init: "Init", Next: "Next"}
 	}
 	checkDeadlocks := true
 	if configuration.TLCConfig != nil && configuration.TLCConfig.CheckDeadlock != nil {

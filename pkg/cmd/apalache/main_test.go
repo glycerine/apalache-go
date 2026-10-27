@@ -118,7 +118,7 @@ Inv == x < 2
 		t.Fatal(err)
 	}
 	var stdout, stderr bytes.Buffer
-	direct := []string{"check", "-init=Init", "-next=Next", "-inv=Inv", "-length=1", path}
+	direct := []string{"check", "-inv=Inv", "-length=1", path}
 	if code := run(context.Background(), direct, &stdout, &stderr); code != exitOK {
 		t.Fatalf("safe check = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
 	}
@@ -278,7 +278,7 @@ Next == x' = x + 1
 	}
 	var stdout, stderr bytes.Buffer
 	code := run(context.Background(), []string{
-		"simulate", "-init=Init", "-next=Next", "-length=2", "-itf=" + itfPath, path,
+		"simulate", "-length=2", "-itf=" + itfPath, path,
 	}, &stdout, &stderr)
 	if code != exitOK || !strings.Contains(stdout.String(), "Simulation completed through depth 2") ||
 		!strings.Contains(stdout.String(), "State 2: x = 2") {
