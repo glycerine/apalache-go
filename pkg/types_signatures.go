@@ -133,6 +133,12 @@ func InferOperatorType(operator Operator, arguments []Type) (Type, error) {
 				}
 			}
 		}
+	case "SequencesExt!ToSet":
+		if len(arguments) == 1 {
+			if sequence, ok := arguments[0].(SeqType); ok {
+				return newSetTypeUnchecked(sequence.element), nil
+			}
+		}
 	case "SET_IN", "SET_NOT_IN", "SET_SUBSET_EQ":
 		if len(arguments) == 2 {
 			if operator.Name() == "SET_SUBSET_EQ" {

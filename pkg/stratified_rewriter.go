@@ -109,6 +109,8 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 			return rewriter.rewriteSequenceConcat(typed, scope)
 		case "Sequences!SubSeq":
 			return rewriter.rewriteSubSequence(typed, scope)
+		case "SequencesExt!ToSet":
+			return rewriter.rewriteSequenceToSet(typed, scope)
 		case "Apalache!MkSeq":
 			return rewriter.rewriteMakeSequence(typed, scope)
 		case "Apalache!ApaFoldSeqLeft":

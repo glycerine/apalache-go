@@ -47,3 +47,49 @@ func unpackSequence(arena *PureArena, sequence ArenaCell) (length, proto ArenaCe
 	}
 	return length, proto, arena.GetHas(proto), nil
 }
+
+func (rewriter *StratifiedRewriter) rewriteSequenceToSet(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
+	arguments := expression.Arguments()
+	if len(arguments) != 1 {
+		return scope, ArenaCell{}, fmt.Errorf("ToSet requires one sequence")
+	}
+	resultType, err := CellTypeFromTag(expression.Tag())
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	setType, ok := resultType.TLAType().(SetType)
+	if !ok {
+		return scope, ArenaCell{}, fmt.Errorf("ToSet has non-set type %s", resultType)
+	}
+	scope, sequence, err := rewriter.Rewrite(arguments[0], scope)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	scope, sequence, err = rewriter.coerceCell(scope, sequence, mustSeq(setType.Element()))
+	if err != nil {
+		return scope, ArenaCell{}, fmt.Errorf("ToSet operand cannot be widened to Seq(%s): %w", setType.Element(), err)
+	}
+	length, _, elements, err := unpackSequence(scope.Arena, sequence)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	pointers := make([]ElementPointer, len(elements))
+	for index, pointer := range elements {
+		inLength := MustOperExpr(Op("LE"), Typed(BoolT1),
+			NewValueExpr(Int64Value(int64(index+1)), Typed(IntT1)), length.NameExpr())
+		pointers[index] = SMTElementPointer{
+			Cell:       pointer.Element(),
+			Expression: booleanAnd(pointer.ToSMT(), inLength),
+		}
+	}
+	if len(pointers) > 0 {
+		pointers, err = MergeElementPointersByCell(pointers)
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+	}
+	newArena, result := scope.Arena.AppendCellType(resultType)
+	scope.Arena = newArena.AppendHas(result, pointers...)
+	rewriter.addMembershipConstraints(scope.Arena, result)
+	return scope, result, nil
+}

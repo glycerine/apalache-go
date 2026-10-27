@@ -214,6 +214,7 @@ func init() {
 		{"Sequences!Head", fixed(1), 160, 160}, {"Sequences!Tail", fixed(1), 160, 160},
 		{"Sequences!Append", fixed(2), 160, 160}, {"Sequences!Concat", fixed(2), 130, 130},
 		{"Sequences!Len", fixed(1), 160, 160}, {"Sequences!SubSeq", fixed(3), 160, 160},
+		{"SequencesExt!ToSet", fixed(1), 160, 160},
 	} {
 		defineOperator(spec.name, lib, CategorySequence, spec.arity, spec.low, spec.high)
 	}

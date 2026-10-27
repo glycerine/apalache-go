@@ -159,6 +159,21 @@ Test == SelectSeq(<<2, 3, 4>>, IsOdd) = <<3>>
 	}
 }
 
+func TestParseAndTypeCheckSourceNormalizesSequenceToSet(t *testing.T) {
+	result := ParseAndTypeCheckSource(context.Background(), "SequenceToSet.tla", `---- MODULE SequenceToSet ----
+EXTENDS SequencesExt
+Test == ToSet(<<1>>) = {1}
+====
+`, FrontendOptions{}, TypeCheckOptions{})
+	if !result.OK() {
+		t.Fatalf("ParseAndTypeCheckSource() diagnostics = %v", result.Diagnostics)
+	}
+	body, found := OperatorBody(result.Native, "Test")
+	if !found || countOperator(body, "SequencesExt!ToSet") != 1 {
+		t.Fatalf("normalized ToSet body = %#v", body)
+	}
+}
+
 func TestParseAndTypeCheckSourceReconstructsTupleQuantifier(t *testing.T) {
 	result := ParseAndTypeCheckSource(context.Background(), "TupleBound.tla", `---- MODULE TupleBound ----
 EXTENDS Integers

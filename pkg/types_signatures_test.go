@@ -36,6 +36,7 @@ func TestRepresentativeOperatorSignatures(t *testing.T) {
 		{"FUN_SET", []Type{setInt, setBool}, mustSetType(t, intToBool)},
 		{"FUN_CTOR", []Type{BoolT1, IntT1, setInt}, intToBool},
 		{"Sequences!Append", []Type{seqInt, IntT1}, seqInt},
+		{"SequencesExt!ToSet", []Type{seqInt}, setInt},
 		{"FiniteSets!Cardinality", []Type{setInt}, IntT1},
 		{"PRIME", []Type{IntT1}, IntT1},
 		{"GLOBALLY", []Type{BoolT1}, BoolT1},

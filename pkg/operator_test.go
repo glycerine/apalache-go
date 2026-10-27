@@ -36,8 +36,8 @@ func TestArityCombinatorsMatchScala(t *testing.T) {
 
 func TestOperatorRegistry(t *testing.T) {
 	operators := AllOperators()
-	if len(operators) != 104 {
-		t.Fatalf("registered %d operators, want 104", len(operators))
+	if len(operators) != 105 {
+		t.Fatalf("registered %d operators, want 105", len(operators))
 	}
 	seen := make(map[string]bool)
 	for index, operator := range operators {
@@ -69,6 +69,7 @@ func TestRepresentativeOperatorMetadata(t *testing.T) {
 		{"EXCEPT", CategoryFunction, InterpretationPredefined, 3, 2, Precedence{160, 160}},
 		{"GLOBALLY", CategoryTemporal, InterpretationPredefined, 1, 2, Precedence{40, 150}},
 		{"Apalache!Guess", CategoryApalache, InterpretationPredefined, 1, 2, Precedence{160, 160}},
+		{"SequencesExt!ToSet", CategorySequence, InterpretationStandardLibrary, 1, 2, Precedence{160, 160}},
 		{"Apalache!StoreInSet", CategoryApalacheInternal, InterpretationStandardLibrary, 3, 4, Precedence{160, 160}},
 	}
 	for _, test := range tests {

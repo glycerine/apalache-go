@@ -356,6 +356,12 @@ func normalizeTlagoApalacheBuiltinCalls(module *Module, sources *SourceStore) *M
 				return expanded, true
 			}
 		}
+		if _, shadowed := declared[callee.Name()]; !shadowed &&
+			(callee.Name() == "ToSet" || strings.HasSuffix(callee.Name(), "!ToSet")) {
+			if len(arguments) == 2 {
+				return MustOperExpr(Op("SequencesExt!ToSet"), operation.Tag(), arguments[1]), true
+			}
+		}
 		builtin, found := tlagoApalacheBuiltinCalls[callee.Name()]
 		if !found {
 			if changed {

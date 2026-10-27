@@ -262,6 +262,9 @@ func (translator *ToEtcExpr) translateOperator(expression *OperExpr) (EtcExpr, e
 	case "Sequences!Seq":
 		a := fresh()
 		return appAll(mustOperator([]Type{mustSet(a)}, mustSet(mustSeq(a))))
+	case "SequencesExt!ToSet":
+		a := fresh()
+		return appAll(mustOperator([]Type{mustSeq(a)}, mustSet(a)))
 	case "SET_IN", "SET_NOT_IN":
 		a := fresh()
 		return appAll(mustOperator([]Type{a, mustSet(a)}, BoolT1))
