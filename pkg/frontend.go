@@ -73,6 +73,7 @@ func ParseSource(ctx context.Context, filename, source string, opts FrontendOpti
 		return canceledResult(err)
 	}
 
+	normalizeTlagoApalacheAssignments(spec)
 	ir, irDiags := tlago.ApalacheIRJSON(spec, tlago.ApalacheIROptions{IncludeSource: opts.IncludeSource})
 	result.Diagnostics = append(result.Diagnostics, frontendDiagnostics(irDiags)...)
 	if !hasErrors(result.Diagnostics) {

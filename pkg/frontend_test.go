@@ -65,6 +65,26 @@ func TestParseSourcePopulatesNativeSourceLocations(t *testing.T) {
 	}
 }
 
+func TestParseSourceAcceptsApalacheAssignmentSyntax(t *testing.T) {
+	result := ParseSource(context.Background(), "Assignments.tla", `---- MODULE Assignments ----
+EXTENDS Apalache
+VARIABLE x
+Init == x := 0
+Next == x' := 1
+====
+`, FrontendOptions{})
+	if !result.OK() {
+		t.Fatalf("ParseSource() diagnostics = %v", result.Diagnostics)
+	}
+	for _, name := range []string{"Init", "Next"} {
+		body, found := OperatorBody(result.Native, name)
+		operation, ok := body.(*OperExpr)
+		if !found || !ok || operation.Operator().Name() != "EQ" {
+			t.Fatalf("%s assignment body = %#v", name, body)
+		}
+	}
+}
+
 func TestParseSourceReportsSemanticErrors(t *testing.T) {
 	result := ParseSource(context.Background(), "Bad.tla", `---- MODULE Bad ----
 Op == missing
