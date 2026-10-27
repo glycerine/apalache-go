@@ -98,8 +98,9 @@ func CheckBoundedSafetyWithOptions(
 		if len(parameters) != 0 {
 			return BoundedSafetyResult{}, fmt.Errorf("invariant %s has %d parameters; expected zero or one trace parameter", name, len(parameters))
 		}
-		named := namedExpression{name: name, expression: operator.Body()}
-		switch levelFinder.LevelOfExpression(operator.Body()) {
+		body := invariantAssignmentsToEquality(operator.Body())
+		named := namedExpression{name: name, expression: body}
+		switch levelFinder.LevelOfExpression(body) {
 		case ConstantLevel, StateLevel:
 			stateInvariants = append(stateInvariants, named)
 		case ActionLevel:
@@ -142,6 +143,16 @@ func CheckBoundedSafetyWithOptions(
 		}
 	}
 	return result, nil
+}
+
+func invariantAssignmentsToEquality(expression Expr) Expr {
+	return RewriteExpressions(nil, func(current Expr) (Expr, bool) {
+		assignment, ok := current.(*OperExpr)
+		if !ok || assignment.Operator().Name() != "Apalache!:=" {
+			return nil, false
+		}
+		return MustOperExpr(Op("EQ"), assignment.Tag(), assignment.Arguments()...), true
+	})(expression)
 }
 
 type namedExpression struct {

@@ -231,6 +231,31 @@ func TestCheckBoundedSafetyChecksActionInvariantsOnPendingState(t *testing.T) {
 	}
 }
 
+func TestCheckBoundedSafetyTreatsInvariantAssignmentsAsEquality(t *testing.T) {
+	x := NewNameExpr("x", Typed(IntT1))
+	prime := MustOperExpr(Op("PRIME"), Typed(IntT1), NewNameExpr("x", Typed(IntT1)))
+	constantInit := boolDefinition("CInit", NewValueExpr(BoolValue(true), Typed(BoolT1)))
+	init := boolDefinition("Init", MustOperExpr(Op("EQ"), Typed(BoolT1), x, intLiteral(0)))
+	next := boolDefinition("Next", MustOperExpr(Op("EQ"), Typed(BoolT1), prime,
+		MustOperExpr(Op("PLUS"), Typed(IntT1), x, intLiteral(1))))
+	assignmentInvariant := boolDefinition("AssignmentInv",
+		MustOperExpr(Op("Apalache!:="), Typed(BoolT1), prime, x))
+	module := configuredTestModule(NewVarDecl("x", Typed(IntT1)), constantInit, init, next, assignmentInvariant)
+	prepared, err := PrepareSafetyTransitions(module, SafetyPipelineOptions{Specification: SpecificationConfiguration{
+		Behavior: InitNextSpec{Init: "Init", Next: "Next"}, ConstantInit: "CInit", Invariants: []string{"AssignmentInv"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Outcome != SafetyCounterexample || !result.ActionInvariant || result.Depth != 1 {
+		t.Fatalf("assignment invariant result = %#v", result)
+	}
+}
+
 func TestCheckBoundedSafetyChecksTraceInvariantsOverStateHistory(t *testing.T) {
 	x := NewNameExpr("x", Typed(IntT1))
 	prime := MustOperExpr(Op("PRIME"), Typed(IntT1), NewNameExpr("x", Typed(IntT1)))
