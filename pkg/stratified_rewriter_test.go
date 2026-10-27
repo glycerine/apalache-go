@@ -605,6 +605,12 @@ func TestStratifiedSequenceAppendAndTailThroughG3(t *testing.T) {
 		{name: "tail", operation: MustOperExpr(Op("Sequences!Tail"), tag, sequence(1, 2)), want: sequence(2)},
 		{name: "empty tail", operation: MustOperExpr(Op("Sequences!Tail"), tag, sequence()), want: sequence()},
 		{name: "concat", operation: MustOperExpr(Op("Sequences!Concat"), tag, sequence(1, 2), sequence(3)), want: sequence(1, 2, 3)},
+		{name: "subsequence", operation: MustOperExpr(Op("Sequences!SubSeq"), tag, sequence(1, 2, 3),
+			NewValueExpr(Int64Value(2), Typed(IntT1)), NewValueExpr(Int64Value(3), Typed(IntT1))), want: sequence(2, 3)},
+		{name: "clipped subsequence", operation: MustOperExpr(Op("Sequences!SubSeq"), tag, sequence(1, 2, 3),
+			NewValueExpr(Int64Value(0), Typed(IntT1)), NewValueExpr(Int64Value(99), Typed(IntT1))), want: sequence(1, 2, 3)},
+		{name: "reversed subsequence", operation: MustOperExpr(Op("Sequences!SubSeq"), tag, sequence(1, 2, 3),
+			NewValueExpr(Int64Value(3), Typed(IntT1)), NewValueExpr(Int64Value(2), Typed(IntT1))), want: sequence()},
 	}
 	falsePredicate := MustOperExpr(Op("GT"), Typed(BoolT1),
 		NewValueExpr(Int64Value(1), Typed(IntT1)), NewValueExpr(Int64Value(2), Typed(IntT1)))

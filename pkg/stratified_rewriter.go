@@ -88,6 +88,8 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 			return rewriter.rewriteSequenceAppend(typed, scope)
 		case "Sequences!Concat":
 			return rewriter.rewriteSequenceConcat(typed, scope)
+		case "Sequences!SubSeq":
+			return rewriter.rewriteSubSequence(typed, scope)
 		case "SET_FILTER":
 			return rewriter.rewriteSetFilter(typed, scope)
 		case "SET_IN", "Apalache!SelectInSet":
@@ -101,6 +103,78 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 		}
 	}
 	return scope, ArenaCell{}, fmt.Errorf("no stratified rule is applicable to %T", expression)
+}
+
+func (rewriter *StratifiedRewriter) selectSequenceElement(scope RewriterScope, elements []ElementPointer, index Expr, defaultElement ArenaCell) (RewriterScope, ArenaCell, error) {
+	choice := defaultElement
+	for indexBase0, pointer := range elements {
+		condition := MustOperExpr(Op("EQ"), Typed(BoolT1), index,
+			NewValueExpr(Int64Value(int64(indexBase0+1)), Typed(IntT1)))
+		var predicate ArenaCell
+		scope, predicate = rewriter.bindBoolean(scope, condition)
+		var err error
+		scope, choice, err = rewriter.chooseConditional(scope, predicate, pointer.Element(), choice)
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+	}
+	return scope, choice, nil
+}
+
+func (rewriter *StratifiedRewriter) rewriteSubSequence(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
+	arguments := expression.Arguments()
+	if len(arguments) != 3 {
+		return scope, ArenaCell{}, fmt.Errorf("subsequence requires a sequence, start, and end")
+	}
+	scope, sequence, err := rewriter.Rewrite(arguments[0], scope)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	length, _, oldElements, err := unpackSequence(scope.Arena, sequence)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	scope, start, err := rewriter.Rewrite(arguments[1], scope)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	scope, end, err := rewriter.Rewrite(arguments[2], scope)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	if !EqualTypes(start.Type.TLAType(), IntT1) || !EqualTypes(end.Type.TLAType(), IntT1) {
+		return scope, ArenaCell{}, fmt.Errorf("subsequence bounds must be integers")
+	}
+	zero := NewValueExpr(Int64Value(0), Typed(IntT1))
+	one := NewValueExpr(Int64Value(1), Typed(IntT1))
+	adjustedStartExpression := MustOperExpr(Op("IF_THEN_ELSE"), Typed(IntT1),
+		MustOperExpr(Op("GT"), Typed(BoolT1), start.NameExpr(), zero), start.NameExpr(), one)
+	scope, adjustedStart := rewriter.bindInteger(scope, adjustedStartExpression)
+	adjustedEndExpression := MustOperExpr(Op("IF_THEN_ELSE"), Typed(IntT1),
+		MustOperExpr(Op("LE"), Typed(BoolT1), end.NameExpr(), length.NameExpr()), end.NameExpr(), length.NameExpr())
+	scope, adjustedEnd := rewriter.bindInteger(scope, adjustedEndExpression)
+	difference := MustOperExpr(Op("MINUS"), Typed(IntT1), adjustedEnd.NameExpr(), adjustedStart.NameExpr())
+	newLengthExpression := MustOperExpr(Op("IF_THEN_ELSE"), Typed(IntT1),
+		MustOperExpr(Op("GE"), Typed(BoolT1), adjustedEnd.NameExpr(), adjustedStart.NameExpr()),
+		MustOperExpr(Op("PLUS"), Typed(IntT1), one, difference), zero)
+	scope, newLength := rewriter.bindInteger(scope, newLengthExpression)
+	sequenceType := sequence.Type.TLAType().(SeqType)
+	scope, defaultElement, err := rewriter.defaults.GetOrCreate(scope, sequenceType.Element())
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	elements := make([]ArenaCell, len(oldElements))
+	for index := range elements {
+		sourceIndex := MustOperExpr(Op("PLUS"), Typed(IntT1), adjustedStart.NameExpr(),
+			NewValueExpr(Int64Value(int64(index)), Typed(IntT1)))
+		scope, elements[index], err = rewriter.selectSequenceElement(scope, oldElements, sourceIndex, defaultElement)
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+	}
+	newArena, result := makeSequenceWithLength(scope.Arena, sequenceType, elements, newLength)
+	scope.Arena = newArena
+	return scope, result, nil
 }
 
 func (rewriter *StratifiedRewriter) rewriteSequenceConcat(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
