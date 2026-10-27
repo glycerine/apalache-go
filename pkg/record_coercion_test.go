@@ -103,6 +103,43 @@ func TestStratifiedCoercesClosedRowRecordToLegacyRecord(t *testing.T) {
 	}
 }
 
+func TestStratifiedWidensClosedRowRecordFields(t *testing.T) {
+	narrowNested, _ := NewRecordType(map[string]Type{"a": IntT1})
+	wideNested, _ := NewRecordType(map[string]Type{"a": IntT1, "b": BoolT1})
+	actualRow, err := NewRowType(map[string]Type{"nested": narrowNested}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectedRow, err := NewRowType(map[string]Type{"nested": wideNested}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actualType := NewRecordRowType(actualRow)
+	expectedType := NewRecordRowType(expectedRow)
+	nested := MustOperExpr(Op("RECORD"), Typed(narrowNested),
+		NewValueExpr(StringValue("a"), Typed(StrT1)), intLiteral(1))
+	record := MustOperExpr(Op("RECORD"), Typed(actualType),
+		NewValueExpr(StringValue("nested"), Typed(StrT1)), nested)
+
+	rewriter := NewStratifiedRewriter()
+	scope, actual, err := rewriter.Rewrite(record, InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope, widened, err := rewriter.coerceCell(scope, actual, expectedType)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !EqualTypes(widened.Type.TLAType(), expectedType) {
+		t.Fatalf("widened row record has type %s, want %s", widened.Type.TLAType(), expectedType)
+	}
+	fields := scope.Arena.GetHas(widened)
+	if len(fields) != 1 || !EqualTypes(fields[0].Element().Type.TLAType(), wideNested) ||
+		!scope.Arena.HasDomain(fields[0].Element()) {
+		t.Fatalf("widened nested field = %#v", fields)
+	}
+}
+
 func TestStratifiedEqualityWidensSparseLegacyRecords(t *testing.T) {
 	narrowType, _ := NewRecordType(map[string]Type{"a": IntT1})
 	wideType, _ := NewRecordType(map[string]Type{"a": IntT1, "b": BoolT1})
