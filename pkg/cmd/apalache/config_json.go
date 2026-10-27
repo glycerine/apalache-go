@@ -175,6 +175,65 @@ func (source *jsonInputSource) materializeSpecification() (string, func(), error
 	return materializeSourceFiles(*source.Content, aux, format)
 }
 
+func (source *jsonInputSource) materializeTrace() (string, func(), error) {
+	noCleanup := func() {}
+	if err := source.validate(); err != nil {
+		return "", noCleanup, err
+	}
+	kind := "file"
+	if source.Kind != nil {
+		kind = strings.ToLower(*source.Kind)
+	} else if source.Content != nil {
+		kind = "string"
+	}
+	format := ""
+	if source.Format != nil {
+		format = strings.ToLower(*source.Format)
+	}
+	if kind == "file" {
+		path, _, err := expandHomePath(*source.Path)
+		if err != nil {
+			return "", noCleanup, err
+		}
+		if format == "" {
+			format = inferSourceFormat(path)
+		}
+		if format != "itf" {
+			return "", noCleanup, fmt.Errorf("Go trace evaluation currently requires an itf trace source")
+		}
+		if inferSourceFormat(path) == format {
+			return path, noCleanup, nil
+		}
+		contents, err := os.ReadFile(path)
+		if err != nil {
+			return "", noCleanup, err
+		}
+		return materializeTraceFile(contents)
+	}
+	if source.Aux != nil && len(*source.Aux) != 0 {
+		return "", noCleanup, fmt.Errorf("trace source cannot contain auxiliary modules")
+	}
+	if format != "itf" {
+		return "", noCleanup, fmt.Errorf("Go trace evaluation currently requires an itf trace source")
+	}
+	return materializeTraceFile([]byte(*source.Content))
+}
+
+func materializeTraceFile(content []byte) (string, func(), error) {
+	directory, err := os.MkdirTemp("", "apalache-trace-")
+	if err != nil {
+		return "", func() {}, err
+	}
+	cleanup := func() { _ = os.RemoveAll(directory) }
+	name := "trace.itf.json"
+	path := filepath.Join(directory, name)
+	if err = os.WriteFile(path, content, 0o600); err != nil {
+		cleanup()
+		return "", func() {}, err
+	}
+	return path, cleanup, nil
+}
+
 func copyAdjacentTLAModules(sourceDirectory, targetDirectory string) error {
 	entries, err := os.ReadDir(sourceDirectory)
 	if err != nil {
@@ -278,8 +337,8 @@ type jsonCommandConfig struct {
 }
 
 type jsonTraceConfig struct {
-	Trace       json.RawMessage `json:"trace"`
-	Expressions *[]string       `json:"expressions"`
+	Trace       *jsonInputSource `json:"trace"`
+	Expressions *[]string        `json:"expressions"`
 }
 
 type jsonServerConfig struct {
@@ -373,16 +432,13 @@ func (config jsonCommandConfig) validateForTracee() error {
 	return nil
 }
 
-func (config jsonCommandConfig) configuredTracePath() (string, bool, error) {
+func (config jsonCommandConfig) configuredTracePath() (string, func(), bool, error) {
+	noCleanup := func() {}
 	if config.TraceEvaluation.Trace == nil {
-		return "", false, nil
+		return "", noCleanup, false, nil
 	}
-	var path string
-	if err := json.Unmarshal(config.TraceEvaluation.Trace, &path); err != nil || path == "" {
-		return "", true, fmt.Errorf("Go tracee currently requires tracee.trace to be a nonempty file path string")
-	}
-	expanded, _, err := expandHomePath(path)
-	return expanded, true, err
+	path, cleanup, err := config.TraceEvaluation.Trace.materializeTrace()
+	return path, cleanup, true, err
 }
 
 func applyJSONFrontendDefaults(

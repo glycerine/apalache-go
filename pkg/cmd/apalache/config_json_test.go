@@ -313,3 +313,48 @@ Increment == x + 1
 		t.Fatalf("tracee expression override = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
 	}
 }
+
+func TestRunTraceeLoadsInMemoryJSONTraceSource(t *testing.T) {
+	directory := t.TempDir()
+	t.Setenv("HOME", filepath.Join(directory, "home"))
+	t.Chdir(directory)
+	if err := os.WriteFile("TraceMemory.tla", []byte(`---- MODULE TraceMemory ----
+EXTENDS Integers
+\* @type: Int;
+VARIABLE x
+Double == x + x
+====
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	trace := `{"#meta":{"format":"ITF","varTypes":{"x":"Int"}},"vars":["x"],"states":[{"x":6}]}`
+	configuration, err := json.Marshal(map[string]any{
+		"source": "TraceMemory.tla",
+		"tracee": map[string]any{
+			"trace":       map[string]any{"kind": "string", "content": trace, "format": "itf"},
+			"expressions": []string{"Double"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile("trace-memory.json", configuration, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	if code := run(context.Background(), []string{"tracee", "--config-file=trace-memory.json"}, &stdout, &stderr); code != exitOK ||
+		!bytes.Contains(stdout.Bytes(), []byte(`"Double":{"#bigint":"12"}`)) {
+		t.Fatalf("in-memory tracee = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
+	}
+
+	unsupported := bytes.ReplaceAll(configuration, []byte(`"format":"itf"`), []byte(`"format":"json"`))
+	if err = os.WriteFile("trace-json.json", unsupported, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := run(context.Background(), []string{"tracee", "--config-file=trace-json.json"}, &stdout, &stderr); code != exitUsage ||
+		!strings.Contains(stderr.String(), "currently requires an itf trace") {
+		t.Fatalf("unsupported Apalache JSON trace = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
+	}
+}

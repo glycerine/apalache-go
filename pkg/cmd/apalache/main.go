@@ -273,11 +273,12 @@ func runTracee(ctx context.Context, args []string, stdout, stderr io.Writer) int
 			defer cleanup()
 		}
 		if !visited["trace"] && flags.NArg() != 3 {
-			if configuredTrace, found, traceErr := applicationConfig.configuredTracePath(); traceErr != nil {
+			if configuredTrace, cleanup, found, traceErr := applicationConfig.configuredTracePath(); traceErr != nil {
 				fmt.Fprintln(stderr, traceErr)
 				return exitUsage
 			} else if found {
 				*tracePath = configuredTrace
+				defer cleanup()
 			}
 		}
 		if !visited["expressions"] && flags.NArg() != 3 && applicationConfig.TraceEvaluation.Expressions != nil {
