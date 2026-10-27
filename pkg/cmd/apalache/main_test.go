@@ -236,6 +236,37 @@ Next == x' = x + 1
 	}
 }
 
+func TestRunTestChecksAssertionOnlyAfterAction(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "OneStep.tla")
+	if err := os.WriteFile(path, []byte(`---- MODULE OneStep ----
+EXTENDS Integers
+\* @type: Int;
+VARIABLE x
+Before == x = 0
+Increment == x' = x + 1
+Positive == x > 0
+StillZero == x = 0
+====
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	args := []string{"test", path, "Before", "Increment", "Positive"}
+	if code := run(context.Background(), args, &stdout, &stderr); code != exitOK ||
+		!strings.Contains(stdout.String(), "No example found") {
+		t.Fatalf("passing test = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	args[4] = "StillZero"
+	if code := run(context.Background(), args, &stdout, &stderr); code != exitCounterexample ||
+		!strings.Contains(stdout.String(), "Assertion StillZero violated after Increment") ||
+		!strings.Contains(stdout.String(), "State 1: x = 1") {
+		t.Fatalf("failing test = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
+	}
+}
+
 func TestRunCheckValidatesConfigurationFlags(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := run(context.Background(), []string{"check", "-init=Init", "M.tla"}, &stdout, &stderr)

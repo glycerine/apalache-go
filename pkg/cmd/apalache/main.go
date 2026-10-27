@@ -51,10 +51,78 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return runCheck(ctx, args[1:], stdout, stderr)
 	case "simulate":
 		return runSimulate(ctx, args[1:], stdout, stderr)
+	case "test":
+		return runTest(ctx, args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command %q\n", args[0])
 		printUsage(stderr)
 		return exitUsage
+	}
+}
+
+func runTest(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	flags := flag.NewFlagSet("test", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	constantInit := flags.String("cinit", "", "constant initializer operator")
+	useRows := flags.Bool("rows", false, "enable row types")
+	disablePolytypes := flags.Bool("no-polytypes", false, "disable let-polymorphism")
+	var libraryPaths stringList
+	flags.Var(&libraryPaths, "I", "add a TLA+ module search directory (repeatable)")
+	if err := flags.Parse(args); err != nil {
+		return exitUsage
+	}
+	if flags.NArg() != 4 {
+		fmt.Fprintln(stderr, "test requires FILE BEFORE ACTION ASSERTION")
+		return exitUsage
+	}
+	path, before, action, assertion := flags.Arg(0), flags.Arg(1), flags.Arg(2), flags.Arg(3)
+	frontend := pal.ParseAndTypeCheckFile(ctx, path, pal.FrontendOptions{
+		LibraryPaths: libraryPaths,
+	}, pal.TypeCheckOptions{UseRows: *useRows, DisablePolytypes: *disablePolytypes})
+	for _, diagnostic := range frontend.Diagnostics {
+		fmt.Fprintln(stderr, diagnostic.Error())
+	}
+	if !frontend.OK() {
+		return exitFrontend
+	}
+	prepared, err := pal.PrepareSafetyTransitions(frontend.Native, pal.SafetyPipelineOptions{
+		Specification: pal.SpecificationConfiguration{
+			Behavior: pal.InitNextSpec{Init: before, Next: action}, ConstantInit: *constantInit,
+			Invariants: []string{assertion},
+		},
+		Sources: frontend.Sources,
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "cannot prepare test: %v\n", err)
+		return exitTool
+	}
+	result, err := pal.CheckBoundedSafetyWithOptions(ctx, prepared.Module, prepared.Predicates,
+		pal.BoundedSafetyOptions{MaxSteps: 1, CheckDeadlocks: true, InvariantMinimumDepth: 1})
+	if err != nil {
+		fmt.Fprintf(stderr, "test failed: %v\n", err)
+		return exitTool
+	}
+	switch result.Outcome {
+	case pal.SafetyNoCounterexample:
+		fmt.Fprintln(stdout, "No example found.")
+		return exitOK
+	case pal.SafetyCounterexample:
+		fmt.Fprintf(stdout, "Assertion %s violated after %s.\n", assertion, action)
+		if err = printDecodedStates(stdout, result.States); err != nil {
+			fmt.Fprintf(stderr, "cannot format test counterexample: %v\n", err)
+			return exitTool
+		}
+		return exitCounterexample
+	case pal.SafetyDeadlock:
+		fmt.Fprintf(stdout, "Action %s is disabled after %s.\n", action, before)
+		if err = printDecodedStates(stdout, result.States); err != nil {
+			fmt.Fprintf(stderr, "cannot format test deadlock: %v\n", err)
+			return exitTool
+		}
+		return exitCounterexample
+	default:
+		fmt.Fprintln(stderr, "solver returned unknown")
+		return exitTool
 	}
 }
 
@@ -439,6 +507,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  check FILE    bounded safety check")
 	fmt.Fprintln(w, "  parse FILE    parse and semantically check TLA+")
 	fmt.Fprintln(w, "  simulate FILE generate one bounded behavior")
+	fmt.Fprintln(w, "  test FILE BEFORE ACTION ASSERTION run a one-step test")
 	fmt.Fprintln(w, "  typecheck FILE parse and type-check annotated TLA+")
 	fmt.Fprintln(w, "  version       print build version")
 }

@@ -16,8 +16,9 @@ const (
 )
 
 type BoundedSafetyOptions struct {
-	MaxSteps       int
-	CheckDeadlocks bool
+	MaxSteps              int
+	CheckDeadlocks        bool
+	InvariantMinimumDepth int
 }
 
 // BoundedSafetyResult describes either a completed bounded search or the
@@ -61,6 +62,9 @@ func CheckBoundedSafetyWithOptions(
 	}
 	if options.MaxSteps < 0 {
 		return BoundedSafetyResult{}, fmt.Errorf("maximum step count cannot be negative")
+	}
+	if options.InvariantMinimumDepth < 0 {
+		return BoundedSafetyResult{}, fmt.Errorf("invariant minimum depth cannot be negative")
 	}
 	if ctx == nil {
 		ctx = context.Background()
@@ -133,7 +137,8 @@ func CheckBoundedSafetyWithOptions(
 			stateInvariants: stateInvariants, actionInvariants: actionInvariants,
 			traceInvariants: traceInvariants, variableDeclarations: variableDeclarations,
 			maxSteps: options.MaxSteps, checkDeadlocks: options.CheckDeadlocks,
-			stateConstraints: stateConstraints, actionConstraints: actionConstraints,
+			invariantMinimumDepth: options.InvariantMinimumDepth,
+			stateConstraints:      stateConstraints, actionConstraints: actionConstraints,
 		}, path, &result)
 		if err != nil {
 			return BoundedSafetyResult{}, err
@@ -217,21 +222,22 @@ type boundedPath struct {
 }
 
 type modulePathInputs struct {
-	constants            []string
-	variables            []string
-	constantInit         Expr
-	hasConstantInit      bool
-	assumptions          []*AssumeDecl
-	initTransitions      []Expr
-	nextTransitions      []Expr
-	stateInvariants      []namedExpression
-	actionInvariants     []namedExpression
-	traceInvariants      []namedTraceInvariant
-	variableDeclarations []*VarDecl
-	stateConstraints     []namedExpression
-	actionConstraints    []namedExpression
-	maxSteps             int
-	checkDeadlocks       bool
+	constants             []string
+	variables             []string
+	constantInit          Expr
+	hasConstantInit       bool
+	assumptions           []*AssumeDecl
+	initTransitions       []Expr
+	nextTransitions       []Expr
+	stateInvariants       []namedExpression
+	actionInvariants      []namedExpression
+	traceInvariants       []namedTraceInvariant
+	variableDeclarations  []*VarDecl
+	stateConstraints      []namedExpression
+	actionConstraints     []namedExpression
+	maxSteps              int
+	checkDeadlocks        bool
+	invariantMinimumDepth int
 }
 
 func searchSafetyPath(
@@ -259,48 +265,50 @@ func searchSafetyPath(
 	if status == SMTUnsatisfiable {
 		return false, nil
 	}
-	for _, invariant := range inputs.stateInvariants {
-		violation := MustOperExpr(Op("NOT"), Typed(BoolT1), invariant.expression)
-		var states []DecodedState
-		status, states, err = executor.CheckAndDecode(ctx, violation)
-		if err != nil {
-			return false, fmt.Errorf("check invariant %s at depth %d: %w", invariant.name, len(path.next), err)
+	if len(path.next) >= inputs.invariantMinimumDepth {
+		for _, invariant := range inputs.stateInvariants {
+			violation := MustOperExpr(Op("NOT"), Typed(BoolT1), invariant.expression)
+			var states []DecodedState
+			status, states, err = executor.CheckAndDecode(ctx, violation)
+			if err != nil {
+				return false, fmt.Errorf("check invariant %s at depth %d: %w", invariant.name, len(path.next), err)
+			}
+			if status == SMTUnknown {
+				result.Outcome = SafetyUnknown
+				return true, nil
+			}
+			if status == SMTSatisfiable {
+				result.Outcome = SafetyCounterexample
+				result.Depth = len(path.next)
+				result.Invariant = invariant.name
+				result.InitTransition = path.init
+				result.NextTransitions = append([]int(nil), path.next...)
+				result.States = states
+				return true, nil
+			}
 		}
-		if status == SMTUnknown {
-			result.Outcome = SafetyUnknown
-			return true, nil
-		}
-		if status == SMTSatisfiable {
-			result.Outcome = SafetyCounterexample
-			result.Depth = len(path.next)
-			result.Invariant = invariant.name
-			result.InitTransition = path.init
-			result.NextTransitions = append([]int(nil), path.next...)
-			result.States = states
-			return true, nil
-		}
-	}
-	for _, invariant := range inputs.traceInvariants {
-		violation := MustOperExpr(Op("NOT"), Typed(BoolT1), invariant.expression)
-		var states []DecodedState
-		status, states, err = executor.CheckTraceAndDecode(ctx, invariant.parameter, violation,
-			invariant.historyType, inputs.variableDeclarations)
-		if err != nil {
-			return false, fmt.Errorf("check trace invariant %s at depth %d: %w", invariant.name, len(path.next), err)
-		}
-		if status == SMTUnknown {
-			result.Outcome = SafetyUnknown
-			return true, nil
-		}
-		if status == SMTSatisfiable {
-			result.Outcome = SafetyCounterexample
-			result.Depth = len(path.next)
-			result.Invariant = invariant.name
-			result.TraceInvariant = true
-			result.InitTransition = path.init
-			result.NextTransitions = append([]int(nil), path.next...)
-			result.States = states
-			return true, nil
+		for _, invariant := range inputs.traceInvariants {
+			violation := MustOperExpr(Op("NOT"), Typed(BoolT1), invariant.expression)
+			var states []DecodedState
+			status, states, err = executor.CheckTraceAndDecode(ctx, invariant.parameter, violation,
+				invariant.historyType, inputs.variableDeclarations)
+			if err != nil {
+				return false, fmt.Errorf("check trace invariant %s at depth %d: %w", invariant.name, len(path.next), err)
+			}
+			if status == SMTUnknown {
+				result.Outcome = SafetyUnknown
+				return true, nil
+			}
+			if status == SMTSatisfiable {
+				result.Outcome = SafetyCounterexample
+				result.Depth = len(path.next)
+				result.Invariant = invariant.name
+				result.TraceInvariant = true
+				result.InitTransition = path.init
+				result.NextTransitions = append([]int(nil), path.next...)
+				result.States = states
+				return true, nil
+			}
 		}
 	}
 	if len(path.next) == inputs.maxSteps && !inputs.checkDeadlocks {

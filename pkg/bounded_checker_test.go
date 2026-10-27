@@ -70,6 +70,22 @@ func TestCheckBoundedSafetyReportsInitialViolation(t *testing.T) {
 	}
 }
 
+func TestCheckBoundedSafetyCanDelayInvariantChecking(t *testing.T) {
+	module, configuration := counterSafetyModule(1)
+	prepared, err := PrepareSafetyTransitions(module, SafetyPipelineOptions{Specification: configuration})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := CheckBoundedSafetyWithOptions(context.Background(), prepared.Module, prepared.Predicates,
+		BoundedSafetyOptions{MaxSteps: 1, CheckDeadlocks: true, InvariantMinimumDepth: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Outcome != SafetyCounterexample || result.Depth != 1 || result.Invariant != "Inv" {
+		t.Fatalf("delayed invariant result = %#v", result)
+	}
+}
+
 func TestCheckBoundedSafetyEnumeratesTransitionAlternatives(t *testing.T) {
 	x := NewNameExpr("x", Typed(IntT1))
 	constantInit := boolDefinition("CInit", NewValueExpr(BoolValue(true), Typed(BoolT1)))
