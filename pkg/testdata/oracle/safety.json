@@ -182,6 +182,12 @@
       "go_args": ["check", "-length", "0", "-deadlock=false", "-inv", "AllTests", "test/tla/TestSequences.tla"]
     },
     {
+      "name": "sequence-extensions",
+      "dir": "..",
+      "scala_args": ["check", "--features=rows", "--length=0", "--no-deadlock", "--inv=TestSetToSeq3,TestSetToSortSeq4,TestFoldLeft1,TestReplaceFirstSubSeq23", "test/tla/TestSequencesExt.tla"],
+      "go_args": ["check", "-rows", "-length", "0", "-deadlock=false", "-inv", "TestSetToSeq3,TestSetToSortSeq4,TestFoldLeft1,TestReplaceFirstSubSeq23", "test/tla/TestSequencesExt.tla"]
+    },
+    {
       "name": "bags",
       "dir": "..",
       "scala_args": ["check", "--length=0", "--no-deadlock", "--inv=Inv", "test/tla/TestBags.tla"],
