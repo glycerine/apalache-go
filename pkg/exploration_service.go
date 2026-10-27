@@ -96,6 +96,20 @@ type checkInvariantResult struct {
 	Trace           any    `json:"trace"`
 }
 
+type queryParams struct {
+	SessionID  string   `json:"sessionId"`
+	Kinds      []string `json:"kinds"`
+	Operator   string   `json:"operator"`
+	TimeoutSec int      `json:"timeoutSec"`
+}
+
+type queryResult struct {
+	SessionID     string `json:"sessionId"`
+	Trace         any    `json:"trace"`
+	State         any    `json:"state"`
+	OperatorValue any    `json:"operatorValue"`
+}
+
 type explorationOperation struct {
 	transition *int
 	advance    bool
@@ -302,6 +316,64 @@ func (service *ExplorationService) checkInvariant(ctx context.Context, raw json.
 			return nil, &jsonRPCError{Code: JSONRPCInternalError, Message: err.Error()}
 		}
 		return checkInvariantResult{params.SessionID, "VIOLATED", trace}, nil
+	})
+}
+
+func (service *ExplorationService) query(ctx context.Context, raw json.RawMessage) (any, *jsonRPCError) {
+	var params queryParams
+	if err := decodeJSONRPCParams(raw, &params); err != nil || params.SessionID == "" || len(params.Kinds) == 0 || params.TimeoutSec < 0 {
+		return nil, invalidParams(fmt.Errorf("query requires a non-empty sessionId and kinds, and non-negative timeoutSec"))
+	}
+	wantTrace, wantState := false, false
+	for _, kind := range params.Kinds {
+		switch kind {
+		case "TRACE":
+			wantTrace = true
+		case "STATE":
+			wantState = true
+		case "OPERATOR":
+			return nil, invalidParams(fmt.Errorf("query kind OPERATOR is not implemented by the Go explorer yet"))
+		default:
+			return nil, invalidParams(fmt.Errorf("unsupported query kind %q", kind))
+		}
+	}
+	return service.withSession(params.SessionID, func(session *explorationSession) (any, *jsonRPCError) {
+		truth := NewValueExpr(BoolValue(true), Typed(BoolT1))
+		checkContext, cancel := explorationTimeout(ctx, params.TimeoutSec)
+		defer cancel()
+		var status SMTStatus
+		var states []DecodedState
+		var err error
+		if len(session.operations) > 0 && session.operations[len(session.operations)-1].transition != nil {
+			status, states, err = session.executor.CheckPendingAndDecode(checkContext, truth)
+		} else {
+			status, states, err = session.executor.CheckAndDecode(checkContext, truth)
+		}
+		if err != nil {
+			return nil, &jsonRPCError{Code: JSONRPCInternalError, Message: err.Error()}
+		}
+		result := queryResult{SessionID: params.SessionID}
+		if status != SMTSatisfiable || len(states) == 0 {
+			return result, nil
+		}
+		encoded, err := MarshalDecodedTraceITF(session.prepared.Module, states, ITFOptions{})
+		if err != nil {
+			return nil, &jsonRPCError{Code: JSONRPCInternalError, Message: err.Error()}
+		}
+		var trace map[string]any
+		if err = json.Unmarshal(encoded, &trace); err != nil {
+			return nil, &jsonRPCError{Code: JSONRPCInternalError, Message: err.Error()}
+		}
+		if wantTrace {
+			result.Trace = trace
+		}
+		if wantState {
+			encodedStates, _ := trace[ITFStatesField].([]any)
+			if len(encodedStates) > 0 {
+				result.State = encodedStates[len(encodedStates)-1]
+			}
+		}
+		return result, nil
 	})
 }
 

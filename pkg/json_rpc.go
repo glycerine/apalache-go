@@ -133,6 +133,8 @@ func (handler *ExplorationJSONRPCHandler) dispatch(ctx context.Context, method s
 		return handler.service.rollback(params)
 	case "checkInvariant":
 		return handler.service.checkInvariant(ctx, params)
+	case "query":
+		return handler.service.query(ctx, params)
 	default:
 		return nil, &jsonRPCError{Code: JSONRPCMethodNotFound, Message: fmt.Sprintf("Method not found: %s", method)}
 	}

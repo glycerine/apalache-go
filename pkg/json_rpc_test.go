@@ -128,6 +128,16 @@ Bad == IBad:: x /= 0
 	if violatedResult["invariantStatus"] != "VIOLATED" || violatedResult["trace"] == nil {
 		t.Fatalf("checkInvariant violation = %#v", violated)
 	}
+	query := postJSONRPC(t, handler, fmt.Sprintf(
+		`{"jsonrpc":"2.0","method":"query","params":{"sessionId":%q,"kinds":["TRACE","STATE"]},"id":4}`,
+		sessionID,
+	))
+	queryResult, _ := query["result"].(map[string]any)
+	trace, traceOK := queryResult["trace"].(map[string]any)
+	state, stateOK := queryResult["state"].(map[string]any)
+	if !traceOK || !stateOK || trace["states"] == nil || state["x"] == nil {
+		t.Fatalf("query trace/state = %#v", query)
+	}
 	disabled := postJSONRPC(t, handler, fmt.Sprintf(
 		`{"jsonrpc":"2.0","method":"assumeTransition","params":{"sessionId":%q,"transitionId":2,"checkEnabled":true},"id":4}`,
 		sessionID,
