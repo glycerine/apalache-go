@@ -22,6 +22,7 @@ type FrontendOptions struct {
 // for interoperability and conformance testing.
 type FrontendResult struct {
 	Module      string                 `json:"module,omitempty"`
+	Extends     []string               `json:"-"`
 	IR          json.RawMessage        `json:"ir,omitempty"`
 	Diagnostics []Diagnostic           `json:"diagnostics"`
 	Native      *Module                `json:"-"`
@@ -82,6 +83,7 @@ func ParseSource(ctx context.Context, filename, source string, opts FrontendOpti
 	result := FrontendResult{Diagnostics: frontendDiagnostics(tlagoDiags)}
 	if spec != nil && spec.Root != nil {
 		result.Module = spec.Root.Name
+		result.Extends = append([]string(nil), spec.Root.Extends...)
 	}
 	if hasErrors(result.Diagnostics) {
 		return result
@@ -157,7 +159,27 @@ func ParseAndTypeCheckSource(ctx context.Context, filename, source string, front
 	result.Types = typed.Types
 	result.Diagnostics = append(result.Diagnostics, typed.Diagnostics...)
 	if typed.Module != nil {
+		result.Annotations = remapDeclarationAnnotations(result.Native, typed.Module, result.Annotations)
 		result.Native = typed.Module
+	}
+	return result
+}
+
+func remapDeclarationAnnotations(from, to *Module, annotations *AnnotationStore) *AnnotationStore {
+	if annotations == nil || from == nil || to == nil {
+		return annotations
+	}
+	byName := make(map[string][]Annotation)
+	for _, declaration := range from.Declarations() {
+		if values := annotations.Get(declaration.ID()); len(values) > 0 {
+			byName[declaration.Name()] = values
+		}
+	}
+	result := NewAnnotationStore()
+	for _, declaration := range to.Declarations() {
+		if values := byName[declaration.Name()]; len(values) > 0 {
+			result.Set(declaration.ID(), values)
+		}
 	}
 	return result
 }

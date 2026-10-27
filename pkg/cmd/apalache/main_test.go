@@ -281,6 +281,56 @@ func TestRunParseJSON(t *testing.T) {
 	}
 }
 
+func TestRunParseAndTypecheckWriteRoundTrippableFiles(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "RoundTrip.tla")
+	if err := os.WriteFile(sourcePath, []byte(`---- MODULE RoundTrip ----
+EXTENDS Integers
+\* @type: Int;
+CONSTANT N
+Value == N + 1
+====
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, command := range []string{"parse", "typecheck"} {
+		t.Run(command, func(t *testing.T) {
+			outputDir := filepath.Join(dir, command)
+			if err := os.Mkdir(outputDir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			outputPath := filepath.Join(outputDir, "RoundTrip.tla")
+			var stdout, stderr bytes.Buffer
+			code := run(context.Background(), []string{command, "-output", outputPath, sourcePath}, &stdout, &stderr)
+			if code != exitOK {
+				t.Fatalf("%s output = %d, stderr = %q", command, code, &stderr)
+			}
+			contents, err := os.ReadFile(outputPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Contains(contents, []byte("EXTENDS Integers")) || !bytes.Contains(contents, []byte("@type: Int;")) {
+				t.Fatalf("%s output lost module metadata:\n%s", command, contents)
+			}
+			result := pal.ParseAndTypeCheckFile(context.Background(), outputPath, pal.FrontendOptions{}, pal.TypeCheckOptions{})
+			if !result.OK() {
+				t.Fatalf("%s output did not round trip: %v\n%s", command, result.Diagnostics, contents)
+			}
+		})
+	}
+
+	jsonPath := filepath.Join(dir, "typed.json")
+	var stdout, stderr bytes.Buffer
+	if code := run(context.Background(), []string{"typecheck", "-output", jsonPath, sourcePath}, &stdout, &stderr); code != exitOK {
+		t.Fatalf("JSON file output = %d, stderr = %q", code, &stderr)
+	}
+	var document map[string]any
+	data, err := os.ReadFile(jsonPath)
+	if err != nil || json.Unmarshal(data, &document) != nil || document["name"] != "ApalacheIR" {
+		t.Fatalf("JSON file output = %v, %v, %s", document, err, data)
+	}
+}
+
 func TestRunParseFailure(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "Bad.tla")

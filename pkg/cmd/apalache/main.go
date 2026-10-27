@@ -629,7 +629,7 @@ func printDecodedStates(output io.Writer, module *pal.Module, states []pal.Decod
 func runTypeCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("typecheck", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	output := flags.String("output", "summary", "output format: summary or json")
+	output := flags.String("output", "summary", "output format (summary/json) or .tla/.json file")
 	includeSource := flags.Bool("source", false, "include source positions in JSON IR")
 	useRows := flags.Bool("rows", false, "enable row types")
 	disablePolytypes := flags.Bool("no-polytypes", false, "disable let-polymorphism")
@@ -642,8 +642,8 @@ func runTypeCheck(ctx context.Context, args []string, stdout, stderr io.Writer) 
 		fmt.Fprintln(stderr, "typecheck requires exactly one TLA+ file")
 		return exitUsage
 	}
-	if *output != "summary" && *output != "json" {
-		fmt.Fprintf(stderr, "invalid output format %q (want summary or json)\n", *output)
+	if !validModuleOutput(*output) {
+		fmt.Fprintf(stderr, "invalid output %q (want summary, json, or a .tla/.json file)\n", *output)
 		return exitUsage
 	}
 
@@ -656,7 +656,7 @@ func runTypeCheck(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	if !result.OK() {
 		return exitFrontend
 	}
-	if *output == "json" {
+	if *output == "json" || strings.EqualFold(filepath.Ext(*output), ".json") {
 		options := pal.IRJSONOptions{}
 		if *includeSource {
 			options.SourceStore = result.Sources
@@ -671,13 +671,25 @@ func runTypeCheck(ctx context.Context, args []string, stdout, stderr io.Writer) 
 			fmt.Fprintf(stderr, "cannot decode typed IR: %v\n", err)
 			return exitTool
 		}
-		encoder := json.NewEncoder(stdout)
-		encoder.SetEscapeHTML(false)
-		encoder.SetIndent("", "  ")
-		if err = encoder.Encode(formatted); err != nil {
+		if err = writePrettyJSONOutput(*output, formatted, stdout); err != nil {
 			fmt.Fprintf(stderr, "cannot write typed IR: %v\n", err)
 			return exitTool
 		}
+		return exitOK
+	}
+	if strings.EqualFold(filepath.Ext(*output), ".tla") {
+		formatted, err := pal.FormatTLAModule(result.Native, pal.TLAFormatOptions{
+			ExtendedModules: result.Extends, Annotations: result.Annotations,
+		})
+		if err != nil {
+			fmt.Fprintf(stderr, "cannot format typed TLA+: %v\n", err)
+			return exitTool
+		}
+		if err = os.WriteFile(*output, []byte(formatted), 0o644); err != nil {
+			fmt.Fprintf(stderr, "cannot write typed TLA+: %v\n", err)
+			return exitTool
+		}
+		fmt.Fprintf(stdout, "Wrote typed TLA+ to %s.\n", *output)
 		return exitOK
 	}
 	fmt.Fprintf(stdout, "type-checked module %s\n", result.Module)
@@ -709,7 +721,7 @@ func (s *csvStringList) Set(value string) error {
 func runParse(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("parse", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	output := flags.String("output", "summary", "output format: summary or json")
+	output := flags.String("output", "summary", "output format (summary/json) or .tla/.json file")
 	includeSource := flags.Bool("source", false, "include source positions in JSON IR")
 	var libraryPaths stringList
 	flags.Var(&libraryPaths, "I", "add a TLA+ module search directory (repeatable)")
@@ -720,14 +732,14 @@ func runParse(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		fmt.Fprintln(stderr, "parse requires exactly one TLA+ file")
 		return exitUsage
 	}
-	if *output != "summary" && *output != "json" {
-		fmt.Fprintf(stderr, "invalid output format %q (want summary or json)\n", *output)
+	if !validModuleOutput(*output) {
+		fmt.Fprintf(stderr, "invalid output %q (want summary, json, or a .tla/.json file)\n", *output)
 		return exitUsage
 	}
 
 	result := pal.ParseFile(ctx, flags.Arg(0), pal.FrontendOptions{
 		LibraryPaths:  libraryPaths,
-		IncludeSource: *includeSource,
+		IncludeSource: *includeSource || strings.EqualFold(filepath.Ext(*output), ".tla"),
 	})
 	for _, diagnostic := range result.Diagnostics {
 		fmt.Fprintln(stderr, diagnostic.Error())
@@ -736,23 +748,64 @@ func runParse(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		return exitFrontend
 	}
 
-	if *output == "json" {
+	if *output == "json" || strings.EqualFold(filepath.Ext(*output), ".json") {
 		var formatted any
 		if err := json.Unmarshal(result.IR, &formatted); err != nil {
 			fmt.Fprintf(stderr, "cannot decode frontend IR: %v\n", err)
 			return exitTool
 		}
-		encoder := json.NewEncoder(stdout)
-		encoder.SetEscapeHTML(false)
-		encoder.SetIndent("", "  ")
-		if err := encoder.Encode(formatted); err != nil {
+		if err := writePrettyJSONOutput(*output, formatted, stdout); err != nil {
 			fmt.Fprintf(stderr, "cannot write frontend IR: %v\n", err)
 			return exitTool
 		}
 		return exitOK
 	}
+	if strings.EqualFold(filepath.Ext(*output), ".tla") {
+		source, err := os.ReadFile(flags.Arg(0))
+		if err != nil {
+			fmt.Fprintf(stderr, "cannot recover source annotations: %v\n", err)
+			return exitFrontend
+		}
+		annotations := pal.ExtractTypeAnnotations(flags.Arg(0), string(source), result.Native, result.Sources)
+		formatted, err := pal.FormatTLAModule(result.Native, pal.TLAFormatOptions{
+			ExtendedModules: result.Extends, Annotations: annotations.Annotations,
+		})
+		if err != nil {
+			fmt.Fprintf(stderr, "cannot format parsed TLA+: %v\n", err)
+			return exitTool
+		}
+		if err = os.WriteFile(*output, []byte(formatted), 0o644); err != nil {
+			fmt.Fprintf(stderr, "cannot write parsed TLA+: %v\n", err)
+			return exitTool
+		}
+		fmt.Fprintf(stdout, "Wrote parsed TLA+ to %s.\n", *output)
+		return exitOK
+	}
 	fmt.Fprintf(stdout, "parsed module %s\n", result.Module)
 	return exitOK
+}
+
+func validModuleOutput(output string) bool {
+	return output == "summary" || output == "json" ||
+		strings.EqualFold(filepath.Ext(output), ".tla") || strings.EqualFold(filepath.Ext(output), ".json")
+}
+
+func writePrettyJSONOutput(output string, value any, stdout io.Writer) error {
+	var destination io.Writer = stdout
+	var file *os.File
+	if output != "json" {
+		var err error
+		file, err = os.OpenFile(output, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+		destination = file
+	}
+	encoder := json.NewEncoder(destination)
+	encoder.SetEscapeHTML(false)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(value)
 }
 
 func printUsage(w io.Writer) {
