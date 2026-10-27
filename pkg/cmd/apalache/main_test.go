@@ -60,6 +60,48 @@ func TestRunParseFailure(t *testing.T) {
 	}
 }
 
+func TestRunTypeCheckAndTypedJSON(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "Typed.tla")
+	if err := os.WriteFile(path, []byte(`---- MODULE Typed ----
+EXTENDS Integers
+\* @type: Int;
+CONSTANT N
+Value == N + 1
+====
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	if code := run(context.Background(), []string{"typecheck", path}, &stdout, &stderr); code != exitOK {
+		t.Fatalf("run() = %d, stderr = %s", code, &stderr)
+	}
+	if got, want := stdout.String(), "type-checked module Typed\n"; got != want {
+		t.Fatalf("stdout = %q, want %q", got, want)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := run(context.Background(), []string{"typecheck", "-output=json", path}, &stdout, &stderr); code != exitOK {
+		t.Fatalf("JSON run() = %d, stderr = %s", code, &stderr)
+	}
+	if !strings.Contains(stdout.String(), `"type": "Int"`) || strings.Contains(stdout.String(), `"type": "Untyped"`) {
+		t.Fatalf("stdout is not fully typed IR: %s", &stdout)
+	}
+}
+
+func TestRunTypeCheckReportsMissingAnnotation(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "Untyped.tla")
+	if err := os.WriteFile(path, []byte("---- MODULE Untyped ----\nCONSTANT N\nValue == N\n====\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	code := run(context.Background(), []string{"typecheck", path}, &stdout, &stderr)
+	if code != exitFrontend || !strings.Contains(stderr.String(), "expected a type annotation for CONSTANT N") {
+		t.Fatalf("run() = %d, stderr = %q", code, &stderr)
+	}
+}
+
 func TestRunUsage(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	if code := run(context.Background(), nil, &stdout, &stderr); code != exitUsage {

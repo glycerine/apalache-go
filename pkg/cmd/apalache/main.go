@@ -42,11 +42,71 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return exitOK
 	case "parse":
 		return runParse(ctx, args[1:], stdout, stderr)
+	case "typecheck":
+		return runTypeCheck(ctx, args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command %q\n", args[0])
 		printUsage(stderr)
 		return exitUsage
 	}
+}
+
+func runTypeCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	flags := flag.NewFlagSet("typecheck", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	output := flags.String("output", "summary", "output format: summary or json")
+	includeSource := flags.Bool("source", false, "include source positions in JSON IR")
+	useRows := flags.Bool("rows", false, "enable row types")
+	disablePolytypes := flags.Bool("no-polytypes", false, "disable let-polymorphism")
+	var libraryPaths stringList
+	flags.Var(&libraryPaths, "I", "add a TLA+ module search directory (repeatable)")
+	if err := flags.Parse(args); err != nil {
+		return exitUsage
+	}
+	if flags.NArg() != 1 {
+		fmt.Fprintln(stderr, "typecheck requires exactly one TLA+ file")
+		return exitUsage
+	}
+	if *output != "summary" && *output != "json" {
+		fmt.Fprintf(stderr, "invalid output format %q (want summary or json)\n", *output)
+		return exitUsage
+	}
+
+	result := pal.ParseAndTypeCheckFile(ctx, flags.Arg(0), pal.FrontendOptions{
+		LibraryPaths: libraryPaths,
+	}, pal.TypeCheckOptions{UseRows: *useRows, DisablePolytypes: *disablePolytypes})
+	for _, diagnostic := range result.Diagnostics {
+		fmt.Fprintln(stderr, diagnostic.Error())
+	}
+	if !result.OK() {
+		return exitFrontend
+	}
+	if *output == "json" {
+		options := pal.IRJSONOptions{}
+		if *includeSource {
+			options.SourceStore = result.Sources
+		}
+		encoded, err := pal.MarshalSingleModuleIRJSON(result.Native, options)
+		if err != nil {
+			fmt.Fprintf(stderr, "cannot encode typed IR: %v\n", err)
+			return exitTool
+		}
+		var formatted any
+		if err = json.Unmarshal(encoded, &formatted); err != nil {
+			fmt.Fprintf(stderr, "cannot decode typed IR: %v\n", err)
+			return exitTool
+		}
+		encoder := json.NewEncoder(stdout)
+		encoder.SetEscapeHTML(false)
+		encoder.SetIndent("", "  ")
+		if err = encoder.Encode(formatted); err != nil {
+			fmt.Fprintf(stderr, "cannot write typed IR: %v\n", err)
+			return exitTool
+		}
+		return exitOK
+	}
+	fmt.Fprintf(stdout, "type-checked module %s\n", result.Module)
+	return exitOK
 }
 
 type stringList []string
@@ -110,5 +170,6 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "usage: apalache <command> [options]")
 	fmt.Fprintln(w, "commands:")
 	fmt.Fprintln(w, "  parse FILE    parse and semantically check TLA+")
+	fmt.Fprintln(w, "  typecheck FILE parse and type-check annotated TLA+")
 	fmt.Fprintln(w, "  version       print build version")
 }
