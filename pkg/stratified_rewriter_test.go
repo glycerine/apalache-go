@@ -604,7 +604,16 @@ func TestStratifiedSequenceAppendAndTailThroughG3(t *testing.T) {
 		},
 		{name: "tail", operation: MustOperExpr(Op("Sequences!Tail"), tag, sequence(1, 2)), want: sequence(2)},
 		{name: "empty tail", operation: MustOperExpr(Op("Sequences!Tail"), tag, sequence()), want: sequence()},
+		{name: "concat", operation: MustOperExpr(Op("Sequences!Concat"), tag, sequence(1, 2), sequence(3)), want: sequence(1, 2, 3)},
 	}
+	falsePredicate := MustOperExpr(Op("GT"), Typed(BoolT1),
+		NewValueExpr(Int64Value(1), Typed(IntT1)), NewValueExpr(Int64Value(2), Typed(IntT1)))
+	conditionalLeft := MustOperExpr(Op("IF_THEN_ELSE"), tag, falsePredicate, sequence(1), sequence(2, 3))
+	tests = append(tests, struct {
+		name      string
+		operation Expr
+		want      Expr
+	}{name: "concat symbolic length", operation: MustOperExpr(Op("Sequences!Concat"), tag, conditionalLeft, sequence(4)), want: sequence(2, 3, 4)})
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			equal := MustOperExpr(Op("EQ"), Typed(BoolT1), test.operation, test.want)

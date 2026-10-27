@@ -86,6 +86,8 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 			return rewriter.rewriteSequenceTail(typed, scope)
 		case "Sequences!Append":
 			return rewriter.rewriteSequenceAppend(typed, scope)
+		case "Sequences!Concat":
+			return rewriter.rewriteSequenceConcat(typed, scope)
 		case "SET_FILTER":
 			return rewriter.rewriteSetFilter(typed, scope)
 		case "SET_IN", "Apalache!SelectInSet":
@@ -99,6 +101,69 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 		}
 	}
 	return scope, ArenaCell{}, fmt.Errorf("no stratified rule is applicable to %T", expression)
+}
+
+func (rewriter *StratifiedRewriter) rewriteSequenceConcat(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
+	arguments := expression.Arguments()
+	if len(arguments) != 2 {
+		return scope, ArenaCell{}, fmt.Errorf("sequence concatenation requires two operands")
+	}
+	scope, left, err := rewriter.Rewrite(arguments[0], scope)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	scope, right, err := rewriter.Rewrite(arguments[1], scope)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	if !isSequenceCellType(left.Type) || !EqualCellTypes(left.Type, right.Type) {
+		return scope, ArenaCell{}, fmt.Errorf("concatenation requires matching sequences, found %s and %s", left.Type, right.Type)
+	}
+	leftLength, _, leftElements, err := unpackSequence(scope.Arena, left)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	rightLength, _, rightElements, err := unpackSequence(scope.Arena, right)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	sequenceType := left.Type.TLAType().(SeqType)
+	scope, defaultElement, err := rewriter.defaults.GetOrCreate(scope, sequenceType.Element())
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	newLengthExpression := MustOperExpr(Op("PLUS"), Typed(IntT1), leftLength.NameExpr(), rightLength.NameExpr())
+	scope, newLength := rewriter.bindInteger(scope, newLengthExpression)
+	elements := make([]ArenaCell, len(leftElements)+len(rightElements))
+	for index := range elements {
+		position := NewValueExpr(Int64Value(int64(index+1)), Typed(IntT1))
+		rightIndex := MustOperExpr(Op("MINUS"), Typed(IntT1), position, leftLength.NameExpr())
+		rightChoice := defaultElement
+		for rightIndexBase0, pointer := range rightElements {
+			condition := MustOperExpr(Op("EQ"), Typed(BoolT1), rightIndex,
+				NewValueExpr(Int64Value(int64(rightIndexBase0+1)), Typed(IntT1)))
+			var predicate ArenaCell
+			scope, predicate = rewriter.bindBoolean(scope, condition)
+			scope, rightChoice, err = rewriter.chooseConditional(scope, predicate, pointer.Element(), rightChoice)
+			if err != nil {
+				return scope, ArenaCell{}, err
+			}
+		}
+		leftChoice := defaultElement
+		if index < len(leftElements) {
+			leftChoice = leftElements[index].Element()
+		}
+		inLeft := MustOperExpr(Op("LE"), Typed(BoolT1), position, leftLength.NameExpr())
+		var predicate ArenaCell
+		scope, predicate = rewriter.bindBoolean(scope, inLeft)
+		scope, elements[index], err = rewriter.chooseConditional(scope, predicate, leftChoice, rightChoice)
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+	}
+	newArena, result := makeSequenceWithLength(scope.Arena, sequenceType, elements, newLength)
+	scope.Arena = newArena
+	return scope, result, nil
 }
 
 func (rewriter *StratifiedRewriter) bindBoolean(scope RewriterScope, condition Expr) (RewriterScope, ArenaCell) {
