@@ -100,6 +100,26 @@ Inv == LET Op(a, i) == a + i IN Repeat(Op, 2, 0) = 3
 	}
 }
 
+func TestParseAndTypeCheckSourceReconstructsTupleQuantifier(t *testing.T) {
+	result := ParseAndTypeCheckSource(context.Background(), "TupleBound.tla", `---- MODULE TupleBound ----
+EXTENDS Integers
+Op == \E <<i, j>> \in (1..2) \X (3..4): i < j
+====
+`, FrontendOptions{}, TypeCheckOptions{})
+	if !result.OK() {
+		t.Fatalf("ParseAndTypeCheckSource() diagnostics = %v", result.Diagnostics)
+	}
+	body, found := OperatorBody(result.Native, "Op")
+	quantifier, ok := body.(*OperExpr)
+	if !found || !ok || quantifier.Operator().Name() != "EXISTS3" {
+		t.Fatalf("tuple quantifier body = %#v", body)
+	}
+	binder, ok := quantifier.Arguments()[0].(*OperExpr)
+	if !ok || binder.Operator().Name() != "TUPLE" || len(binder.Arguments()) != 2 {
+		t.Fatalf("tuple quantifier binder = %#v", quantifier.Arguments()[0])
+	}
+}
+
 func TestParseSourceReportsSemanticErrors(t *testing.T) {
 	result := ParseSource(context.Background(), "Bad.tla", `---- MODULE Bad ----
 Op == missing

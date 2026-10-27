@@ -190,3 +190,59 @@ func normalizeTlagoApalacheBuiltinCalls(module *Module, sources *SourceStore) *M
 	})
 	return TransformModuleExpressions(module, rewrite, nil)
 }
+
+// normalizeTlagoTupleQuantifiers reconstructs a tuple binder that tlago
+// v0.1.9 exports as nested binders over the same Cartesian product. The
+// generated quantifiers share one exact source region, which distinguishes
+// them from user-written nested quantifiers.
+func normalizeTlagoTupleQuantifiers(module *Module, sources *SourceStore) *Module {
+	if module == nil || sources == nil {
+		return module
+	}
+	tracker := NewListenerTracker(sources)
+	rewrite := RewriteExpressions(tracker, func(expression Expr) (Expr, bool) {
+		outer, ok := expression.(*OperExpr)
+		if !ok || (outer.Operator().Name() != "EXISTS3" && outer.Operator().Name() != "FORALL3") {
+			return nil, false
+		}
+		outerArguments := outer.Arguments()
+		if len(outerArguments) != 3 {
+			return nil, false
+		}
+		product, ok := outerArguments[1].(*OperExpr)
+		if !ok || product.Operator().Name() != "SET_TIMES" {
+			return nil, false
+		}
+		location, found := sources.Find(outer.ID())
+		if !found {
+			return nil, false
+		}
+		binders := []Expr{outerArguments[0]}
+		body := outerArguments[2]
+		for {
+			inner, isInner := body.(*OperExpr)
+			if !isInner || inner.Operator().Name() != outer.Operator().Name() {
+				break
+			}
+			innerArguments := inner.Arguments()
+			innerLocation, hasLocation := sources.Find(inner.ID())
+			if len(innerArguments) != 3 || !hasLocation || innerLocation != location ||
+				!EqualExpr(innerArguments[1], outerArguments[1]) {
+				break
+			}
+			binders = append(binders, innerArguments[0])
+			body = innerArguments[2]
+		}
+		if len(binders) < 2 || len(product.Arguments()) != len(binders) {
+			return nil, false
+		}
+		for _, binder := range binders {
+			if _, named := binder.(*NameExpr); !named {
+				return nil, false
+			}
+		}
+		tuple := MustOperExpr(Op("TUPLE"), Untyped(), binders...)
+		return MustOperExpr(outer.Operator(), outer.Tag(), tuple, outerArguments[1], body), true
+	})
+	return TransformModuleExpressions(module, rewrite, nil)
+}

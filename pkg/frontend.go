@@ -81,6 +81,7 @@ func ParseSource(ctx context.Context, filename, source string, opts FrontendOpti
 		result.Sources = NewSourceStore()
 		native, conversionErr := UnmarshalSingleModuleIRJSON(ir, result.Sources)
 		result.Native = normalizeTlagoApalacheBuiltinCalls(native, result.Sources)
+		result.Native = normalizeTlagoTupleQuantifiers(result.Native, result.Sources)
 		if conversionErr != nil {
 			result.IR = nil
 			result.Native = nil
