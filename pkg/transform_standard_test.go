@@ -1,0 +1,95 @@
+package apalache
+
+import "testing"
+
+func TestReplaceEqualIsBottomUpAndFresh(t *testing.T) {
+	x := NewNameExpr("x", Untyped())
+	nested := MustOperExpr(Op("PLUS"), Untyped(), x,
+		MustOperExpr(Op("PLUS"), Untyped(), x, x))
+	replacePair := ReplaceMatching(IdleTracker{}, func(expression Expr) bool {
+		oper, ok := expression.(*OperExpr)
+		return ok && oper.Operator().Name() == "PLUS" && EqualExpr(oper.Arguments()[0], oper.Arguments()[1])
+	}, func() Expr { return NewNameExpr("x", Untyped()) })
+	if got := replacePair(nested); !EqualExpr(got, x) {
+		t.Fatalf("bottom-up replacement got %#v", got)
+	}
+
+	plus := MustOperExpr(Op("PLUS"), Untyped(), x, x)
+	replaceNames := ReplaceEqual(IdleTracker{}, x, func() Expr { return NewNameExpr("y", Untyped()) })
+	got := replaceNames(plus).(*OperExpr).Arguments()
+	if !EqualExpr(got[0], got[1]) || got[0].ID() == got[1].ID() {
+		t.Fatalf("replacements are not structurally equal with fresh IDs: %v %v", got[0].ID(), got[1].ID())
+	}
+}
+
+func TestReplaceEqualRewritesLetInBodies(t *testing.T) {
+	x := NewNameExpr("x", Untyped())
+	declaration := NewOperDecl("A", nil, x, Untyped())
+	input := NewLetInExpr(untypedApp("A"), Untyped(), declaration)
+	got := ReplaceEqual(IdleTracker{}, x, func() Expr { return NewNameExpr("y", Untyped()) })(input).(*LetInExpr)
+	if body := got.Declarations()[0].Body(); !EqualExpr(body, NewNameExpr("y", Untyped())) {
+		t.Fatalf("LET-IN declaration body was not replaced: %#v", body)
+	}
+}
+
+func TestFlattenBooleanConnectives(t *testing.T) {
+	x := NewNameExpr("x", Untyped())
+	y := NewNameExpr("y", Untyped())
+	z := NewNameExpr("z", Untyped())
+	nested := MustOperExpr(Op("AND"), Typed(BoolT1), x,
+		MustOperExpr(Op("AND"), Typed(BoolT1), y, z))
+	got := FlattenBooleanConnectives(IdleTracker{})(nested).(*OperExpr)
+	if !got.Tag().Equal(nested.Tag()) || len(got.Arguments()) != 3 {
+		t.Fatalf("flatten got tag=%s and %d arguments", got.Tag(), len(got.Arguments()))
+	}
+	for index, want := range []Expr{x, y, z} {
+		if !EqualExpr(got.Arguments()[index], want) {
+			t.Fatalf("argument %d changed", index)
+		}
+	}
+
+	setTag := Typed(mustSetType(t, IntT1))
+	parent := MustOperExpr(Op("SET_ENUM"), setTag, nested)
+	parentGot := FlattenBooleanConnectives(IdleTracker{})(parent).(*OperExpr)
+	if !parentGot.Tag().Equal(setTag) || !parentGot.Arguments()[0].Tag().Equal(Typed(BoolT1)) {
+		t.Fatalf("reconstruction lost node-specific tags: parent=%s child=%s", parentGot.Tag(), parentGot.Arguments()[0].Tag())
+	}
+}
+
+func TestPropagatePrimes(t *testing.T) {
+	x := NewNameExpr("x", Untyped())
+	y := NewNameExpr("y", Untyped())
+	n := NewNameExpr("N", Untyped())
+	prime := func(expression Expr) Expr { return MustOperExpr(Op("PRIME"), expression.Tag(), expression) }
+	application := MustOperExpr(Op("FUN_APP"), Untyped(), x, y)
+	stateVariables := map[string]struct{}{"x": {}, "y": {}}
+	transform := PropagatePrimes(IdleTracker{}, stateVariables)
+
+	want := MustOperExpr(Op("FUN_APP"), Untyped(), prime(x), prime(y))
+	if got := transform(prime(application)); !EqualExpr(got, want) {
+		t.Fatalf("prime propagation got %#v, want %#v", got, want)
+	}
+	if got := transform(prime(n)); !EqualExpr(got, n) {
+		t.Fatalf("constant remained primed: %#v", got)
+	}
+	literal := NewValueExpr(Int64Value(2021), Typed(IntT1))
+	if got := transform(prime(literal)); !EqualExpr(got, literal) {
+		t.Fatalf("literal remained primed: %#v", got)
+	}
+}
+
+func TestPropagatePrimesThroughLetIn(t *testing.T) {
+	x := NewNameExpr("x", Untyped())
+	y := NewNameExpr("y", Untyped())
+	application := MustOperExpr(Op("FUN_APP"), Untyped(), x, y)
+	declaration := NewOperDecl("Foo", nil, application, Untyped())
+	letIn := NewLetInExpr(untypedApp("Foo"), Untyped(), declaration)
+	input := MustOperExpr(Op("PRIME"), Untyped(), letIn)
+	got := PropagatePrimes(IdleTracker{}, map[string]struct{}{"x": {}, "y": {}})(input).(*LetInExpr)
+	for _, argument := range got.Declarations()[0].Body().(*OperExpr).Arguments() {
+		oper, ok := argument.(*OperExpr)
+		if !ok || oper.Operator().Name() != "PRIME" {
+			t.Fatalf("LET-IN body argument was not primed: %#v", argument)
+		}
+	}
+}
