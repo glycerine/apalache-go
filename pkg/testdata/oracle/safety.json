@@ -19,6 +19,12 @@
       "go_args": ["check", "-length", "2", "-deadlock=false", "-inv", "Inv", "test/tla/Test1305.tla"]
     },
     {
+      "name": "configured-depth-four-deadlock",
+      "dir": "..",
+      "scala_args": ["check", "--config=test/tla/HandshakeWithTypes_deadlock.cfg", "--length=5", "test/tla/HandshakeWithTypes.tla"],
+      "go_args": ["check", "-config", "test/tla/HandshakeWithTypes_deadlock.cfg", "-length", "5", "test/tla/HandshakeWithTypes.tla"]
+    },
+    {
       "name": "action-invariant-safe",
       "dir": "..",
       "scala_args": ["check", "--length=2", "--no-deadlock", "--inv=IncreaseInv", "test/tla/ActionInv.tla"],

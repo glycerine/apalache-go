@@ -78,6 +78,8 @@ var (
 	goViolation         = regexp.MustCompile(`(?m)^(?:Invariant|Trace invariant|Action invariant)\s+(\S+)\s+violated at depth\s+(\d+)`)
 	goDeadlock          = regexp.MustCompile(`(?m)^Deadlock found at depth\s+(\d+)`)
 	scalaViolationDepth = regexp.MustCompile(`(?m)^State\s+(\d+):\s+(state|action|trace) invariant\b.*\bviolated\.`)
+	scalaStateDepth     = regexp.MustCompile(`(?m)^State\s+(\d+):`)
+	scalaStepDepth      = regexp.MustCompile(`(?m)^Step\s+(\d+):`)
 	scalaResult         = regexp.MustCompile(`(?m)^The outcome is:\s*(NoError|Error|Deadlock)\b`)
 	scalaSafe           = regexp.MustCompile(`Checker reports no error up to computation length\s+(\d+)`)
 )
@@ -154,6 +156,13 @@ func Normalize(stdout, stderr string, exitCode int) Outcome {
 			outcome.Verdict = VerdictViolation
 		case "Deadlock":
 			outcome.Verdict = VerdictDeadlock
+			if depth, found := maximumReportedNumber(scalaStateDepth, combined); found {
+				outcome.Depth = depth
+			} else if step, found := maximumReportedNumber(scalaStepDepth, combined); found {
+				// Step 0 selects Init. A disabled Next at Step n therefore
+				// deadlocks in the state reached at trace depth n-1.
+				outcome.Depth = max(0, step-1)
+			}
 		}
 		return outcome
 	}
@@ -165,6 +174,17 @@ func Normalize(stdout, stderr string, exitCode int) Outcome {
 		outcome.Verdict = VerdictUnknown
 	}
 	return outcome
+}
+
+func maximumReportedNumber(pattern *regexp.Regexp, output string) (int, bool) {
+	maximum, found := 0, false
+	for _, match := range pattern.FindAllStringSubmatch(output, -1) {
+		value, err := strconv.Atoi(match[1])
+		if err == nil && (!found || value > maximum) {
+			maximum, found = value, true
+		}
+	}
+	return maximum, found
 }
 
 func Compare(left, right Outcome) error {

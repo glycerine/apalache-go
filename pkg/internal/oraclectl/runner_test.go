@@ -17,7 +17,8 @@ func TestNormalizeCheckerOutcomes(t *testing.T) {
 		{"Scala violation", "State 2: state invariant 0 violated.\nThe outcome is: Error\nEXITCODE: ERROR (12)", 12, VerdictViolation, "", 2},
 		{"Scala action violation", "State 3: action invariant 1 [line 4] violated.\nThe outcome is: Error", 12, VerdictViolation, "", 4},
 		{"Scala trace violation", "State 4: trace invariant 0 violated.\nThe outcome is: Error", 12, VerdictViolation, "", 4},
-		{"Scala deadlock", "The outcome is: Deadlock", 12, VerdictDeadlock, "", -1},
+		{"Scala deadlock", "State 4: state invariant 0 holds.\nStep 5: Transition #0 is disabled\nFound a deadlock.\nThe outcome is: Deadlock", 12, VerdictDeadlock, "", 4},
+		{"Scala deadlock without invariants", "Step 3: Transition #0 is disabled\nFound a deadlock.\nThe outcome is: Deadlock", 12, VerdictDeadlock, "", 2},
 		{"unknown", "solver returned unknown", 1, VerdictUnknown, "", -1},
 	}
 	for _, test := range tests {
