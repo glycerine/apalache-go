@@ -14,10 +14,11 @@ import (
 )
 
 const (
-	exitOK       = 0
-	exitTool     = 1
-	exitUsage    = 2
-	exitFrontend = 4
+	exitOK             = 0
+	exitTool           = 1
+	exitUsage          = 2
+	exitFrontend       = 4
+	exitCounterexample = 12
 )
 
 var version = "dev"
@@ -44,10 +45,110 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return runParse(ctx, args[1:], stdout, stderr)
 	case "typecheck":
 		return runTypeCheck(ctx, args[1:], stdout, stderr)
+	case "check":
+		return runCheck(ctx, args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command %q\n", args[0])
 		printUsage(stderr)
 		return exitUsage
+	}
+}
+
+func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	flags := flag.NewFlagSet("check", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	length := flags.Int("length", 10, "maximum number of Next steps")
+	configPath := flags.String("config", "", "TLC configuration file")
+	initName := flags.String("init", "", "initial-state operator")
+	nextName := flags.String("next", "", "next-state operator")
+	constantInit := flags.String("cinit", "", "constant initializer operator")
+	useRows := flags.Bool("rows", false, "enable row types")
+	disablePolytypes := flags.Bool("no-polytypes", false, "disable let-polymorphism")
+	var invariants stringList
+	var libraryPaths stringList
+	flags.Var(&invariants, "inv", "state invariant operator (repeatable)")
+	flags.Var(&libraryPaths, "I", "add a TLA+ module search directory (repeatable)")
+	if err := flags.Parse(args); err != nil {
+		return exitUsage
+	}
+	if flags.NArg() != 1 {
+		fmt.Fprintln(stderr, "check requires exactly one TLA+ file")
+		return exitUsage
+	}
+	if *length < 0 {
+		fmt.Fprintln(stderr, "check length cannot be negative")
+		return exitUsage
+	}
+
+	configuration := pal.SpecificationConfiguration{
+		ConstantInit: *constantInit,
+		Invariants:   append([]string(nil), invariants...),
+	}
+	if *configPath != "" {
+		contents, err := os.ReadFile(*configPath)
+		if err != nil {
+			fmt.Fprintf(stderr, "cannot read TLC configuration: %v\n", err)
+			return exitFrontend
+		}
+		parsed, err := pal.ParseTLCConfig(string(contents))
+		if err != nil {
+			fmt.Fprintf(stderr, "cannot parse TLC configuration: %v\n", err)
+			return exitFrontend
+		}
+		configuration.TLCConfig = &parsed
+		configuration.ContextName = *configPath
+	}
+	if (*initName == "") != (*nextName == "") {
+		fmt.Fprintln(stderr, "-init and -next must be provided together")
+		return exitUsage
+	}
+	if *initName != "" {
+		configuration.Behavior = pal.InitNextSpec{Init: *initName, Next: *nextName}
+	} else if configuration.TLCConfig == nil {
+		fmt.Fprintln(stderr, "check requires either -config or both -init and -next")
+		return exitUsage
+	}
+
+	frontend := pal.ParseAndTypeCheckFile(ctx, flags.Arg(0), pal.FrontendOptions{
+		LibraryPaths: libraryPaths,
+	}, pal.TypeCheckOptions{UseRows: *useRows, DisablePolytypes: *disablePolytypes})
+	for _, diagnostic := range frontend.Diagnostics {
+		fmt.Fprintln(stderr, diagnostic.Error())
+	}
+	if !frontend.OK() {
+		return exitFrontend
+	}
+	prepared, err := pal.PrepareSafetyTransitions(frontend.Native, pal.SafetyPipelineOptions{
+		Specification: configuration,
+		Sources:       frontend.Sources,
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "cannot prepare safety transitions: %v\n", err)
+		return exitTool
+	}
+	if len(prepared.Predicates.Invariants) == 0 {
+		fmt.Fprintln(stderr, "check requires at least one invariant")
+		return exitUsage
+	}
+	result, err := pal.CheckBoundedSafety(ctx, prepared.Module, prepared.Predicates, *length)
+	if err != nil {
+		fmt.Fprintf(stderr, "bounded safety check failed: %v\n", err)
+		return exitTool
+	}
+	switch result.Outcome {
+	case pal.SafetyCounterexample:
+		fmt.Fprintf(stdout, "Invariant %s violated at depth %d (Init$%04d", result.Invariant, result.Depth, result.InitTransition)
+		for _, number := range result.NextTransitions {
+			fmt.Fprintf(stdout, ", Next$%04d", number)
+		}
+		fmt.Fprintln(stdout, ").")
+		return exitCounterexample
+	case pal.SafetyNoCounterexample:
+		fmt.Fprintf(stdout, "No counterexample found through depth %d (%d symbolic executions).\n", *length, result.ExploredExecutions)
+		return exitOK
+	default:
+		fmt.Fprintln(stderr, "solver returned unknown")
+		return exitTool
 	}
 }
 
@@ -169,6 +270,7 @@ func runParse(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "usage: apalache <command> [options]")
 	fmt.Fprintln(w, "commands:")
+	fmt.Fprintln(w, "  check FILE    bounded safety check")
 	fmt.Fprintln(w, "  parse FILE    parse and semantically check TLA+")
 	fmt.Fprintln(w, "  typecheck FILE parse and type-check annotated TLA+")
 	fmt.Fprintln(w, "  version       print build version")

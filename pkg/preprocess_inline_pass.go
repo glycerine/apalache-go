@@ -23,7 +23,9 @@ func InlineConfiguredModule(module *Module, options InlinePassOptions) (*Module,
 	}
 	constantInit := options.ConstantInit
 	if constantInit == "" {
-		constantInit = "CInit"
+		if _, found := OperatorBody(module, "CInit"); found {
+			constantInit = "CInit"
+		}
 	}
 	tracker := options.Tracker
 	if tracker == nil {
@@ -37,8 +39,12 @@ func InlineConfiguredModule(module *Module, options InlinePassOptions) (*Module,
 	for _, name := range options.Relevant {
 		relevant[name] = struct{}{}
 	}
-	for _, name := range []string{options.Init, options.Next, constantInit, options.Init + "Primed", constantInit + "Primed"} {
+	for _, name := range []string{options.Init, options.Next, options.Init + "Primed"} {
 		relevant[name] = struct{}{}
+	}
+	if constantInit != "" {
+		relevant[constantInit] = struct{}{}
+		relevant[constantInit+"Primed"] = struct{}{}
 	}
 
 	renamed, err := renamer.RenameModule(module)
@@ -49,6 +55,17 @@ func InlineConfiguredModule(module *Module, options InlinePassOptions) (*Module,
 	inlined, err := inliner.Module(renamed)
 	if err != nil {
 		return nil, fmt.Errorf("operator inlining: %w", err)
+	}
+	for _, name := range []string{options.Init, options.Next} {
+		if _, found := OperatorBody(inlined, name); !found {
+			return nil, fmt.Errorf("configured operator %s was not found after inlining", name)
+		}
+	}
+	if constantInit == "" {
+		result := NewModule(module.Name(), inlined.Declarations())
+		result.properties = cloneMap(module.properties)
+		result.AddProperty(PropertyInlined)
+		return result, nil
 	}
 	cinitBody, found := OperatorBody(inlined, constantInit)
 	if !found {

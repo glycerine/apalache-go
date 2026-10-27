@@ -75,6 +75,22 @@ func TestInlineConfiguredModuleRetainsExplicitRelevantOperators(t *testing.T) {
 	}
 }
 
+func TestInlineConfiguredModuleWithoutConstantInitializer(t *testing.T) {
+	truth := NewValueExpr(BoolValue(true), Typed(BoolT1))
+	boolOperator := Typed(mustOperator(nil, BoolT1))
+	module := NewModule("M", []Decl{
+		NewOperDecl("Init", nil, truth, boolOperator),
+		NewOperDecl("Next", nil, truth, boolOperator),
+	})
+	got, err := InlineConfiguredModule(module, InlinePassOptions{Init: "Init", Next: "Next"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.HasProperty(PropertyInlined) {
+		t.Fatal("constant-free module was not marked inlined")
+	}
+}
+
 func TestInlineConfiguredModuleRejectsMissingConfiguration(t *testing.T) {
 	module := NewModule("M", nil)
 	if _, err := InlineConfiguredModule(module, InlinePassOptions{}); err == nil {

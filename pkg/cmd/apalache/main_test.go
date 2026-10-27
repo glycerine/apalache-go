@@ -102,6 +102,74 @@ func TestRunTypeCheckReportsMissingAnnotation(t *testing.T) {
 	}
 }
 
+func TestRunCheckFindsCounterexampleAndHonorsBound(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "Counter.tla")
+	if err := os.WriteFile(path, []byte(`---- MODULE Counter ----
+EXTENDS Integers
+\* @type: Int;
+VARIABLE x
+Init == x = 0
+Next == x' = x + 1
+Inv == x < 2
+====
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	direct := []string{"check", "-init=Init", "-next=Next", "-inv=Inv", "-length=1", path}
+	if code := run(context.Background(), direct, &stdout, &stderr); code != exitOK {
+		t.Fatalf("safe check = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
+	}
+	if !strings.Contains(stdout.String(), "No counterexample found through depth 1") {
+		t.Fatalf("safe output = %q", &stdout)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	direct[4] = "-length=2"
+	if code := run(context.Background(), direct, &stdout, &stderr); code != exitCounterexample {
+		t.Fatalf("unsafe check = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
+	}
+	if !strings.Contains(stdout.String(), "Invariant Inv violated at depth 2") ||
+		!strings.Contains(stdout.String(), "Init$0000, Next$0000, Next$0000") {
+		t.Fatalf("counterexample output = %q", &stdout)
+	}
+}
+
+func TestRunCheckLoadsTLCConfiguration(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "Configured.tla")
+	configPath := filepath.Join(dir, "Configured.cfg")
+	if err := os.WriteFile(path, []byte(`---- MODULE Configured ----
+EXTENDS Integers
+\* @type: Int;
+VARIABLE x
+Init == x = 0
+Next == x' = x
+Inv == x = 0
+====
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, []byte("INIT Init\nNEXT Next\nINVARIANT Inv\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	code := run(context.Background(), []string{"check", "-config", configPath, "-length=1", path}, &stdout, &stderr)
+	if code != exitOK || !strings.Contains(stdout.String(), "No counterexample") {
+		t.Fatalf("configured check = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
+	}
+}
+
+func TestRunCheckValidatesConfigurationFlags(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := run(context.Background(), []string{"check", "-init=Init", "M.tla"}, &stdout, &stderr)
+	if code != exitUsage || !strings.Contains(stderr.String(), "-init and -next") {
+		t.Fatalf("partial behavior flags = %d, stderr = %q", code, &stderr)
+	}
+}
+
 func TestRunUsage(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	if code := run(context.Background(), nil, &stdout, &stderr); code != exitUsage {
