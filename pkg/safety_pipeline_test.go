@@ -139,3 +139,33 @@ func TestPrepareSafetyTransitionsDesugarsLeadsToBeforeTableau(t *testing.T) {
 		t.Fatalf("leads-to counterexample = %+v", result)
 	}
 }
+
+func TestPrepareSafetyTransitionsRemovesAssignmentsFromTemporalAtoms(t *testing.T) {
+	x := NewNameExpr("x", Typed(IntT1))
+	prime := MustOperExpr(Op("PRIME"), Typed(IntT1), NewNameExpr("x", Typed(IntT1)))
+	init := boolDefinition("Init", MustOperExpr(Op("EQ"), Typed(BoolT1), x, intLiteral(0)))
+	next := boolDefinition("Next", MustOperExpr(Op("EQ"), Typed(BoolT1), prime, x))
+	actionAssignment := MustOperExpr(Op("Apalache!"+":="), Typed(BoolT1), prime, intLiteral(1))
+	live := boolDefinition("Live", MustOperExpr(Op("EVENTUALLY"), Typed(BoolT1), actionAssignment))
+	module := configuredTestModule(NewVarDecl("x", Typed(IntT1)), init, next, live)
+	prepared, err := PrepareSafetyTransitions(module, SafetyPipelineOptions{Specification: SpecificationConfiguration{
+		Behavior: InitNextSpec{Init: "Init", Next: "Next"}, TemporalProperties: []string{"Live"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, transition := range TransitionsFromModule(prepared.Module, NormalizedNextPrefix) {
+		// Exactly one assignment to x and assignments to generated variables must
+		// originate from Next/tableau state, never from the temporal atom itself.
+		if countOperator(transition, "Apalache!"+":=") == 0 {
+			t.Fatalf("normalized transition has no assignments: %v", transition)
+		}
+	}
+	result, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Outcome != SafetyCounterexample || result.Invariant != "Live" {
+		t.Fatalf("action temporal counterexample = %+v", result)
+	}
+}

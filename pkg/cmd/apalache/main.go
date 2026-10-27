@@ -237,9 +237,10 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	itfPath := flags.String("itf", "", "write a counterexample trace as ITF JSON")
 	useRows := flags.Bool("rows", false, "enable row types")
 	disablePolytypes := flags.Bool("no-polytypes", false, "disable let-polymorphism")
-	var invariants stringList
+	var invariants, temporalProperties csvStringList
 	var libraryPaths stringList
 	flags.Var(&invariants, "inv", "state invariant operator (repeatable)")
+	flags.Var(&temporalProperties, "temporal", "temporal property operator (repeatable or comma-separated)")
 	flags.Var(&libraryPaths, "I", "add a TLA+ module search directory (repeatable)")
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
@@ -254,8 +255,9 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	}
 
 	configuration := pal.SpecificationConfiguration{
-		ConstantInit: *constantInit,
-		Invariants:   append([]string(nil), invariants...),
+		ConstantInit:       *constantInit,
+		Invariants:         append([]string(nil), invariants...),
+		TemporalProperties: append([]string(nil), temporalProperties...),
 	}
 	if *configPath != "" {
 		contents, err := os.ReadFile(*configPath)
@@ -450,6 +452,20 @@ type stringList []string
 func (s *stringList) String() string { return strings.Join(*s, string(os.PathListSeparator)) }
 func (s *stringList) Set(value string) error {
 	*s = append(*s, value)
+	return nil
+}
+
+type csvStringList []string
+
+func (s *csvStringList) String() string { return strings.Join(*s, ",") }
+func (s *csvStringList) Set(value string) error {
+	for _, item := range strings.Split(value, ",") {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			return fmt.Errorf("operator name list contains an empty name")
+		}
+		*s = append(*s, item)
+	}
 	return nil
 }
 

@@ -203,6 +203,41 @@ Live == <> (x = 2)
 	}
 }
 
+func TestRunCheckAcceptsDirectCommaSeparatedProperties(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "Direct.tla")
+	if err := os.WriteFile(path, []byte(`---- MODULE Direct ----
+EXTENDS Integers
+\* @type: Int;
+VARIABLE x
+Init == x = 0
+Next == x' = x
+Inv == x = 0
+Live == <> (x = 1)
+====
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	code := run(context.Background(), []string{
+		"check", "-init=Init", "-next=Next", "-deadlock=false",
+		"-inv=Inv", "-temporal=Live", "-length=1", path,
+	}, &stdout, &stderr)
+	if code != exitCounterexample || !strings.Contains(stdout.String(), "Invariant Live violated") {
+		t.Fatalf("direct temporal check = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = run(context.Background(), []string{
+		"check", "-init=Init", "-next=Next", "-deadlock=false",
+		"-inv=Inv,Inv", "-length=0", path,
+	}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("comma invariant check = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
+	}
+}
+
 func TestRunCheckReportsDeadlockWithoutInvariant(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "Deadlock.tla")

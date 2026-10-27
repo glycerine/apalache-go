@@ -39,9 +39,10 @@ type SafetyPipelineResult struct {
 	Predicates DerivedPredicates
 }
 
-// PrepareSafetyTransitions executes the currently ported Scala safety front
-// half through optimized symbolic transitions. Temporal encoding and VC
-// generation remain separate, explicit future stages.
+// PrepareSafetyTransitions executes the ported Scala checker front half
+// through temporal encoding and optimized symbolic transitions. VC generation
+// remains a separate stage because the bounded checker evaluates invariants
+// directly against each symbolic state or action.
 func PrepareSafetyTransitions(module *Module, options SafetyPipelineOptions) (SafetyPipelineResult, error) {
 	tracker := options.Tracker
 	if tracker == nil {
