@@ -513,6 +513,36 @@ func normalizeTlagoLambdaValues(module *Module, sources *SourceStore) *Module {
 	return transformTlagoModuleExpressions(module, rewrite, sources)
 }
 
+// normalizeTlagoNamedAssumptionReferences repairs named ASSUME references
+// that tlago exports as first-class (() => Bool) values. A named assumption
+// denotes its formula body, so inline a fresh copy at every reference.
+func normalizeTlagoNamedAssumptionReferences(module *Module, sources *SourceStore) *Module {
+	if module == nil {
+		return nil
+	}
+	namedAssumptions := make(map[string]Expr)
+	for _, declaration := range module.AssumeDeclarations() {
+		if name, named := declaration.DefinedName(); named {
+			namedAssumptions[name] = declaration.Body()
+		}
+	}
+	var tracker TransformationTracker = IdleTracker{}
+	if sources != nil {
+		tracker = NewListenerTracker(sources)
+	}
+	rewrite := RewriteExpressions(tracker, func(expression Expr) (Expr, bool) {
+		name, ok := expression.(*NameExpr)
+		if !ok {
+			return nil, false
+		}
+		if body, assumption := namedAssumptions[name.Name()]; assumption {
+			return NewDeepCopier(tracker).Expression(body), true
+		}
+		return nil, false
+	})
+	return transformTlagoModuleExpressions(module, rewrite, sources)
+}
+
 func removeTlagoNativeVariantDeclarations(module *Module, sources *SourceStore, variantsImported bool) *Module {
 	if module == nil || !variantsImported {
 		return module

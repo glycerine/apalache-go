@@ -342,6 +342,26 @@ Test == LET s == SetToSeq({1, 2}) IN Len(s) = 2 /\ ToSet(s) = {1, 2}
 	}
 }
 
+func TestParseAndTypeCheckSourceInlinesNamedAssumptionReferences(t *testing.T) {
+	result := ParseAndTypeCheckSource(context.Background(), "NamedAssumption.tla", `---- MODULE NamedAssumption ----
+EXTENDS Integers
+VARIABLE
+\* @type: Int;
+x
+ASSUME Positive == 1 > 0
+Init == x = 0 /\ Positive
+Next == x' = x
+====
+`, FrontendOptions{}, TypeCheckOptions{})
+	if !result.OK() {
+		t.Fatalf("ParseAndTypeCheckSource() diagnostics = %v", result.Diagnostics)
+	}
+	body, found := OperatorBody(result.Native, "Init")
+	if !found || countNamed(body, "Positive") != 0 || countOperator(body, "GT") != 1 {
+		t.Fatalf("inlined named assumption body = %#v", body)
+	}
+}
+
 func TestParseAndTypeCheckSourceReconstructsTupleQuantifier(t *testing.T) {
 	result := ParseAndTypeCheckSource(context.Background(), "TupleBound.tla", `---- MODULE TupleBound ----
 EXTENDS Integers

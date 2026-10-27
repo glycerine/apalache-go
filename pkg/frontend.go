@@ -93,6 +93,7 @@ func ParseSource(ctx context.Context, filename, source string, opts FrontendOpti
 		result.Sources = NewSourceStore()
 		native, conversionErr := UnmarshalSingleModuleIRJSON(ir, result.Sources)
 		result.Native = normalizeTlagoLambdaValues(native, result.Sources)
+		result.Native = normalizeTlagoNamedAssumptionReferences(result.Native, result.Sources)
 		variantsImported := spec.Modules["Variants"] != nil
 		tlcImported := spec.Modules["TLC"] != nil
 		result.Native = removeTlagoNativeVariantDeclarations(result.Native, result.Sources, variantsImported)
