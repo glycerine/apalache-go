@@ -9,20 +9,27 @@ import (
 // PureArena graph and records the ground constraints separately.
 type StratifiedRewriter struct {
 	integers    *IntValueCache
+	equality    *LazyEquality
 	constraints []Expr
 }
 
 func NewStratifiedRewriter() *StratifiedRewriter {
-	return &StratifiedRewriter{integers: NewIntValueCache()}
+	result := &StratifiedRewriter{integers: NewIntValueCache()}
+	result.equality = NewLazyEquality(result.assert)
+	return result
 }
 
 func (rewriter *StratifiedRewriter) IntegerCache() *IntValueCache { return rewriter.integers }
+func (rewriter *StratifiedRewriter) LazyEquality() *LazyEquality  { return rewriter.equality }
 
 func (rewriter *StratifiedRewriter) Constraints() []Expr {
 	return append([]Expr(nil), rewriter.constraints...)
 }
 
-func (rewriter *StratifiedRewriter) ResetConstraints() { rewriter.constraints = nil }
+func (rewriter *StratifiedRewriter) ResetConstraints() {
+	rewriter.constraints = nil
+	rewriter.equality.Dispose()
+}
 
 func (rewriter *StratifiedRewriter) assert(expression Expr) {
 	rewriter.constraints = append(rewriter.constraints, expression)
@@ -121,15 +128,15 @@ func (rewriter *StratifiedRewriter) rewriteBasicEquality(expression *OperExpr, s
 	if err != nil {
 		return scope, ArenaCell{}, err
 	}
-	if !isDirectSMTCellType(left.Type) || !isDirectSMTCellType(right.Type) {
-		return scope, ArenaCell{}, fmt.Errorf("structural equality is not yet implemented for %s and %s", left.Type, right.Type)
+	comparison, err := rewriter.equality.Equal(scope.Arena, left, right)
+	if err != nil {
+		return scope, ArenaCell{}, err
 	}
-	if !EqualTypes(left.Type.TLAType(), right.Type.TLAType()) {
-		return scope, ArenaCell{}, fmt.Errorf("cannot compare cells of types %s and %s", left.Type, right.Type)
+	if expression.Operator().Name() == "NE" {
+		comparison = MustOperExpr(Op("NOT"), Typed(BoolT1), comparison)
 	}
 	newArena, result := scope.Arena.AppendCellType(BasicCellType{Type: BoolT1})
 	scope.Arena = newArena
-	comparison := MustOperExpr(expression.Operator(), Typed(BoolT1), left.NameExpr(), right.NameExpr())
 	rewriter.assert(MustOperExpr(Op("EQ"), Typed(BoolT1), result.NameExpr(), comparison))
 	return scope, result, nil
 }

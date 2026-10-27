@@ -228,13 +228,135 @@ func TestStratifiedFiniteAndNaturalMembershipThroughG3(t *testing.T) {
 	}
 }
 
-func TestStratifiedEqualityRejectsStructuralCells(t *testing.T) {
-	rewriter := NewStratifiedRewriter()
+func TestStratifiedFiniteSetEqualityThroughG3(t *testing.T) {
 	setType := Typed(mustSet(IntT1))
-	left := MustOperExpr(Op("SET_ENUM"), setType, NewValueExpr(Int64Value(1), Typed(IntT1)))
-	right := MustOperExpr(Op("SET_ENUM"), setType, NewValueExpr(Int64Value(2), Typed(IntT1)))
-	equality := MustOperExpr(Op("EQ"), Typed(BoolT1), left, right)
-	if _, _, err := rewriter.Rewrite(equality, InitialRewriterScope()); err == nil {
-		t.Fatal("structural set equality was approximated as cell equality")
+	set := func(values ...int64) Expr {
+		elements := make([]Expr, len(values))
+		for index, value := range values {
+			elements[index] = NewValueExpr(Int64Value(value), Typed(IntT1))
+		}
+		return MustOperExpr(Op("SET_ENUM"), setType, elements...)
+	}
+	tests := []struct {
+		name       string
+		left       Expr
+		right      Expr
+		contradict func(Expr) Expr
+	}{
+		{
+			name: "order independent",
+			left: set(1, 2), right: set(2, 1),
+			contradict: func(result Expr) Expr {
+				return MustOperExpr(Op("NOT"), Typed(BoolT1), result)
+			},
+		},
+		{
+			name: "different elements",
+			left: set(1), right: set(2),
+			contradict: func(result Expr) Expr { return result },
+		},
+		{
+			name: "empty and nonempty",
+			left: set(), right: set(1),
+			contradict: func(result Expr) Expr { return result },
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			rewriter := NewStratifiedRewriter()
+			equality := MustOperExpr(Op("EQ"), Typed(BoolT1), test.left, test.right)
+			scope, result, err := rewriter.Rewrite(equality, InitialRewriterScope())
+			if err != nil {
+				t.Fatal(err)
+			}
+			solver := newTestG3Solver(t)
+			encoder, err := EncodeRewriterScope(solver, scope, rewriter.Constraints())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := encoder.Assert(test.contradict(result.NameExpr())); err != nil {
+				t.Fatal(err)
+			}
+			if status, err := solver.Check(context.Background()); err != nil || status != SMTUnsatisfiable {
+				t.Fatalf("contradicted set equality = %v, %v", status, err)
+			}
+		})
+	}
+}
+
+func TestStratifiedNestedSetEqualityThroughG3(t *testing.T) {
+	intSetType := mustSet(IntT1)
+	innerTag := Typed(intSetType)
+	outerTag := Typed(mustSet(intSetType))
+	inner := func() Expr {
+		return MustOperExpr(Op("SET_ENUM"), innerTag, NewValueExpr(Int64Value(1), Typed(IntT1)))
+	}
+	left := MustOperExpr(Op("SET_ENUM"), outerTag, inner())
+	right := MustOperExpr(Op("SET_ENUM"), outerTag, inner())
+	equal := MustOperExpr(Op("EQ"), Typed(BoolT1), left, right)
+	rewriter := NewStratifiedRewriter()
+	scope, result, err := rewriter.Rewrite(equal, InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	solver := newTestG3Solver(t)
+	encoder, err := EncodeRewriterScope(solver, scope, rewriter.Constraints())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := encoder.Assert(MustOperExpr(Op("NOT"), Typed(BoolT1), result.NameExpr())); err != nil {
+		t.Fatal(err)
+	}
+	if status, err := solver.Check(context.Background()); err != nil || status != SMTUnsatisfiable {
+		t.Fatalf("nested singleton set equality negated = %v, %v", status, err)
+	}
+}
+
+func TestStratifiedGuardedSetEqualityThroughG3(t *testing.T) {
+	setType := Typed(mustSet(BoolT1))
+	allBooleans := MustOperExpr(Op("SET_ENUM"), setType,
+		NewValueExpr(BoolValue(false), Typed(BoolT1)),
+		NewValueExpr(BoolValue(true), Typed(BoolT1)),
+	)
+	bound := NewNameExpr("b", Typed(BoolT1))
+	filtered := MustOperExpr(Op("SET_FILTER"), setType, bound, allBooleans, bound)
+	trueOnly := MustOperExpr(Op("SET_ENUM"), setType,
+		NewValueExpr(BoolValue(true), Typed(BoolT1)),
+	)
+	equal := MustOperExpr(Op("EQ"), Typed(BoolT1), filtered, trueOnly)
+	rewriter := NewStratifiedRewriter()
+	scope, result, err := rewriter.Rewrite(equal, InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	solver := newTestG3Solver(t)
+	encoder, err := EncodeRewriterScope(solver, scope, rewriter.Constraints())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := encoder.Assert(MustOperExpr(Op("NOT"), Typed(BoolT1), result.NameExpr())); err != nil {
+		t.Fatal(err)
+	}
+	if status, err := solver.Check(context.Background()); err != nil || status != SMTUnsatisfiable {
+		t.Fatalf("{b \\in BOOLEAN: b} = {TRUE} negated = %v, %v", status, err)
+	}
+}
+
+func TestStratifiedEqualityRejectsUnsupportedStructuralCells(t *testing.T) {
+	rewriter := NewStratifiedRewriter()
+	tupleType, err := NewTupleType(IntT1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope := InitialRewriterScope()
+	newArena, cells := scope.Arena.AppendCellTypes(
+		BasicCellType{Type: tupleType}, BasicCellType{Type: tupleType},
+	)
+	scope.Arena = newArena
+	scope.Binding = scope.Binding.With("left", cells[0]).With("right", cells[1])
+	equality := MustOperExpr(Op("EQ"), Typed(BoolT1),
+		NewNameExpr("left", Typed(tupleType)), NewNameExpr("right", Typed(tupleType)))
+	if _, _, err := rewriter.Rewrite(equality, scope); err == nil {
+		t.Fatal("unsupported tuple equality was approximated as cell equality")
 	}
 }

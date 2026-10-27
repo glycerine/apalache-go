@@ -117,3 +117,19 @@ func TestEqualityCacheSnapshotsAreSquashedAndIndependent(t *testing.T) {
 		t.Fatal("squashed snapshot entry was removed at level zero")
 	}
 }
+
+func TestEqualityCacheAcceptsCellsWithNonComparableTypes(t *testing.T) {
+	record, err := NewRecordType(map[string]Type{"x": IntT1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	left := NewArenaCell(7, BasicCellType{Type: record})
+	right := NewArenaCell(8, BasicCellType{Type: record})
+	cache := NewEqualityCache()
+	if err := cache.Put(left, right, EqualityDirect{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, found := cache.Get(right, left); !found {
+		t.Fatal("cache missed cells whose types contain maps")
+	}
+}

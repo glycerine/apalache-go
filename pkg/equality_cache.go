@@ -20,8 +20,8 @@ func (EqualityDirect) equalityCacheEntry()     {}
 func (EqualityExpression) equalityCacheEntry() {}
 
 type equalityPair struct {
-	left  ArenaCell
-	right ArenaCell
+	leftID  int
+	rightID int
 }
 
 type equalityCacheValue struct {
@@ -48,9 +48,9 @@ func NewEqualityCache() *EqualityCache {
 
 func canonicalEqualityPair(left, right ArenaCell) equalityPair {
 	if left.ID <= right.ID {
-		return equalityPair{left: left, right: right}
+		return equalityPair{leftID: left.ID, rightID: right.ID}
 	}
-	return equalityPair{left: right, right: left}
+	return equalityPair{leftID: right.ID, rightID: left.ID}
 }
 
 func (cache *EqualityCache) Put(left, right ArenaCell, entry EqualityCacheEntry) error {
