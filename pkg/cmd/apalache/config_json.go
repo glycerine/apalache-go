@@ -349,6 +349,34 @@ type jsonServerConfig struct {
 	ServerType *string `json:"server-type"`
 }
 
+func (config jsonCommandConfig) validateForServer() error {
+	unsupported := []struct {
+		set  bool
+		name string
+	}{
+		{config.Command != nil, "command"},
+		{config.ConfigFile != nil, "config-file"},
+		{config.OutDir != nil, "out-dir"},
+		{config.RunDir != nil, "run-dir"},
+		{config.Debug != nil, "debug"},
+		{config.SMTProfile != nil, "smtprof"},
+		{config.WriteIntermediate != nil, "write-intermediate"},
+		{config.Profiling != nil, "profiling"},
+		{config.Features != nil, "features"},
+		{config.Source != nil, "source"},
+		{config.Output != nil, "output"},
+		{config.Checker != (jsonCheckerConfig{}), "checker"},
+		{config.Typechecker != (jsonTypecheckerConfig{}), "typechecker"},
+		{config.TraceEvaluation != (jsonTraceConfig{}), "tracee"},
+	}
+	for _, field := range unsupported {
+		if field.set {
+			return fmt.Errorf("JSON configuration field %s is not supported by the Go server command", field.name)
+		}
+	}
+	return nil
+}
+
 func (config jsonCommandConfig) validateForModelCommand(command string, checkSpecific bool) error {
 	unsupported := []struct {
 		set  bool

@@ -8,6 +8,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -28,6 +30,7 @@ const (
 )
 
 var version = "dev"
+var listenTCP = net.Listen
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -57,6 +60,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return runConfig(args[1:], stdout, stderr)
 	case "simulate":
 		return runSimulate(ctx, args[1:], stdout, stderr)
+	case "server":
+		return runServer(ctx, args[1:], stdout, stderr)
 	case "test":
 		return runTest(ctx, args[1:], stdout, stderr)
 	case "tracee":
@@ -68,6 +73,77 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		printUsage(stderr)
 		return exitUsage
 	}
+}
+
+func runServer(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	flags := flag.NewFlagSet("server", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	configFile := flags.String("config-file", "", "Apalache JSON configuration file")
+	port := flags.Int("port", 8822, "port served by the RPC server")
+	serverType := flags.String("server-type", "explorer", "server type: explorer")
+	if err := flags.Parse(args); err != nil {
+		return exitUsage
+	}
+	if flags.NArg() != 0 {
+		fmt.Fprintln(stderr, "server does not accept positional arguments")
+		return exitUsage
+	}
+	visited := make(map[string]bool)
+	flags.Visit(func(flag *flag.Flag) { visited[flag.Name] = true })
+	applicationConfig, selectedConfig, err := loadCommandConfig(*configFile)
+	if err != nil {
+		fmt.Fprintf(stderr, "cannot load Apalache configuration: %v\n", err)
+		return exitUsage
+	}
+	if selectedConfig != "" {
+		if err = applicationConfig.validateForServer(); err != nil {
+			fmt.Fprintf(stderr, "invalid JSON server configuration: %v\n", err)
+			return exitUsage
+		}
+		if !visited["port"] && applicationConfig.Server.Port != nil {
+			*port = *applicationConfig.Server.Port
+		}
+		if !visited["server-type"] && applicationConfig.Server.ServerType != nil {
+			*serverType = *applicationConfig.Server.ServerType
+		}
+	}
+	if *port < 0 || *port > 65535 {
+		fmt.Fprintln(stderr, "server port must be in [0, 65535]")
+		return exitUsage
+	}
+	if strings.ToLower(*serverType) != "explorer" {
+		fmt.Fprintf(stderr, "unsupported server type %q (Go port currently supports explorer)\n", *serverType)
+		return exitUsage
+	}
+	listener, err := listenTCP("tcp", fmt.Sprintf(":%d", *port))
+	if err != nil {
+		fmt.Fprintf(stderr, "cannot listen for JSON-RPC: %v\n", err)
+		return exitTool
+	}
+	server := &http.Server{Handler: pal.NewExplorationJSONRPCHandler(), ReadHeaderTimeout: 10 * time.Second}
+	fmt.Fprintf(stdout, "JSON-RPC explorer server running on http://localhost:%d/rpc.\n", listener.Addr().(*net.TCPAddr).Port)
+	if ctx.Err() != nil {
+		_ = listener.Close()
+		return exitOK
+	}
+	shutdownContext, stopShutdown := context.WithCancel(ctx)
+	defer stopShutdown()
+	shutdownDone := make(chan struct{})
+	go func() {
+		defer close(shutdownDone)
+		<-shutdownContext.Done()
+		if ctx.Err() != nil {
+			_ = server.Shutdown(context.Background())
+		}
+	}()
+	err = server.Serve(listener)
+	stopShutdown()
+	<-shutdownDone
+	if err != nil && err != http.ErrServerClosed {
+		fmt.Fprintf(stderr, "JSON-RPC server failed: %v\n", err)
+		return exitTool
+	}
+	return exitOK
 }
 
 func runTranspile(ctx context.Context, args []string, stdout, stderr io.Writer) int {
@@ -1201,6 +1277,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  check FILE    bounded safety check")
 	fmt.Fprintln(w, "  config        configure shared TLA+ options")
 	fmt.Fprintln(w, "  parse FILE    parse and semantically check TLA+")
+	fmt.Fprintln(w, "  server        run the JSON-RPC exploration server")
 	fmt.Fprintln(w, "  simulate FILE generate one bounded behavior")
 	fmt.Fprintln(w, "  test FILE BEFORE ACTION ASSERTION run a one-step test")
 	fmt.Fprintln(w, "  tracee SOURCE TRACE EXPRESSIONS evaluate operators over an ITF trace")

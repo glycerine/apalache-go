@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -62,6 +63,42 @@ func TestRunConfigRejectsInvalidStatisticsChoice(t *testing.T) {
 	code := run(context.Background(), []string{"config", "--enable-stats=maybe"}, &stdout, &stderr)
 	if code != exitUsage || !strings.Contains(stderr.String(), "must be true or false") {
 		t.Fatalf("config = %d, stderr = %q", code, &stderr)
+	}
+}
+
+func TestRunServerStartsExplorerAndStopsWithContext(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	originalListen := listenTCP
+	listenTCP = func(network, address string) (net.Listener, error) {
+		if network != "tcp" || address != ":0" {
+			t.Fatalf("listen = %q, %q", network, address)
+		}
+		return &testListener{address: &net.TCPAddr{Port: 43210}}, nil
+	}
+	t.Cleanup(func() { listenTCP = originalListen })
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	var stdout, stderr bytes.Buffer
+	code := run(ctx, []string{"server", "--port=0", "--server-type=explorer"}, &stdout, &stderr)
+	if code != exitOK || !strings.Contains(stdout.String(), "JSON-RPC explorer server running on http://localhost:") {
+		t.Fatalf("server = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
+	}
+}
+
+type testListener struct {
+	address net.Addr
+}
+
+func (listener *testListener) Accept() (net.Conn, error) { return nil, net.ErrClosed }
+func (listener *testListener) Close() error              { return nil }
+func (listener *testListener) Addr() net.Addr            { return listener.address }
+
+func TestRunServerRejectsUnsupportedCheckerService(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	var stdout, stderr bytes.Buffer
+	code := run(context.Background(), []string{"server", "--server-type=checker"}, &stdout, &stderr)
+	if code != exitUsage || !strings.Contains(stderr.String(), "currently supports explorer") {
+		t.Fatalf("server = %d, stderr = %q", code, &stderr)
 	}
 }
 

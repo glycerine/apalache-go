@@ -54,6 +54,19 @@ func TestJSONModelConfigRejectsKeepingDisabledTransitions(t *testing.T) {
 	}
 }
 
+func TestJSONServerConfigAcceptsOnlyServerSettings(t *testing.T) {
+	port := 0
+	explorer := "explorer"
+	if err := (jsonCommandConfig{Server: jsonServerConfig{Port: &port, ServerType: &explorer}}).validateForServer(); err != nil {
+		t.Fatalf("server-only configuration = %v", err)
+	}
+	length := 1
+	err := (jsonCommandConfig{Checker: jsonCheckerConfig{Length: &length}}).validateForServer()
+	if err == nil || !strings.Contains(err.Error(), "checker") {
+		t.Fatalf("checker server configuration = %v", err)
+	}
+}
+
 func TestRunCheckLoadsInMemoryJSONSourceWithAuxiliaryModule(t *testing.T) {
 	directory := t.TempDir()
 	t.Setenv("HOME", filepath.Join(directory, "home"))
