@@ -67,7 +67,9 @@ func ParseSource(ctx context.Context, filename, source string, opts FrontendOpti
 		}}}
 	}
 	defer cleanupLibraries()
-	spec, tlagoDiags := tlago.CheckSanySourceWithOptions(filename, source, tlago.LoadOptions{LibraryPaths: libraryPaths})
+	spec, tlagoDiags := tlago.CheckSanySourceWithOptions(filename, source, tlago.LoadOptions{
+		LibraryPaths: libraryPaths, PreferLibraryModules: true,
+	})
 	result := FrontendResult{Diagnostics: frontendDiagnostics(tlagoDiags)}
 	if spec != nil && spec.Root != nil {
 		result.Module = spec.Root.Name
