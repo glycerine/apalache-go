@@ -220,6 +220,23 @@ func TestStratifiedSkolemizedExistentialSupportsAssignments(t *testing.T) {
 	}
 }
 
+func TestStratifiedSetNonMembership(t *testing.T) {
+	setType := mustSet(IntT1)
+	set := MustOperExpr(Op("SET_ENUM"), Typed(setType), intLiteral(1), intLiteral(2))
+	for _, test := range []struct {
+		value int64
+		want  bool
+	}{{1, false}, {3, true}} {
+		rewriter := NewStratifiedRewriter()
+		expression := MustOperExpr(Op("SET_NOT_IN"), Typed(BoolT1), intLiteral(test.value), set)
+		scope, result, err := rewriter.Rewrite(expression, InitialRewriterScope())
+		if err != nil {
+			t.Fatal(err)
+		}
+		checkRewrittenTruth(t, rewriter, scope, result, test.want)
+	}
+}
+
 func TestStratifiedPrimeAndConstCardinalityWrapper(t *testing.T) {
 	intValue := func(value int64) Expr { return NewValueExpr(Int64Value(value), Typed(IntT1)) }
 	rewriter := NewStratifiedRewriter()

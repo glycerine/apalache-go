@@ -133,6 +133,8 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 			return rewriter.rewriteFunctionSet(typed, scope)
 		case "SET_IN", "Apalache!SelectInSet":
 			return rewriter.rewriteMembership(typed, scope)
+		case "SET_NOT_IN":
+			return rewriter.rewriteNegatedMembership(typed, scope)
 		case "TUPLE":
 			return rewriter.rewriteTuple(typed, scope)
 		case "RECORD":
@@ -1151,6 +1153,29 @@ func (rewriter *StratifiedRewriter) rewriteNegation(expression *OperExpr, scope 
 	newArena, result := scope.Arena.AppendCellType(BasicCellType{Type: BoolT1})
 	scope.Arena = newArena
 	rewriter.assert(MustOperExpr(Op("EQ"), Typed(BoolT1), result.NameExpr(), MustOperExpr(Op("NOT"), Typed(BoolT1), argument.NameExpr())))
+	return scope, result, nil
+}
+
+func (rewriter *StratifiedRewriter) rewriteNegatedMembership(
+	expression *OperExpr,
+	scope RewriterScope,
+) (RewriterScope, ArenaCell, error) {
+	arguments := expression.Arguments()
+	if len(arguments) != 2 {
+		return scope, ArenaCell{}, fmt.Errorf("set non-membership requires two operands")
+	}
+	membership := MustOperExpr(Op("SET_IN"), Typed(BoolT1), arguments...)
+	scope, member, err := rewriter.Rewrite(membership, scope)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	if member.Equal(scope.Arena.TrueCell()) {
+		return scope, scope.Arena.FalseCell(), nil
+	}
+	if member.Equal(scope.Arena.FalseCell()) {
+		return scope, scope.Arena.TrueCell(), nil
+	}
+	scope, result := rewriter.bindBoolean(scope, MustOperExpr(Op("NOT"), Typed(BoolT1), member.NameExpr()))
 	return scope, result, nil
 }
 
