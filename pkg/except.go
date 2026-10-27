@@ -190,6 +190,13 @@ func (rewriter *StratifiedRewriter) rewriteRecordExcept(
 	}
 	newArena, result := scope.Arena.AppendCellType(oldRecord.Type)
 	scope.Arena = newArena.AppendHas(result, updated...)
+	if _, legacy := oldRecord.Type.TLAType().(RecordType); legacy {
+		domain, domainErr := scope.Arena.Domain(oldRecord)
+		if domainErr != nil {
+			return scope, ArenaCell{}, domainErr
+		}
+		scope.Arena = scope.Arena.SetDomain(result, domain)
+	}
 	return scope, result, nil
 }
 

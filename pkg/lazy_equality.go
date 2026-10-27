@@ -242,6 +242,21 @@ func (equality *LazyEquality) recordEqualityCondition(arena *PureArena, left, ri
 		}
 		conditions[index] = condition
 	}
+	if _, legacy := left.Type.TLAType().(RecordType); legacy {
+		leftDomain, err := arena.Domain(left)
+		if err != nil {
+			return nil, err
+		}
+		rightDomain, err := arena.Domain(right)
+		if err != nil {
+			return nil, err
+		}
+		domainsEqual, err := equality.Equal(arena, leftDomain, rightDomain)
+		if err != nil {
+			return nil, fmt.Errorf("compare record domains: %w", err)
+		}
+		conditions = append([]Expr{domainsEqual}, conditions...)
+	}
 	return booleanAnd(conditions...), nil
 }
 

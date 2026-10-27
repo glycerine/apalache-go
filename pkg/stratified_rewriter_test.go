@@ -1454,8 +1454,13 @@ func TestStratifiedRecordConstructionAndEqualityThroughG3(t *testing.T) {
 		t.Fatalf("sorted record fields = %#v, integer %v, found %v", fields, integer, found)
 	}
 	missing := MustOperExpr(Op("RECORD"), recordTag, key("a"), NewValueExpr(Int64Value(1), Typed(IntT1)))
-	if _, _, err := NewStratifiedRewriter().Rewrite(missing, InitialRewriterScope()); err == nil {
-		t.Fatal("record constructor accepted a missing typed field")
+	missingRewriter := NewStratifiedRewriter()
+	missingScope, missingCell, err := missingRewriter.Rewrite(missing, InitialRewriterScope())
+	if err != nil {
+		t.Fatalf("legacy record with a missing static field: %v", err)
+	}
+	if len(missingScope.Arena.GetHas(missingCell)) != 2 || !missingScope.Arena.HasDomain(missingCell) {
+		t.Fatalf("legacy record was not totalized with a dynamic domain: %s", missingCell)
 	}
 	duplicate := MustOperExpr(Op("RECORD"), recordTag,
 		key("a"), NewValueExpr(Int64Value(1), Typed(IntT1)),

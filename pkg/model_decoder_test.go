@@ -104,6 +104,22 @@ func TestSymbolicDecoderRecordsVariantsAndFunctions(t *testing.T) {
 	}
 }
 
+func TestSymbolicDecoderOmitsAbsentLegacyRecordFields(t *testing.T) {
+	recordType, _ := NewRecordType(map[string]Type{"a": IntT1, "b": BoolT1})
+	record := MustOperExpr(Op("RECORD"), Typed(recordType),
+		NewValueExpr(StringValue("a"), Typed(StrT1)), intLiteral(3))
+	decoder, scope, cell, closeSolver := decoderForExpression(t, record)
+	defer closeSolver()
+	decoded, err := decoder.DecodeCell(scope.Arena, cell)
+	if err != nil {
+		t.Fatal(err)
+	}
+	formatted, err := FormatTLAExpression(decoded)
+	if err != nil || formatted != "[a |-> 3]" {
+		t.Fatalf("decoded sparse record = %q, %v", formatted, err)
+	}
+}
+
 func TestSymbolicDecoderBindingUsesLiteralCache(t *testing.T) {
 	expression := NewValueExpr(StringValue("hello"), Typed(StrT1))
 	decoder, scope, cell, closeSolver := decoderForExpression(t, expression)

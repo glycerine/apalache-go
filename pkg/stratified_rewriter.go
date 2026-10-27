@@ -286,6 +286,10 @@ func (rewriter *StratifiedRewriter) rewriteDomain(expression *OperExpr, scope Re
 		return rewriter.Rewrite(MustOperExpr(Op("SET_ENUM"), Typed(mustSet(IntT1)), elements...), scope)
 	}
 	if isRecordCellType(value.Type) {
+		if _, legacy := value.Type.TLAType().(RecordType); legacy && scope.Arena.HasDomain(value) {
+			domain, domainErr := scope.Arena.Domain(value)
+			return scope, domain, domainErr
+		}
 		fields, ok := recordTypeFields(value.Type)
 		if !ok {
 			return scope, ArenaCell{}, fmt.Errorf("DOMAIN requires a closed record type")
@@ -575,6 +579,18 @@ func (rewriter *StratifiedRewriter) rewriteSequenceConcat(expression *OperExpr, 
 	if err != nil {
 		return scope, ArenaCell{}, err
 	}
+	resultType, typed := expression.Tag().Type()
+	if !typed {
+		return scope, ArenaCell{}, fmt.Errorf("sequence concatenation must be typed")
+	}
+	scope, left, err = rewriter.coerceCell(scope, left, resultType)
+	if err != nil {
+		return scope, ArenaCell{}, fmt.Errorf("widen left sequence: %w", err)
+	}
+	scope, right, err = rewriter.coerceCell(scope, right, resultType)
+	if err != nil {
+		return scope, ArenaCell{}, fmt.Errorf("widen right sequence: %w", err)
+	}
 	if !isSequenceCellType(left.Type) || !EqualCellTypes(left.Type, right.Type) {
 		return scope, ArenaCell{}, fmt.Errorf("concatenation requires matching sequences, found %s and %s", left.Type, right.Type)
 	}
@@ -789,6 +805,18 @@ func (rewriter *StratifiedRewriter) rewriteSubset(expression *OperExpr, scope Re
 	if err != nil {
 		return scope, ArenaCell{}, err
 	}
+	commonType, compatible, err := CommonSupertype(left.Type.TLAType(), right.Type.TLAType())
+	if err != nil || !compatible {
+		return scope, ArenaCell{}, fmt.Errorf("subset comparison requires compatible sets, found %s and %s", left.Type, right.Type)
+	}
+	scope, left, err = rewriter.coerceCell(scope, left, commonType)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	scope, right, err = rewriter.coerceCell(scope, right, commonType)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
 	if !isFiniteSetCellType(left.Type) || !EqualCellTypes(left.Type, right.Type) {
 		return scope, ArenaCell{}, fmt.Errorf("subset comparison requires matching finite sets, found %s and %s", left.Type, right.Type)
 	}
@@ -812,6 +840,18 @@ func (rewriter *StratifiedRewriter) rewriteSetBinaryFilter(expression *OperExpr,
 		return scope, ArenaCell{}, err
 	}
 	scope, right, err := rewriter.Rewrite(arguments[1], scope)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	resultType, typed := expression.Tag().Type()
+	if !typed {
+		return scope, ArenaCell{}, fmt.Errorf("set operator %s must be typed", expression.Operator().Name())
+	}
+	scope, left, err = rewriter.coerceCell(scope, left, resultType)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	scope, right, err = rewriter.coerceCell(scope, right, resultType)
 	if err != nil {
 		return scope, ArenaCell{}, err
 	}
@@ -854,8 +894,10 @@ func (rewriter *StratifiedRewriter) rewriteApplication(expression *OperExpr, sco
 		return scope, ArenaCell{}, fmt.Errorf("function application must be typed")
 	}
 	project := func(current RewriterScope, cell ArenaCell) (RewriterScope, ArenaCell, error) {
-		if !EqualTypes(cell.Type.TLAType(), expectedType) {
-			return current, ArenaCell{}, fmt.Errorf("application result has type %s, expected %s", cell.Type, expectedType)
+		var projectErr error
+		current, cell, projectErr = rewriter.coerceCell(current, cell, expectedType)
+		if projectErr != nil {
+			return current, ArenaCell{}, fmt.Errorf("application result has type %s, expected %s: %w", cell.Type, expectedType, projectErr)
 		}
 		return current, cell, nil
 	}
@@ -1057,21 +1099,48 @@ func (rewriter *StratifiedRewriter) rewriteRecord(expression *OperExpr, scope Re
 		if err != nil {
 			return scope, ArenaCell{}, err
 		}
-		if !EqualTypes(value.Type.TLAType(), expectedType) {
-			return scope, ArenaCell{}, fmt.Errorf("record field %q has type %s, expected %s", key, value.Type, expectedType)
+		scope, value, err = rewriter.coerceCell(scope, value, expectedType)
+		if err != nil {
+			return scope, ArenaCell{}, fmt.Errorf("record field %q has type %s, expected %s: %w", key, value.Type, expectedType, err)
 		}
 		values[key] = value
 	}
-	if len(values) != len(fieldTypes) {
+	recordType, legacy := cellType.TLAType().(RecordType)
+	if !legacy && len(values) != len(fieldTypes) {
 		return scope, ArenaCell{}, fmt.Errorf("record constructor provides %d of %d fields", len(values), len(fieldTypes))
 	}
 	keys := sortedStringKeys(fieldTypes)
 	pointers := make([]ElementPointer, len(keys))
 	for index, key := range keys {
-		pointers[index] = FixedElementPointer{Cell: values[key]}
+		value, found := values[key]
+		if !found {
+			scope, value, err = rewriter.defaults.GetOrCreate(scope, recordType.Fields()[key])
+			if err != nil {
+				return scope, ArenaCell{}, fmt.Errorf("default record field %q: %w", key, err)
+			}
+		}
+		pointers[index] = FixedElementPointer{Cell: value}
 	}
 	newArena, record := scope.Arena.AppendCellType(cellType)
 	scope.Arena = newArena.AppendHas(record, pointers...)
+	if legacy {
+		domainElements := make([]Expr, 0, len(values))
+		valueKeys := make([]string, 0, len(values))
+		for key := range values {
+			valueKeys = append(valueKeys, key)
+		}
+		sort.Strings(valueKeys)
+		for _, key := range valueKeys {
+			domainElements = append(domainElements, NewValueExpr(StringValue(key), Typed(StrT1)))
+		}
+		domainExpression := MustOperExpr(Op("SET_ENUM"), Typed(mustSet(StrT1)), domainElements...)
+		var domain ArenaCell
+		scope, domain, err = rewriter.Rewrite(domainExpression, scope)
+		if err != nil {
+			return scope, ArenaCell{}, fmt.Errorf("construct record domain: %w", err)
+		}
+		scope.Arena = scope.Arena.SetDomain(record, domain)
+	}
 	return scope, record, nil
 }
 
@@ -1213,6 +1282,23 @@ func (rewriter *StratifiedRewriter) rewriteBasicEquality(expression *OperExpr, s
 	if err != nil {
 		return scope, ArenaCell{}, err
 	}
+	if !EqualCellTypes(left.Type, right.Type) {
+		commonType, compatible, unifyErr := CommonSupertype(left.Type.TLAType(), right.Type.TLAType())
+		if unifyErr != nil {
+			return scope, ArenaCell{}, fmt.Errorf("find common equality type: %w", unifyErr)
+		}
+		if !compatible {
+			return scope, ArenaCell{}, fmt.Errorf("cannot compare cells of types %s and %s", left.Type, right.Type)
+		}
+		scope, left, err = rewriter.coerceCell(scope, left, commonType)
+		if err != nil {
+			return scope, ArenaCell{}, fmt.Errorf("coerce left equality operand: %w", err)
+		}
+		scope, right, err = rewriter.coerceCell(scope, right, commonType)
+		if err != nil {
+			return scope, ArenaCell{}, fmt.Errorf("coerce right equality operand: %w", err)
+		}
+	}
 	comparison, err := rewriter.equality.Equal(scope.Arena, left, right)
 	if err != nil {
 		return scope, ArenaCell{}, err
@@ -1347,6 +1433,18 @@ func (rewriter *StratifiedRewriter) rewriteConditional(expression *OperExpr, sco
 	if !EqualTypes(predicate.Type.TLAType(), BoolT1) {
 		return scope, ArenaCell{}, fmt.Errorf("conditional predicate has non-Boolean type %s", predicate.Type)
 	}
+	expectedType, typed := expression.Tag().Type()
+	if !typed {
+		return scope, ArenaCell{}, fmt.Errorf("conditional must be typed")
+	}
+	scope, thenCell, err = rewriter.coerceCell(scope, thenCell, expectedType)
+	if err != nil {
+		return scope, ArenaCell{}, fmt.Errorf("widen conditional then branch: %w", err)
+	}
+	scope, elseCell, err = rewriter.coerceCell(scope, elseCell, expectedType)
+	if err != nil {
+		return scope, ArenaCell{}, fmt.Errorf("widen conditional else branch: %w", err)
+	}
 	if !EqualCellTypes(thenCell.Type, elseCell.Type) {
 		return scope, ArenaCell{}, fmt.Errorf("conditional branches have different types %s and %s", thenCell.Type, elseCell.Type)
 	}
@@ -1407,6 +1505,22 @@ func (rewriter *StratifiedRewriter) chooseConditional(scope RewriterScope, predi
 			pointers[index] = FixedElementPointer{Cell: field}
 		}
 		scope.Arena = newArena.AppendHas(result, pointers...)
+		if _, legacy := thenCell.Type.TLAType().(RecordType); legacy {
+			thenDomain, domainErr := scope.Arena.Domain(thenCell)
+			if domainErr != nil {
+				return scope, ArenaCell{}, domainErr
+			}
+			elseDomain, domainErr := scope.Arena.Domain(elseCell)
+			if domainErr != nil {
+				return scope, ArenaCell{}, domainErr
+			}
+			var domain ArenaCell
+			scope, domain, domainErr = rewriter.chooseConditional(scope, predicate, thenDomain, elseDomain)
+			if domainErr != nil {
+				return scope, ArenaCell{}, fmt.Errorf("choose conditional record domain: %w", domainErr)
+			}
+			scope.Arena = scope.Arena.SetDomain(result, domain)
+		}
 		return scope, result, nil
 	}
 	if isSequenceCellType(thenCell.Type) {
@@ -1581,7 +1695,8 @@ func (rewriter *StratifiedRewriter) rewriteSetConstructor(expression *OperExpr, 
 	if err != nil {
 		return scope, ArenaCell{}, err
 	}
-	if _, ok := cellType.TLAType().(SetType); !ok {
+	setType, ok := cellType.TLAType().(SetType)
+	if !ok {
 		return scope, ArenaCell{}, fmt.Errorf("set constructor has non-set type %s", cellType.TLAType())
 	}
 	unique := make(map[int]ArenaCell)
@@ -1590,6 +1705,10 @@ func (rewriter *StratifiedRewriter) rewriteSetConstructor(expression *OperExpr, 
 		scope, cell, err = rewriter.Rewrite(element, scope)
 		if err != nil {
 			return scope, ArenaCell{}, err
+		}
+		scope, cell, err = rewriter.coerceCell(scope, cell, setType.Element())
+		if err != nil {
+			return scope, ArenaCell{}, fmt.Errorf("set element has type %s, expected %s: %w", cell.Type, setType.Element(), err)
 		}
 		unique[cell.ID] = cell
 	}
@@ -1620,6 +1739,18 @@ func (rewriter *StratifiedRewriter) rewriteSetUnion(expression *OperExpr, scope 
 	rightScope, right, err := rewriter.Rewrite(arguments[1], leftScope)
 	if err != nil {
 		return scope, ArenaCell{}, err
+	}
+	resultType, typed := expression.Tag().Type()
+	if !typed {
+		return scope, ArenaCell{}, fmt.Errorf("set union must be typed")
+	}
+	rightScope, left, err = rewriter.coerceCell(rightScope, left, resultType)
+	if err != nil {
+		return scope, ArenaCell{}, fmt.Errorf("widen left set union operand: %w", err)
+	}
+	rightScope, right, err = rewriter.coerceCell(rightScope, right, resultType)
+	if err != nil {
+		return scope, ArenaCell{}, fmt.Errorf("widen right set union operand: %w", err)
 	}
 	pointers, err := MergeElementPointersByCell(append(rightScope.Arena.GetHas(left), rightScope.Arena.GetHas(right)...))
 	if err != nil {
@@ -1731,8 +1862,9 @@ func (rewriter *StratifiedRewriter) rewriteMembership(expression *OperExpr, scop
 	if !ok {
 		return scope, ArenaCell{}, fmt.Errorf("membership right-hand side has non-set type %s", setType.Type)
 	}
-	if !EqualTypes(element.Type.TLAType(), tlaSetType.Element()) {
-		return scope, ArenaCell{}, fmt.Errorf("membership element has type %s, expected %s", element.Type, tlaSetType.Element())
+	scope, element, err = rewriter.coerceCell(scope, element, tlaSetType.Element())
+	if err != nil {
+		return scope, ArenaCell{}, fmt.Errorf("membership element has type %s, expected %s: %w", element.Type, tlaSetType.Element(), err)
 	}
 	membership, err := rewriter.finiteMembershipCondition(scope.Arena, element, setCell)
 	if err != nil {

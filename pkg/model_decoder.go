@@ -111,7 +111,7 @@ func (decoder *SymbolicDecoder) decodeBasic(arena *PureArena, cell ArenaCell, ty
 	case SeqType:
 		return decoder.decodeSequence(arena, cell, typed)
 	case RecordType:
-		return decoder.decodeRecord(arena, cell, typed.Fields(), typed)
+		return decoder.decodeLegacyRecord(arena, cell, typed)
 	case RecordRowType:
 		if _, open := typed.Row().Other(); open {
 			return nil, fmt.Errorf("cannot decode an open row record")
@@ -123,6 +123,51 @@ func (decoder *SymbolicDecoder) decodeBasic(arena *PureArena, cell ArenaCell, ty
 		return decoder.decodeFunction(arena, cell, typed)
 	}
 	return nil, fmt.Errorf("unsupported basic TLA+ type %s", typ)
+}
+
+func (decoder *SymbolicDecoder) decodeLegacyRecord(arena *PureArena, cell ArenaCell, typ RecordType) (Expr, error) {
+	domain, err := arena.Domain(cell)
+	if err != nil {
+		return nil, fmt.Errorf("decode legacy record domain: %w", err)
+	}
+	decodedDomain, err := decoder.DecodeCell(arena, domain)
+	if err != nil {
+		return nil, err
+	}
+	domainSet, ok := decodedDomain.(*OperExpr)
+	if !ok || domainSet.Operator().Name() != "SET_ENUM" {
+		return nil, fmt.Errorf("legacy record %s has a malformed decoded domain", cell)
+	}
+	present := make(map[string]struct{}, len(domainSet.Arguments()))
+	for _, element := range domainSet.Arguments() {
+		valueExpression, ok := element.(*ValueExpr)
+		if !ok {
+			return nil, fmt.Errorf("legacy record %s has a nonliteral domain key", cell)
+		}
+		value, ok := valueExpression.Value().(StringValue)
+		if !ok {
+			return nil, fmt.Errorf("legacy record %s has a nonstring domain key", cell)
+		}
+		present[string(value)] = struct{}{}
+	}
+	fields := typ.Fields()
+	keys := sortedStringKeys(fields)
+	pointers := arena.GetHas(cell)
+	if len(pointers) != len(keys) {
+		return nil, fmt.Errorf("record %s has %d of %d totalized fields", cell, len(pointers), len(keys))
+	}
+	arguments := make([]Expr, 0, len(present)*2)
+	for index, key := range keys {
+		if _, found := present[key]; !found {
+			continue
+		}
+		value, decodeErr := decoder.DecodeCell(arena, pointers[index].Element())
+		if decodeErr != nil {
+			return nil, decodeErr
+		}
+		arguments = append(arguments, NewValueExpr(StringValue(key), Typed(StrT1)), value)
+	}
+	return NewOperExpr(Op("RECORD"), Typed(typ), arguments...)
 }
 
 func (decoder *SymbolicDecoder) decodeUninterpreted(cell ArenaCell, typ Type) (Expr, error) {

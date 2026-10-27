@@ -125,6 +125,23 @@ func (picker *CherryPicker) pickProduct(scope RewriterScope, oracle ChoiceOracle
 		pointers[index] = FixedElementPointer{Cell: field}
 	}
 	scope.Arena = newArena.AppendHas(result, pointers...)
+	if _, legacy := cells[0].Type.TLAType().(RecordType); legacy {
+		domains := make([]ArenaCell, len(cells))
+		for index, cell := range cells {
+			var err error
+			domains[index], err = scope.Arena.Domain(cell)
+			if err != nil {
+				return scope, ArenaCell{}, fmt.Errorf("record candidate %d domain: %w", index+1, err)
+			}
+		}
+		var domain ArenaCell
+		var err error
+		scope, domain, err = picker.Pick(scope, oracle, domains)
+		if err != nil {
+			return scope, ArenaCell{}, fmt.Errorf("pick record domain: %w", err)
+		}
+		scope.Arena = scope.Arena.SetDomain(result, domain)
+	}
 	return scope, result, nil
 }
 
