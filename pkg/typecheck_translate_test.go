@@ -32,6 +32,7 @@ func TestToEtcExprInfersCoreOperators(t *testing.T) {
 		{"function set", tlaOper("FUN_SET", tlaOper("SET_ENUM", tlaInt(1)), tlaOper("SET_ENUM", NewValueExpr(BoolValue(true), Untyped()))), mustSet(mustFun(IntT1, BoolT1))},
 		{"if", tlaOper("IF_THEN_ELSE", NewValueExpr(BoolValue(true), Untyped()), tlaInt(1), tlaInt(2)), IntT1},
 		{"sequence head", tlaOper("Sequences!Head", tlaOper("TUPLE", tlaInt(1), tlaInt(2))), IntT1},
+		{"unchanged singleton tuple", tlaOper("UNCHANGED", tlaOper("TUPLE", tlaInt(1))), BoolT1},
 		{"variant unsafe", tlaOper("Variants!VariantGetUnsafe", tlaString("A"), tlaOper("Variants!Variant", tlaString("A"), tlaInt(1))), IntT1},
 	}
 	for _, test := range tests {

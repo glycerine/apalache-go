@@ -348,6 +348,23 @@ func (translator *ToEtcExpr) translateOperator(expression *OperExpr) (EtcExpr, e
 		a := fresh()
 		return appAll(mustOperator([]Type{BoolT1, a}, BoolT1))
 	case "UNCHANGED":
+		if len(args) == 1 {
+			if tuple, ok := args[0].(*OperExpr); ok && tuple.Operator().Name() == "TUPLE" {
+				elements := tuple.Arguments()
+				elementTypes := make([]Type, len(elements))
+				for i := range elementTypes {
+					elementTypes[i] = fresh()
+				}
+				translated, err := translator.translateExpressions(elements)
+				if err != nil {
+					return nil, err
+				}
+				tupleType := mustTuple(elementTypes...)
+				tupleExpression := NewEtcApp(ExactRef{SourceID: tuple.ID()},
+					[]Type{mustOperator(elementTypes, tupleType)}, translated...)
+				return NewEtcApp(ref, []Type{mustOperator([]Type{tupleType}, BoolT1)}, tupleExpression), nil
+			}
+		}
 		inputs := make([]Type, len(args))
 		for i := range inputs {
 			inputs[i] = fresh()
