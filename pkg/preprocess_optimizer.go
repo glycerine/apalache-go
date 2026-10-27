@@ -8,8 +8,9 @@ import (
 // ExprOptimizer applies the inexpensive KerA expression rewrites used by the
 // Scala optimization pass.
 type ExprOptimizer struct {
-	names   *UniqueNameGenerator
-	tracker TransformationTracker
+	names               *UniqueNameGenerator
+	tracker             TransformationTracker
+	functionDefinitions map[string]*OperExpr
 }
 
 func NewExprOptimizer(names *UniqueNameGenerator, tracker TransformationTracker) *ExprOptimizer {
@@ -56,11 +57,44 @@ func (optimizer *ExprOptimizer) transform(expression Expr) (Expr, error) {
 			copy.SetBody(body)
 			declarations[index] = copy
 		}
+		previousDefinitions := optimizer.functionDefinitions
+		optimizer.functionDefinitions = make(map[string]*OperExpr, len(previousDefinitions)+len(declarations))
+		for name, definition := range previousDefinitions {
+			optimizer.functionDefinitions[name] = definition
+		}
+		for _, declaration := range declarations {
+			if len(declaration.FormalParams()) != 0 {
+				continue
+			}
+			if constructor, ok := operNamed(declaration.Body(), "FUN_CTOR"); ok {
+				optimizer.functionDefinitions[declaration.Name()] = constructor
+			}
+		}
 		body, err := optimizer.transform(typed.Body())
+		optimizer.functionDefinitions = previousDefinitions
 		if err != nil {
 			return nil, err
 		}
-		rebuilt = NewLetInExpr(body, typed.Tag(), declarations...)
+		retained := make([]*OperDecl, 0, len(declarations))
+		for index, declaration := range declarations {
+			_, isFunctionConstructor := operNamed(declaration.Body(), "FUN_CTOR")
+			used := expressionCallsOperator(body, declaration.Name())
+			for otherIndex, other := range declarations {
+				if otherIndex != index && expressionCallsOperator(other.Body(), declaration.Name()) {
+					used = true
+					break
+				}
+			}
+			if !isFunctionConstructor || used {
+				retained = append(retained, declaration)
+			}
+		}
+		declarations = retained
+		if len(declarations) == 0 {
+			rebuilt = body
+		} else {
+			rebuilt = NewLetInExpr(body, typed.Tag(), declarations...)
+		}
 	}
 	result, err := optimizer.oneLevel(rebuilt)
 	if err != nil {
@@ -206,7 +240,94 @@ func (optimizer *ExprOptimizer) oneLevel(expression Expr) (Expr, error) {
 		}
 	}
 
+	// A bounded quantifier over a function constructor's domain can use the
+	// constructor domain directly.  Applications at the quantifier's bound
+	// variable are defined and may therefore be beta-reduced without changing
+	// the behavior of applications outside the function domain.
+	if name == "EXISTS3" || name == "FORALL3" {
+		quantifierBinder, binderOK := args[0].(*NameExpr)
+		domain, domainOK := operNamed(args[1], "DOMAIN")
+		if binderOK && domainOK {
+			functionExpression := domain.Arguments()[0]
+			constructor, constructorOK := operNamed(functionExpression, "FUN_CTOR")
+			if !constructorOK {
+				if referenceName, referenceOK := nullaryOperatorReference(functionExpression); referenceOK {
+					constructor, constructorOK = optimizer.functionDefinitions[referenceName]
+				}
+			}
+			if constructorOK {
+				constructorArgs := constructor.Arguments()
+				if len(constructorArgs) == 3 {
+					functionBinder, functionBinderOK := constructorArgs[1].(*NameExpr)
+					if !functionBinderOK {
+						return expression, nil
+					}
+					predicate := RewriteExpressions(optimizer.tracker, func(expression Expr) (Expr, bool) {
+						application, applicationOK := operNamed(expression, "FUN_APP")
+						if !applicationOK {
+							return nil, false
+						}
+						applicationArgs := application.Arguments()
+						if len(applicationArgs) != 2 || !EqualExpr(applicationArgs[0], functionExpression) ||
+							!EqualExpr(applicationArgs[1], quantifierBinder) {
+							return nil, false
+						}
+						body := NewDeepCopier(optimizer.tracker).Expression(constructorArgs[0])
+						body = ReplaceEqual(optimizer.tracker, functionBinder, func() Expr {
+							return NewDeepCopier(optimizer.tracker).Expression(quantifierBinder)
+						})(body)
+						return body, true
+					})(args[2])
+					return MustOperExpr(op.Operator(), op.Tag(), quantifierBinder, constructorArgs[2], predicate), nil
+				}
+			}
+		}
+	}
+
 	return expression, nil
+}
+
+func expressionCallsOperator(expression Expr, name string) bool {
+	switch typed := expression.(type) {
+	case *OperExpr:
+		if typed.Operator().Name() == name {
+			return true
+		}
+		if referenceName, ok := nullaryOperatorReference(typed); ok && referenceName == name {
+			return true
+		}
+		for _, argument := range typed.Arguments() {
+			if expressionCallsOperator(argument, name) {
+				return true
+			}
+		}
+	case *LetInExpr:
+		if expressionCallsOperator(typed.Body(), name) {
+			return true
+		}
+		for _, declaration := range typed.Declarations() {
+			if expressionCallsOperator(declaration.Body(), name) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func nullaryOperatorReference(expression Expr) (string, bool) {
+	application, ok := operNamed(expression, "OPER_APP")
+	if !ok {
+		return "", false
+	}
+	arguments := application.Arguments()
+	if len(arguments) != 1 {
+		return "", false
+	}
+	name, ok := arguments[0].(*NameExpr)
+	if !ok {
+		return "", false
+	}
+	return name.Name(), true
 }
 
 func (optimizer *ExprOptimizer) recordMapMembership(member Expr, mapped *OperExpr, powerset bool) (Expr, bool, error) {

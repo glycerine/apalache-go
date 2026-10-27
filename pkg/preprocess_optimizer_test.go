@@ -192,3 +192,35 @@ func TestExprOptimizerExistsOverSetComprehensions(t *testing.T) {
 		t.Fatalf("mapped value was not substituted: %v", equality)
 	}
 }
+
+func TestExprOptimizerBetaReducesConstructorApplicationsInDomainQuantifiers(t *testing.T) {
+	intSet := mustSet(IntT1)
+	functionType := mustFun(IntT1, IntT1)
+	x := NewNameExpr("x", Typed(IntT1))
+	iBound := NewNameExpr("i", Typed(IntT1))
+	rangeExpr := MustOperExpr(Op("INT_RANGE"), Typed(intSet), i(1), i(10000))
+	body := MustOperExpr(Op("PLUS"), Typed(IntT1), x, i(1))
+	constructor := MustOperExpr(Op("FUN_CTOR"), Typed(functionType), body, x, rangeExpr)
+	domain := MustOperExpr(Op("DOMAIN"), Typed(intSet), constructor)
+	application := MustOperExpr(Op("FUN_APP"), Typed(IntT1), constructor, iBound)
+	predicate := MustOperExpr(Op("EQ"), Typed(BoolT1), application,
+		MustOperExpr(Op("PLUS"), Typed(IntT1), iBound, i(1)))
+
+	got := optimizeForTest(t, MustOperExpr(Op("EXISTS3"), Typed(BoolT1), iBound, domain, predicate)).(*OperExpr)
+	if !EqualExpr(got.Arguments()[1], rangeExpr) {
+		t.Fatalf("quantifier domain = %v, want %v", got.Arguments()[1], rangeExpr)
+	}
+	wantBody := MustOperExpr(Op("PLUS"), Typed(IntT1), iBound, i(1))
+	wantPredicate := MustOperExpr(Op("EQ"), Typed(BoolT1), wantBody, wantBody)
+	if !EqualTypedExpr(got.Arguments()[2], wantPredicate) {
+		t.Fatalf("quantifier predicate = %v, want %v", got.Arguments()[2], wantPredicate)
+	}
+
+	differentArgument := i(2)
+	unreducedApplication := MustOperExpr(Op("FUN_APP"), Typed(IntT1), constructor, differentArgument)
+	unreducedPredicate := MustOperExpr(Op("EQ"), Typed(BoolT1), unreducedApplication, i(3))
+	unreduced := optimizeForTest(t, MustOperExpr(Op("FORALL3"), Typed(BoolT1), iBound, domain, unreducedPredicate)).(*OperExpr)
+	if !EqualTypedExpr(unreduced.Arguments()[2], unreducedPredicate) {
+		t.Fatalf("application at a different argument was reduced: %v", unreduced.Arguments()[2])
+	}
+}

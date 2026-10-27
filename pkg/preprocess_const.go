@@ -93,9 +93,27 @@ func simplifyConstantShallow(expression Expr) (Expr, error) {
 		boolean, ok := value.Value().(BoolValue)
 		return bool(boolean), ok
 	}
-	isEmpty := func(expr Expr) bool {
+	knownSetEmpty := func(expr Expr) (bool, bool) {
 		set, ok := expr.(*OperExpr)
-		return ok && set.Operator().Name() == "SET_ENUM" && len(set.Arguments()) == 0
+		if !ok {
+			return false, false
+		}
+		switch set.Operator().Name() {
+		case "SET_ENUM":
+			return len(set.Arguments()) == 0, true
+		case "INT_RANGE":
+			bounds := set.Arguments()
+			lower, lowerOK := constantInteger(bounds[0])
+			upper, upperOK := constantInteger(bounds[1])
+			if lowerOK && upperOK {
+				return lower.Cmp(upper) > 0, true
+			}
+		}
+		return false, false
+	}
+	isEmpty := func(expr Expr) bool {
+		empty, known := knownSetEmpty(expr)
+		return known && empty
 	}
 	empty := func(tag TypeTag) Expr { return MustOperExpr(Op("SET_ENUM"), tag) }
 
@@ -319,11 +337,15 @@ func simplifyConstantShallow(expression Expr) (Expr, error) {
 		}
 	}
 	if name == "EXISTS3" || name == "FORALL3" {
-		if isEmpty(args[1]) {
+		setEmpty, emptinessKnown := knownSetEmpty(args[1])
+		if emptinessKnown && setEmpty {
 			return boolEx(name == "FORALL3"), nil
 		}
 		body, literal := boolLiteral(args[2])
 		if literal {
+			if emptinessKnown {
+				return boolEx(body), nil
+			}
 			if name == "EXISTS3" && !body {
 				return boolEx(false), nil
 			}

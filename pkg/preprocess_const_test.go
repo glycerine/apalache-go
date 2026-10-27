@@ -85,6 +85,33 @@ func TestSimplifyConstantsLiteralSetsQuantifiersAndCardinality(t *testing.T) {
 	if !EqualTypedExpr(quantified, b(false)) {
 		t.Fatalf("exists empty = %v", quantified)
 	}
+
+	rangeExpr := func(lower, upper int64) Expr {
+		return MustOperExpr(Op("INT_RANGE"), Typed(setType), i(lower), i(upper))
+	}
+	for _, test := range []struct {
+		name     string
+		operator string
+		domain   Expr
+		body     bool
+		want     bool
+	}{
+		{"exists true nonempty range", "EXISTS3", rangeExpr(1, 10000), true, true},
+		{"exists false nonempty range", "EXISTS3", rangeExpr(1, 10000), false, false},
+		{"forall true nonempty range", "FORALL3", rangeExpr(1, 10000), true, true},
+		{"forall false nonempty range", "FORALL3", rangeExpr(1, 10000), false, false},
+		{"exists empty range", "EXISTS3", rangeExpr(2, 1), true, false},
+		{"forall empty range", "FORALL3", rangeExpr(2, 1), false, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			quantifier := MustOperExpr(Op(test.operator), Typed(BoolT1),
+				NewNameExpr("x", Typed(IntT1)), test.domain, b(test.body))
+			got, simplifyErr := SimplifyConstants(quantifier, nil)
+			if simplifyErr != nil || !EqualTypedExpr(got, b(test.want)) {
+				t.Fatalf("SimplifyConstants() = %v, %v; want %v", got, simplifyErr, test.want)
+			}
+		})
+	}
 }
 
 func TestSimplifyConstantsRecursesThroughLetAndTracksSources(t *testing.T) {

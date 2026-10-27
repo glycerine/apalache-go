@@ -4,6 +4,7 @@ import (
 	"context"
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestDesugarModuleUsesNullaryDefinitionsForUnchanged(t *testing.T) {
@@ -59,6 +60,47 @@ func TestPrepareSafetyTransitionsEndToEnd(t *testing.T) {
 	}
 	if _, found := OperatorBody(result.Module, "Inv"); !found {
 		t.Fatal("raw invariant was not retained without VC generation")
+	}
+}
+
+func TestPrepareSafetyTransitionsAvoidsMaterializingLargeConstructorDomain(t *testing.T) {
+	frontend := ParseAndTypeCheckSource(context.Background(), "LargeFunction.tla", `
+---- MODULE LargeFunction ----
+EXTENDS Integers
+Init == TRUE
+Next == TRUE
+Inv ==
+  LET fun == [x \in 1..10000 |-> x + 1] IN
+  \E i \in DOMAIN fun: fun[i] = i + 1
+====`, FrontendOptions{}, TypeCheckOptions{})
+	if !frontend.OK() {
+		t.Fatalf("frontend diagnostics: %v", frontend.Diagnostics)
+	}
+	prepared, err := PrepareSafetyTransitions(frontend.Native, SafetyPipelineOptions{Specification: SpecificationConfiguration{
+		Behavior: InitNextSpec{Init: "Init", Next: "Next"}, Invariants: []string{"Inv"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	invariant, found := OperatorBody(prepared.Module, "Inv")
+	if !found {
+		t.Fatal("prepared module has no Inv declaration")
+	}
+	if constructors := countOperator(invariant, "FUN_CTOR"); constructors != 0 {
+		formatted, _ := FormatTLAExpression(invariant)
+		t.Fatalf("prepared invariant retains %d function constructors: %s", constructors, formatted)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	result, err := CheckBoundedSafetyWithOptions(ctx, prepared.Module, prepared.Predicates, BoundedSafetyOptions{
+		MaxSteps: 0, CheckDeadlocks: false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Outcome != SafetyNoCounterexample {
+		t.Fatalf("large function constructor check = %+v", result)
 	}
 }
 
