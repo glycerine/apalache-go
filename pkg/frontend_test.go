@@ -414,6 +414,30 @@ Use(F1, F2) ==
 	}
 }
 
+func TestParseAndTypeCheckSourceQualifiesInstantiatedRecursiveCalls(t *testing.T) {
+	result := ParseAndTypeCheckSource(context.Background(), "InstantiatedRecursion.tla", `---- MODULE InstantiatedRecursion ----
+EXTENDS Integers
+---- MODULE Inner ----
+RECURSIVE A(_)
+A(x) == IF x < 1 THEN x ELSE 1 + A(x - 1)
+====
+I == INSTANCE Inner
+Test == I!A(2) = 2
+====
+`, FrontendOptions{}, TypeCheckOptions{})
+	if !result.OK() {
+		t.Fatalf("ParseAndTypeCheckSource() diagnostics = %v", result.Diagnostics)
+	}
+	declaration, found := declarationNamed(result.Native, "I!A")
+	operator, ok := declaration.(*OperDecl)
+	if !found || !ok || !operator.IsRecursive() {
+		t.Fatalf("I!A declaration = %#v", declaration)
+	}
+	if countNamed(operator.Body(), "I!A") != 1 || countNamed(operator.Body(), "A") != 0 {
+		t.Fatalf("I!A recursive body = %#v", operator.Body())
+	}
+}
+
 func TestParseSourceClearsImportedLocalResultTags(t *testing.T) {
 	source := `---- MODULE ImportedSequencesExt ----
 EXTENDS SequencesExt

@@ -96,6 +96,7 @@ func ParseSource(ctx context.Context, filename, source string, opts FrontendOpti
 	normalizeTlagoLambdas(spec)
 	binderLayouts := normalizeTlagoApalacheAssignments(spec)
 	apalacheInstancePrefixes := tlagoApalacheInstancePrefixes(spec)
+	recursiveScopes := tlagoRecursiveOperatorScopes(spec)
 	ir, irDiags := tlago.ApalacheIRJSON(spec, tlago.ApalacheIROptions{IncludeSource: opts.IncludeSource})
 	result.Diagnostics = append(result.Diagnostics, frontendDiagnostics(irDiags)...)
 	if !hasErrors(result.Diagnostics) {
@@ -112,6 +113,7 @@ func ParseSource(ctx context.Context, filename, source string, opts FrontendOpti
 		result.Native = normalizeTlagoTLCCalls(result.Native, result.Sources, tlcImported)
 		result.Native = normalizeTlagoApalacheBuiltinCalls(result.Native, result.Sources, apalacheInstancePrefixes)
 		result.Native = normalizeTlagoLocalDeclarationTags(result.Native, result.Sources)
+		result.Native = normalizeTlagoRecursiveOperators(result.Native, result.Sources, recursiveScopes)
 		result.Native = normalizeTlagoVariantUnit(result.Native, result.Sources, variantsImported)
 		result.Native = normalizeTlagoTupleBinders(result.Native, result.Sources, binderLayouts)
 		result.Native = normalizeTlagoTupleQuantifiers(result.Native, result.Sources)

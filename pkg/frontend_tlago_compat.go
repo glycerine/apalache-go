@@ -76,6 +76,94 @@ func tlagoApalacheInstancePrefixes(spec *tlago.Spec) map[string]struct{} {
 	return result
 }
 
+func tlagoRecursiveOperatorScopes(spec *tlago.Spec) map[string]map[string]string {
+	result := make(map[string]map[string]string)
+	if spec == nil || spec.Root == nil {
+		return result
+	}
+	seen := make(map[string]bool)
+	var visit func(*tlago.Module, string)
+	visit = func(module *tlago.Module, prefix string) {
+		if module == nil {
+			return
+		}
+		key := module.Name + "\x00" + prefix
+		if seen[key] {
+			return
+		}
+		seen[key] = true
+		scope := make(map[string]string)
+		for _, declaration := range module.Recursives {
+			for _, name := range declaration.Names {
+				qualified := name
+				if prefix != "" {
+					qualified = prefix + "!" + name
+				}
+				scope[name] = qualified
+			}
+		}
+		for _, qualified := range scope {
+			result[qualified] = scope
+		}
+		for _, instance := range module.Instances {
+			nestedPrefix := prefix
+			if instance.Name != "" {
+				if nestedPrefix != "" {
+					nestedPrefix += "!"
+				}
+				nestedPrefix += instance.Name
+			}
+			visit(spec.Modules[instance.Module], nestedPrefix)
+		}
+	}
+	visit(spec.Root, "")
+	return result
+}
+
+func normalizeTlagoRecursiveOperators(module *Module, sources *SourceStore, scopes map[string]map[string]string) *Module {
+	if module == nil || len(scopes) == 0 {
+		return module
+	}
+	var tracker TransformationTracker = IdleTracker{}
+	if sources != nil {
+		tracker = NewListenerTracker(sources)
+	}
+	declarations := module.Declarations()
+	changed := false
+	for index, declaration := range declarations {
+		operator, ok := declaration.(*OperDecl)
+		scope := scopes[declaration.Name()]
+		if !ok || len(scope) == 0 {
+			continue
+		}
+		rewrite := RewriteExpressions(tracker, func(expression Expr) (Expr, bool) {
+			application, ok := expression.(*OperExpr)
+			if !ok || application.Operator().Name() != "OPER_APP" || len(application.Arguments()) == 0 {
+				return nil, false
+			}
+			callee, ok := application.Arguments()[0].(*NameExpr)
+			qualified, recursive := scope[callee.Name()]
+			if !ok || !recursive || qualified == callee.Name() {
+				return nil, false
+			}
+			arguments := application.Arguments()
+			arguments[0] = NewNameExpr(qualified, callee.Tag())
+			return MustOperExpr(application.Operator(), application.Tag(), arguments...), true
+		})
+		copy := operator.copyWithTag(operator.Tag())
+		copy.SetBody(rewrite(operator.Body()))
+		copy.SetRecursive(true)
+		declarations[index] = tracker.TrackOperatorDeclaration(func(*OperDecl) *OperDecl { return copy })(operator)
+		changed = true
+	}
+	if !changed {
+		return module
+	}
+	result := NewModule(module.Name(), declarations)
+	result.properties = cloneMap(module.properties)
+	return result
+}
+
 var tlagoOpaqueBuiltinModules = map[string]struct{}{
 	"Naturals": {}, "Integers": {}, "Reals": {}, "Sequences": {}, "FiniteSets": {},
 	"TLC": {}, "TLCExt": {}, "Apalache": {}, "__apalache_internal": {},
