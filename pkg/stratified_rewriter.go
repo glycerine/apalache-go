@@ -75,6 +75,8 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 			return rewriter.rewriteComparison(typed, scope)
 		case "IF_THEN_ELSE":
 			return rewriter.rewriteConditional(typed, scope)
+		case "LABEL":
+			return rewriter.rewriteLabel(typed, scope)
 		case "SET_ENUM":
 			return rewriter.rewriteSetConstructor(typed, scope)
 		case "SET_UNION2":
@@ -89,6 +91,8 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 			return rewriter.rewritePowerSet(typed, scope)
 		case "FiniteSets!Cardinality":
 			return rewriter.rewriteCardinality(typed, scope)
+		case "FiniteSets!IsFiniteSet":
+			return rewriter.rewriteIsFiniteSet(typed, scope)
 		case "Sequences!Len":
 			return rewriter.rewriteSequenceLength(typed, scope)
 		case "Sequences!Head":
@@ -136,6 +140,23 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 		}
 	}
 	return scope, ArenaCell{}, fmt.Errorf("no stratified rule is applicable to %T", expression)
+}
+
+func (rewriter *StratifiedRewriter) rewriteLabel(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
+	arguments := expression.Arguments()
+	if len(arguments) < 1 {
+		return scope, ArenaCell{}, fmt.Errorf("label requires a labelled expression")
+	}
+	return rewriter.Rewrite(arguments[0], scope)
+}
+
+func (rewriter *StratifiedRewriter) rewriteIsFiniteSet(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
+	if len(expression.Arguments()) != 1 {
+		return scope, ArenaCell{}, fmt.Errorf("IsFiniteSet requires one operand")
+	}
+	// This deliberately matches Scala: every set admitted into the symbolic
+	// finite-set fragment is reported finite, without rewriting its operand.
+	return scope, scope.Arena.TrueCell(), nil
 }
 
 func (rewriter *StratifiedRewriter) rewriteFunctionConstructor(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {

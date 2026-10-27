@@ -62,6 +62,27 @@ func TestStratifiedRewriterAssignmentAndBooleanRules(t *testing.T) {
 	}
 }
 
+func TestStratifiedLabelsAndFiniteSetPredicate(t *testing.T) {
+	rewriter := NewStratifiedRewriter()
+	label := MustOperExpr(Op("LABEL"), Typed(IntT1),
+		NewValueExpr(Int64Value(7), Typed(IntT1)), NewValueExpr(StringValue("source-label"), Typed(StrT1)))
+	scope, labelled, err := rewriter.Rewrite(label, InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, found := rewriter.IntegerCache().FindValue(labelled)
+	if !found || value.Int64() != 7 {
+		t.Fatalf("labelled value = %v, found %v", value, found)
+	}
+	finite := MustOperExpr(Op("FiniteSets!IsFiniteSet"), Typed(BoolT1),
+		NewNameExpr("deliberately_unbound", Typed(mustSet(IntT1))))
+	unchangedArena := scope.Arena
+	scope, result, err := rewriter.Rewrite(finite, scope)
+	if err != nil || !result.Equal(scope.Arena.TrueCell()) || scope.Arena != unchangedArena {
+		t.Fatalf("IsFiniteSet = %v, arena changed %v, error %v", result, scope.Arena != unchangedArena, err)
+	}
+}
+
 func TestStratifiedRewriterSetConstructionUnionAndFilter(t *testing.T) {
 	rewriter := NewStratifiedRewriter()
 	intSet := Typed(mustSet(IntT1))
