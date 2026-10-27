@@ -9,18 +9,22 @@ import (
 // PureArena graph and records the ground constraints separately.
 type StratifiedRewriter struct {
 	integers    *IntValueCache
+	literals    *UninterpretedLiteralCache
 	equality    *LazyEquality
 	constraints []Expr
 }
 
 func NewStratifiedRewriter() *StratifiedRewriter {
-	result := &StratifiedRewriter{integers: NewIntValueCache()}
+	result := &StratifiedRewriter{integers: NewIntValueCache(), literals: NewUninterpretedLiteralCache()}
 	result.equality = NewLazyEquality(result.assert)
 	return result
 }
 
 func (rewriter *StratifiedRewriter) IntegerCache() *IntValueCache { return rewriter.integers }
-func (rewriter *StratifiedRewriter) LazyEquality() *LazyEquality  { return rewriter.equality }
+func (rewriter *StratifiedRewriter) LiteralCache() *UninterpretedLiteralCache {
+	return rewriter.literals
+}
+func (rewriter *StratifiedRewriter) LazyEquality() *LazyEquality { return rewriter.equality }
 
 func (rewriter *StratifiedRewriter) Constraints() []Expr {
 	return append([]Expr(nil), rewriter.constraints...)
@@ -328,7 +332,7 @@ func isDirectSMTCellType(cellType CellType) bool {
 	case ConstType:
 		return true
 	case primitiveType:
-		return EqualTypes(basic.Type, BoolT1) || EqualTypes(basic.Type, IntT1)
+		return EqualTypes(basic.Type, BoolT1) || EqualTypes(basic.Type, IntT1) || EqualTypes(basic.Type, StrT1)
 	default:
 		return false
 	}
@@ -527,6 +531,19 @@ func (rewriter *StratifiedRewriter) rewriteValue(expression *ValueExpr, scope Re
 		}
 		scope.Arena = arena
 		rewriter.assert(MustOperExpr(Op("EQ"), Typed(BoolT1), cell.NameExpr(), NewValueExpr(value, Typed(IntT1))))
+		return scope, cell, nil
+	case StringValue:
+		literal := UninterpretedLiteral{Type: StrT1, Index: string(value)}
+		arena, cell, err := rewriter.literals.GetOrCreate(scope.Arena, literal)
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+		scope.Arena = arena
+		distinct, err := rewriter.literals.ConstraintFor(literal, cell)
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+		rewriter.assert(distinct)
 		return scope, cell, nil
 	}
 	return scope, ArenaCell{}, fmt.Errorf("unsupported stratified literal %T", expression.Value())

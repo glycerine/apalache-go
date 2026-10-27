@@ -186,6 +186,45 @@ func TestStratifiedArithmeticEqualityAndConditionalThroughG3(t *testing.T) {
 	}
 }
 
+func TestStratifiedStringLiteralsAndEqualityThroughG3(t *testing.T) {
+	tests := []struct {
+		name       string
+		left       string
+		right      string
+		contradict func(Expr) Expr
+	}{
+		{
+			name: "same literal", left: "alpha", right: "alpha",
+			contradict: func(result Expr) Expr { return MustOperExpr(Op("NOT"), Typed(BoolT1), result) },
+		},
+		{name: "distinct literals", left: "alpha", right: "beta", contradict: func(result Expr) Expr { return result }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			rewriter := NewStratifiedRewriter()
+			equal := MustOperExpr(Op("EQ"), Typed(BoolT1),
+				NewValueExpr(StringValue(test.left), Typed(StrT1)),
+				NewValueExpr(StringValue(test.right), Typed(StrT1)),
+			)
+			scope, result, err := rewriter.Rewrite(equal, InitialRewriterScope())
+			if err != nil {
+				t.Fatal(err)
+			}
+			solver := newTestG3Solver(t)
+			encoder, err := EncodeRewriterScope(solver, scope, rewriter.Constraints())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := encoder.Assert(test.contradict(result.NameExpr())); err != nil {
+				t.Fatal(err)
+			}
+			if status, err := solver.Check(context.Background()); err != nil || status != SMTUnsatisfiable {
+				t.Fatalf("contradicted string equality = %v, %v", status, err)
+			}
+		})
+	}
+}
+
 func TestStratifiedStructuralConditionalsThroughG3(t *testing.T) {
 	predicate := MustOperExpr(Op("LT"), Typed(BoolT1),
 		NewValueExpr(Int64Value(1), Typed(IntT1)), NewValueExpr(Int64Value(2), Typed(IntT1)))
