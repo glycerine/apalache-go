@@ -461,6 +461,78 @@ func TestStratifiedFiniteCardinalityThroughG3(t *testing.T) {
 	}
 }
 
+func TestStratifiedSequenceConstructionLengthAndEqualityThroughG3(t *testing.T) {
+	sequenceType, err := NewSeqType(IntT1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tag := Typed(sequenceType)
+	sequence := func(values ...int64) Expr {
+		elements := make([]Expr, len(values))
+		for index, value := range values {
+			elements[index] = NewValueExpr(Int64Value(value), Typed(IntT1))
+		}
+		return MustOperExpr(Op("TUPLE"), tag, elements...)
+	}
+	rewriter := NewStratifiedRewriter()
+	scope, first, err := rewriter.Rewrite(sequence(1, 2), InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	length, proto, elements, err := unpackSequence(scope.Arena, first)
+	if err != nil || len(elements) != 2 || proto.ID < 0 {
+		t.Fatalf("unpacked sequence = length %v, proto %v, elements %#v, error %v", length, proto, elements, err)
+	}
+	lengthValue, found := rewriter.IntegerCache().FindValue(length)
+	if !found || lengthValue.Int64() != 2 {
+		t.Fatalf("sequence length cache = %v, %v", lengthValue, found)
+	}
+
+	lengthExpression := MustOperExpr(Op("Sequences!Len"), Typed(IntT1), first.NameExpr())
+	_, projectedLength, err := rewriter.Rewrite(lengthExpression, scope)
+	if err != nil || !projectedLength.Equal(length) {
+		t.Fatalf("sequence Len = %v, %v", projectedLength, err)
+	}
+
+	scope, equalSequence, err := rewriter.Rewrite(sequence(1, 2), scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope, differentSequence, err := rewriter.Rewrite(sequence(1, 3), scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope.Binding = scope.Binding.With("left", first).With("equal", equalSequence).With("different", differentSequence)
+	for _, test := range []struct {
+		name       string
+		right      string
+		contradict func(Expr) Expr
+	}{
+		{name: "equal", right: "equal", contradict: func(result Expr) Expr { return MustOperExpr(Op("NOT"), Typed(BoolT1), result) }},
+		{name: "different", right: "different", contradict: func(result Expr) Expr { return result }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			equality := MustOperExpr(Op("EQ"), Typed(BoolT1),
+				NewNameExpr("left", tag), NewNameExpr(test.right, tag))
+			equalityScope, result, err := rewriter.Rewrite(equality, scope)
+			if err != nil {
+				t.Fatal(err)
+			}
+			solver := newTestG3Solver(t)
+			encoder, err := EncodeRewriterScope(solver, equalityScope, rewriter.Constraints())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := encoder.Assert(test.contradict(result.NameExpr())); err != nil {
+				t.Fatal(err)
+			}
+			if status, err := solver.Check(context.Background()); err != nil || status != SMTUnsatisfiable {
+				t.Fatalf("contradicted sequence equality = %v, %v", status, err)
+			}
+		})
+	}
+}
+
 func TestStratifiedFiniteSetEqualityThroughG3(t *testing.T) {
 	setType := Typed(mustSet(IntT1))
 	set := func(values ...int64) Expr {

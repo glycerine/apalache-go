@@ -74,6 +74,8 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 			return rewriter.rewriteSubset(typed, scope)
 		case "FiniteSets!Cardinality":
 			return rewriter.rewriteCardinality(typed, scope)
+		case "Sequences!Len":
+			return rewriter.rewriteSequenceLength(typed, scope)
 		case "SET_FILTER":
 			return rewriter.rewriteSetFilter(typed, scope)
 		case "SET_IN", "Apalache!SelectInSet":
@@ -87,6 +89,19 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 		}
 	}
 	return scope, ArenaCell{}, fmt.Errorf("no stratified rule is applicable to %T", expression)
+}
+
+func (rewriter *StratifiedRewriter) rewriteSequenceLength(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
+	arguments := expression.Arguments()
+	if len(arguments) != 1 {
+		return scope, ArenaCell{}, fmt.Errorf("sequence length requires one operand")
+	}
+	scope, sequence, err := rewriter.Rewrite(arguments[0], scope)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	length, _, _, err := unpackSequence(scope.Arena, sequence)
+	return scope, length, err
 }
 
 func (rewriter *StratifiedRewriter) rewriteCardinality(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
@@ -311,9 +326,35 @@ func (rewriter *StratifiedRewriter) rewriteTuple(expression *OperExpr, scope Rew
 	if !ok {
 		return scope, ArenaCell{}, fmt.Errorf("tuple constructor must be typed")
 	}
+	if sequenceType, sequence := typ.(SeqType); sequence {
+		arguments := expression.Arguments()
+		elements := make([]ArenaCell, len(arguments))
+		for index, argument := range arguments {
+			var err error
+			scope, elements[index], err = rewriter.Rewrite(argument, scope)
+			if err != nil {
+				return scope, ArenaCell{}, err
+			}
+			if !EqualTypes(elements[index].Type.TLAType(), sequenceType.Element()) {
+				return scope, ArenaCell{}, fmt.Errorf("sequence element %d has type %s, expected %s", index+1, elements[index].Type, sequenceType.Element())
+			}
+		}
+		arena, sequenceCell, err := makeSequence(scope.Arena, sequenceType, elements, rewriter.integers)
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+		scope.Arena = arena
+		length, _, _, err := unpackSequence(scope.Arena, sequenceCell)
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+		rewriter.assert(MustOperExpr(Op("EQ"), Typed(BoolT1),
+			length.NameExpr(), NewValueExpr(Int64Value(int64(len(elements))), Typed(IntT1))))
+		return scope, sequenceCell, nil
+	}
 	tupleType, ok := typ.(TupleType)
 	if !ok {
-		return scope, ArenaCell{}, fmt.Errorf("sequence construction through TUPLE is not yet implemented for %s", typ)
+		return scope, ArenaCell{}, fmt.Errorf("TUPLE has unsupported result type %s", typ)
 	}
 	types := tupleType.Elements()
 	arguments := expression.Arguments()

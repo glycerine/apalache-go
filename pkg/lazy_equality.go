@@ -73,6 +73,8 @@ func (equality *LazyEquality) Equal(arena *PureArena, left, right ArenaCell) (Ex
 		condition, err = equality.tupleEqualityCondition(arena, left, right)
 	case isRecordCellType(left.Type):
 		condition, err = equality.recordEqualityCondition(arena, left, right)
+	case isSequenceCellType(left.Type):
+		condition, err = equality.sequenceEqualityCondition(arena, left, right)
 	default:
 		err = fmt.Errorf("structural equality is not yet implemented for %s", left.Type)
 	}
@@ -86,6 +88,40 @@ func (equality *LazyEquality) Equal(arena *PureArena, left, right ArenaCell) (Ex
 		return nil, err
 	}
 	return rawEquality, nil
+}
+
+func (equality *LazyEquality) sequenceEqualityCondition(arena *PureArena, left, right ArenaCell) (Expr, error) {
+	leftLength, _, leftElements, err := unpackSequence(arena, left)
+	if err != nil {
+		return nil, err
+	}
+	rightLength, _, rightElements, err := unpackSequence(arena, right)
+	if err != nil {
+		return nil, err
+	}
+	lengthsEqual, err := equality.Equal(arena, leftLength, rightLength)
+	if err != nil {
+		return nil, err
+	}
+	shared := len(leftElements)
+	if len(rightElements) < shared {
+		shared = len(rightElements)
+	}
+	conditions := make([]Expr, 1, shared+1)
+	conditions[0] = lengthsEqual
+	for index := 0; index < shared; index++ {
+		elementsEqual, equalityErr := equality.Equal(arena, leftElements[index].Element(), rightElements[index].Element())
+		if equalityErr != nil {
+			return nil, equalityErr
+		}
+		indexValue := NewValueExpr(Int64Value(int64(index+1)), Typed(IntT1))
+		conditions = append(conditions, booleanOr(
+			MustOperExpr(Op("LT"), Typed(BoolT1), leftLength.NameExpr(), indexValue),
+			MustOperExpr(Op("LT"), Typed(BoolT1), rightLength.NameExpr(), indexValue),
+			elementsEqual,
+		))
+	}
+	return booleanAnd(conditions...), nil
 }
 
 func isRecordCellType(cellType CellType) bool {
