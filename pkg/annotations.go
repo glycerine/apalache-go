@@ -1,0 +1,246 @@
+package apalache
+
+import (
+	"fmt"
+	"math/big"
+	"regexp"
+	"strings"
+	"unicode"
+)
+
+type AnnotationArg interface {
+	fmt.Stringer
+	annotationArg()
+}
+type AnnotationString struct{ Text string }
+
+func (AnnotationString) annotationArg()   {}
+func (a AnnotationString) String() string { return fmt.Sprintf("%q", a.Text) }
+
+type AnnotationIdentifier struct{ Name string }
+
+func (AnnotationIdentifier) annotationArg()   {}
+func (a AnnotationIdentifier) String() string { return a.Name }
+
+type AnnotationInteger struct{ Value *big.Int }
+
+func (AnnotationInteger) annotationArg() {}
+func (a AnnotationInteger) String() string {
+	if a.Value == nil {
+		return "0"
+	}
+	return a.Value.String()
+}
+
+type AnnotationBoolean struct{ Value bool }
+
+func (AnnotationBoolean) annotationArg() {}
+func (a AnnotationBoolean) String() string {
+	if a.Value {
+		return "true"
+	}
+	return "false"
+}
+
+type Annotation struct {
+	Name      string
+	Arguments []AnnotationArg
+}
+
+func (annotation Annotation) String() string {
+	if len(annotation.Arguments) == 0 {
+		return "@" + annotation.Name
+	}
+	parts := make([]string, len(annotation.Arguments))
+	for i, arg := range annotation.Arguments {
+		parts[i] = arg.String()
+	}
+	return "@" + annotation.Name + "(" + strings.Join(parts, ", ") + ")"
+}
+func (annotation Annotation) PrettyString() string {
+	if len(annotation.Arguments) == 1 {
+		if text, ok := annotation.Arguments[0].(AnnotationString); ok {
+			return fmt.Sprintf("@%s: %s;", annotation.Name, text.Text)
+		}
+	}
+	return annotation.String()
+}
+
+type AnnotationParseError struct {
+	Offset  int
+	Message string
+}
+
+func (err *AnnotationParseError) Error() string {
+	return fmt.Sprintf("annotation parse error at offset %d: %s", err.Offset, err.Message)
+}
+
+type annotationParser struct {
+	text string
+	at   int
+}
+
+func ParseAnnotation(text string) (Annotation, error) {
+	p := annotationParser{text: text}
+	p.space(false)
+	if !p.consume('@') {
+		return Annotation{}, p.fail("expected @identifier")
+	}
+	name, ok := p.identifier()
+	if !ok {
+		return Annotation{}, p.fail("expected annotation name")
+	}
+	result := Annotation{Name: name}
+	p.space(false)
+	if p.at == len(p.text) {
+		return result, nil
+	}
+	switch p.text[p.at] {
+	case '(':
+		p.at++
+		p.space(false)
+		if p.consume(')') {
+			p.space(false)
+			if p.at != len(p.text) {
+				return Annotation{}, p.fail("unexpected trailing input")
+			}
+			return result, nil
+		}
+		for {
+			argument, err := p.argument()
+			if err != nil {
+				return Annotation{}, err
+			}
+			result.Arguments = append(result.Arguments, argument)
+			p.space(false)
+			if p.consume(')') {
+				break
+			}
+			p.newlines()
+			p.space(false)
+			if !p.consume(',') {
+				return Annotation{}, p.fail("expected ',' or ')'")
+			}
+			p.space(true)
+		}
+	case ':':
+		p.at++
+		start := p.at
+		semicolon := strings.IndexByte(p.text[p.at:], ';')
+		if semicolon < 0 {
+			return Annotation{}, p.fail("expected ';'")
+		}
+		end := p.at + semicolon
+		inline := p.text[start:end]
+		p.at = end + 1
+		inline = strings.TrimSpace(annotationInlineSpace.ReplaceAllString(inline, " "))
+		result.Arguments = []AnnotationArg{AnnotationString{Text: inline}}
+	default:
+		return Annotation{}, p.fail("expected annotation arguments")
+	}
+	p.space(false)
+	if p.at != len(p.text) {
+		return Annotation{}, p.fail("unexpected trailing input")
+	}
+	return result, nil
+}
+
+var annotationInlineSpace = regexp.MustCompile(`[ \t\f]+`)
+
+func (p *annotationParser) argument() (AnnotationArg, error) {
+	p.space(false)
+	if p.at >= len(p.text) {
+		return nil, p.fail("expected argument")
+	}
+	if p.text[p.at] == '"' {
+		p.at++
+		start := p.at
+		for p.at < len(p.text) && p.text[p.at] != '"' {
+			p.at++
+		}
+		if p.at >= len(p.text) {
+			return nil, p.fail("unterminated string")
+		}
+		value := p.text[start:p.at]
+		p.at++
+		return AnnotationString{Text: value}, nil
+	}
+	start := p.at
+	if p.text[p.at] == '-' {
+		p.at++
+	}
+	for p.at < len(p.text) && p.text[p.at] >= '0' && p.text[p.at] <= '9' {
+		p.at++
+	}
+	if p.at > start && (p.text[start] != '-' || p.at > start+1) {
+		number, ok := new(big.Int).SetString(p.text[start:p.at], 10)
+		if ok {
+			return AnnotationInteger{Value: number}, nil
+		}
+	}
+	p.at = start
+	word, ok := p.identifier()
+	if !ok {
+		return nil, p.fail("expected string, integer, Boolean, or identifier")
+	}
+	switch strings.ToLower(word) {
+	case "true":
+		return AnnotationBoolean{Value: true}, nil
+	case "false":
+		return AnnotationBoolean{Value: false}, nil
+	}
+	return AnnotationIdentifier{Name: word}, nil
+}
+
+func (p *annotationParser) newlines() {
+	for p.at < len(p.text) {
+		if p.text[p.at] == '\n' {
+			p.at++
+			continue
+		}
+		if p.text[p.at] == '\r' && p.at+1 < len(p.text) && p.text[p.at+1] == '\n' {
+			p.at += 2
+			continue
+		}
+		return
+	}
+}
+func (p *annotationParser) identifier() (string, bool) {
+	if p.at >= len(p.text) || !(p.text[p.at] == '_' || isASCIIAlpha(p.text[p.at])) {
+		return "", false
+	}
+	start := p.at
+	p.at++
+	for p.at < len(p.text) && (p.text[p.at] == '_' || isASCIIAlpha(p.text[p.at]) || p.text[p.at] >= '0' && p.text[p.at] <= '9') {
+		p.at++
+	}
+	return p.text[start:p.at], true
+}
+func isASCIIAlpha(ch byte) bool { return ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z' }
+func (p *annotationParser) space(includeNewlines bool) {
+	for p.at < len(p.text) {
+		r := rune(p.text[p.at])
+		if p.text[p.at] == '\n' || p.text[p.at] == '\r' {
+			if !includeNewlines {
+				return
+			}
+			p.at++
+			continue
+		}
+		if unicode.IsSpace(r) {
+			p.at++
+			continue
+		}
+		return
+	}
+}
+func (p *annotationParser) consume(ch byte) bool {
+	if p.at < len(p.text) && p.text[p.at] == ch {
+		p.at++
+		return true
+	}
+	return false
+}
+func (p *annotationParser) fail(message string) error {
+	return &AnnotationParseError{Offset: p.at, Message: message}
+}
