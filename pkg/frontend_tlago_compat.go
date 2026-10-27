@@ -362,6 +362,12 @@ func normalizeTlagoApalacheBuiltinCalls(module *Module, sources *SourceStore) *M
 				return MustOperExpr(Op("SequencesExt!ToSet"), operation.Tag(), arguments[1]), true
 			}
 		}
+		if _, shadowed := declared[callee.Name()]; !shadowed &&
+			(callee.Name() == "SetToSeq" || strings.HasSuffix(callee.Name(), "!SetToSeq")) {
+			if expanded, expandedOK := expandTlagoSetToSequence(operation, arguments); expandedOK {
+				return expanded, true
+			}
+		}
 		builtin, found := tlagoApalacheBuiltinCalls[callee.Name()]
 		if !found {
 			if changed {
@@ -442,6 +448,23 @@ func expandTlagoSelectSeq(operation *OperExpr, arguments []Expr) (Expr, bool) {
 	embedded := NewLetInExpr(NewNameExpr(definitionName, Untyped()), Untyped(), definition)
 	empty := MustOperExpr(Op("TUPLE"), Untyped())
 	return MustOperExpr(Op("Apalache!ApaFoldSeqLeft"), operation.Tag(), embedded, empty, arguments[1]), true
+}
+
+func expandTlagoSetToSequence(operation *OperExpr, arguments []Expr) (Expr, bool) {
+	if len(arguments) != 2 {
+		return nil, false
+	}
+	suffix := operation.ID().String()
+	accumulatorName := "__set_to_seq_acc_" + suffix
+	elementName := "__set_to_seq_element_" + suffix
+	definitionName := "__set_to_seq_append_" + suffix
+	appendElement := MustOperExpr(Op("Sequences!Append"), Untyped(),
+		NewNameExpr(accumulatorName, Untyped()), NewNameExpr(elementName, Untyped()))
+	definition := NewOperDecl(definitionName,
+		[]OperatorParam{ValueParam(accumulatorName), ValueParam(elementName)}, appendElement, Untyped())
+	embedded := NewLetInExpr(NewNameExpr(definitionName, Untyped()), Untyped(), definition)
+	empty := MustOperExpr(Op("TUPLE"), Untyped())
+	return MustOperExpr(Op("Apalache!ApaFoldSet"), operation.Tag(), embedded, empty, arguments[1]), true
 }
 
 func wrapTlagoBuiltinOperator(name *NameExpr, arity int) (Expr, bool) {

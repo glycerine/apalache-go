@@ -174,6 +174,21 @@ Test == ToSet(<<1>>) = {1}
 	}
 }
 
+func TestParseAndTypeCheckSourceExpandsSetToSequence(t *testing.T) {
+	result := ParseAndTypeCheckSource(context.Background(), "SetToSequence.tla", `---- MODULE SetToSequence ----
+EXTENDS Sequences, SequencesExt, Integers
+Test == LET s == SetToSeq({1, 2}) IN Len(s) = 2 /\ ToSet(s) = {1, 2}
+====
+`, FrontendOptions{}, TypeCheckOptions{})
+	if !result.OK() {
+		t.Fatalf("ParseAndTypeCheckSource() diagnostics = %v", result.Diagnostics)
+	}
+	body, found := OperatorBody(result.Native, "Test")
+	if !found || countOperator(body, "Apalache!ApaFoldSet") != 1 || countOperator(body, "SequencesExt!ToSet") != 1 {
+		t.Fatalf("expanded SetToSeq body = %#v", body)
+	}
+}
+
 func TestParseAndTypeCheckSourceReconstructsTupleQuantifier(t *testing.T) {
 	result := ParseAndTypeCheckSource(context.Background(), "TupleBound.tla", `---- MODULE TupleBound ----
 EXTENDS Integers
