@@ -60,11 +60,108 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return runTest(ctx, args[1:], stdout, stderr)
 	case "tracee":
 		return runTracee(ctx, args[1:], stdout, stderr)
+	case "transpile":
+		return runTranspile(ctx, args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command %q\n", args[0])
 		printUsage(stderr)
 		return exitUsage
 	}
+}
+
+func runTranspile(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	flags := flag.NewFlagSet("transpile", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	configPath := flags.String("config", "", "TLC configuration file")
+	initName := flags.String("init", "", "initial-state operator")
+	nextName := flags.String("next", "", "next-state operator")
+	constantInit := flags.String("cinit", "", "constant initializer operator")
+	outputPath := flags.String("output", "output.vmt", "write VMT constraints to this file, or - for stdout")
+	useRows := flags.Bool("rows", false, "enable row types")
+	disablePolytypes := flags.Bool("no-polytypes", false, "disable let-polymorphism")
+	var invariants, temporalProperties csvStringList
+	var libraryPaths stringList
+	flags.Var(&invariants, "inv", "state invariant operator (repeatable or comma-separated)")
+	flags.Var(&temporalProperties, "temporal", "temporal property operator (repeatable or comma-separated)")
+	flags.Var(&libraryPaths, "I", "add a TLA+ module search directory (repeatable)")
+	if err := flags.Parse(args); err != nil {
+		return exitUsage
+	}
+	if flags.NArg() != 1 {
+		fmt.Fprintln(stderr, "transpile requires exactly one TLA+ file")
+		return exitUsage
+	}
+	if *outputPath == "" {
+		fmt.Fprintln(stderr, "transpile output path cannot be empty")
+		return exitUsage
+	}
+	configuration := pal.SpecificationConfiguration{
+		ConstantInit:       *constantInit,
+		Invariants:         append([]string(nil), invariants...),
+		TemporalProperties: append([]string(nil), temporalProperties...),
+	}
+	if *configPath != "" {
+		contents, err := os.ReadFile(*configPath)
+		if err != nil {
+			fmt.Fprintf(stderr, "cannot read TLC configuration: %v\n", err)
+			return exitFrontend
+		}
+		parsed, err := pal.ParseTLCConfig(string(contents))
+		if err != nil {
+			fmt.Fprintf(stderr, "cannot parse TLC configuration: %v\n", err)
+			return exitFrontend
+		}
+		configuration.TLCConfig = &parsed
+		configuration.ContextName = *configPath
+	}
+	if (*initName == "") != (*nextName == "") {
+		fmt.Fprintln(stderr, "-init and -next must be provided together")
+		return exitUsage
+	}
+	if *initName != "" {
+		configuration.Behavior = pal.InitNextSpec{Init: *initName, Next: *nextName}
+	} else if configuration.TLCConfig == nil {
+		configuration.Behavior = pal.InitNextSpec{Init: "Init", Next: "Next"}
+	}
+	frontend := pal.ParseAndTypeCheckFile(ctx, flags.Arg(0), pal.FrontendOptions{
+		LibraryPaths: libraryPaths,
+	}, pal.TypeCheckOptions{UseRows: *useRows, DisablePolytypes: *disablePolytypes})
+	for _, diagnostic := range frontend.Diagnostics {
+		fmt.Fprintln(stderr, diagnostic.Error())
+	}
+	if !frontend.OK() {
+		return exitFrontend
+	}
+	prepared, err := pal.PrepareSafetyTransitions(frontend.Native, pal.SafetyPipelineOptions{
+		Specification: configuration,
+		Sources:       frontend.Sources,
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "cannot prepare VMT transitions: %v\n", err)
+		return exitTool
+	}
+	document, err := pal.FormatVMTModuleWithInvariants(prepared.Module, prepared.Predicates.Invariants)
+	if err != nil {
+		fmt.Fprintf(stderr, "cannot generate VMT constraints: %v\n", err)
+		return exitTool
+	}
+	if *outputPath == "-" {
+		if _, err = io.WriteString(stdout, document); err != nil {
+			fmt.Fprintf(stderr, "cannot write VMT constraints: %v\n", err)
+			return exitTool
+		}
+		return exitOK
+	}
+	if err = os.WriteFile(*outputPath, []byte(document), 0o644); err != nil {
+		fmt.Fprintf(stderr, "cannot write VMT constraints: %v\n", err)
+		return exitTool
+	}
+	absolute, absoluteErr := filepath.Abs(*outputPath)
+	if absoluteErr != nil {
+		absolute = *outputPath
+	}
+	fmt.Fprintf(stdout, "VMT constraints successfully generated at\n%s\n", absolute)
+	return exitOK
 }
 
 func runTracee(ctx context.Context, args []string, stdout, stderr io.Writer) int {
@@ -667,6 +764,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  simulate FILE generate one bounded behavior")
 	fmt.Fprintln(w, "  test FILE BEFORE ACTION ASSERTION run a one-step test")
 	fmt.Fprintln(w, "  tracee SOURCE TRACE EXPRESSIONS evaluate operators over an ITF trace")
+	fmt.Fprintln(w, "  transpile FILE transpile ReTLA to VMT constraints")
 	fmt.Fprintln(w, "  typecheck FILE parse and type-check annotated TLA+")
 	fmt.Fprintln(w, "  version       print build version")
 }

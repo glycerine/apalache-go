@@ -152,6 +152,64 @@ Double == x + x
 	}
 }
 
+func TestRunTranspileGeneratesStandaloneVMT(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "VMT.tla")
+	if err := os.WriteFile(sourcePath, []byte(`---- MODULE VMT ----
+\* @type: Int;
+VARIABLE x
+Init == x = 0
+Next == x' = x
+Inv == x = x
+====
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	code := run(context.Background(), []string{
+		"transpile", "-inv=Inv", "-output=-", sourcePath,
+	}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("transpile = %d, stderr = %q", code, &stderr)
+	}
+	for _, fragment := range []string{
+		";Variables\n(declare-fun x () Int)",
+		"(define-fun .x () Int (! x :next x^))",
+		":init true",
+		":action Next$",
+		":invar-property 0",
+	} {
+		if !strings.Contains(stdout.String(), fragment) {
+			t.Errorf("VMT stdout does not contain %q:\n%s", fragment, &stdout)
+		}
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	outputPath := filepath.Join(dir, "model.vmt")
+	code = run(context.Background(), []string{
+		"transpile", "-inv=Inv", "-output", outputPath, sourcePath,
+	}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("file transpile = %d, stderr = %q", code, &stderr)
+	}
+	contents, err := os.ReadFile(outputPath)
+	if err != nil || !strings.Contains(string(contents), ";Initial states") {
+		t.Fatalf("written VMT = %q, %v", contents, err)
+	}
+	if !strings.Contains(stdout.String(), outputPath) {
+		t.Fatalf("transpile success message = %q", &stdout)
+	}
+}
+
+func TestRunTranspileValidatesArguments(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := run(context.Background(), []string{"transpile", "-init=Init", "M.tla"}, &stdout, &stderr)
+	if code != exitUsage || !strings.Contains(stderr.String(), "must be provided together") {
+		t.Fatalf("transpile = %d, stderr = %q", code, &stderr)
+	}
+}
+
 func TestRunParse(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "Tiny.tla")
