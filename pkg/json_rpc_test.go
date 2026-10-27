@@ -73,10 +73,11 @@ Next ==
   \/ C:: x > 10 /\ x' = x
 Inv1 == I1:: x >= -3
 Inv2 == I2:: x' - x = 1 \/ x' - x = -1
+Bad == IBad:: x /= 0
 ====`
 	encoded := base64.StdEncoding.EncodeToString([]byte(source))
 	load := postJSONRPC(t, handler, fmt.Sprintf(
-		`{"jsonrpc":"2.0","method":"loadSpec","params":{"sources":[%q],"invariants":["Inv1","Inv2"]},"id":1}`,
+		`{"jsonrpc":"2.0","method":"loadSpec","params":{"sources":[%q],"invariants":["Inv1","Inv2","Bad"]},"id":1}`,
 		encoded,
 	))
 	result, ok := load["result"].(map[string]any)
@@ -89,7 +90,7 @@ Inv2 == I2:: x' - x = 1 \/ x' - x = -1
 		t.Fatalf("loadSpec identity = %#v", result)
 	}
 	for name, count := range map[string]int{
-		"initTransitions": 1, "nextTransitions": 3, "stateInvariants": 1, "actionInvariants": 1,
+		"initTransitions": 1, "nextTransitions": 3, "stateInvariants": 2, "actionInvariants": 1,
 	} {
 		entries, ok := parameters[name].([]any)
 		if !ok || len(entries) != count {
@@ -101,6 +102,7 @@ Inv2 == I2:: x' - x = 1 \/ x' - x = -1
 	assertMetadataLabels(t, parameters["nextTransitions"], 1, "B")
 	assertMetadataLabels(t, parameters["nextTransitions"], 2, "C")
 	assertMetadataLabels(t, parameters["stateInvariants"], 0, "I1")
+	assertMetadataLabels(t, parameters["stateInvariants"], 1, "IBad")
 	assertMetadataLabels(t, parameters["actionInvariants"], 0, "I2")
 	assume := postJSONRPC(t, handler, fmt.Sprintf(
 		`{"jsonrpc":"2.0","method":"assumeTransition","params":{"sessionId":%q,"transitionId":0,"checkEnabled":true},"id":2}`,
@@ -118,6 +120,14 @@ Inv2 == I2:: x' - x = 1 \/ x' - x = -1
 	if nextResult["newStepNo"] != float64(1) {
 		t.Fatalf("nextStep = %#v", next)
 	}
+	violated := postJSONRPC(t, handler, fmt.Sprintf(
+		`{"jsonrpc":"2.0","method":"checkInvariant","params":{"sessionId":%q,"invariantId":1,"kind":"STATE"},"id":4}`,
+		sessionID,
+	))
+	violatedResult, _ := violated["result"].(map[string]any)
+	if violatedResult["invariantStatus"] != "VIOLATED" || violatedResult["trace"] == nil {
+		t.Fatalf("checkInvariant violation = %#v", violated)
+	}
 	disabled := postJSONRPC(t, handler, fmt.Sprintf(
 		`{"jsonrpc":"2.0","method":"assumeTransition","params":{"sessionId":%q,"transitionId":2,"checkEnabled":true},"id":4}`,
 		sessionID,
@@ -132,6 +142,18 @@ Inv2 == I2:: x' - x = 1 \/ x' - x = -1
 	))
 	if result, _ := enabledAfterDisabled["result"].(map[string]any); result["status"] != "ENABLED" {
 		t.Fatalf("assumeTransition after disabled = %#v", enabledAfterDisabled)
+	}
+	postJSONRPC(t, handler, fmt.Sprintf(
+		`{"jsonrpc":"2.0","method":"nextStep","params":{"sessionId":%q},"id":6}`,
+		sessionID,
+	))
+	actionSatisfied := postJSONRPC(t, handler, fmt.Sprintf(
+		`{"jsonrpc":"2.0","method":"checkInvariant","params":{"sessionId":%q,"invariantId":0,"kind":"ACTION"},"id":7}`,
+		sessionID,
+	))
+	actionResult, _ := actionSatisfied["result"].(map[string]any)
+	if actionResult["invariantStatus"] != "SATISFIED" || actionResult["trace"] != nil {
+		t.Fatalf("checkInvariant action = %#v", actionSatisfied)
 	}
 	rollback := postJSONRPC(t, handler, fmt.Sprintf(
 		`{"jsonrpc":"2.0","method":"rollback","params":{"sessionId":%q,"snapshotId":0},"id":6}`,

@@ -83,6 +83,19 @@ type rollbackResult struct {
 	SnapshotID int    `json:"snapshotId"`
 }
 
+type checkInvariantParams struct {
+	SessionID   string `json:"sessionId"`
+	InvariantID int    `json:"invariantId"`
+	Kind        string `json:"kind"`
+	TimeoutSec  int    `json:"timeoutSec"`
+}
+
+type checkInvariantResult struct {
+	SessionID       string `json:"sessionId"`
+	InvariantStatus string `json:"invariantStatus"`
+	Trace           any    `json:"trace"`
+}
+
 type explorationOperation struct {
 	transition *int
 	advance    bool
@@ -237,6 +250,61 @@ func (service *ExplorationService) rollback(raw json.RawMessage) (any, *jsonRPCE
 	})
 }
 
+func (service *ExplorationService) checkInvariant(ctx context.Context, raw json.RawMessage) (any, *jsonRPCError) {
+	var params checkInvariantParams
+	if err := decodeJSONRPCParams(raw, &params); err != nil || params.SessionID == "" || params.InvariantID < 0 ||
+		(params.Kind != "STATE" && params.Kind != "ACTION") || params.TimeoutSec < 0 {
+		return nil, invalidParams(fmt.Errorf("checkInvariant requires sessionId, a non-negative invariantId, kind STATE or ACTION, and non-negative timeoutSec"))
+	}
+	return service.withSession(params.SessionID, func(session *explorationSession) (any, *jsonRPCError) {
+		state, action, err := explorationInvariantViolations(session.prepared)
+		if err != nil {
+			return nil, &jsonRPCError{Code: JSONRPCInternalError, Message: err.Error()}
+		}
+		expressions := state
+		if params.Kind == "ACTION" {
+			expressions = action
+		}
+		if params.InvariantID >= len(expressions) {
+			return nil, invalidParams(fmt.Errorf("Invalid invariant ID: %s invariant %d not in [0, %d)", strings.ToLower(params.Kind), params.InvariantID, len(expressions)))
+		}
+		if session.executor.Step() == 0 || (session.executor.Step() == 1 && params.Kind == "ACTION") {
+			return checkInvariantResult{params.SessionID, "SATISFIED", nil}, nil
+		}
+		checkContext, cancel := explorationTimeout(ctx, params.TimeoutSec)
+		defer cancel()
+		var status SMTStatus
+		var states []DecodedState
+		if params.Kind == "STATE" {
+			status, states, err = session.executor.CheckAndDecode(checkContext, expressions[params.InvariantID])
+		} else {
+			pending, replayErr := session.executorBeforeLastAdvance()
+			if replayErr != nil {
+				return nil, &jsonRPCError{Code: JSONRPCInternalError, Message: replayErr.Error()}
+			}
+			status, states, err = pending.CheckPendingAndDecode(checkContext, expressions[params.InvariantID])
+		}
+		if err != nil {
+			return nil, &jsonRPCError{Code: JSONRPCInternalError, Message: err.Error()}
+		}
+		if status == SMTUnsatisfiable {
+			return checkInvariantResult{params.SessionID, "SATISFIED", nil}, nil
+		}
+		if status != SMTSatisfiable {
+			return checkInvariantResult{params.SessionID, "UNKNOWN", nil}, nil
+		}
+		encoded, err := MarshalDecodedTraceITF(session.prepared.Module, states, ITFOptions{})
+		if err != nil {
+			return nil, &jsonRPCError{Code: JSONRPCInternalError, Message: err.Error()}
+		}
+		var trace any
+		if err = json.Unmarshal(encoded, &trace); err != nil {
+			return nil, &jsonRPCError{Code: JSONRPCInternalError, Message: err.Error()}
+		}
+		return checkInvariantResult{params.SessionID, "VIOLATED", trace}, nil
+	})
+}
+
 func (service *ExplorationService) disposeSpec(raw json.RawMessage) (any, *jsonRPCError) {
 	var params disposeSpecParams
 	if err := decodeJSONRPCParams(raw, &params); err != nil {
@@ -348,6 +416,31 @@ func explorationSpecParameters(prepared SafetyPipelineResult) (specParameters, e
 	return result, nil
 }
 
+func explorationInvariantViolations(prepared SafetyPipelineResult) (state, action []Expr, err error) {
+	levels := NewLevelFinder(prepared.Module)
+	for _, name := range prepared.Predicates.Invariants {
+		declaration, found := declarationNamed(prepared.Module, name)
+		operator, ok := declaration.(*OperDecl)
+		if !found || !ok || len(operator.FormalParams()) != 0 {
+			return nil, nil, fmt.Errorf("invariant %s was not found as a nullary operator", name)
+		}
+		body := invariantAssignmentsToEquality(operator.Body())
+		violation, violationErr := invariantViolationExpression(body)
+		if violationErr != nil {
+			return nil, nil, violationErr
+		}
+		switch levels.LevelOfExpression(body) {
+		case ConstantLevel, StateLevel:
+			state = append(state, violation)
+		case ActionLevel:
+			action = append(action, violation)
+		default:
+			return nil, nil, fmt.Errorf("invariant %s is temporal", name)
+		}
+	}
+	return state, action, nil
+}
+
 func metadataForExpressions(expressions []Expr) []specEntryMetadata {
 	result := make([]specEntryMetadata, len(expressions))
 	for index, expression := range expressions {
@@ -424,42 +517,57 @@ func (session *explorationSession) recoverSnapshot(snapshotID int) error {
 	if !found {
 		return fmt.Errorf("snapshot %d was not found", snapshotID)
 	}
-	executor, err := newExplorationExecutor(session.prepared)
+	executor, err := replayExplorationOperations(session.prepared, operations)
 	if err != nil {
 		return err
-	}
-	for _, operation := range operations {
-		if operation.advance {
-			if err = executor.NextState(); err != nil {
-				return err
-			}
-			continue
-		}
-		if operation.transition == nil {
-			return fmt.Errorf("invalid empty exploration operation")
-		}
-		transitions := TransitionsFromModule(session.prepared.Module, NormalizedNextPrefix)
-		if executor.Step() == 0 {
-			transitions = TransitionsFromModule(session.prepared.Module, NormalizedInitPrefix)
-		}
-		number := *operation.transition
-		if number < 0 || number >= len(transitions) {
-			return fmt.Errorf("transition %d is out of range while recovering snapshot", number)
-		}
-		enabled, prepareErr := executor.PrepareTransition(number, transitions[number])
-		if prepareErr != nil {
-			return prepareErr
-		}
-		if !enabled {
-			return fmt.Errorf("transition %d became disabled while recovering snapshot", number)
-		}
-		if err = executor.AssumeTransition(number); err != nil {
-			return err
-		}
 	}
 	session.executor = executor
 	session.operations = append([]explorationOperation(nil), operations...)
 	return nil
+}
+
+func (session *explorationSession) executorBeforeLastAdvance() (*TransitionExecutor, error) {
+	if len(session.operations) == 0 || !session.operations[len(session.operations)-1].advance {
+		return nil, fmt.Errorf("action invariant requires a completed action")
+	}
+	return replayExplorationOperations(session.prepared, session.operations[:len(session.operations)-1])
+}
+
+func replayExplorationOperations(prepared SafetyPipelineResult, operations []explorationOperation) (*TransitionExecutor, error) {
+	executor, err := newExplorationExecutor(prepared)
+	if err != nil {
+		return nil, err
+	}
+	for _, operation := range operations {
+		if operation.advance {
+			if err = executor.NextState(); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		if operation.transition == nil {
+			return nil, fmt.Errorf("invalid empty exploration operation")
+		}
+		transitions := TransitionsFromModule(prepared.Module, NormalizedNextPrefix)
+		if executor.Step() == 0 {
+			transitions = TransitionsFromModule(prepared.Module, NormalizedInitPrefix)
+		}
+		number := *operation.transition
+		if number < 0 || number >= len(transitions) {
+			return nil, fmt.Errorf("transition %d is out of range while recovering snapshot", number)
+		}
+		enabled, prepareErr := executor.PrepareTransition(number, transitions[number])
+		if prepareErr != nil {
+			return nil, prepareErr
+		}
+		if !enabled {
+			return nil, fmt.Errorf("transition %d became disabled while recovering snapshot", number)
+		}
+		if err = executor.AssumeTransition(number); err != nil {
+			return nil, err
+		}
+	}
+	return executor, nil
 }
 
 func (service *ExplorationService) withSession(
