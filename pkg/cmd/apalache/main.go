@@ -386,6 +386,7 @@ func runTest(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("simulate", flag.ContinueOnError)
 	flags.SetOutput(stderr)
+	backend := addCheckerBackendFlags(flags)
 	length := flags.Int("length", 10, "maximum number of Next steps")
 	configPath := flags.String("config", "", "TLC configuration file")
 	initName := flags.String("init", "", "initial-state operator")
@@ -406,6 +407,10 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	}
 	if *length < 0 {
 		fmt.Fprintln(stderr, "simulate length cannot be negative")
+		return exitUsage
+	}
+	if err := validateCheckerBackendOptions(backend); err != nil {
+		fmt.Fprintln(stderr, err)
 		return exitUsage
 	}
 	rows, featureErr := resolveRowsFeature(*useRows, *features)
@@ -490,6 +495,7 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("check", flag.ContinueOnError)
 	flags.SetOutput(stderr)
+	backend := addCheckerBackendFlags(flags)
 	length := flags.Int("length", 10, "maximum number of Next steps")
 	configPath := flags.String("config", "", "TLC configuration file")
 	initName := flags.String("init", "", "initial-state operator")
@@ -515,6 +521,10 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	}
 	if *length < 0 {
 		fmt.Fprintln(stderr, "check length cannot be negative")
+		return exitUsage
+	}
+	if err := validateCheckerBackendOptions(backend); err != nil {
+		fmt.Fprintln(stderr, err)
 		return exitUsage
 	}
 	rows, featureErr := resolveRowsFeature(*useRows, *features)
@@ -853,6 +863,36 @@ func resolveRowsFeature(rows bool, features string) (bool, error) {
 	default:
 		return false, fmt.Errorf("unsupported feature %q (want rows or no-rows)", features)
 	}
+}
+
+type checkerBackendOptions struct {
+	algorithm string
+	encoding  string
+	solver    string
+}
+
+func addCheckerBackendFlags(flags *flag.FlagSet) *checkerBackendOptions {
+	options := &checkerBackendOptions{}
+	flags.StringVar(&options.algorithm, "algo", "incremental", "checking algorithm (incremental)")
+	flags.StringVar(&options.encoding, "smt-encoding", "oopsla19", "SMT encoding (oopsla19)")
+	flags.StringVar(&options.solver, "smt-solver", "z3", "SMT solver backend (z3 via g3)")
+	return options
+}
+
+func validateCheckerBackendOptions(options *checkerBackendOptions) error {
+	if options == nil {
+		return fmt.Errorf("checker backend options are missing")
+	}
+	if algorithm := strings.ToLower(options.algorithm); algorithm != "incremental" {
+		return fmt.Errorf("unsupported checker algorithm %q (Go port currently supports incremental)", options.algorithm)
+	}
+	if encoding := strings.ToLower(options.encoding); encoding != "oopsla19" {
+		return fmt.Errorf("unsupported SMT encoding %q (Go port currently supports oopsla19)", options.encoding)
+	}
+	if solver := strings.ToLower(options.solver); solver != "z3" {
+		return fmt.Errorf("unsupported SMT solver %q (Go port uses g3 v0.0.5 as its Z3 backend)", options.solver)
+	}
+	return nil
 }
 
 func writePrettyJSONOutput(output string, value any, stdout io.Writer) error {

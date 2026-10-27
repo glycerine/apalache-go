@@ -441,7 +441,7 @@ Inv == x < 2
 		t.Fatal(err)
 	}
 	var stdout, stderr bytes.Buffer
-	direct := []string{"check", "-inv=Inv", "-length=1", path}
+	direct := []string{"check", "--algo=incremental", "--smt-encoding=oopsla19", "--smt-solver=z3", "-inv=Inv", "-length=1", path}
 	if code := run(context.Background(), direct, &stdout, &stderr); code != exitOK {
 		t.Fatalf("safe check = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
 	}
@@ -625,7 +625,8 @@ Next == x' = x + 1
 	}
 	var stdout, stderr bytes.Buffer
 	code := run(context.Background(), []string{
-		"simulate", "-length=2", "-itf=" + itfPath, path,
+		"simulate", "--algo=incremental", "--smt-encoding=oopsla19", "--smt-solver=z3",
+		"-length=2", "-itf=" + itfPath, path,
 	}, &stdout, &stderr)
 	if code != exitOK || !strings.Contains(stdout.String(), "Simulation completed through depth 2") ||
 		!strings.Contains(stdout.String(), "State 2: x = 2") {
@@ -680,6 +681,25 @@ func TestRunCheckValidatesConfigurationFlags(t *testing.T) {
 	code := run(context.Background(), []string{"check", "-init=Init", "M.tla"}, &stdout, &stderr)
 	if code != exitUsage || !strings.Contains(stderr.String(), "-init and -next") {
 		t.Fatalf("partial behavior flags = %d, stderr = %q", code, &stderr)
+	}
+}
+
+func TestRunCheckerCommandsRejectUnsupportedBackends(t *testing.T) {
+	for _, test := range []struct {
+		command, option, message string
+	}{
+		{"check", "--algo=offline", "supports incremental"},
+		{"check", "--smt-encoding=arrays", "supports oopsla19"},
+		{"check", "--smt-solver=cvc5", "g3 v0.0.5"},
+		{"simulate", "--algo=remote", "supports incremental"},
+	} {
+		t.Run(test.command+" "+test.option, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := run(context.Background(), []string{test.command, test.option, "M.tla"}, &stdout, &stderr)
+			if code != exitUsage || !strings.Contains(stderr.String(), test.message) {
+				t.Fatalf("run() = %d, stderr = %q", code, &stderr)
+			}
+		})
 	}
 }
 

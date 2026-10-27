@@ -19,6 +19,30 @@
       "go_args": ["check", "-length", "2", "-deadlock=false", "-inv", "Inv", "test/tla/Test1305.tla"]
     },
     {
+      "name": "action-invariant-safe",
+      "dir": "..",
+      "scala_args": ["check", "--length=2", "--no-deadlock", "--inv=IncreaseInv", "test/tla/ActionInv.tla"],
+      "go_args": ["check", "--length=2", "--no-deadlock", "--inv=IncreaseInv", "test/tla/ActionInv.tla"]
+    },
+    {
+      "name": "action-invariant-violation",
+      "dir": "..",
+      "scala_args": ["check", "--length=2", "--no-deadlock", "--inv=KeepInv", "test/tla/ActionInv.tla"],
+      "go_args": ["check", "--length=2", "--no-deadlock", "--inv=KeepInv", "test/tla/ActionInv.tla"]
+    },
+    {
+      "name": "trace-invariant-safe",
+      "dir": "..",
+      "scala_args": ["check", "--length=3", "--no-deadlock", "--inv=TraceInv", "test/tla/Invariants.tla"],
+      "go_args": ["check", "--length=3", "--no-deadlock", "--inv=TraceInv", "test/tla/Invariants.tla"]
+    },
+    {
+      "name": "trace-invariant-violation",
+      "dir": "..",
+      "scala_args": ["check", "--length=3", "--no-deadlock", "--inv=BuggyTraceInv", "test/tla/Invariants.tla"],
+      "go_args": ["check", "--length=3", "--no-deadlock", "--inv=BuggyTraceInv", "test/tla/Invariants.tla"]
+    },
+    {
       "name": "finite-sets",
       "dir": "..",
       "scala_args": ["check", "--length=0", "--no-deadlock", "--inv=AllTests", "test/tla/TestSets.tla"],
