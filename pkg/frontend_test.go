@@ -120,6 +120,50 @@ Op == \E <<i, j>> \in (1..2) \X (3..4): i < j
 	}
 }
 
+func TestParseAndTypeCheckSourceReconstructsMixedTupleFunctionBinder(t *testing.T) {
+	result := ParseAndTypeCheckSource(context.Background(), "TupleFunction.tla", `---- MODULE TupleFunction ----
+EXTENDS Integers
+\* @type: <<Int, <<Int, Int>>>> -> Int;
+F == [x \in {1, 2}, <<a, b>> \in {<<3, 4>>} |-> x + a + b]
+Inv == F[2, <<3, 4>>] = 9
+====
+`, FrontendOptions{}, TypeCheckOptions{})
+	if !result.OK() {
+		t.Fatalf("ParseAndTypeCheckSource() diagnostics = %v", result.Diagnostics)
+	}
+	body, found := OperatorBody(result.Native, "F")
+	function, ok := body.(*OperExpr)
+	if !found || !ok || function.Operator().Name() != "FUN_CTOR" || len(function.Arguments()) != 5 {
+		t.Fatalf("mixed-binder function body = %#v", body)
+	}
+	binder, ok := function.Arguments()[3].(*OperExpr)
+	if !ok || binder.Operator().Name() != "TUPLE" || len(binder.Arguments()) != 2 {
+		t.Fatalf("tuple function binder = %#v", function.Arguments()[3])
+	}
+}
+
+func TestParseSourceKeepsIndependentFunctionBindersSeparate(t *testing.T) {
+	result := ParseSource(context.Background(), "IndependentFunction.tla", `---- MODULE IndependentFunction ----
+EXTENDS Integers
+F == [x, y \in {1, 2} |-> x + y]
+====
+`, FrontendOptions{})
+	if !result.OK() {
+		t.Fatalf("ParseSource() diagnostics = %v", result.Diagnostics)
+	}
+	body, found := OperatorBody(result.Native, "F")
+	function, ok := body.(*OperExpr)
+	if !found || !ok || function.Operator().Name() != "FUN_CTOR" || len(function.Arguments()) != 5 {
+		t.Fatalf("independent-binder function body = %#v", body)
+	}
+	if _, tuple := function.Arguments()[1].(*OperExpr); tuple {
+		t.Fatalf("first independent binder was grouped: %#v", function.Arguments()[1])
+	}
+	if _, tuple := function.Arguments()[3].(*OperExpr); tuple {
+		t.Fatalf("second independent binder was grouped: %#v", function.Arguments()[3])
+	}
+}
+
 func TestParseSourceReportsSemanticErrors(t *testing.T) {
 	result := ParseSource(context.Background(), "Bad.tla", `---- MODULE Bad ----
 Op == missing
