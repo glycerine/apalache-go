@@ -99,6 +99,15 @@ FoldOK ==
   LET f == [x \in 1..3 |-> 1]
       AddToSet(x, acc) == {x} \union acc
   IN FoldFunctionOnSet(AddToSet, {}, f, {1, 2}) = {1}
+InjectionOK ==
+  LET f == [x \in 1..3 |-> 2 * x]
+  IN f \in Injection(DOMAIN f, Range(f))
+SurjectionOK ==
+  LET f == [x \in 1..3 |-> x \div 2]
+  IN f \in Surjection(DOMAIN f, Range(f))
+BijectionOK ==
+  LET f == [x \in 1..3 |-> 2 * x]
+  IN f \in Bijection(DOMAIN f, Range(f))
 ====
 `, FrontendOptions{}, TypeCheckOptions{UseRows: true})
 	if !frontend.OK() {
@@ -107,7 +116,7 @@ FoldOK ==
 	prepared, err := PrepareSafetyTransitions(frontend.Native, SafetyPipelineOptions{
 		Specification: SpecificationConfiguration{
 			Behavior:   InitNextSpec{Init: "Init", Next: "Next"},
-			Invariants: []string{"RangeOK", "InjectiveOK", "RestrictOK", "FoldOK"},
+			Invariants: []string{"RangeOK", "InjectiveOK", "RestrictOK", "FoldOK", "InjectionOK", "SurjectionOK", "BijectionOK"},
 		},
 		Sources: frontend.Sources,
 	})

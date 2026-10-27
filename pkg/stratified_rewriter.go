@@ -1977,6 +1977,50 @@ func (rewriter *StratifiedRewriter) rewriteMembership(expression *OperExpr, scop
 		rewriter.assert(MustOperExpr(Op("EQ"), Typed(BoolT1), result.NameExpr(), condition))
 		return scope, result, nil
 	}
+	if functionSet, compact := setCell.Type.(FiniteFunctionSetCellType); compact {
+		functionType, isFunction := element.Type.TLAType().(FunType)
+		if !isFunction || !EqualTypes(functionType, mustFun(functionSet.ArgumentType(), functionSet.ResultType())) {
+			return scope, ArenaCell{}, fmt.Errorf("function-set membership requires an element of type %s, found %s",
+				mustFun(functionSet.ArgumentType(), functionSet.ResultType()), element.Type)
+		}
+		expectedDomain, domainErr := scope.Arena.Domain(setCell)
+		if domainErr != nil {
+			return scope, ArenaCell{}, domainErr
+		}
+		actualDomain, domainErr := scope.Arena.Domain(element)
+		if domainErr != nil {
+			return scope, ArenaCell{}, domainErr
+		}
+		domainsEqual, equalityErr := rewriter.equality.Equal(scope.Arena, actualDomain, expectedDomain)
+		if equalityErr != nil {
+			return scope, ArenaCell{}, fmt.Errorf("compare function domain with function-set domain: %w", equalityErr)
+		}
+		expectedCodomain, codomainErr := scope.Arena.Codomain(setCell)
+		if codomainErr != nil {
+			return scope, ArenaCell{}, codomainErr
+		}
+		relation, relationErr := scope.Arena.Codomain(element)
+		if relationErr != nil {
+			return scope, ArenaCell{}, relationErr
+		}
+		conditions := []Expr{domainsEqual}
+		for index, pointer := range scope.Arena.GetHas(relation) {
+			_, value, pairErr := unpackFunctionPair(scope.Arena, pointer.Element())
+			if pairErr != nil {
+				return scope, ArenaCell{}, pairErr
+			}
+			membership := MustOperExpr(Op("SET_IN"), Typed(BoolT1), value.NameExpr(), expectedCodomain.NameExpr())
+			var member ArenaCell
+			scope, member, err = rewriter.Rewrite(membership, scope)
+			if err != nil {
+				return scope, ArenaCell{}, fmt.Errorf("check function result %d against function-set codomain: %w", index+1, err)
+			}
+			conditions = append(conditions, booleanOr(
+				MustOperExpr(Op("NOT"), Typed(BoolT1), pointer.ToSMT()), member.NameExpr()))
+		}
+		scope, result := rewriter.bindBoolean(scope, booleanAnd(conditions...))
+		return scope, result, nil
+	}
 	setType, ok := setCell.Type.(BasicCellType)
 	if !ok {
 		return scope, ArenaCell{}, fmt.Errorf("membership is not implemented for arena type %s", setCell.Type)

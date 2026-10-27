@@ -72,6 +72,39 @@ func TestStratifiedFunctionSetRetainsOperands(t *testing.T) {
 	}
 }
 
+func TestStratifiedFunctionSetMembership(t *testing.T) {
+	intValue := func(value int64) Expr { return NewValueExpr(Int64Value(value), Typed(IntT1)) }
+	boolValue := func(value bool) Expr { return NewValueExpr(BoolValue(value), Typed(BoolT1)) }
+	functionType := mustFun(IntT1, BoolT1)
+	pairType, _ := NewTupleType(IntT1, BoolT1)
+	relationType := mustSet(pairType)
+	domain := MustOperExpr(Op("SET_ENUM"), Typed(mustSet(IntT1)), intValue(1), intValue(2))
+	codomain := MustOperExpr(Op("SET_ENUM"), Typed(mustSet(BoolT1)), boolValue(true))
+	functionSet := MustOperExpr(Op("FUN_SET"), Typed(mustSet(functionType)), domain, codomain)
+	pair := func(key int64, value bool) Expr {
+		return MustOperExpr(Op("TUPLE"), Typed(pairType), intValue(key), boolValue(value))
+	}
+	for _, test := range []struct {
+		name, operation string
+		secondValue     bool
+	}{
+		{name: "member", operation: "SET_IN", secondValue: true},
+		{name: "nonmember", operation: "SET_NOT_IN", secondValue: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			relation := MustOperExpr(Op("SET_ENUM"), Typed(relationType), pair(1, true), pair(2, test.secondValue))
+			function := MustOperExpr(Op("Apalache!SetAsFun"), Typed(functionType), relation)
+			claim := MustOperExpr(Op(test.operation), Typed(BoolT1), function, functionSet)
+			rewriter := NewStratifiedRewriter()
+			scope, result, err := rewriter.Rewrite(claim, InitialRewriterScope())
+			if err != nil {
+				t.Fatal(err)
+			}
+			checkRewrittenTruth(t, rewriter, scope, result, true)
+		})
+	}
+}
+
 func TestStratifiedFunctionSetSymbolicEmptiness(t *testing.T) {
 	intSetType := mustSet(IntT1)
 	boolSetType := mustSet(BoolT1)
