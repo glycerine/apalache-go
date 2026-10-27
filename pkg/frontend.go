@@ -222,6 +222,10 @@ func ParseAndTypeCheckFile(ctx context.Context, filename string, frontendOptions
 		if !result.OK() {
 			return result
 		}
+		if (TypedLanguagePredicate{}).CheckModule(result.Native).OK() {
+			result.Native.AddProperty(PropertyTypeChecked)
+			return result
+		}
 		typeOptions.Sources = result.Sources
 		typed := TypeCheckModule(result.Native, typeOptions)
 		result.Types = typed.Types

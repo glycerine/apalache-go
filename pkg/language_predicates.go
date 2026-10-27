@@ -104,6 +104,51 @@ func checkFlatInContext(context map[string]struct{}, expression Expr) PredicateR
 
 type MonotypeLanguagePredicate struct{}
 
+// TypedLanguagePredicate accepts polymorphic tags but rejects every untyped
+// expression or declaration. It is used when loading already-typechecked IR,
+// whose imported operators may legitimately retain type variables.
+type TypedLanguagePredicate struct{}
+
+func checkTyped(id UID, tag TypeTag) PredicateResult {
+	if _, typed := tag.Type(); typed {
+		return PredicateOK()
+	}
+	return PredicateFail(id, "expected a typed expression or declaration")
+}
+
+func (TypedLanguagePredicate) CheckExpression(expression Expr) PredicateResult {
+	result := checkTyped(expression.ID(), expression.Tag())
+	switch typed := expression.(type) {
+	case *OperExpr:
+		for _, argument := range typed.Arguments() {
+			result = result.And((TypedLanguagePredicate{}).CheckExpression(argument))
+		}
+	case *LetInExpr:
+		for _, declaration := range typed.Declarations() {
+			result = result.And(checkTyped(declaration.ID(), declaration.Tag()))
+			result = result.And((TypedLanguagePredicate{}).CheckExpression(declaration.Body()))
+		}
+		result = result.And((TypedLanguagePredicate{}).CheckExpression(typed.Body()))
+	}
+	return result
+}
+
+func (predicate TypedLanguagePredicate) CheckModule(module *Module) PredicateResult {
+	result := PredicateOK()
+	for _, declaration := range module.Declarations() {
+		result = result.And(checkTyped(declaration.ID(), declaration.Tag()))
+		switch typed := declaration.(type) {
+		case *OperDecl:
+			result = result.And(predicate.CheckExpression(typed.Body()))
+		case *AssumeDecl:
+			result = result.And(predicate.CheckExpression(typed.Body()))
+		case *TheoremDecl:
+			result = result.And(predicate.CheckExpression(typed.Body()))
+		}
+	}
+	return result
+}
+
 func checkMonotype(id UID, tag TypeTag) PredicateResult {
 	typ, typed := tag.Type()
 	if !typed {

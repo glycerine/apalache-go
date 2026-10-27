@@ -63,6 +63,23 @@ func TestMonotypeLanguagePredicate(t *testing.T) {
 	}
 }
 
+func TestTypedLanguagePredicateAllowsPolymorphismButRejectsUntypedNodes(t *testing.T) {
+	a, err := NewVarType(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	polymorphic := NewOperDecl("Identity", []OperatorParam{ValueParam("x")},
+		NewNameExpr("x", Typed(a)), Typed(mustOperator([]Type{a}, a)))
+	module := NewModule("Typed", []Decl{polymorphic})
+	if result := (TypedLanguagePredicate{}).CheckModule(module); !result.OK() {
+		t.Fatalf("typed polymorphic module was rejected: %+v", result.Failures)
+	}
+	polymorphic.SetBody(NewNameExpr("x", Untyped()))
+	if result := (TypedLanguagePredicate{}).CheckModule(module); result.OK() {
+		t.Fatal("untyped expression was accepted")
+	}
+}
+
 func TestNonrecursiveLanguagePredicate(t *testing.T) {
 	predicate := NonrecursiveLanguagePredicate{}
 	recursive := NewOperDecl("Rec", []OperatorParam{ValueParam("x")}, NewNameExpr("x", Untyped()), Untyped())
