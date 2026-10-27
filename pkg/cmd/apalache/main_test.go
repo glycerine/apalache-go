@@ -197,7 +197,8 @@ Live == <> (x = 2)
 	}
 	var stdout, stderr bytes.Buffer
 	code := run(context.Background(), []string{"check", "-config", configPath, "-length=3", path}, &stdout, &stderr)
-	if code != exitCounterexample || !strings.Contains(stdout.String(), "Invariant Live violated") {
+	if code != exitCounterexample || !strings.Contains(stdout.String(), "Invariant Live violated") ||
+		strings.Contains(stdout.String(), "__") {
 		t.Fatalf("temporal check = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
 	}
 }

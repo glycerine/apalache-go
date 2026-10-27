@@ -32,7 +32,9 @@ func NewTemporalLoopEncoder(tracker TransformationTracker) *TemporalLoopEncoder 
 }
 
 func (encoder *TemporalLoopEncoder) SavedVariable(variable *VarDecl) *VarDecl {
-	return NewVarDecl(TemporalSavedPrefix+variable.Name(), variable.Tag())
+	result := NewVarDecl(TemporalSavedPrefix+variable.Name(), variable.Tag())
+	result.MarkInternal()
+	return result
 }
 
 func temporalName(declaration interface {
@@ -160,7 +162,9 @@ func (encoder *TemporalLoopEncoder) AddLoopLogic(module *Module, initName, nextN
 	for _, declaration := range saved {
 		declarations = append(declarations, declaration)
 	}
-	declarations = append(declarations, NewVarDecl(TemporalInLoopName, Typed(BoolT1)))
+	inLoop := NewVarDecl(TemporalInLoopName, Typed(BoolT1))
+	inLoop.MarkInternal()
+	declarations = append(declarations, inLoop)
 	for _, declaration := range module.Declarations() {
 		switch declaration.Name() {
 		case initName:

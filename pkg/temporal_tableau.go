@@ -133,6 +133,7 @@ func (encoder *TemporalTableauEncoder) EncodeSyntaxTree(expression Expr) (Tempor
 		return TemporalSyntaxEncoding{}, fmt.Errorf("temporal-level expression %T must be an operator application after inlining", expression)
 	}
 	node := NewVarDecl(TemporalTableauPrefix+encoder.names.NewName(), Typed(BoolT1))
+	node.MarkInternal()
 	saved := encoder.loop.SavedVariable(node)
 	nodeExpression := temporalName(node)
 	predicates := encoder.genericPredicates(node, saved)
@@ -157,6 +158,8 @@ func (encoder *TemporalTableauEncoder) EncodeSyntaxTree(expression Expr) (Tempor
 		isGlobally := operation.Operator().Name() == "GLOBALLY"
 		auxiliary := NewVarDecl(node.Name()+TemporalUnrollSuffix, Typed(BoolT1))
 		lookback := NewVarDecl(auxiliary.Name()+TemporalLookbackSuffix, Typed(BoolT1))
+		auxiliary.MarkInternal()
+		lookback.MarkInternal()
 		variables = append([]*VarDecl{node, saved, auxiliary, lookback}, variables[2:]...)
 		auxiliaryExpression := temporalName(auxiliary)
 		lookbackExpression := temporalName(lookback)
@@ -218,6 +221,7 @@ func (encoder *TemporalTableauEncoder) encodeFormula(formula *OperDecl) (tempora
 		return temporalFormulaEncoding{}, fmt.Errorf("encode temporal property %s: %w", formula.Name(), err)
 	}
 	initial := NewVarDecl("__"+formula.Name()+"_init", Typed(BoolT1))
+	initial.MarkInternal()
 	initialExpression := temporalName(initial)
 	encoded.Variables = append(encoded.Variables, initial)
 	encoded.Predicates = encoded.Predicates.Append(TemporalPredicateExpressions{

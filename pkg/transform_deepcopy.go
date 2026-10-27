@@ -49,7 +49,11 @@ func (copier *DeepCopier) copyDeclaration(declaration Decl) Decl {
 	case *ConstDecl:
 		return NewConstDecl(typed.Name(), typed.Tag())
 	case *VarDecl:
-		return NewVarDecl(typed.Name(), typed.Tag())
+		result := NewVarDecl(typed.Name(), typed.Tag())
+		if typed.IsInternal() {
+			result.MarkInternal()
+		}
+		return result
 	case *AssumeDecl:
 		name, named := typed.DefinedName()
 		if named {

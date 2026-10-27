@@ -56,6 +56,39 @@ func TestMarshalDecodedTraceITFSeparatesConstantsWithoutDroppingInitialState(t *
 	}
 }
 
+func TestDecodedAndITFTracesOmitMarkedInternalVariables(t *testing.T) {
+	x := NewVarDecl("x", Typed(IntT1))
+	aux := NewVarDecl("aux", Typed(BoolT1))
+	aux.MarkInternal()
+	module := NewModule("M", []Decl{x, aux})
+	states := []DecodedState{{Values: map[string]Expr{
+		"x": intLiteral(1), "aux": temporalBool(true),
+	}}}
+	user := UserDecodedStates(module, states)
+	if _, found := user[0].Values["aux"]; found || len(user[0].Values) != 1 {
+		t.Fatalf("user states = %#v", user)
+	}
+	if _, found := states[0].Values["aux"]; !found {
+		t.Fatal("filter mutated the decoded input")
+	}
+	data, err := MarshalDecodedTraceITF(module, states, ITFOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var root map[string]any
+	if err = json.Unmarshal(data, &root); err != nil {
+		t.Fatal(err)
+	}
+	variables := root[ITFVarsField].([]any)
+	encoded := root[ITFStatesField].([]any)[0].(map[string]any)
+	if len(variables) != 1 || variables[0] != "x" {
+		t.Fatalf("ITF variables = %#v", variables)
+	}
+	if _, found := encoded["aux"]; found {
+		t.Fatalf("ITF state contains internal value: %#v", encoded)
+	}
+}
+
 func TestEncodeITFCollectionValues(t *testing.T) {
 	intValue := func(value int64) Expr { return NewValueExpr(Int64Value(value), Typed(IntT1)) }
 	strValue := func(value string) Expr { return NewValueExpr(StringValue(value), Typed(StrT1)) }

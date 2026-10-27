@@ -36,16 +36,21 @@ func (decl *ConstDecl) WithTag(tag TypeTag) Decl {
 
 type VarDecl struct {
 	declIdentity
-	name string
+	name     string
+	internal bool
 }
 
 func (*VarDecl) declNode() {}
 func NewVarDecl(name string, tag TypeTag) *VarDecl {
 	return &VarDecl{declIdentity: newDeclIdentity(tag), name: name}
 }
-func (decl *VarDecl) Name() string { return decl.name }
+func (decl *VarDecl) Name() string     { return decl.name }
+func (decl *VarDecl) IsInternal() bool { return decl.internal }
+func (decl *VarDecl) MarkInternal()    { decl.internal = true }
 func (decl *VarDecl) WithTag(tag TypeTag) Decl {
-	return NewVarDecl(decl.name, tag)
+	result := NewVarDecl(decl.name, tag)
+	result.internal = decl.internal
+	return result
 }
 
 type AssumeDecl struct {

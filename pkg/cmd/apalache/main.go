@@ -108,14 +108,14 @@ func runTest(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return exitOK
 	case pal.SafetyCounterexample:
 		fmt.Fprintf(stdout, "Assertion %s violated after %s.\n", assertion, action)
-		if err = printDecodedStates(stdout, result.States); err != nil {
+		if err = printDecodedStates(stdout, prepared.Module, result.States); err != nil {
 			fmt.Fprintf(stderr, "cannot format test counterexample: %v\n", err)
 			return exitTool
 		}
 		return exitCounterexample
 	case pal.SafetyDeadlock:
 		fmt.Fprintf(stdout, "Action %s is disabled after %s.\n", action, before)
-		if err = printDecodedStates(stdout, result.States); err != nil {
+		if err = printDecodedStates(stdout, prepared.Module, result.States); err != nil {
 			fmt.Fprintf(stderr, "cannot format test deadlock: %v\n", err)
 			return exitTool
 		}
@@ -218,7 +218,7 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	} else {
 		fmt.Fprintf(stdout, "Simulation completed through depth %d.\n", result.Depth)
 	}
-	if err = printDecodedStates(stdout, result.States); err != nil {
+	if err = printDecodedStates(stdout, prepared.Module, result.States); err != nil {
 		fmt.Fprintf(stderr, "cannot format simulated state: %v\n", err)
 		return exitTool
 	}
@@ -347,14 +347,14 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 			fmt.Fprintf(stdout, ", Next$%04d", number)
 		}
 		fmt.Fprintln(stdout, ").")
-		if formatErr := printDecodedStates(stdout, result.States); formatErr != nil {
+		if formatErr := printDecodedStates(stdout, prepared.Module, result.States); formatErr != nil {
 			fmt.Fprintf(stderr, "cannot format counterexample state: %v\n", formatErr)
 			return exitTool
 		}
 		return exitCounterexample
 	case pal.SafetyDeadlock:
 		fmt.Fprintf(stdout, "Deadlock found at depth %d.\n", result.Depth)
-		if formatErr := printDecodedStates(stdout, result.States); formatErr != nil {
+		if formatErr := printDecodedStates(stdout, prepared.Module, result.States); formatErr != nil {
 			fmt.Fprintf(stderr, "cannot format deadlock state: %v\n", formatErr)
 			return exitTool
 		}
@@ -368,7 +368,8 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	}
 }
 
-func printDecodedStates(output io.Writer, states []pal.DecodedState) error {
+func printDecodedStates(output io.Writer, module *pal.Module, states []pal.DecodedState) error {
+	states = pal.UserDecodedStates(module, states)
 	for index, state := range states {
 		names := make([]string, 0, len(state.Values))
 		for name := range state.Values {

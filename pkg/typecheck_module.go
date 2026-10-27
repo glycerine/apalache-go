@@ -226,7 +226,11 @@ func (rewriter *TypeRewriter) Declaration(declaration Decl) (Decl, error) {
 	case *ConstDecl:
 		result = NewConstDecl(typed.Name(), rewriter.tag(typed.ID(), typed.Tag()))
 	case *VarDecl:
-		result = NewVarDecl(typed.Name(), rewriter.tag(typed.ID(), typed.Tag()))
+		variable := NewVarDecl(typed.Name(), rewriter.tag(typed.ID(), typed.Tag()))
+		if typed.IsInternal() {
+			variable.MarkInternal()
+		}
+		result = variable
 	case *AssumeDecl:
 		body, err := rewriter.Expression(typed.Body())
 		if err != nil {

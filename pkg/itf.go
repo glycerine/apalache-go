@@ -41,6 +41,7 @@ func MarshalDecodedTraceITF(module *Module, states []DecodedState, options ITFOp
 	for _, declaration := range module.ConstDeclarations() {
 		constantNames[declaration.Name()] = struct{}{}
 	}
+	internalNames := internalVariableNames(module)
 	trace := make([]TraceState, 0, len(states)+1)
 	constants := make(TraceState)
 	for name, value := range states[0].Values {
@@ -52,6 +53,9 @@ func MarshalDecodedTraceITF(module *Module, states []DecodedState, options ITFOp
 	for _, state := range states {
 		values := make(TraceState)
 		for name, value := range state.Values {
+			if _, internal := internalNames[name]; internal {
+				continue
+			}
 			if _, constant := constantNames[name]; !constant {
 				values[name] = value
 			}
@@ -85,6 +89,9 @@ func MarshalITFTrace(module *Module, states []TraceState, options ITFOptions) ([
 	for _, declaration := range module.Declarations() {
 		switch typed := declaration.(type) {
 		case *VarDecl:
+			if typed.IsInternal() {
+				continue
+			}
 			typ, ok := typed.Tag().Type()
 			if !ok {
 				return nil, fmt.Errorf("variable %s has no type annotation", typed.Name())
@@ -117,6 +124,36 @@ func MarshalITFTrace(module *Module, states []TraceState, options ITFOptions) ([
 	}
 	root[ITFStatesField] = encodedStates
 	return json.Marshal(root)
+}
+
+func internalVariableNames(module *Module) map[string]struct{} {
+	result := make(map[string]struct{})
+	if module == nil {
+		return result
+	}
+	for _, variable := range module.VarDeclarations() {
+		if variable.IsInternal() {
+			result[variable.Name()] = struct{}{}
+		}
+	}
+	return result
+}
+
+// UserDecodedStates removes generated checker state while preserving all
+// user-declared constants and variables.
+func UserDecodedStates(module *Module, states []DecodedState) []DecodedState {
+	internal := internalVariableNames(module)
+	result := make([]DecodedState, len(states))
+	for index, state := range states {
+		values := make(map[string]Expr, len(state.Values))
+		for name, value := range state.Values {
+			if _, hidden := internal[name]; !hidden {
+				values[name] = value
+			}
+		}
+		result[index] = DecodedState{Values: values}
+	}
+	return result
 }
 
 func cloneTraceState(state TraceState) TraceState {

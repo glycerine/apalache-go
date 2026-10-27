@@ -120,3 +120,14 @@ func TestStructuralEqualityIncludesChildrenButNotIdentity(t *testing.T) {
 		t.Fatal("different operators compare equal")
 	}
 }
+
+func TestInternalVariableMarkerSurvivesTypeAndDeepCopies(t *testing.T) {
+	variable := NewVarDecl("aux", Typed(BoolT1))
+	variable.MarkInternal()
+	withTag := variable.WithTag(Typed(IntT1)).(*VarDecl)
+	deep := NewDeepCopier(nil).Declaration(variable).(*VarDecl)
+	if !variable.IsInternal() || !withTag.IsInternal() || !deep.IsInternal() {
+		t.Fatalf("internal markers: original=%v withTag=%v deep=%v",
+			variable.IsInternal(), withTag.IsInternal(), deep.IsInternal())
+	}
+}
