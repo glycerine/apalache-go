@@ -143,6 +143,10 @@ func collectionElementType(cell CellType) Type {
 		}
 	case PowerSetCellType:
 		return typed.Domain
+	case InfiniteSetCellType:
+		return typed.Element.TLAType()
+	case FiniteFunctionSetCellType:
+		return mustFun(typed.ArgumentType(), typed.ResultType())
 	}
 	panic(fmt.Sprintf("unexpected collection cell type %s", cell))
 }
