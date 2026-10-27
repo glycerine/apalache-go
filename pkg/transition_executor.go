@@ -271,6 +271,38 @@ func (executor *TransitionExecutor) CheckAndDecode(ctx context.Context, expressi
 	return executor.checkAndDecode(ctx, expression, executor.states)
 }
 
+// CheckTraceAndDecode instantiates a one-argument trace predicate with the
+// sequence of records represented by the committed symbolic state bindings.
+func (executor *TransitionExecutor) CheckTraceAndDecode(
+	ctx context.Context,
+	parameter string,
+	expression Expr,
+	historyType SeqType,
+	variables []*VarDecl,
+) (SMTStatus, []DecodedState, error) {
+	if len(executor.states) == 0 {
+		return SMTUnknown, nil, fmt.Errorf("cannot check a trace predicate before the initial state")
+	}
+	ordered := append([]*VarDecl(nil), variables...)
+	sort.Slice(ordered, func(left, right int) bool { return ordered[left].Name() < ordered[right].Name() })
+	records := make([]Expr, len(executor.states))
+	for stateIndex, binding := range executor.states {
+		arguments := make([]Expr, 0, len(ordered)*2)
+		for _, variable := range ordered {
+			cell, found := binding.Get(variable.Name())
+			if !found {
+				return SMTUnknown, nil, fmt.Errorf("state %d has no binding for %s", stateIndex, variable.Name())
+			}
+			arguments = append(arguments,
+				NewValueExpr(StringValue(variable.Name()), Typed(StrT1)), cell.NameExpr())
+		}
+		records[stateIndex] = MustOperExpr(Op("RECORD"), Typed(historyType.Element()), arguments...)
+	}
+	history := MustOperExpr(Op("TUPLE"), Typed(historyType), records...)
+	instantiated := replaceNames(expression, map[string]Expr{parameter: history}, nil)
+	return executor.checkAndDecode(ctx, instantiated, executor.states)
+}
+
 // CheckPendingAndDecode evaluates an action expression before NextState and
 // decodes the selected transition's target as the final state in the trace.
 func (executor *TransitionExecutor) CheckPendingAndDecode(ctx context.Context, expression Expr) (SMTStatus, []DecodedState, error) {

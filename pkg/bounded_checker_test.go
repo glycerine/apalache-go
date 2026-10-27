@@ -231,6 +231,43 @@ func TestCheckBoundedSafetyChecksActionInvariantsOnPendingState(t *testing.T) {
 	}
 }
 
+func TestCheckBoundedSafetyChecksTraceInvariantsOverStateHistory(t *testing.T) {
+	x := NewNameExpr("x", Typed(IntT1))
+	prime := MustOperExpr(Op("PRIME"), Typed(IntT1), NewNameExpr("x", Typed(IntT1)))
+	constantInit := boolDefinition("CInit", NewValueExpr(BoolValue(true), Typed(BoolT1)))
+	init := boolDefinition("Init", MustOperExpr(Op("EQ"), Typed(BoolT1), x, intLiteral(0)))
+	next := boolDefinition("Next", MustOperExpr(Op("EQ"), Typed(BoolT1), prime,
+		MustOperExpr(Op("PLUS"), Typed(IntT1), x, intLiteral(1))))
+	recordType, _ := NewRecordType(map[string]Type{"x": IntT1})
+	historyType, _ := NewSeqType(recordType)
+	history := NewNameExpr("hist", Typed(historyType))
+	traceBody := MustOperExpr(Op("LE"), Typed(BoolT1),
+		MustOperExpr(Op("Sequences!Len"), Typed(IntT1), history), intLiteral(2))
+	traceInvariant := NewOperDecl("TraceInv", []OperatorParam{ValueParam("hist")}, traceBody,
+		Typed(mustOperator([]Type{historyType}, BoolT1)))
+	module := configuredTestModule(NewVarDecl("x", Typed(IntT1)), constantInit, init, next, traceInvariant)
+	prepared, err := PrepareSafetyTransitions(module, SafetyPipelineOptions{Specification: SpecificationConfiguration{
+		Behavior: InitNextSpec{Init: "Init", Next: "Next"}, ConstantInit: "CInit", Invariants: []string{"TraceInv"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Outcome != SafetyCounterexample || !result.TraceInvariant || result.ActionInvariant ||
+		result.Invariant != "TraceInv" || result.Depth != 2 || len(result.States) != 3 {
+		t.Fatalf("trace invariant result = %#v", result)
+	}
+	for index, expected := range []string{"0", "1", "2"} {
+		formatted, formatErr := FormatTLAExpression(result.States[index].Values["x"])
+		if formatErr != nil || formatted != expected {
+			t.Fatalf("trace state %d x = %q, %v", index, formatted, formatErr)
+		}
+	}
+}
+
 func TestCheckBoundedSafetySkolemizesExistentialAssignments(t *testing.T) {
 	x := NewNameExpr("x", Typed(IntT1))
 	prime := MustOperExpr(Op("PRIME"), Typed(IntT1), NewNameExpr("x", Typed(IntT1)))

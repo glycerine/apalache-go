@@ -27,6 +27,7 @@ type BoundedSafetyResult struct {
 	Depth              int
 	Invariant          string
 	ActionInvariant    bool
+	TraceInvariant     bool
 	InitTransition     int
 	NextTransitions    []int
 	ExploredExecutions int
@@ -71,14 +72,34 @@ func CheckBoundedSafetyWithOptions(
 	nextTransitions := TransitionsFromModule(module, NormalizedNextPrefix)
 	stateInvariants := make([]namedExpression, 0, len(predicates.Invariants))
 	actionInvariants := make([]namedExpression, 0, len(predicates.Invariants))
+	traceInvariants := make([]namedTraceInvariant, 0, len(predicates.Invariants))
 	levelFinder := NewLevelFinder(module)
 	for _, name := range predicates.Invariants {
-		body, found := OperatorBody(module, name)
-		if !found {
+		declaration, found := declarationNamed(module, name)
+		operator, ok := declaration.(*OperDecl)
+		if !found || !ok {
 			return BoundedSafetyResult{}, fmt.Errorf("invariant %s was not found", name)
 		}
-		named := namedExpression{name: name, expression: body}
-		switch levelFinder.LevelOfExpression(body) {
+		parameters := operator.FormalParams()
+		if len(parameters) == 1 && parameters[0].Arity <= 0 {
+			if levelFinder.LevelOfDeclaration(operator) != ConstantLevel {
+				return BoundedSafetyResult{}, fmt.Errorf("trace invariant %s refers to state variables or action/temporal operators", name)
+			}
+			historyType, err := validateTraceInvariantType(operator, module.VarDeclarations())
+			if err != nil {
+				return BoundedSafetyResult{}, err
+			}
+			traceInvariants = append(traceInvariants, namedTraceInvariant{
+				name: name, parameter: parameters[0].Name, expression: operator.Body(),
+				historyType: historyType,
+			})
+			continue
+		}
+		if len(parameters) != 0 {
+			return BoundedSafetyResult{}, fmt.Errorf("invariant %s has %d parameters; expected zero or one trace parameter", name, len(parameters))
+		}
+		named := namedExpression{name: name, expression: operator.Body()}
+		switch levelFinder.LevelOfExpression(operator.Body()) {
 		case ConstantLevel, StateLevel:
 			stateInvariants = append(stateInvariants, named)
 		case ActionLevel:
@@ -97,6 +118,7 @@ func CheckBoundedSafetyWithOptions(
 	}
 	constants := declarationNameSlice(module.ConstDeclarations())
 	variables := declarationNameSlice(module.VarDeclarations())
+	variableDeclarations := module.VarDeclarations()
 	constantInit, hasConstantInit := OperatorBody(module, NormalizedConstInit)
 	assumptions := module.AssumeDeclarations()
 
@@ -108,6 +130,7 @@ func CheckBoundedSafetyWithOptions(
 			hasConstantInit: hasConstantInit, assumptions: assumptions,
 			initTransitions: initTransitions, nextTransitions: nextTransitions,
 			stateInvariants: stateInvariants, actionInvariants: actionInvariants,
+			traceInvariants: traceInvariants, variableDeclarations: variableDeclarations,
 			maxSteps: options.MaxSteps, checkDeadlocks: options.CheckDeadlocks,
 			stateConstraints: stateConstraints, actionConstraints: actionConstraints,
 		}, path, &result)
@@ -126,25 +149,78 @@ type namedExpression struct {
 	expression Expr
 }
 
+type namedTraceInvariant struct {
+	name        string
+	parameter   string
+	expression  Expr
+	historyType SeqType
+}
+
+func validateTraceInvariantType(declaration *OperDecl, variables []*VarDecl) (SeqType, error) {
+	typ, typed := declaration.Tag().Type()
+	operatorType, ok := typ.(OperatorType)
+	if !typed || !ok || len(operatorType.Arguments()) != 1 || !EqualTypes(operatorType.Result(), BoolT1) {
+		return SeqType{}, fmt.Errorf("trace invariant %s must be a Boolean predicate over a history sequence", declaration.Name())
+	}
+	historyType, ok := operatorType.Arguments()[0].(SeqType)
+	if !ok {
+		return SeqType{}, fmt.Errorf("trace invariant %s parameter must be a sequence of state records", declaration.Name())
+	}
+	var fields map[string]Type
+	switch recordType := historyType.Element().(type) {
+	case RecordType:
+		fields = recordType.Fields()
+	case RecordRowType:
+		if _, open := recordType.Row().Other(); open {
+			return SeqType{}, fmt.Errorf("trace invariant %s history record must be closed", declaration.Name())
+		}
+		fields = recordType.Row().Fields()
+	default:
+		return SeqType{}, fmt.Errorf("trace invariant %s parameter must be a sequence of state records", declaration.Name())
+	}
+	expected := make(map[string]Type, len(variables))
+	for _, variable := range variables {
+		variableType, ok := variable.Tag().Type()
+		if !ok {
+			return SeqType{}, fmt.Errorf("state variable %s is untyped", variable.Name())
+		}
+		expected[variable.Name()] = variableType
+	}
+	if len(fields) != len(expected) {
+		return SeqType{}, fmt.Errorf("trace invariant %s history record has fields %v, expected state variables %v",
+			declaration.Name(), sortedStringKeys(fields), sortedStringKeys(expected))
+	}
+	for name, expectedType := range expected {
+		actualType, found := fields[name]
+		if !found || !EqualTypes(actualType, expectedType) {
+			return SeqType{}, fmt.Errorf("trace invariant %s history field %s has type %v, expected %s",
+				declaration.Name(), name, actualType, expectedType)
+		}
+	}
+	return historyType, nil
+}
+
 type boundedPath struct {
 	init int
 	next []int
 }
 
 type modulePathInputs struct {
-	constants         []string
-	variables         []string
-	constantInit      Expr
-	hasConstantInit   bool
-	assumptions       []*AssumeDecl
-	initTransitions   []Expr
-	nextTransitions   []Expr
-	stateInvariants   []namedExpression
-	actionInvariants  []namedExpression
-	stateConstraints  []namedExpression
-	actionConstraints []namedExpression
-	maxSteps          int
-	checkDeadlocks    bool
+	constants            []string
+	variables            []string
+	constantInit         Expr
+	hasConstantInit      bool
+	assumptions          []*AssumeDecl
+	initTransitions      []Expr
+	nextTransitions      []Expr
+	stateInvariants      []namedExpression
+	actionInvariants     []namedExpression
+	traceInvariants      []namedTraceInvariant
+	variableDeclarations []*VarDecl
+	stateConstraints     []namedExpression
+	actionConstraints    []namedExpression
+	maxSteps             int
+	checkDeadlocks       bool
 }
 
 func searchSafetyPath(
@@ -187,6 +263,29 @@ func searchSafetyPath(
 			result.Outcome = SafetyCounterexample
 			result.Depth = len(path.next)
 			result.Invariant = invariant.name
+			result.InitTransition = path.init
+			result.NextTransitions = append([]int(nil), path.next...)
+			result.States = states
+			return true, nil
+		}
+	}
+	for _, invariant := range inputs.traceInvariants {
+		violation := MustOperExpr(Op("NOT"), Typed(BoolT1), invariant.expression)
+		var states []DecodedState
+		status, states, err = executor.CheckTraceAndDecode(ctx, invariant.parameter, violation,
+			invariant.historyType, inputs.variableDeclarations)
+		if err != nil {
+			return false, fmt.Errorf("check trace invariant %s at depth %d: %w", invariant.name, len(path.next), err)
+		}
+		if status == SMTUnknown {
+			result.Outcome = SafetyUnknown
+			return true, nil
+		}
+		if status == SMTSatisfiable {
+			result.Outcome = SafetyCounterexample
+			result.Depth = len(path.next)
+			result.Invariant = invariant.name
+			result.TraceInvariant = true
 			result.InitTransition = path.init
 			result.NextTransitions = append([]int(nil), path.next...)
 			result.States = states
