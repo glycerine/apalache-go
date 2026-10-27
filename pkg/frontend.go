@@ -60,9 +60,14 @@ func ParseSource(ctx context.Context, filename, source string, opts FrontendOpti
 		return canceledResult(err)
 	}
 
-	spec, tlagoDiags := tlago.CheckSanySourceWithOptions(filename, source, tlago.LoadOptions{
-		LibraryPaths: append([]string(nil), opts.LibraryPaths...),
-	})
+	libraryPaths, cleanupLibraries, mountErr := mountBundledTLAModules(opts.LibraryPaths)
+	if mountErr != nil {
+		return FrontendResult{Diagnostics: []Diagnostic{{
+			Code: "E-IO", Severity: SeverityError, Message: mountErr.Error(), Position: Position{Filename: filename},
+		}}}
+	}
+	defer cleanupLibraries()
+	spec, tlagoDiags := tlago.CheckSanySourceWithOptions(filename, source, tlago.LoadOptions{LibraryPaths: libraryPaths})
 	result := FrontendResult{Diagnostics: frontendDiagnostics(tlagoDiags)}
 	if spec != nil && spec.Root != nil {
 		result.Module = spec.Root.Name
@@ -70,6 +75,7 @@ func ParseSource(ctx context.Context, filename, source string, opts FrontendOpti
 	if hasErrors(result.Diagnostics) {
 		return result
 	}
+	normalizeTlagoInstanceExtendedDefinitions(spec)
 	result.imported = collectTlagoImportedAnnotations(spec)
 	if err := contextError(ctx); err != nil {
 		return canceledResult(err)
@@ -85,7 +91,10 @@ func ParseSource(ctx context.Context, filename, source string, opts FrontendOpti
 		result.Sources = NewSourceStore()
 		native, conversionErr := UnmarshalSingleModuleIRJSON(ir, result.Sources)
 		result.Native = normalizeTlagoLambdaValues(native, result.Sources)
+		variantsImported := spec.Modules["Variants"] != nil
+		result.Native = removeTlagoNativeVariantDeclarations(result.Native, result.Sources, variantsImported)
 		result.Native = normalizeTlagoApalacheBuiltinCalls(result.Native, result.Sources)
+		result.Native = normalizeTlagoVariantUnit(result.Native, result.Sources, variantsImported)
 		result.Native = normalizeTlagoTupleBinders(result.Native, result.Sources, binderLayouts)
 		result.Native = normalizeTlagoTupleQuantifiers(result.Native, result.Sources)
 		if conversionErr != nil {

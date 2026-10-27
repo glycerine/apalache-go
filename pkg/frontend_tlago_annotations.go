@@ -76,17 +76,43 @@ func collectTlagoImportedAnnotations(spec *tlago.Spec) tlagoImportedAnnotations 
 		ownDefinitions[definition.Name] = struct{}{}
 	}
 	for _, instance := range spec.Root.Instances {
-		module := spec.Modules[instance.Module]
-		annotations := moduleAnnotations(module)
-		for declaration, typ := range annotations.types {
-			name := declaration
-			if instance.Name != "" {
-				name = instance.Name + "!" + declaration
-			} else if _, shadowed := ownDefinitions[name]; shadowed {
-				continue
+		seen := make(map[string]bool)
+		var visitInstanceModule func(string, string)
+		visitInstanceModule = func(moduleName, prefix string) {
+			key := prefix + "\x00" + moduleName
+			if moduleName == "" || seen[key] {
+				return
 			}
-			result.types[name] = typ
+			seen[key] = true
+			module := spec.Modules[moduleName]
+			if module == nil {
+				return
+			}
+			for _, parent := range module.Extends {
+				visitInstanceModule(parent, prefix)
+			}
+			for _, nested := range module.Instances {
+				nestedPrefix := prefix
+				if nested.Name != "" {
+					if nestedPrefix != "" {
+						nestedPrefix += "!"
+					}
+					nestedPrefix += nested.Name
+				}
+				visitInstanceModule(nested.Module, nestedPrefix)
+			}
+			annotations := moduleAnnotations(module)
+			for declaration, typ := range annotations.types {
+				name := declaration
+				if prefix != "" {
+					name = prefix + "!" + declaration
+				} else if _, shadowed := ownDefinitions[name]; shadowed {
+					continue
+				}
+				result.types[name] = typ
+			}
 		}
+		visitInstanceModule(instance.Module, instance.Name)
 	}
 	return result
 }

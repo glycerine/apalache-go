@@ -8,15 +8,29 @@ import (
 )
 
 var tlagoApalacheBuiltinCalls = map[string]string{
-	"Guess":          "Apalache!Guess",
-	"Gen":            "Apalache!Gen",
-	"Expand":         "Apalache!Expand",
-	"MkSeq":          "Apalache!MkSeq",
-	"SetAsFun":       "Apalache!SetAsFun",
-	"Repeat":         "Apalache!Repeat",
-	"ApaFoldSet":     "Apalache!ApaFoldSet",
-	"ApaFoldSeqLeft": "Apalache!ApaFoldSeqLeft",
-	"Distinct":       "Apalache!Distinct",
+	"Guess":            "Apalache!Guess",
+	"Gen":              "Apalache!Gen",
+	"Expand":           "Apalache!Expand",
+	"MkSeq":            "Apalache!MkSeq",
+	"SetAsFun":         "Apalache!SetAsFun",
+	"Repeat":           "Apalache!Repeat",
+	"ApaFoldSet":       "Apalache!ApaFoldSet",
+	"ApaFoldSeqLeft":   "Apalache!ApaFoldSeqLeft",
+	"Distinct":         "Apalache!Distinct",
+	"Variant":          "Variants!Variant",
+	"VariantFilter":    "Variants!VariantFilter",
+	"VariantTag":       "Variants!VariantTag",
+	"VariantGetOrElse": "Variants!VariantGetOrElse",
+	"VariantGetUnsafe": "Variants!VariantGetUnsafe",
+}
+
+var tlagoNativeVariantDeclarations = map[string]struct{}{
+	"Variant": {}, "VariantFilter": {}, "VariantTag": {}, "VariantGetOrElse": {}, "VariantGetUnsafe": {},
+}
+
+var tlagoOpaqueBuiltinModules = map[string]struct{}{
+	"Naturals": {}, "Integers": {}, "Reals": {}, "Sequences": {}, "FiniteSets": {},
+	"TLC": {}, "TLCExt": {}, "Apalache": {},
 }
 
 var tlagoBuiltinOperatorArguments = map[string]map[int]string{
@@ -74,6 +88,60 @@ func normalizeTlagoRootLocalInstances(spec *tlago.Spec) {
 	}
 	for index := range spec.Root.Instances {
 		spec.Root.Instances[index].Local = false
+	}
+}
+
+// normalizeTlagoInstanceExtendedDefinitions supplies definitions inherited by
+// a root INSTANCE target. tlago v0.1.9 exports only the target's direct
+// definitions, although those definitions may refer to operators from EXTENDS.
+func normalizeTlagoInstanceExtendedDefinitions(spec *tlago.Spec) {
+	if spec == nil || spec.Root == nil {
+		return
+	}
+	for _, instance := range spec.Root.Instances {
+		target := spec.Modules[instance.Module]
+		if target == nil {
+			continue
+		}
+		existing := make(map[string]struct{}, len(target.Definitions))
+		for _, definition := range target.Definitions {
+			existing[definition.Name] = struct{}{}
+		}
+		var inherited []tlago.Definition
+		seen := make(map[string]bool)
+		var visit func(string)
+		visit = func(name string) {
+			if name == "" || seen[name] {
+				return
+			}
+			seen[name] = true
+			if _, opaque := tlagoOpaqueBuiltinModules[name]; opaque {
+				return
+			}
+			module := spec.Modules[name]
+			if module == nil {
+				return
+			}
+			for _, parent := range module.Extends {
+				visit(parent)
+			}
+			for _, definition := range module.Definitions {
+				if definition.Local || definition.TheoremLike {
+					continue
+				}
+				if _, found := existing[definition.Name]; found {
+					continue
+				}
+				existing[definition.Name] = struct{}{}
+				inherited = append(inherited, definition)
+			}
+		}
+		for _, parent := range target.Extends {
+			visit(parent)
+		}
+		if len(inherited) != 0 {
+			target.Definitions = append(inherited, target.Definitions...)
+		}
 	}
 }
 
@@ -349,6 +417,47 @@ func normalizeTlagoLambdaValues(module *Module, sources *SourceStore) *Module {
 			return nil, false
 		}
 		return NewLetInExpr(NewNameExpr(name.Name(), name.Tag()), let.Tag(), declaration), true
+	})
+	return transformTlagoModuleExpressions(module, rewrite, sources)
+}
+
+func removeTlagoNativeVariantDeclarations(module *Module, sources *SourceStore, variantsImported bool) *Module {
+	if module == nil || !variantsImported {
+		return module
+	}
+	declarations := module.Declarations()
+	kept := make([]Decl, 0, len(declarations))
+	for _, declaration := range declarations {
+		_, native := tlagoNativeVariantDeclarations[declaration.Name()]
+		if native {
+			continue
+		}
+		kept = append(kept, declaration)
+	}
+	result := NewModule(module.Name(), kept)
+	result.properties = cloneMap(module.properties)
+	return result
+}
+
+func normalizeTlagoVariantUnit(module *Module, sources *SourceStore, variantsImported bool) *Module {
+	if module == nil || !variantsImported {
+		return module
+	}
+	for _, declaration := range module.Declarations() {
+		if declaration.Name() == "UNIT" {
+			return module
+		}
+	}
+	var tracker TransformationTracker = IdleTracker{}
+	if sources != nil {
+		tracker = NewListenerTracker(sources)
+	}
+	rewrite := RewriteExpressions(tracker, func(expression Expr) (Expr, bool) {
+		name, ok := expression.(*NameExpr)
+		if !ok || name.Name() != "UNIT" {
+			return nil, false
+		}
+		return NewValueExpr(StringValue("U_OF_UNIT"), name.Tag()), true
 	})
 	return transformTlagoModuleExpressions(module, rewrite, sources)
 }
