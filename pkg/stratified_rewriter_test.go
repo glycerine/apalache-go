@@ -186,6 +186,61 @@ func TestStratifiedArithmeticEqualityAndConditionalThroughG3(t *testing.T) {
 	}
 }
 
+func TestStratifiedStructuralConditionalsThroughG3(t *testing.T) {
+	predicate := MustOperExpr(Op("LT"), Typed(BoolT1),
+		NewValueExpr(Int64Value(1), Typed(IntT1)), NewValueExpr(Int64Value(2), Typed(IntT1)))
+	falsePredicate := MustOperExpr(Op("GT"), Typed(BoolT1),
+		NewValueExpr(Int64Value(1), Typed(IntT1)), NewValueExpr(Int64Value(2), Typed(IntT1)))
+	intSetType := mustSet(IntT1)
+	setTag := Typed(intSetType)
+	set := func(value int64) Expr {
+		return MustOperExpr(Op("SET_ENUM"), setTag, NewValueExpr(Int64Value(value), Typed(IntT1)))
+	}
+	tupleType, err := NewTupleType(IntT1, intSetType)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tupleTag := Typed(tupleType)
+	tuple := func(integer, setValue int64) Expr {
+		return MustOperExpr(Op("TUPLE"), tupleTag,
+			NewValueExpr(Int64Value(integer), Typed(IntT1)), set(setValue))
+	}
+	tests := []struct {
+		name      string
+		tag       TypeTag
+		predicate Expr
+		thenExpr  Expr
+		elseExpr  Expr
+		want      Expr
+	}{
+		{name: "finite set then branch", tag: setTag, predicate: predicate, thenExpr: set(1), elseExpr: set(2), want: set(1)},
+		{name: "finite set else branch", tag: setTag, predicate: falsePredicate, thenExpr: set(1), elseExpr: set(2), want: set(2)},
+		{name: "tuple with set field", tag: tupleTag, predicate: predicate, thenExpr: tuple(1, 2), elseExpr: tuple(3, 4), want: tuple(1, 2)},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			rewriter := NewStratifiedRewriter()
+			conditional := MustOperExpr(Op("IF_THEN_ELSE"), test.tag, test.predicate, test.thenExpr, test.elseExpr)
+			equal := MustOperExpr(Op("EQ"), Typed(BoolT1), conditional, test.want)
+			scope, result, err := rewriter.Rewrite(equal, InitialRewriterScope())
+			if err != nil {
+				t.Fatal(err)
+			}
+			solver := newTestG3Solver(t)
+			encoder, err := EncodeRewriterScope(solver, scope, rewriter.Constraints())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := encoder.Assert(MustOperExpr(Op("NOT"), Typed(BoolT1), result.NameExpr())); err != nil {
+				t.Fatal(err)
+			}
+			if status, err := solver.Check(context.Background()); err != nil || status != SMTUnsatisfiable {
+				t.Fatalf("selected structural branch differs from then branch = %v, %v", status, err)
+			}
+		})
+	}
+}
+
 func TestStratifiedFiniteAndNaturalMembershipThroughG3(t *testing.T) {
 	rewriter := NewStratifiedRewriter()
 	setType := Typed(mustSet(IntT1))

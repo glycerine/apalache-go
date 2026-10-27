@@ -247,14 +247,72 @@ func (rewriter *StratifiedRewriter) rewriteConditional(expression *OperExpr, sco
 	if err != nil {
 		return scope, ArenaCell{}, err
 	}
-	if !isDirectSMTCellType(thenCell.Type) || !EqualCellTypes(thenCell.Type, elseCell.Type) {
-		return scope, ArenaCell{}, fmt.Errorf("conditional branches require one matching basic type, found %s and %s", thenCell.Type, elseCell.Type)
+	if !EqualTypes(predicate.Type.TLAType(), BoolT1) {
+		return scope, ArenaCell{}, fmt.Errorf("conditional predicate has non-Boolean type %s", predicate.Type)
 	}
-	newArena, result := scope.Arena.AppendCellType(thenCell.Type)
-	scope.Arena = newArena
-	choice := MustOperExpr(Op("IF_THEN_ELSE"), thenCell.NameExpr().Tag(), predicate.NameExpr(), thenCell.NameExpr(), elseCell.NameExpr())
-	rewriter.assert(MustOperExpr(Op("EQ"), Typed(BoolT1), result.NameExpr(), choice))
-	return scope, result, nil
+	if !EqualCellTypes(thenCell.Type, elseCell.Type) {
+		return scope, ArenaCell{}, fmt.Errorf("conditional branches have different types %s and %s", thenCell.Type, elseCell.Type)
+	}
+	return rewriter.chooseConditional(scope, predicate, thenCell, elseCell)
+}
+
+func (rewriter *StratifiedRewriter) chooseConditional(scope RewriterScope, predicate, thenCell, elseCell ArenaCell) (RewriterScope, ArenaCell, error) {
+	if !EqualCellTypes(thenCell.Type, elseCell.Type) {
+		return scope, ArenaCell{}, fmt.Errorf("conditional choices have different types %s and %s", thenCell.Type, elseCell.Type)
+	}
+	if thenCell.Equal(elseCell) {
+		return scope, thenCell, nil
+	}
+	if isDirectSMTCellType(thenCell.Type) {
+		newArena, result := scope.Arena.AppendCellType(thenCell.Type)
+		scope.Arena = newArena
+		choice := MustOperExpr(Op("IF_THEN_ELSE"), thenCell.NameExpr().Tag(), predicate.NameExpr(), thenCell.NameExpr(), elseCell.NameExpr())
+		rewriter.assert(MustOperExpr(Op("EQ"), Typed(BoolT1), result.NameExpr(), choice))
+		return scope, result, nil
+	}
+	if isFiniteSetCellType(thenCell.Type) {
+		thenPointers := scope.Arena.GetHas(thenCell)
+		elsePointers := scope.Arena.GetHas(elseCell)
+		pointers := make([]ElementPointer, 0, len(thenPointers)+len(elsePointers))
+		for _, pointer := range thenPointers {
+			pointers = append(pointers, pointer.Restrict(predicate.NameExpr()))
+		}
+		notPredicate := MustOperExpr(Op("NOT"), Typed(BoolT1), predicate.NameExpr())
+		for _, pointer := range elsePointers {
+			pointers = append(pointers, pointer.Restrict(notPredicate))
+		}
+		merged, err := MergeElementPointersByCell(pointers)
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+		newArena, result := scope.Arena.AppendCellType(thenCell.Type)
+		scope.Arena = newArena.AppendHas(result, merged...)
+		rewriter.addMembershipConstraints(scope.Arena, result)
+		return scope, result, nil
+	}
+	if isTupleCellType(thenCell.Type) {
+		thenFields := scope.Arena.GetHas(thenCell)
+		elseFields := scope.Arena.GetHas(elseCell)
+		if len(thenFields) != len(elseFields) {
+			return scope, ArenaCell{}, fmt.Errorf("conditional tuple branches have different arities %d and %d", len(thenFields), len(elseFields))
+		}
+		fields := make([]ArenaCell, len(thenFields))
+		for index := range thenFields {
+			var err error
+			scope, fields[index], err = rewriter.chooseConditional(scope, predicate, thenFields[index].Element(), elseFields[index].Element())
+			if err != nil {
+				return scope, ArenaCell{}, fmt.Errorf("choose conditional tuple field %d: %w", index+1, err)
+			}
+		}
+		newArena, result := scope.Arena.AppendCellType(thenCell.Type)
+		pointers := make([]ElementPointer, len(fields))
+		for index, field := range fields {
+			pointers[index] = FixedElementPointer{Cell: field}
+		}
+		scope.Arena = newArena.AppendHas(result, pointers...)
+		return scope, result, nil
+	}
+	return scope, ArenaCell{}, fmt.Errorf("conditional branches have unsupported structural type %s", thenCell.Type)
 }
 
 func (rewriter *StratifiedRewriter) rewriteValue(expression *ValueExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
