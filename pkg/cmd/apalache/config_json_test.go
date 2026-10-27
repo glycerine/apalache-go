@@ -76,3 +76,41 @@ func TestRunCheckRejectsLegacyExplicitConfiguration(t *testing.T) {
 		t.Fatalf("legacy config = %d, stderr = %q", code, &stderr)
 	}
 }
+
+func TestRunSimulateLoadsJSONConfigurationWithCLIPrecedence(t *testing.T) {
+	directory := t.TempDir()
+	t.Setenv("HOME", filepath.Join(directory, "home"))
+	t.Chdir(directory)
+	if err := os.WriteFile("Simulation.tla", []byte(`---- MODULE Simulation ----
+EXTENDS Integers
+\* @type: Int;
+VARIABLE x
+Init == x = 0
+Next == x' = x + 1
+====
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	configuration := `{
+  "source":"Simulation.tla",
+  "checker":{"length":2},
+  "typechecker":{"infer-poly":true}
+}`
+	if err := os.WriteFile("simulation.json", []byte(configuration), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	if code := run(context.Background(), []string{"simulate", "--config-file=simulation.json"}, &stdout, &stderr); code != exitOK ||
+		!strings.Contains(stdout.String(), "Simulation completed through depth 2") ||
+		!strings.Contains(stdout.String(), "State 2: x = 2") {
+		t.Fatalf("configured simulation = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := run(context.Background(), []string{"simulate", "--config-file=simulation.json", "--length=1"}, &stdout, &stderr); code != exitOK ||
+		!strings.Contains(stdout.String(), "through depth 1") || strings.Contains(stdout.String(), "State 2:") {
+		t.Fatalf("simulation CLI override = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
+	}
+}

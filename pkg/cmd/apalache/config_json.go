@@ -61,7 +61,7 @@ type jsonServerConfig struct {
 	ServerType *string `json:"server-type"`
 }
 
-func (config jsonCommandConfig) validateForCheck() error {
+func (config jsonCommandConfig) validateForModelCommand(command string, checkSpecific bool) error {
 	unsupported := []struct {
 		set  bool
 		name string
@@ -75,11 +75,16 @@ func (config jsonCommandConfig) validateForCheck() error {
 		{config.WriteIntermediate != nil, "write-intermediate"},
 		{config.Profiling != nil, "profiling"},
 		{config.Output != nil, "output"},
-		{config.Checker.View != nil, "checker.view"},
+	}
+	if checkSpecific {
+		unsupported = append(unsupported, struct {
+			set  bool
+			name string
+		}{config.Checker.View != nil, "checker.view"})
 	}
 	for _, field := range unsupported {
 		if field.set {
-			return fmt.Errorf("JSON configuration field %s is not supported by the Go check command", field.name)
+			return fmt.Errorf("JSON configuration field %s is not supported by the Go %s command", field.name, command)
 		}
 	}
 	if config.Checker.Tuning != nil && len(*config.Checker.Tuning) != 0 {
@@ -91,6 +96,83 @@ func (config jsonCommandConfig) validateForCheck() error {
 				return fmt.Errorf("unsupported JSON feature %q (want rows)", feature)
 			}
 		}
+	}
+	return nil
+}
+
+func (config jsonCommandConfig) validateForCheck() error {
+	return config.validateForModelCommand("check", true)
+}
+
+func (config jsonCommandConfig) validateForSimulate() error {
+	return config.validateForModelCommand("simulate", false)
+}
+
+type jsonModelConfigTargets struct {
+	backend            *checkerBackendOptions
+	length             *int
+	timeoutSMT         *int
+	TLCConfig          *string
+	constantInit       *string
+	init               *string
+	next               *string
+	useRows            *bool
+	disablePolytypes   *bool
+	invariants         *csvStringList
+	temporalProperties *csvStringList
+	enforceMaxError    bool
+}
+
+func applyJSONModelDefaults(config jsonCommandConfig, visited map[string]bool, targets jsonModelConfigTargets) error {
+	checker := config.Checker
+	if !visited["algo"] && checker.Algorithm != nil {
+		targets.backend.algorithm = *checker.Algorithm
+	}
+	if !visited["smt-encoding"] && checker.SMTEncoding != nil {
+		targets.backend.encoding = *checker.SMTEncoding
+	}
+	if !visited["smt-solver"] && checker.SMTSolver != nil {
+		targets.backend.solver = *checker.SMTSolver
+	}
+	if !visited["length"] && checker.Length != nil {
+		*targets.length = *checker.Length
+	}
+	if !visited["timeout-smt"] && checker.TimeoutSMT != nil {
+		*targets.timeoutSMT = *checker.TimeoutSMT
+	}
+	if !visited["config"] && checker.TLCConfig != nil {
+		path, _, err := expandHomePath(*checker.TLCConfig)
+		if err != nil {
+			return err
+		}
+		*targets.TLCConfig = path
+	}
+	if !visited["cinit"] && checker.ConstantInit != nil {
+		*targets.constantInit = *checker.ConstantInit
+	}
+	if !visited["init"] && checker.Init != nil {
+		*targets.init = *checker.Init
+	}
+	if !visited["next"] && checker.Next != nil {
+		*targets.next = *checker.Next
+	}
+	if targets.invariants != nil && !visited["inv"] && checker.Invariants != nil {
+		*targets.invariants = append((*targets.invariants)[:0], (*checker.Invariants)...)
+	}
+	if targets.temporalProperties != nil && !visited["temporal"] && checker.TemporalProperties != nil {
+		*targets.temporalProperties = append((*targets.temporalProperties)[:0], (*checker.TemporalProperties)...)
+	}
+	if !visited["no-polytypes"] && config.Typechecker.InferPoly != nil {
+		*targets.disablePolytypes = !*config.Typechecker.InferPoly
+	}
+	if !visited["rows"] && !visited["features"] && config.Features != nil {
+		*targets.useRows = false
+		for _, feature := range *config.Features {
+			*targets.useRows = *targets.useRows || feature == "rows"
+		}
+	}
+	if targets.enforceMaxError && checker.MaxError != nil && *checker.MaxError != 1 {
+		return fmt.Errorf("JSON checker.max-error currently supports only 1")
 	}
 	return nil
 }
