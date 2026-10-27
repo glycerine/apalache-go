@@ -72,6 +72,8 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 			return rewriter.rewriteSetBinaryFilter(typed, scope)
 		case "SET_SUBSET_EQ":
 			return rewriter.rewriteSubset(typed, scope)
+		case "FiniteSets!Cardinality":
+			return rewriter.rewriteCardinality(typed, scope)
 		case "SET_FILTER":
 			return rewriter.rewriteSetFilter(typed, scope)
 		case "SET_IN", "Apalache!SelectInSet":
@@ -85,6 +87,42 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 		}
 	}
 	return scope, ArenaCell{}, fmt.Errorf("no stratified rule is applicable to %T", expression)
+}
+
+func (rewriter *StratifiedRewriter) rewriteCardinality(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
+	arguments := expression.Arguments()
+	if len(arguments) != 1 {
+		return scope, ArenaCell{}, fmt.Errorf("cardinality requires one operand")
+	}
+	scope, setCell, err := rewriter.Rewrite(arguments[0], scope)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	if !isFiniteSetCellType(setCell.Type) {
+		return scope, ArenaCell{}, fmt.Errorf("cardinality requires a finite set, found %s", setCell.Type)
+	}
+	pointers := scope.Arena.GetHas(setCell)
+	sum := Expr(NewValueExpr(Int64Value(0), Typed(IntT1)))
+	for index, pointer := range pointers {
+		uniqueConditions := []Expr{pointer.ToSMT()}
+		for previous := 0; previous < index; previous++ {
+			equal, equalityErr := rewriter.equality.Equal(scope.Arena, pointer.Element(), pointers[previous].Element())
+			if equalityErr != nil {
+				return scope, ArenaCell{}, equalityErr
+			}
+			uniqueConditions = append(uniqueConditions, booleanOr(
+				MustOperExpr(Op("NOT"), Typed(BoolT1), pointers[previous].ToSMT()),
+				MustOperExpr(Op("NOT"), Typed(BoolT1), equal),
+			))
+		}
+		increment := MustOperExpr(Op("IF_THEN_ELSE"), Typed(IntT1), booleanAnd(uniqueConditions...),
+			NewValueExpr(Int64Value(1), Typed(IntT1)), NewValueExpr(Int64Value(0), Typed(IntT1)))
+		sum = MustOperExpr(Op("PLUS"), Typed(IntT1), sum, increment)
+	}
+	newArena, result := scope.Arena.AppendCellType(BasicCellType{Type: IntT1})
+	scope.Arena = newArena
+	rewriter.assert(MustOperExpr(Op("EQ"), Typed(BoolT1), result.NameExpr(), sum))
+	return scope, result, nil
 }
 
 func (rewriter *StratifiedRewriter) rewriteSubset(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {

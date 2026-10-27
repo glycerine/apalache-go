@@ -412,6 +412,55 @@ func TestStratifiedStructuralSetMembershipThroughG3(t *testing.T) {
 	}
 }
 
+func TestStratifiedFiniteCardinalityThroughG3(t *testing.T) {
+	tupleType, err := NewTupleType(IntT1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tupleTag := Typed(tupleType)
+	tuple := func() Expr {
+		return MustOperExpr(Op("TUPLE"), tupleTag, NewValueExpr(Int64Value(1), Typed(IntT1)))
+	}
+	structuralSetTag := Typed(mustSet(tupleType))
+	structuralDuplicates := MustOperExpr(Op("SET_ENUM"), structuralSetTag, tuple(), tuple())
+	boolSetTag := Typed(mustSet(BoolT1))
+	booleans := MustOperExpr(Op("SET_ENUM"), boolSetTag,
+		NewValueExpr(BoolValue(false), Typed(BoolT1)), NewValueExpr(BoolValue(true), Typed(BoolT1)))
+	bound := NewNameExpr("b", Typed(BoolT1))
+	filtered := MustOperExpr(Op("SET_FILTER"), boolSetTag, bound, booleans, bound)
+	tests := []struct {
+		name string
+		set  Expr
+		want int64
+	}{
+		{name: "empty", set: MustOperExpr(Op("SET_ENUM"), Typed(mustSet(IntT1))), want: 0},
+		{name: "guarded", set: filtered, want: 1},
+		{name: "structural duplicates", set: structuralDuplicates, want: 1},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			cardinality := MustOperExpr(Op("FiniteSets!Cardinality"), Typed(IntT1), test.set)
+			equal := MustOperExpr(Op("EQ"), Typed(BoolT1), cardinality, NewValueExpr(Int64Value(test.want), Typed(IntT1)))
+			rewriter := NewStratifiedRewriter()
+			scope, result, err := rewriter.Rewrite(equal, InitialRewriterScope())
+			if err != nil {
+				t.Fatal(err)
+			}
+			solver := newTestG3Solver(t)
+			encoder, err := EncodeRewriterScope(solver, scope, rewriter.Constraints())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := encoder.Assert(MustOperExpr(Op("NOT"), Typed(BoolT1), result.NameExpr())); err != nil {
+				t.Fatal(err)
+			}
+			if status, err := solver.Check(context.Background()); err != nil || status != SMTUnsatisfiable {
+				t.Fatalf("cardinality differs from %d = %v, %v", test.want, status, err)
+			}
+		})
+	}
+}
+
 func TestStratifiedFiniteSetEqualityThroughG3(t *testing.T) {
 	setType := Typed(mustSet(IntT1))
 	set := func(values ...int64) Expr {
