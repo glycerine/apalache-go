@@ -143,6 +143,8 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 			return rewriter.rewriteSetAsFunction(typed, scope)
 		case "Apalache!Expand":
 			return rewriter.rewriteSetExpansion(typed, scope)
+		case "Apalache!Gen":
+			return rewriter.rewriteGenerate(typed, scope)
 		}
 	}
 	return scope, ArenaCell{}, fmt.Errorf("no stratified rule is applicable to %T", expression)
