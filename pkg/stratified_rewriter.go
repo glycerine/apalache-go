@@ -105,6 +105,8 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 			return rewriter.rewriteSequenceConcat(typed, scope)
 		case "Sequences!SubSeq":
 			return rewriter.rewriteSubSequence(typed, scope)
+		case "Apalache!MkSeq":
+			return rewriter.rewriteMakeSequence(typed, scope)
 		case "Apalache!Guess", "CHOOSE3":
 			return rewriter.rewriteBoundedChoice(typed, scope)
 		case "EXISTS3", "FORALL3":
