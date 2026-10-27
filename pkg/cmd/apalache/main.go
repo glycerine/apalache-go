@@ -213,6 +213,7 @@ func runTranspile(ctx context.Context, args []string, stdout, stderr io.Writer) 
 func runTracee(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("tracee", flag.ContinueOnError)
 	flags.SetOutput(stderr)
+	configFile := flags.String("config-file", "", "Apalache JSON configuration file")
 	tracePath := flags.String("trace", "", "input ITF trace")
 	itfPath := flags.String("itf", "", "write evaluated ITF trace to this file (default stdout)")
 	useRows := flags.Bool("rows", false, "enable row types")
@@ -225,8 +226,11 @@ func runTracee(ctx context.Context, args []string, stdout, stderr io.Writer) int
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
 	}
+	visited := make(map[string]bool)
+	flags.Visit(func(flag *flag.Flag) { visited[flag.Name] = true })
 	var sourcePath string
 	switch flags.NArg() {
+	case 0:
 	case 1:
 		sourcePath = flags.Arg(0)
 	case 3:
@@ -243,7 +247,40 @@ func runTracee(ctx context.Context, args []string, stdout, stderr io.Writer) int
 		fmt.Fprintln(stderr, "tracee requires SOURCE TRACE EXPRESSIONS, or -trace and -expressions with SOURCE")
 		return exitUsage
 	}
-	if *tracePath == "" || len(expressions) == 0 {
+	applicationConfig, selectedConfig, err := loadCommandConfig(*configFile)
+	if err != nil {
+		fmt.Fprintf(stderr, "cannot load Apalache configuration: %v\n", err)
+		return exitUsage
+	}
+	if selectedConfig != "" {
+		if err = applicationConfig.validateForTracee(); err != nil {
+			fmt.Fprintln(stderr, err)
+			return exitUsage
+		}
+		if err = applyJSONFrontendDefaults(applicationConfig, visited, nil, features, useRows, disablePolytypes); err != nil {
+			fmt.Fprintln(stderr, err)
+			return exitUsage
+		}
+		if sourcePath == "" && applicationConfig.Source != nil {
+			sourcePath, _, err = expandHomePath(*applicationConfig.Source)
+			if err != nil {
+				fmt.Fprintln(stderr, err)
+				return exitUsage
+			}
+		}
+		if !visited["trace"] && flags.NArg() != 3 {
+			if configuredTrace, found, traceErr := applicationConfig.configuredTracePath(); traceErr != nil {
+				fmt.Fprintln(stderr, traceErr)
+				return exitUsage
+			} else if found {
+				*tracePath = configuredTrace
+			}
+		}
+		if !visited["expressions"] && flags.NArg() != 3 && applicationConfig.TraceEvaluation.Expressions != nil {
+			expressions = append(expressions[:0], (*applicationConfig.TraceEvaluation.Expressions)...)
+		}
+	}
+	if sourcePath == "" || *tracePath == "" || len(expressions) == 0 {
 		fmt.Fprintln(stderr, "tracee requires a trace and at least one expression operator")
 		return exitUsage
 	}

@@ -208,3 +208,45 @@ Inv == x = x
 		t.Fatalf("configured output was used despite CLI override: %v", err)
 	}
 }
+
+func TestRunTraceeLoadsJSONConfiguration(t *testing.T) {
+	directory := t.TempDir()
+	t.Setenv("HOME", filepath.Join(directory, "home"))
+	t.Chdir(directory)
+	if err := os.WriteFile("TraceConfig.tla", []byte(`---- MODULE TraceConfig ----
+EXTENDS Integers
+\* @type: Int;
+VARIABLE x
+Double == x + x
+Increment == x + 1
+====
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile("input.itf.json", []byte(`{
+  "#meta":{"format":"ITF","varTypes":{"x":"Int"}},
+  "vars":["x"],"states":[{"x":4}]
+}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	configuration := `{
+  "source":"TraceConfig.tla",
+  "tracee":{"trace":"input.itf.json","expressions":["Double"]},
+  "typechecker":{"infer-poly":true}
+}`
+	if err := os.WriteFile("tracee.json", []byte(configuration), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	if code := run(context.Background(), []string{"tracee", "--config-file=tracee.json"}, &stdout, &stderr); code != exitOK ||
+		!bytes.Contains(stdout.Bytes(), []byte(`"Double":{"#bigint":"8"}`)) {
+		t.Fatalf("configured tracee = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := run(context.Background(), []string{"tracee", "--config-file=tracee.json", "--expressions=Increment"}, &stdout, &stderr); code != exitOK ||
+		!bytes.Contains(stdout.Bytes(), []byte(`"Increment":{"#bigint":"5"}`)) || bytes.Contains(stdout.Bytes(), []byte(`"Double"`)) {
+		t.Fatalf("tracee expression override = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
+	}
+}

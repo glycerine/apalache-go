@@ -137,13 +137,35 @@ func (config jsonCommandConfig) validateForFrontend(command string) error {
 	return nil
 }
 
+func (config jsonCommandConfig) validateForTracee() error {
+	if err := config.validateForFrontend("tracee"); err != nil {
+		return err
+	}
+	if config.Output != nil {
+		return fmt.Errorf("JSON configuration field output is not supported by the Go tracee command")
+	}
+	return nil
+}
+
+func (config jsonCommandConfig) configuredTracePath() (string, bool, error) {
+	if config.TraceEvaluation.Trace == nil {
+		return "", false, nil
+	}
+	var path string
+	if err := json.Unmarshal(config.TraceEvaluation.Trace, &path); err != nil || path == "" {
+		return "", true, fmt.Errorf("Go tracee currently requires tracee.trace to be a nonempty file path string")
+	}
+	expanded, _, err := expandHomePath(path)
+	return expanded, true, err
+}
+
 func applyJSONFrontendDefaults(
 	config jsonCommandConfig,
 	visited map[string]bool,
 	output, features *string,
 	useRows, disablePolytypes *bool,
 ) error {
-	if !visited["output"] && config.Output != nil {
+	if output != nil && !visited["output"] && config.Output != nil {
 		path, _, err := expandHomePath(*config.Output)
 		if err != nil {
 			return err
