@@ -74,6 +74,8 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 			return rewriter.rewriteSetConstructor(typed, scope)
 		case "SET_UNION2":
 			return rewriter.rewriteSetUnion(typed, scope)
+		case "SET_UNARY_UNION":
+			return rewriter.rewriteSetUnaryUnion(typed, scope)
 		case "SET_INTERSECT", "SET_MINUS":
 			return rewriter.rewriteSetBinaryFilter(typed, scope)
 		case "SET_SUBSET_EQ":
