@@ -2,6 +2,7 @@ package apalache
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/glycerine/tlago"
 )
@@ -343,6 +344,12 @@ func normalizeTlagoApalacheBuiltinCalls(module *Module, sources *SourceStore) *M
 				arguments[index+1] = argument
 			}
 		}
+		if _, shadowed := declared[callee.Name()]; !shadowed &&
+			(callee.Name() == "FunAsSeq" || strings.HasSuffix(callee.Name(), "!FunAsSeq")) {
+			if expanded, expandedOK := expandTlagoFunAsSeq(operation, arguments); expandedOK {
+				return expanded, true
+			}
+		}
 		builtin, found := tlagoApalacheBuiltinCalls[callee.Name()]
 		if !found {
 			if changed {
@@ -375,6 +382,22 @@ func normalizeTlagoApalacheBuiltinCalls(module *Module, sources *SourceStore) *M
 		return MustOperExpr(Op(builtin), operation.Tag(), builtinArguments...), true
 	})
 	return transformTlagoModuleExpressions(module, rewrite, sources)
+}
+
+func expandTlagoFunAsSeq(operation *OperExpr, arguments []Expr) (Expr, bool) {
+	if len(arguments) != 4 {
+		return nil, false
+	}
+	suffix := operation.ID().String()
+	parameterName := "__fun_as_seq_index_" + suffix
+	definitionName := "__fun_as_seq_element_" + suffix
+	parameter := NewNameExpr(parameterName, Untyped())
+	body := MustOperExpr(Op("FUN_APP"), Untyped(), arguments[1], parameter)
+	definition := NewOperDecl(definitionName, []OperatorParam{ValueParam(parameterName)}, body, Untyped())
+	embedded := NewLetInExpr(NewNameExpr(definitionName, Untyped()), Untyped(), definition)
+	sequence := MustOperExpr(Op("Apalache!MkSeq"), Untyped(), arguments[3], embedded)
+	return MustOperExpr(Op("Sequences!SubSeq"), operation.Tag(), sequence,
+		NewValueExpr(Int64Value(1), Untyped()), arguments[2]), true
 }
 
 func wrapTlagoBuiltinOperator(name *NameExpr, arity int) (Expr, bool) {

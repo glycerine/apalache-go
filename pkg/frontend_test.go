@@ -128,6 +128,21 @@ TestUnion == Apply(\union, {1}, {2}) = {1, 2}
 	}
 }
 
+func TestParseAndTypeCheckSourceExpandsFunAsSeq(t *testing.T) {
+	result := ParseAndTypeCheckSource(context.Background(), "FunctionSequence.tla", `---- MODULE FunctionSequence ----
+EXTENDS Apalache, Integers
+Test == FunAsSeq([i \in 1..3 |-> i + 1], 3, 3) = <<2, 3, 4>>
+====
+`, FrontendOptions{}, TypeCheckOptions{})
+	if !result.OK() {
+		t.Fatalf("ParseAndTypeCheckSource() diagnostics = %v", result.Diagnostics)
+	}
+	body, found := OperatorBody(result.Native, "Test")
+	if !found || countOperator(body, "Apalache!MkSeq") != 1 || countOperator(body, "Sequences!SubSeq") != 1 {
+		t.Fatalf("expanded FunAsSeq body = %#v", body)
+	}
+}
+
 func TestParseAndTypeCheckSourceReconstructsTupleQuantifier(t *testing.T) {
 	result := ParseAndTypeCheckSource(context.Background(), "TupleBound.tla", `---- MODULE TupleBound ----
 EXTENDS Integers
