@@ -10,6 +10,7 @@ import (
 type StratifiedRewriter struct {
 	integers    *IntValueCache
 	literals    *UninterpretedLiteralCache
+	defaults    *DefaultValueCache
 	equality    *LazyEquality
 	constraints []Expr
 }
@@ -17,6 +18,7 @@ type StratifiedRewriter struct {
 func NewStratifiedRewriter() *StratifiedRewriter {
 	result := &StratifiedRewriter{integers: NewIntValueCache(), literals: NewUninterpretedLiteralCache()}
 	result.equality = NewLazyEquality(result.assert)
+	result.defaults = NewDefaultValueCache(result)
 	return result
 }
 
@@ -24,7 +26,8 @@ func (rewriter *StratifiedRewriter) IntegerCache() *IntValueCache { return rewri
 func (rewriter *StratifiedRewriter) LiteralCache() *UninterpretedLiteralCache {
 	return rewriter.literals
 }
-func (rewriter *StratifiedRewriter) LazyEquality() *LazyEquality { return rewriter.equality }
+func (rewriter *StratifiedRewriter) DefaultValueCache() *DefaultValueCache { return rewriter.defaults }
+func (rewriter *StratifiedRewriter) LazyEquality() *LazyEquality           { return rewriter.equality }
 
 func (rewriter *StratifiedRewriter) Constraints() []Expr {
 	return append([]Expr(nil), rewriter.constraints...)
@@ -33,6 +36,7 @@ func (rewriter *StratifiedRewriter) Constraints() []Expr {
 func (rewriter *StratifiedRewriter) ResetConstraints() {
 	rewriter.constraints = nil
 	rewriter.equality.Dispose()
+	rewriter.defaults.Dispose()
 }
 
 func (rewriter *StratifiedRewriter) assert(expression Expr) {
@@ -76,6 +80,8 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 			return rewriter.rewriteCardinality(typed, scope)
 		case "Sequences!Len":
 			return rewriter.rewriteSequenceLength(typed, scope)
+		case "Sequences!Head":
+			return rewriter.rewriteSequenceHead(typed, scope)
 		case "SET_FILTER":
 			return rewriter.rewriteSetFilter(typed, scope)
 		case "SET_IN", "Apalache!SelectInSet":
@@ -89,6 +95,26 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 		}
 	}
 	return scope, ArenaCell{}, fmt.Errorf("no stratified rule is applicable to %T", expression)
+}
+
+func (rewriter *StratifiedRewriter) rewriteSequenceHead(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
+	arguments := expression.Arguments()
+	if len(arguments) != 1 {
+		return scope, ArenaCell{}, fmt.Errorf("sequence head requires one operand")
+	}
+	scope, sequence, err := rewriter.Rewrite(arguments[0], scope)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	_, _, elements, err := unpackSequence(scope.Arena, sequence)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	if len(elements) != 0 {
+		return scope, elements[0].Element(), nil
+	}
+	sequenceType := sequence.Type.TLAType().(SeqType)
+	return rewriter.defaults.GetOrCreate(scope, sequenceType.Element())
 }
 
 func (rewriter *StratifiedRewriter) rewriteSequenceLength(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
@@ -263,6 +289,31 @@ func (rewriter *StratifiedRewriter) rewriteApplication(expression *OperExpr, sco
 			return scope, ArenaCell{}, fmt.Errorf("record key %q is absent", key)
 		}
 		return project(fields[index].Element())
+	}
+	if isSequenceCellType(collection.Type) {
+		indexExpression, ok := arguments[1].(*ValueExpr)
+		if !ok {
+			return scope, ArenaCell{}, fmt.Errorf("symbolic sequence indices require oracle rewriting, which is not yet implemented")
+		}
+		indexValue, ok := indexExpression.Value().(IntValue)
+		if !ok || !indexValue.BigInt().IsInt64() {
+			return scope, ArenaCell{}, fmt.Errorf("sequence application requires an integer index")
+		}
+		_, _, elements, unpackErr := unpackSequence(scope.Arena, collection)
+		if unpackErr != nil {
+			return scope, ArenaCell{}, unpackErr
+		}
+		index := indexValue.BigInt().Int64()
+		if index >= 1 && index <= int64(len(elements)) {
+			return project(elements[index-1].Element())
+		}
+		sequenceType := collection.Type.TLAType().(SeqType)
+		defaultScope, defaultCell, defaultErr := rewriter.defaults.GetOrCreate(scope, sequenceType.Element())
+		if defaultErr != nil {
+			return scope, ArenaCell{}, defaultErr
+		}
+		scope = defaultScope
+		return project(defaultCell)
 	}
 	return scope, ArenaCell{}, fmt.Errorf("application is not yet implemented for %s", collection.Type)
 }
@@ -612,7 +663,13 @@ func (rewriter *StratifiedRewriter) rewriteValue(expression *ValueExpr, scope Re
 		rewriter.assert(MustOperExpr(Op("EQ"), Typed(BoolT1), cell.NameExpr(), NewValueExpr(value, Typed(IntT1))))
 		return scope, cell, nil
 	case StringValue:
-		literal := UninterpretedLiteral{Type: StrT1, Index: string(value)}
+		literalType := Type(StrT1)
+		if tagged, ok := expression.Tag().Type(); ok {
+			if _, constant := tagged.(ConstType); constant {
+				literalType = tagged
+			}
+		}
+		literal := UninterpretedLiteral{Type: literalType, Index: string(value)}
 		arena, cell, err := rewriter.literals.GetOrCreate(scope.Arena, literal)
 		if err != nil {
 			return scope, ArenaCell{}, err

@@ -493,6 +493,39 @@ func TestStratifiedSequenceConstructionLengthAndEqualityThroughG3(t *testing.T) 
 	if err != nil || !projectedLength.Equal(length) {
 		t.Fatalf("sequence Len = %v, %v", projectedLength, err)
 	}
+	application := MustOperExpr(Op("FUN_APP"), Typed(IntT1), first.NameExpr(), NewValueExpr(Int64Value(2), Typed(IntT1)))
+	_, secondElement, err := rewriter.Rewrite(application, scope)
+	secondValue, secondFound := rewriter.IntegerCache().FindValue(secondElement)
+	if err != nil || !secondFound || secondValue.Int64() != 2 {
+		t.Fatalf("sequence[2] = %v, %v, %v", secondValue, secondFound, err)
+	}
+	outOfCapacity := MustOperExpr(Op("FUN_APP"), Typed(IntT1), first.NameExpr(), NewValueExpr(Int64Value(9), Typed(IntT1)))
+	scope, defaultElement, err := rewriter.Rewrite(outOfCapacity, scope)
+	defaultValue, defaultFound := rewriter.IntegerCache().FindValue(defaultElement)
+	if err != nil || !defaultFound || defaultValue.Sign() != 0 {
+		t.Fatalf("sequence[9] default = %v, %v, %v", defaultValue, defaultFound, err)
+	}
+	defaultSolver := newTestG3Solver(t)
+	defaultEncoder, err := EncodeRewriterScope(defaultSolver, scope, rewriter.Constraints())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := defaultEncoder.Assert(MustOperExpr(Op("NE"), Typed(BoolT1),
+		defaultElement.NameExpr(), NewValueExpr(Int64Value(0), Typed(IntT1)))); err != nil {
+		t.Fatal(err)
+	}
+	if status, err := defaultSolver.Check(context.Background()); err != nil || status != SMTUnsatisfiable {
+		t.Fatalf("out-of-capacity default differs from zero = %v, %v", status, err)
+	}
+	emptyScope, emptySequence, err := rewriter.Rewrite(sequence(), scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	head := MustOperExpr(Op("Sequences!Head"), Typed(IntT1), emptySequence.NameExpr())
+	_, emptyHead, err := rewriter.Rewrite(head, emptyScope)
+	if err != nil || !emptyHead.Equal(defaultElement) {
+		t.Fatalf("Head(<<>>) = %v, want cached default %v, %v", emptyHead, defaultElement, err)
+	}
 
 	scope, equalSequence, err := rewriter.Rewrite(sequence(1, 2), scope)
 	if err != nil {
