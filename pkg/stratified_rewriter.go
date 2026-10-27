@@ -102,6 +102,8 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 			return rewriter.rewriteDomain(typed, scope)
 		case "SET_FILTER":
 			return rewriter.rewriteSetFilter(typed, scope)
+		case "SET_MAP":
+			return rewriter.rewriteSetMap(typed, scope)
 		case "SET_IN", "Apalache!SelectInSet":
 			return rewriter.rewriteMembership(typed, scope)
 		case "TUPLE":
