@@ -107,6 +107,32 @@ func TestStratifiedImplicationAndEquivalenceTruthTables(t *testing.T) {
 	}
 }
 
+func TestStratifiedPrimeAndConstCardinalityWrapper(t *testing.T) {
+	intValue := func(value int64) Expr { return NewValueExpr(Int64Value(value), Typed(IntT1)) }
+	rewriter := NewStratifiedRewriter()
+	scope := InitialRewriterScope()
+	scope, primedValue, err := rewriter.Rewrite(intValue(11), scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope.Binding = scope.Binding.With("x'", primedValue)
+	prime := MustOperExpr(Op("PRIME"), Typed(IntT1), NewNameExpr("x", Typed(IntT1)))
+	scope, result, err := rewriter.Rewrite(prime, scope)
+	if err != nil || !result.Equal(primedValue) {
+		t.Fatalf("prime = %v, want %v, error %v", result, primedValue, err)
+	}
+	setType := mustSet(IntT1)
+	set := MustOperExpr(Op("SET_ENUM"), Typed(setType), intValue(1), intValue(2))
+	cardinality := MustOperExpr(Op("FiniteSets!Cardinality"), Typed(IntT1), set)
+	comparison := MustOperExpr(Op("GE"), Typed(BoolT1), cardinality, intValue(2))
+	wrapper := MustOperExpr(Op("Apalache!ConstCardinality"), Typed(BoolT1), comparison)
+	scope, result, err = rewriter.Rewrite(wrapper, scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkRewrittenTruth(t, rewriter, scope, result, true)
+}
+
 func TestStratifiedRewriterSetConstructionUnionAndFilter(t *testing.T) {
 	rewriter := NewStratifiedRewriter()
 	intSet := Typed(mustSet(IntT1))

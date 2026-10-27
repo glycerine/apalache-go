@@ -153,9 +153,39 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 			return rewriter.rewriteSetExpansion(typed, scope)
 		case "Apalache!Gen":
 			return rewriter.rewriteGenerate(typed, scope)
+		case "Apalache!ConstCardinality":
+			return rewriter.rewriteTransparentUnary(typed, scope, "ConstCardinality")
+		case "PRIME":
+			return rewriter.rewritePrime(typed, scope)
 		}
 	}
 	return scope, ArenaCell{}, fmt.Errorf("no stratified rule is applicable to %T", expression)
+}
+
+func (rewriter *StratifiedRewriter) rewriteTransparentUnary(
+	expression *OperExpr, scope RewriterScope, name string,
+) (RewriterScope, ArenaCell, error) {
+	arguments := expression.Arguments()
+	if len(arguments) != 1 {
+		return scope, ArenaCell{}, fmt.Errorf("%s requires one operand", name)
+	}
+	return rewriter.Rewrite(arguments[0], scope)
+}
+
+func (rewriter *StratifiedRewriter) rewritePrime(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
+	arguments := expression.Arguments()
+	if len(arguments) != 1 {
+		return scope, ArenaCell{}, fmt.Errorf("prime requires one operand")
+	}
+	name, ok := arguments[0].(*NameExpr)
+	if !ok || IsArenaCellName(name.Name()) {
+		return scope, ArenaCell{}, fmt.Errorf("prime is only implemented for variables")
+	}
+	cell, found := scope.Binding.Get(name.Name() + "'")
+	if !found {
+		return scope, ArenaCell{}, fmt.Errorf("primed variable %s' is not assigned a value", name.Name())
+	}
+	return scope, cell, nil
 }
 
 func (rewriter *StratifiedRewriter) rewriteLabel(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
