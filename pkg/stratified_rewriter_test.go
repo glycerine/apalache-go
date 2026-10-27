@@ -1,0 +1,140 @@
+package apalache
+
+import (
+	"context"
+	"testing"
+)
+
+func TestStratifiedRewriterBuiltinsSubstitutionIntegersAndAssignment(t *testing.T) {
+	rewriter := NewStratifiedRewriter()
+	scope := InitialRewriterScope()
+	for value, expected := range map[Value]int{
+		BoolValue(false): 0, BoolValue(true): 1, BoolSet: 2, NatSet: 3, IntSet: 4,
+	} {
+		_, cell, err := rewriter.Rewrite(NewValueExpr(value, Untyped()), scope)
+		if err != nil || cell.ID != expected {
+			t.Fatalf("builtin %v = %v, %v", value, cell, err)
+		}
+	}
+	scope.Binding = scope.Binding.With("x", scope.Arena.TrueCell())
+	_, substituted, err := rewriter.Rewrite(NewNameExpr("x", Typed(BoolT1)), scope)
+	if err != nil || !substituted.Equal(scope.Arena.TrueCell()) {
+		t.Fatalf("substitution = %v, %v", substituted, err)
+	}
+	if _, _, err := rewriter.Rewrite(NewNameExpr("missing", Typed(BoolT1)), scope); err == nil {
+		t.Fatal("unbound name was accepted")
+	}
+	intExpr := NewValueExpr(Int64Value(42), Typed(IntT1))
+	intScope, intCell, err := rewriter.Rewrite(intExpr, scope)
+	if err != nil || intScope.Arena.CellCount() != 6 || len(rewriter.Constraints()) != 1 {
+		t.Fatalf("integer rewrite = %v, count %d, constraints %d, error %v", intCell, intScope.Arena.CellCount(), len(rewriter.Constraints()), err)
+	}
+}
+
+func TestStratifiedRewriterAssignmentAndBooleanRules(t *testing.T) {
+	rewriter := NewStratifiedRewriter()
+	scope := InitialRewriterScope()
+	prime := MustOperExpr(Op("PRIME"), Typed(IntT1), NewNameExpr("x", Typed(IntT1)))
+	assignment := MustOperExpr(Op("Apalache!:="), Typed(BoolT1), prime, NewValueExpr(Int64Value(7), Typed(IntT1)))
+	assignedScope, result, err := rewriter.Rewrite(assignment, scope)
+	if err != nil || !result.Equal(assignedScope.Arena.TrueCell()) || !assignedScope.Binding.Contains("x'") {
+		t.Fatalf("assignment = scope %#v, cell %v, error %v", assignedScope, result, err)
+	}
+	if _, _, err := rewriter.Rewrite(assignment, assignedScope); err == nil {
+		t.Fatal("duplicate assignment was accepted")
+	}
+	conjunction := MustOperExpr(Op("AND"), Typed(BoolT1),
+		NewValueExpr(BoolValue(true), Typed(BoolT1)),
+		NewValueExpr(BoolValue(false), Typed(BoolT1)))
+	boolScope, boolCell, err := rewriter.Rewrite(conjunction, assignedScope)
+	if err != nil || boolScope.Arena.CellCount() != assignedScope.Arena.CellCount()+1 {
+		t.Fatalf("conjunction = %v, count %d, error %v", boolCell, boolScope.Arena.CellCount(), err)
+	}
+	constraint := rewriter.Constraints()[len(rewriter.Constraints())-1].(*OperExpr)
+	if constraint.Operator().Name() != "EQ" || constraint.Arguments()[1].(*OperExpr).Operator().Name() != "AND" {
+		t.Fatalf("conjunction constraint = %#v", constraint)
+	}
+	emptyOr := MustOperExpr(Op("OR"), Typed(BoolT1))
+	_, emptyCell, err := rewriter.Rewrite(emptyOr, boolScope)
+	if err != nil || !emptyCell.Equal(boolScope.Arena.FalseCell()) {
+		t.Fatalf("empty disjunction = %v, %v", emptyCell, err)
+	}
+}
+
+func TestStratifiedRewriterSetConstructionUnionAndFilter(t *testing.T) {
+	rewriter := NewStratifiedRewriter()
+	intSet := Typed(mustSet(IntT1))
+	left := MustOperExpr(Op("SET_ENUM"), intSet,
+		NewValueExpr(Int64Value(1), Typed(IntT1)), NewValueExpr(Int64Value(2), Typed(IntT1)))
+	right := MustOperExpr(Op("SET_ENUM"), intSet,
+		NewValueExpr(Int64Value(2), Typed(IntT1)), NewValueExpr(Int64Value(3), Typed(IntT1)))
+	union := MustOperExpr(Op("SET_UNION2"), intSet, left, right)
+	scope, unionCell, err := rewriter.Rewrite(union, InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	pointers := scope.Arena.GetHas(unionCell)
+	if len(pointers) != 3 {
+		t.Fatalf("union pointers = %#v", pointers)
+	}
+	for _, pointer := range pointers {
+		if _, fixed := pointer.(FixedElementPointer); !fixed {
+			t.Fatalf("fixed union member became %#v", pointer)
+		}
+	}
+
+	boolSet := Typed(mustSet(BoolT1))
+	booleans := MustOperExpr(Op("SET_ENUM"), boolSet,
+		NewValueExpr(BoolValue(false), Typed(BoolT1)), NewValueExpr(BoolValue(true), Typed(BoolT1)))
+	bound := NewNameExpr("b", Typed(BoolT1))
+	filter := MustOperExpr(Op("SET_FILTER"), boolSet, bound, booleans, bound)
+	filteredScope, filteredCell, err := rewriter.Rewrite(filter, scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	filtered := filteredScope.Arena.GetHas(filteredCell)
+	if len(filtered) != 2 || filteredScope.Binding.Contains("b") {
+		t.Fatalf("filtered pointers/binding = %#v / %#v", filtered, filteredScope.Binding.Map())
+	}
+	for _, pointer := range filtered {
+		guarded, ok := pointer.(SMTElementPointer)
+		if !ok || !guarded.Element().NameExpr().Tag().Equal(Typed(BoolT1)) {
+			t.Fatalf("filtered pointer = %#v", pointer)
+		}
+	}
+	if len(rewriter.Constraints()) == 0 {
+		t.Fatal("set rewrites produced no constraints")
+	}
+}
+
+func TestStratifiedRewriterRejectsInfiniteSetFilter(t *testing.T) {
+	rewriter := NewStratifiedRewriter()
+	intSet := Typed(mustSet(IntT1))
+	bound := NewNameExpr("x", Typed(IntT1))
+	filter := MustOperExpr(Op("SET_FILTER"), intSet, bound, NewValueExpr(IntSet, intSet), NewValueExpr(BoolValue(true), Typed(BoolT1)))
+	if _, _, err := rewriter.Rewrite(filter, InitialRewriterScope()); err == nil {
+		t.Fatal("filter over Int was accepted")
+	}
+}
+
+func TestStratifiedRewriteScopeDischargesThroughG3(t *testing.T) {
+	rewriter := NewStratifiedRewriter()
+	expression := MustOperExpr(Op("AND"), Typed(BoolT1),
+		NewValueExpr(BoolValue(true), Typed(BoolT1)),
+		NewValueExpr(BoolValue(false), Typed(BoolT1)))
+	scope, result, err := rewriter.Rewrite(expression, InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	solver := newTestG3Solver(t)
+	encoder, err := EncodeRewriterScope(solver, scope, rewriter.Constraints())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := encoder.Assert(result.NameExpr()); err != nil {
+		t.Fatal(err)
+	}
+	if status, err := solver.Check(context.Background()); err != nil || status != SMTUnsatisfiable {
+		t.Fatalf("rewritten TRUE /\\ FALSE asserted true = %v, %v", status, err)
+	}
+}

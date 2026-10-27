@@ -238,3 +238,54 @@ func (encoder *G3GroundEncoder) AssertAll(expressions []Expr) error {
 	}
 	return nil
 }
+
+// EncodeRewriterScope declares a completed solver-free rewrite scope and
+// discharges its collected constraints into a fresh solver encoder.
+func EncodeRewriterScope(solver *G3SolverContext, scope RewriterScope, constraints []Expr) (*G3GroundEncoder, error) {
+	if scope.Arena == nil {
+		return nil, fmt.Errorf("cannot encode a rewrite scope without an arena")
+	}
+	encoder, err := NewG3GroundEncoder(solver)
+	if err != nil {
+		return nil, err
+	}
+	cellsByName := scope.Arena.CellMap()
+	cells := make([]ArenaCell, 0, len(cellsByName))
+	for _, cell := range cellsByName {
+		cells = append(cells, cell)
+	}
+	sort.Slice(cells, func(left, right int) bool { return cells[left].ID < cells[right].ID })
+	for _, cell := range cells {
+		if err := encoder.DeclareCell(cell); err != nil {
+			return nil, err
+		}
+	}
+	for _, parent := range cells {
+		for _, pointer := range scope.Arena.GetHas(parent) {
+			if err := encoder.DeclareMembership(parent, pointer.Element()); err != nil {
+				return nil, err
+			}
+		}
+	}
+	falseCell, falseErr := scope.Arena.FindCellByName(ArenaFalseName)
+	trueCell, trueErr := scope.Arena.FindCellByName(ArenaTrueName)
+	booleanSet, booleanErr := scope.Arena.FindCellByName(ArenaBooleanSet)
+	if falseErr == nil && trueErr == nil {
+		base := []Expr{
+			MustOperExpr(Op("NOT"), Typed(BoolT1), falseCell.NameExpr()),
+			trueCell.NameExpr(),
+		}
+		if booleanErr == nil {
+			base = append(base,
+				MustOperExpr(Op("SET_IN"), Typed(BoolT1), falseCell.NameExpr(), booleanSet.NameExpr()),
+				MustOperExpr(Op("SET_IN"), Typed(BoolT1), trueCell.NameExpr(), booleanSet.NameExpr()))
+		}
+		if err := encoder.AssertAll(base); err != nil {
+			return nil, fmt.Errorf("assert rewrite-scope base constraints: %w", err)
+		}
+	}
+	if err := encoder.AssertAll(constraints); err != nil {
+		return nil, fmt.Errorf("assert rewrite-scope constraints: %w", err)
+	}
+	return encoder, nil
+}
