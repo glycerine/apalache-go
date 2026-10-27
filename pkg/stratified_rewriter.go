@@ -336,6 +336,12 @@ func (rewriter *StratifiedRewriter) rewriteBoundedChoice(expression *OperExpr, s
 	if err != nil {
 		return scope, ArenaCell{}, err
 	}
+	if _, compactFunctionSet := setCell.Type.(FiniteFunctionSetCellType); compactFunctionSet {
+		if expression.Operator().Name() != "Apalache!Guess" {
+			return scope, ArenaCell{}, fmt.Errorf("bounded CHOOSE over compact function sets is not yet implemented")
+		}
+		return rewriter.pickFunctionFromSet(scope, setCell)
+	}
 	setType, ok := setCell.Type.TLAType().(SetType)
 	if !ok || !isFiniteSetCellType(setCell.Type) {
 		return scope, ArenaCell{}, fmt.Errorf("bounded choice requires a finite set, found %s", setCell.Type)

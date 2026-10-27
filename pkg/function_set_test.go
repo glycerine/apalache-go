@@ -122,3 +122,73 @@ func TestStratifiedFunctionSetSymbolicEmptiness(t *testing.T) {
 		})
 	}
 }
+
+func TestStratifiedGuessBuildsFunctionFromCompactSet(t *testing.T) {
+	intValue := func(value int64) Expr { return NewValueExpr(Int64Value(value), Typed(IntT1)) }
+	intSetType := mustSet(IntT1)
+	boolSetType := mustSet(BoolT1)
+	functionType := mustFun(IntT1, BoolT1)
+	domain := MustOperExpr(Op("SET_ENUM"), Typed(intSetType), intValue(1), intValue(2))
+	codomain := MustOperExpr(Op("SET_ENUM"), Typed(boolSetType),
+		NewValueExpr(BoolValue(false), Typed(BoolT1)), NewValueExpr(BoolValue(true), Typed(BoolT1)))
+	functionSet := MustOperExpr(Op("FUN_SET"), Typed(mustSet(functionType)), domain, codomain)
+	guess := MustOperExpr(Op("Apalache!Guess"), Typed(functionType), functionSet)
+	rewriter := NewStratifiedRewriter()
+	scope, function, err := rewriter.Rewrite(guess, InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	relation, err := scope.Arena.Codomain(function)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, pointer := range scope.Arena.GetHas(relation) {
+		if len(scope.Arena.GetHas(pointer.Element())) != 2 {
+			t.Fatalf("picked function pair %s fields = %#v", pointer.Element(), scope.Arena.GetHas(pointer.Element()))
+		}
+	}
+	scope.Binding = scope.Binding.With("f", function)
+	functionName := NewNameExpr("f", Typed(functionType))
+	app := func(index int64) Expr {
+		return MustOperExpr(Op("FUN_APP"), Typed(BoolT1), functionName, intValue(index))
+	}
+	claim := MustOperExpr(Op("AND"), Typed(BoolT1),
+		app(1), MustOperExpr(Op("NOT"), Typed(BoolT1), app(2)),
+		MustOperExpr(Op("EQ"), Typed(BoolT1),
+			MustOperExpr(Op("DOMAIN"), Typed(intSetType), functionName), domain))
+	scope, result, err := rewriter.Rewrite(claim, scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	solver := newTestG3Solver(t)
+	encoder, err := EncodeRewriterScope(solver, scope, rewriter.Constraints())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := encoder.Assert(result.NameExpr()); err != nil {
+		t.Fatal(err)
+	}
+	if status, err := solver.Check(context.Background()); err != nil || status != SMTSatisfiable {
+		t.Fatalf("independent compact function choices = %v, %v", status, err)
+	}
+}
+
+func TestStratifiedGuessFromFunctionSetWithPowerSetCodomain(t *testing.T) {
+	intValue := func(value int64) Expr { return NewValueExpr(Int64Value(value), Typed(IntT1)) }
+	intSetType := mustSet(IntT1)
+	setResultType := intSetType
+	functionType := mustFun(IntT1, setResultType)
+	domain := MustOperExpr(Op("SET_ENUM"), Typed(intSetType), intValue(1))
+	base := MustOperExpr(Op("SET_ENUM"), Typed(intSetType), intValue(4), intValue(5))
+	codomain := MustOperExpr(Op("SET_POWERSET"), Typed(mustSet(intSetType)), base)
+	functionSet := MustOperExpr(Op("FUN_SET"), Typed(mustSet(functionType)), domain, codomain)
+	guess := MustOperExpr(Op("Apalache!Guess"), Typed(functionType), functionSet)
+	application := MustOperExpr(Op("FUN_APP"), Typed(setResultType), guess, intValue(1))
+	membership := MustOperExpr(Op("SET_IN"), Typed(BoolT1), application, codomain)
+	rewriter := NewStratifiedRewriter()
+	scope, result, err := rewriter.Rewrite(membership, InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkRewrittenTruth(t, rewriter, scope, result, true)
+}

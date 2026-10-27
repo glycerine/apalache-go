@@ -173,3 +173,115 @@ func (rewriter *StratifiedRewriter) makeEmptyFunctionSingleton(
 	rewriter.addMembershipConstraints(scope.Arena, result)
 	return scope, result, nil
 }
+
+func (rewriter *StratifiedRewriter) pickFromCompactCollection(scope RewriterScope, set ArenaCell) (RewriterScope, ArenaCell, error) {
+	switch set.Type.(type) {
+	case FiniteFunctionSetCellType:
+		return rewriter.pickFunctionFromSet(scope, set)
+	case PowerSetCellType:
+		domain, err := scope.Arena.Domain(set)
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+		pointers := make([]ElementPointer, len(scope.Arena.GetHas(domain)))
+		for index, pointer := range scope.Arena.GetHas(domain) {
+			newArena, choice := scope.Arena.AppendCellType(BasicCellType{Type: BoolT1})
+			scope.Arena = newArena
+			pointers[index] = SMTElementPointer{Cell: pointer.Element(),
+				Expression: booleanAnd(pointer.ToSMT(), choice.NameExpr())}
+		}
+		newArena, result := scope.Arena.AppendCellType(BasicCellType{Type: set.Type.(PowerSetCellType).Domain})
+		scope.Arena = newArena.AppendHas(result, pointers...)
+		rewriter.addMembershipConstraints(scope.Arena, result)
+		return scope, result, nil
+	case InfiniteSetCellType:
+		if !set.Equal(scope.Arena.IntSetCell()) && !set.Equal(scope.Arena.NatSetCell()) {
+			return scope, ArenaCell{}, fmt.Errorf("choice from infinite set %s is unsupported", set.Type)
+		}
+		newArena, result := scope.Arena.AppendCellType(BasicCellType{Type: IntT1})
+		scope.Arena = newArena
+		if set.Equal(scope.Arena.NatSetCell()) {
+			rewriter.assert(MustOperExpr(Op("GE"), Typed(BoolT1), result.NameExpr(),
+				NewValueExpr(Int64Value(0), Typed(IntT1))))
+		}
+		return scope, result, nil
+	case BasicCellType:
+		if !isFiniteSetCellType(set.Type) {
+			return scope, ArenaCell{}, fmt.Errorf("choice requires a set, found %s", set.Type)
+		}
+		setType := set.Type.TLAType().(SetType)
+		pointers := scope.Arena.GetHas(set)
+		if len(pointers) == 0 {
+			return rewriter.defaults.GetOrCreate(scope, setType.Element())
+		}
+		candidates := make([]ArenaCell, len(pointers))
+		for index, pointer := range pointers {
+			candidates[index] = pointer.Element()
+		}
+		scope, oracle, err := CreateIntOracle(scope, len(candidates)+1)
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+		assertions := make([]Expr, oracle.Size())
+		for index, pointer := range pointers {
+			assertions[index] = pointer.ToSMT()
+		}
+		assertions[len(pointers)] = boolExpr(false)
+		constraint, err := oracle.Cases(scope, assertions, nil)
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+		rewriter.assert(constraint)
+		return NewCherryPicker(rewriter).Pick(scope, oracle, candidates)
+	default:
+		return scope, ArenaCell{}, fmt.Errorf("choice from %s is unsupported", set.Type)
+	}
+}
+
+func (rewriter *StratifiedRewriter) pickFunctionFromSet(scope RewriterScope, functionSet ArenaCell) (RewriterScope, ArenaCell, error) {
+	typ, ok := functionSet.Type.(FiniteFunctionSetCellType)
+	if !ok {
+		return scope, ArenaCell{}, fmt.Errorf("expected a compact function set, found %s", functionSet.Type)
+	}
+	domain, err := scope.Arena.Domain(functionSet)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	codomain, err := scope.Arena.Codomain(functionSet)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	functionType, _ := NewFunType(typ.ArgumentType(), typ.ResultType())
+	pairType, _ := NewTupleType(functionType.Argument(), functionType.Result())
+	domainPointers := scope.Arena.GetHas(domain)
+	relationPointers := make([]ElementPointer, len(domainPointers))
+	for index, pointer := range domainPointers {
+		var result ArenaCell
+		var pickErr error
+		scope, result, pickErr = rewriter.pickFromCompactCollection(scope, codomain)
+		if pickErr != nil {
+			return scope, ArenaCell{}, fmt.Errorf("pick result for function argument %d: %w", index+1, pickErr)
+		}
+		newArena, pair := scope.Arena.AppendCellType(BasicCellType{Type: pairType})
+		scope.Arena = newArena.AppendHas(pair,
+			FixedElementPointer{Cell: pointer.Element()}, FixedElementPointer{Cell: result})
+		conditions := []Expr{pointer.ToSMT()}
+		for previous := 0; previous < index; previous++ {
+			equal, equalErr := rewriter.equality.Equal(scope.Arena,
+				pointer.Element(), domainPointers[previous].Element())
+			if equalErr != nil {
+				return scope, ArenaCell{}, equalErr
+			}
+			conditions = append(conditions, booleanOr(
+				MustOperExpr(Op("NOT"), Typed(BoolT1), domainPointers[previous].ToSMT()),
+				MustOperExpr(Op("NOT"), Typed(BoolT1), equal)))
+		}
+		relationPointers[index] = SMTElementPointer{Cell: pair, Expression: booleanAnd(conditions...)}
+	}
+	newArena, relation := scope.Arena.AppendCellType(BasicCellType{Type: functionRelationType(functionType)})
+	scope.Arena = newArena.AppendHas(relation, relationPointers...)
+	rewriter.addMembershipConstraints(scope.Arena, relation)
+	newArena, function := scope.Arena.AppendCellType(BasicCellType{Type: functionType})
+	scope.Arena = newArena.SetDomain(function, domain).SetCodomain(function, relation)
+	return scope, function, nil
+}
