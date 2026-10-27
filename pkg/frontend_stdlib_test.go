@@ -162,6 +162,39 @@ Inv ==
 	}
 }
 
+func TestBundledBagsExtChecksProductBag(t *testing.T) {
+	frontend := ParseAndTypeCheckSource(context.Background(), "BundledBagsExt.tla", `---- MODULE BundledBagsExt ----
+EXTENDS BagsExt
+Init == TRUE
+Next == TRUE
+ProductOK ==
+  LET B == SetAsFun({<<1, 2>>, <<-2, 1>>})
+  IN ProductBag(B) = -2
+====
+`, FrontendOptions{}, TypeCheckOptions{UseRows: true})
+	if !frontend.OK() {
+		t.Fatalf("bundled BagsExt diagnostics = %v", frontend.Diagnostics)
+	}
+	prepared, err := PrepareSafetyTransitions(frontend.Native, SafetyPipelineOptions{
+		Specification: SpecificationConfiguration{
+			Behavior:   InitNextSpec{Init: "Init", Next: "Next"},
+			Invariants: []string{"ProductOK"},
+		},
+		Sources: frontend.Sources,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := CheckBoundedSafetyWithOptions(context.Background(), prepared.Module, prepared.Predicates,
+		BoundedSafetyOptions{MaxSteps: 0, CheckDeadlocks: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Outcome != SafetyNoCounterexample || result.ExploredExecutions != 1 {
+		t.Fatalf("BagsExt result = %#v", result)
+	}
+}
+
 func TestBundledSequencesExtChecksFiniteSequenceOperators(t *testing.T) {
 	frontend := ParseAndTypeCheckSource(context.Background(), "BundledSequencesExt.tla", `---- MODULE BundledSequencesExt ----
 EXTENDS SequencesExt, Integers

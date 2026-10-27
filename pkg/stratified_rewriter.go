@@ -1090,17 +1090,33 @@ func (rewriter *StratifiedRewriter) rewriteApplication(expression *OperExpr, sco
 		}
 		results := make([]ArenaCell, len(pointers))
 		matches := make([]Expr, len(pointers))
+		exactMatch := -1
 		for index, pointer := range pointers {
 			pairArgument, pairResult, pairErr := unpackFunctionPair(scope.Arena, pointer.Element())
 			if pairErr != nil {
 				return scope, ArenaCell{}, pairErr
 			}
 			results[index] = pairResult
+			if argument.Equal(pairArgument) {
+				if exactMatch == -1 {
+					exactMatch = index
+				} else {
+					exactMatch = -2
+				}
+			}
 			equal, equalityErr := rewriter.equality.Equal(scope.Arena, argument, pairArgument)
 			if equalityErr != nil {
 				return scope, ArenaCell{}, equalityErr
 			}
 			matches[index] = booleanAnd(pointer.ToSMT(), equal)
+		}
+		// Function constructors and SetAsFun retain their domain cells as the
+		// keys in the relation. Projecting such a key is exact and needs no
+		// choice oracle; the surrounding domain guard determines whether this
+		// application is relevant. Duplicate identical keys retain the general
+		// first-match encoding below.
+		if exactMatch >= 0 {
+			return project(scope, results[exactMatch])
 		}
 		scope, oracle, err := CreateIntOracle(scope, len(results)+1)
 		if err != nil {
