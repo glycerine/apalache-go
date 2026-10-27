@@ -17,12 +17,15 @@ func TestTypeParserScalaExamples(t *testing.T) {
 		{"Seq(Int)", mustSeqType(t, IntT1)},
 		{"<<Bool>>", mustTupleType(t, BoolT1)},
 		{"<<Bool, Int>>", mustTupleType(t, BoolT1, IntT1)},
+		{"(Bool, Int)", mustTupleType(t, BoolT1, IntT1)},
 		{"Set(Int) -> Bool", mustFunType(t, mustSetType(t, IntT1), BoolT1)},
+		{"(Bool, Int) -> Str", mustFunType(t, mustTupleType(t, BoolT1, IntT1), StrT1)},
 		{"Set(Int) -> Bool -> Str", mustFunType(t, mustSetType(t, IntT1), mustFunType(t, BoolT1, StrT1))},
 		{"(Set(Int) -> Bool) -> Str", mustFunType(t, mustFunType(t, mustSetType(t, IntT1), BoolT1), StrT1)},
 		{"(Set(Int), Bool) => Str", mustOperatorType(t, []Type{mustSetType(t, IntT1), BoolT1}, StrT1)},
 		{"(Set(Int) => Bool) => Str", mustOperatorType(t, []Type{mustOperatorType(t, []Type{mustSetType(t, IntT1)}, BoolT1)}, StrT1)},
 		{"() => Int", mustOperatorType(t, nil, IntT1)},
+		{"() => (Bool, Int)", mustOperatorType(t, nil, mustTupleType(t, BoolT1, IntT1))},
 	}
 	for _, test := range tests {
 		t.Run(test.text, func(t *testing.T) {
@@ -121,7 +124,7 @@ func TestTypeParserAliasesCommentsAndFailures(t *testing.T) {
 	}
 
 	for _, invalid := range []string{
-		"", "non-sense", "vc", "<<>>", "(Int, Bool)", "{ f: Int, f: Bool }",
+		"", "non-sense", "vc", "<<>>", "{ f: Int, f: Bool }",
 		"Tag(Int) | Tag(Bool)", "Variant(Int)", "$Uppercase", "Set()",
 	} {
 		t.Run("reject_"+invalid, func(t *testing.T) {

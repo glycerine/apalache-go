@@ -201,7 +201,13 @@ func (parser *typeParser) parseExpression() (Type, error) {
 		return result, constructorErr
 	}
 	if operatorArgs != nil {
-		return nil, parser.errorf("parenthesized type list must be followed by =>")
+		if len(operatorArgs) == 0 {
+			return nil, parser.errorf("empty parenthesized type list must be followed by =>")
+		}
+		left, err = NewTupleType(operatorArgs...)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if parser.accept(typeTokenArrow) {
 		resultType, err := parser.parseExpression()
