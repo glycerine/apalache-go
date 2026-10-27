@@ -93,3 +93,62 @@ func TestPropagatePrimesThroughLetIn(t *testing.T) {
 		}
 	}
 }
+
+func TestDecorateWithPrimeIsIdempotent(t *testing.T) {
+	x := NewNameExpr("x", Typed(IntT1))
+	prime := MustOperExpr(Op("PRIME"), Typed(IntT1), x)
+	input := MustOperExpr(Op("PLUS"), Typed(IntT1), x, prime)
+	got := DecorateWithPrime(IdleTracker{}, map[string]struct{}{"x": {}})(input).(*OperExpr).Arguments()
+	for index, argument := range got {
+		outer, ok := argument.(*OperExpr)
+		if !ok || outer.Operator().Name() != "PRIME" {
+			t.Fatalf("argument %d is not singly primed: %#v", index, argument)
+		}
+		if _, doubled := outer.Arguments()[0].(*OperExpr); doubled {
+			t.Fatalf("argument %d was double-primed", index)
+		}
+	}
+}
+
+func TestTransformModuleExpressions(t *testing.T) {
+	x := NewNameExpr("x", Untyped())
+	operator := NewOperDecl("Op", nil, x, Untyped())
+	assumption := NewUnnamedAssumeDecl(x, Untyped())
+	module := NewModule("M", []Decl{operator, assumption})
+	module.AddProperty(PropertyConfigured)
+	transform := ReplaceEqual(IdleTracker{}, x, func() Expr { return NewNameExpr("y", Untyped()) })
+	got := TransformModuleExpressions(module, transform, func(declaration Decl) bool {
+		_, isOperator := declaration.(*OperDecl)
+		return isOperator
+	})
+	if !EqualExpr(got.OperDeclarations()[0].Body(), NewNameExpr("y", Untyped())) {
+		t.Fatal("operator body was not transformed")
+	}
+	if got.AssumeDeclarations()[0].ID() != assumption.ID() || !got.HasProperty(PropertyConfigured) {
+		t.Fatal("excluded declaration or module property was not preserved")
+	}
+}
+
+func TestUnrollSimpleUnchanged(t *testing.T) {
+	x := NewNameExpr("x", Typed(IntT1))
+	y := NewNameExpr("y", Typed(IntT1))
+	tupleType, err := NewTupleType(IntT1, IntT1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tuple := MustOperExpr(Op("TUPLE"), Typed(tupleType), x, y)
+	unchanged := MustOperExpr(Op("UNCHANGED"), Typed(BoolT1), tuple)
+	got := UnrollSimpleUnchanged(IdleTracker{})(unchanged).(*OperExpr)
+	if got.Operator().Name() != "AND" || len(got.Arguments()) != 2 || !got.Tag().Equal(Typed(BoolT1)) {
+		t.Fatalf("tuple UNCHANGED became %#v", got)
+	}
+	for _, equality := range got.Arguments() {
+		eq := equality.(*OperExpr)
+		if eq.Operator().Name() != "EQ" || eq.Arguments()[0].(*OperExpr).Operator().Name() != "PRIME" {
+			t.Fatalf("unexpected equality shape: %#v", equality)
+		}
+		if eq.Arguments()[0].(*OperExpr).Arguments()[0].ID() == eq.Arguments()[1].ID() {
+			t.Fatal("UNCHANGED expansion reused expression identity")
+		}
+	}
+}

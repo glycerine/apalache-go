@@ -154,3 +154,102 @@ func PropagatePrimes(tracker TransformationTracker, stateVariables map[string]st
 	}
 	return func(expression Expr) Expr { return transform(expression, false) }
 }
+
+// DecorateWithPrime primes the selected names without adding a second prime
+// to names that are already primed.
+func DecorateWithPrime(tracker TransformationTracker, variables map[string]struct{}) ExprTransform {
+	return RewriteExpressions(tracker, func(expression Expr) (Expr, bool) {
+		switch typed := expression.(type) {
+		case *NameExpr:
+			if _, found := variables[typed.Name()]; found {
+				return MustOperExpr(Op("PRIME"), typed.Tag(), typed), true
+			}
+		case *OperExpr:
+			if typed.Operator().Name() == "PRIME" {
+				argument := typed.Arguments()[0]
+				if once, ok := argument.(*OperExpr); ok && once.Operator().Name() == "PRIME" {
+					return once, true
+				}
+			}
+		}
+		return nil, false
+	})
+}
+
+// TransformModuleExpressions applies a transformation to operator and
+// assumption bodies selected by include.
+func TransformModuleExpressions(module *Module, transform ExprTransform, include func(Decl) bool) *Module {
+	declarations := module.Declarations()
+	for index, declaration := range declarations {
+		if include != nil && !include(declaration) {
+			continue
+		}
+		switch typed := declaration.(type) {
+		case *OperDecl:
+			body := transform(typed.Body())
+			if body.ID() != typed.Body().ID() {
+				copy := typed.copyWithTag(typed.Tag())
+				copy.SetBody(body)
+				declarations[index] = copy
+			}
+		case *AssumeDecl:
+			body := transform(typed.Body())
+			if body.ID() != typed.Body().ID() {
+				name, named := typed.DefinedName()
+				if named {
+					declarations[index] = NewNamedAssumeDecl(name, body, typed.Tag())
+				} else {
+					declarations[index] = NewUnnamedAssumeDecl(body, typed.Tag())
+				}
+			}
+		}
+	}
+	result := NewModule(module.Name(), declarations)
+	result.properties = cloneMap(module.properties)
+	return result
+}
+
+// UnrollSimpleUnchanged rewrites UNCHANGED e to e' = e and a top-level tuple
+// to the conjunction of element-wise equalities. It deliberately does not
+// descend into LET-IN expressions, matching the post-inlining ReTLA pass.
+func UnrollSimpleUnchanged(tracker TransformationTracker) ExprTransform {
+	if tracker == nil {
+		tracker = IdleTracker{}
+	}
+	copier := NewDeepCopier(IdleTracker{})
+	primeEquality := func(expression Expr) Expr {
+		leftValue := copier.Expression(expression)
+		rightValue := copier.Expression(expression)
+		left := MustOperExpr(Op("PRIME"), expression.Tag(), leftValue)
+		return MustOperExpr(Op("EQ"), Typed(BoolT1), left, rightValue)
+	}
+	var transform ExprTransform
+	transform = tracker.TrackExpression(func(expression Expr) Expr {
+		operatorExpression, ok := expression.(*OperExpr)
+		if !ok {
+			return expression
+		}
+		arguments := operatorExpression.Arguments()
+		if operatorExpression.Operator().Name() == "UNCHANGED" {
+			argument := arguments[0]
+			if tuple, isTuple := argument.(*OperExpr); isTuple && tuple.Operator().Name() == "TUPLE" {
+				equalities := tuple.Arguments()
+				for index, element := range equalities {
+					equalities[index] = primeEquality(element)
+				}
+				return MustOperExpr(Op("AND"), Typed(BoolT1), equalities...)
+			}
+			return primeEquality(argument)
+		}
+		changed := false
+		for index, argument := range arguments {
+			arguments[index] = transform(argument)
+			changed = changed || !EqualExpr(argument, arguments[index])
+		}
+		if !changed {
+			return operatorExpression
+		}
+		return MustOperExpr(operatorExpression.Operator(), operatorExpression.Tag(), arguments...)
+	})
+	return transform
+}
