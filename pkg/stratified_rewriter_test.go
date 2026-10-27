@@ -1406,8 +1406,10 @@ func TestStratifiedTupleAndRecordApplication(t *testing.T) {
 		t.Fatalf("record projection = %v, %v", field, err)
 	}
 	missing := MustOperExpr(Op("FUN_APP"), Typed(BoolT1), record, NewValueExpr(StringValue("missing"), Typed(StrT1)))
-	if _, _, err := NewStratifiedRewriter().Rewrite(missing, InitialRewriterScope()); err == nil {
-		t.Fatal("missing record field application was accepted")
+	missingRewriter := NewStratifiedRewriter()
+	_, missingField, err := missingRewriter.Rewrite(missing, InitialRewriterScope())
+	if err != nil || !missingField.Equal(InitialPureArena().FalseCell()) {
+		t.Fatalf("missing record field default = %v, %v", missingField, err)
 	}
 }
 

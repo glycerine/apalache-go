@@ -1066,7 +1066,13 @@ func (rewriter *StratifiedRewriter) rewriteApplication(expression *OperExpr, sco
 		key := string(keyValue)
 		index := sort.SearchStrings(keys, key)
 		if index == len(keys) || keys[index] != key || index >= len(fields) {
-			return scope, ArenaCell{}, fmt.Errorf("record key %q is absent", key)
+			// Function application is total in TLA+. Scala's FunAppRule also
+			// returns a made-up value when widened record domains omit this key.
+			defaultScope, defaultCell, defaultErr := rewriter.defaults.GetOrCreate(scope, expectedType)
+			if defaultErr != nil {
+				return scope, ArenaCell{}, fmt.Errorf("default for absent record key %q: %w", key, defaultErr)
+			}
+			return project(defaultScope, defaultCell)
 		}
 		return project(scope, fields[index].Element())
 	}
