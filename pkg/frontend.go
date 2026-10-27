@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/glycerine/tlago"
 )
@@ -36,7 +37,8 @@ type FrontendResult struct {
 // OK reports whether the frontend completed without errors.
 func (r FrontendResult) OK() bool { return !hasErrors(r.Diagnostics) }
 
-// ParseFile reads, parses, and semantically checks a TLA+ module using tlago.
+// ParseFile reads either canonical Apalache IR JSON or parses and semantically
+// checks a TLA+ module using tlago.
 func ParseFile(ctx context.Context, filename string, opts FrontendOptions) FrontendResult {
 	if err := contextError(ctx); err != nil {
 		return canceledResult(err)
@@ -50,7 +52,27 @@ func ParseFile(ctx context.Context, filename string, opts FrontendOptions) Front
 			Position: Position{Filename: filename},
 		}}}
 	}
+	if strings.EqualFold(filepath.Ext(filename), ".json") {
+		return parseIRJSONFile(ctx, filename, source)
+	}
 	return ParseSource(ctx, filename, string(source), opts)
+}
+
+func parseIRJSONFile(ctx context.Context, filename string, data []byte) FrontendResult {
+	if err := contextError(ctx); err != nil {
+		return canceledResult(err)
+	}
+	sources := NewSourceStore()
+	module, err := UnmarshalSingleModuleIRJSON(data, sources)
+	if err != nil {
+		return FrontendResult{Diagnostics: []Diagnostic{{
+			Code: "E-IR-JSON", Severity: SeverityError,
+			Message: fmt.Sprintf("cannot read Apalache IR JSON: %v", err), Position: Position{Filename: filename},
+		}}}
+	}
+	return FrontendResult{
+		Module: module.Name(), IR: append(json.RawMessage(nil), data...), Native: module, Sources: sources,
+	}
 }
 
 // ParseSource parses and semantically checks source using tlago, then exports
@@ -194,6 +216,20 @@ func ParseAndTypeCheckFile(ctx context.Context, filename string, frontendOptions
 		return FrontendResult{Diagnostics: []Diagnostic{{
 			Code: "E-IO", Severity: SeverityError, Message: err.Error(), Position: Position{Filename: filename},
 		}}}
+	}
+	if strings.EqualFold(filepath.Ext(filename), ".json") {
+		result := parseIRJSONFile(ctx, filename, source)
+		if !result.OK() {
+			return result
+		}
+		typeOptions.Sources = result.Sources
+		typed := TypeCheckModule(result.Native, typeOptions)
+		result.Types = typed.Types
+		result.Diagnostics = append(result.Diagnostics, typed.Diagnostics...)
+		if typed.Module != nil {
+			result.Native = typed.Module
+		}
+		return result
 	}
 	return ParseAndTypeCheckSource(ctx, filename, string(source), frontendOptions, typeOptions)
 }

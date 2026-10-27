@@ -448,6 +448,18 @@ Inv == x < 2
 	if !strings.Contains(stdout.String(), "No counterexample found through depth 1") {
 		t.Fatalf("safe output = %q", &stdout)
 	}
+	jsonPath := filepath.Join(dir, "Counter.json")
+	stdout.Reset()
+	stderr.Reset()
+	if code := run(context.Background(), []string{"typecheck", "-output", jsonPath, path}, &stdout, &stderr); code != exitOK {
+		t.Fatalf("write typed JSON = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := run(context.Background(), append(append([]string(nil), direct[:len(direct)-1]...), jsonPath), &stdout, &stderr); code != exitOK ||
+		!strings.Contains(stdout.String(), "No counterexample found through depth 1") {
+		t.Fatalf("JSON check = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
+	}
 
 	stdout.Reset()
 	stderr.Reset()

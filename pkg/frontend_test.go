@@ -217,6 +217,43 @@ Next == f' = [f EXCEPT !["a"] = [@ EXCEPT !.cnt = @ + 1]]
 	}
 }
 
+func TestParseAndTypeCheckFileReadsCanonicalIRJSON(t *testing.T) {
+	result := ParseAndTypeCheckSource(context.Background(), "JSONInput.tla", `---- MODULE JSONInput ----
+EXTENDS Integers
+\* @type: Int;
+VARIABLE x
+Init == x = 0
+Next == x' = x + 1
+Inv == x >= 0
+====`, FrontendOptions{}, TypeCheckOptions{})
+	if !result.OK() {
+		t.Fatalf("source diagnostics = %v", result.Diagnostics)
+	}
+	encoded, err := MarshalSingleModuleIRJSON(result.Native, IRJSONOptions{SourceStore: result.Sources})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "JSONInput.json")
+	if err = os.WriteFile(path, encoded, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loaded := ParseAndTypeCheckFile(context.Background(), path, FrontendOptions{}, TypeCheckOptions{})
+	if !loaded.OK() || loaded.Native == nil || !loaded.Native.HasProperty(PropertyTypeChecked) {
+		t.Fatalf("JSON diagnostics = %v, module = %#v", loaded.Diagnostics, loaded.Native)
+	}
+	if loaded.Module != "JSONInput" {
+		t.Fatalf("JSON module = %q", loaded.Module)
+	}
+	badPath := filepath.Join(t.TempDir(), "Bad.json")
+	if err = os.WriteFile(badPath, []byte(`{"version":"wrong","modules":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	bad := ParseFile(context.Background(), badPath, FrontendOptions{})
+	if bad.OK() || len(bad.Diagnostics) != 1 || bad.Diagnostics[0].Code != "E-IR-JSON" {
+		t.Fatalf("bad JSON result = %+v", bad)
+	}
+}
+
 func TestParseAndTypeCheckSourceRetainsRootLocalInstanceDefinitions(t *testing.T) {
 	result := ParseAndTypeCheckSource(context.Background(), "LocalInstance.tla", `---- MODULE LocalInstance ----
 ---- MODULE Helper ----
