@@ -120,6 +120,14 @@ func (rewriter *StratifiedRewriter) rewriteFunctionSet(expression *OperExpr, sco
 	if !ok {
 		return scope, ArenaCell{}, fmt.Errorf("function set element has non-function type %s", setType.Element())
 	}
+	scope, domain, err = rewriter.coerceCell(scope, domain, mustSet(functionType.Argument()))
+	if err != nil {
+		return scope, ArenaCell{}, fmt.Errorf("function set domain cannot be widened: %w", err)
+	}
+	scope, codomain, err = rewriter.coerceCell(scope, codomain, mustSet(functionType.Result()))
+	if err != nil {
+		return scope, ArenaCell{}, fmt.Errorf("function set codomain cannot be widened: %w", err)
+	}
 	domainSetType, domainIsSet := domain.Type.TLAType().(SetType)
 	codomainSetType, codomainIsSet := codomain.Type.TLAType().(SetType)
 	if !domainIsSet || !codomainIsSet || !EqualTypes(domainSetType.Element(), functionType.Argument()) ||

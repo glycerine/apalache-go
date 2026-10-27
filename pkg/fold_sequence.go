@@ -15,6 +15,14 @@ func (rewriter *StratifiedRewriter) rewriteFoldSequence(expression *OperExpr, sc
 	if err != nil {
 		return scope, ArenaCell{}, err
 	}
+	resultType, typed := expression.Tag().Type()
+	if !typed {
+		return scope, ArenaCell{}, fmt.Errorf("FoldSeqLeft must be typed")
+	}
+	scope, accumulator, err = rewriter.coerceCell(scope, accumulator, resultType)
+	if err != nil {
+		return scope, ArenaCell{}, fmt.Errorf("FoldSeqLeft base cannot be widened to %s: %w", resultType, err)
+	}
 	scope, sequence, err := rewriter.Rewrite(arguments[2], scope)
 	if err != nil {
 		return scope, ArenaCell{}, err
@@ -27,7 +35,6 @@ func (rewriter *StratifiedRewriter) rewriteFoldSequence(expression *OperExpr, sc
 	if err != nil {
 		return scope, ArenaCell{}, err
 	}
-	resultType := accumulator.Type.TLAType()
 	for index, pointer := range elements {
 		body, inlineErr := instantiateEmbeddedOperator(operator, resultType,
 			accumulator.NameExpr(), pointer.Element().NameExpr())
@@ -39,8 +46,9 @@ func (rewriter *StratifiedRewriter) rewriteFoldSequence(expression *OperExpr, sc
 		if err != nil {
 			return scope, ArenaCell{}, fmt.Errorf("fold sequence element %d: %w", index+1, err)
 		}
-		if !EqualTypes(next.Type.TLAType(), resultType) {
-			return scope, ArenaCell{}, fmt.Errorf("fold operator result has type %s, expected %s", next.Type, resultType)
+		scope, next, err = rewriter.coerceCell(scope, next, resultType)
+		if err != nil {
+			return scope, ArenaCell{}, fmt.Errorf("fold operator result cannot be widened to %s: %w", resultType, err)
 		}
 		inRange := MustOperExpr(Op("LE"), Typed(BoolT1),
 			NewValueExpr(Int64Value(int64(index+1)), Typed(IntT1)), length.NameExpr())

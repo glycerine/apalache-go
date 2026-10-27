@@ -19,7 +19,14 @@ func (rewriter *StratifiedRewriter) rewriteRepeat(expression *OperExpr, scope Re
 	if err != nil {
 		return scope, ArenaCell{}, err
 	}
-	resultType := accumulator.Type.TLAType()
+	resultType, typed := expression.Tag().Type()
+	if !typed {
+		return scope, ArenaCell{}, fmt.Errorf("Repeat must be typed")
+	}
+	scope, accumulator, err = rewriter.coerceCell(scope, accumulator, resultType)
+	if err != nil {
+		return scope, ArenaCell{}, fmt.Errorf("Repeat base cannot be widened to %s: %w", resultType, err)
+	}
 	for index := 1; index <= int(bound.Int64()); index++ {
 		var indexCell ArenaCell
 		scope, indexCell, err = rewriter.Rewrite(NewValueExpr(Int64Value(int64(index)), Typed(IntT1)), scope)
@@ -35,8 +42,9 @@ func (rewriter *StratifiedRewriter) rewriteRepeat(expression *OperExpr, scope Re
 		if err != nil {
 			return scope, ArenaCell{}, fmt.Errorf("Repeat iteration %d: %w", index, err)
 		}
-		if !EqualTypes(accumulator.Type.TLAType(), resultType) {
-			return scope, ArenaCell{}, fmt.Errorf("Repeat operator result has type %s, expected %s", accumulator.Type, resultType)
+		scope, accumulator, err = rewriter.coerceCell(scope, accumulator, resultType)
+		if err != nil {
+			return scope, ArenaCell{}, fmt.Errorf("Repeat operator result cannot be widened to %s: %w", resultType, err)
 		}
 	}
 	return scope, accumulator, nil

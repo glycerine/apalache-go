@@ -68,6 +68,29 @@ func (rewriter *StratifiedRewriter) coerceCell(
 		newArena, result := makeSequenceWithLength(scope.Arena, expectedType, elements, length)
 		scope.Arena = newArena
 		return scope, result, nil
+	case TupleType:
+		actualType, ok := actual.(TupleType)
+		if !ok || len(actualType.Elements()) != len(expectedType.Elements()) {
+			return scope, ArenaCell{}, fmt.Errorf("cannot widen %s to %s", actual, expected)
+		}
+		actualElements := scope.Arena.GetHas(cell)
+		expectedElements := expectedType.Elements()
+		if len(actualElements) != len(expectedElements) {
+			return scope, ArenaCell{}, fmt.Errorf("tuple %s has %d of %d fields", cell, len(actualElements), len(expectedElements))
+		}
+		pointers := make([]ElementPointer, len(expectedElements))
+		for index, expectedElement := range expectedElements {
+			var element ArenaCell
+			var err error
+			scope, element, err = rewriter.coerceCell(scope, actualElements[index].Element(), expectedElement)
+			if err != nil {
+				return scope, ArenaCell{}, fmt.Errorf("widen tuple element %d: %w", index+1, err)
+			}
+			pointers[index] = PointerWithSameCondition(actualElements[index], element)
+		}
+		newArena, result := scope.Arena.AppendCellType(BasicCellType{Type: expectedType})
+		scope.Arena = newArena.AppendHas(result, pointers...)
+		return scope, result, nil
 	default:
 		return scope, ArenaCell{}, fmt.Errorf("cannot coerce %s to %s", actual, expected)
 	}

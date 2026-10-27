@@ -232,6 +232,10 @@ func (rewriter *StratifiedRewriter) rewriteFunctionConstructor(expression *OperE
 	if err != nil {
 		return scope, ArenaCell{}, err
 	}
+	scope, domain, err = rewriter.coerceCell(scope, domain, mustSet(functionType.Argument()))
+	if err != nil {
+		return scope, ArenaCell{}, fmt.Errorf("function domain cannot be widened to Set(%s): %w", functionType.Argument(), err)
+	}
 	domainType, ok := domain.Type.TLAType().(SetType)
 	if !ok || !EqualTypes(domainType.Element(), functionType.Argument()) {
 		return scope, ArenaCell{}, fmt.Errorf("function domain has type %s, expected Set(%s)", domain.Type, functionType.Argument())
@@ -246,8 +250,9 @@ func (rewriter *StratifiedRewriter) rewriteFunctionConstructor(expression *OperE
 		if rewriteErr != nil {
 			return scope, ArenaCell{}, rewriteErr
 		}
-		if !EqualTypes(result.Type.TLAType(), functionType.Result()) {
-			return scope, ArenaCell{}, fmt.Errorf("function result has type %s, expected %s", result.Type, functionType.Result())
+		mappedScope, result, rewriteErr = rewriter.coerceCell(mappedScope, result, functionType.Result())
+		if rewriteErr != nil {
+			return scope, ArenaCell{}, fmt.Errorf("function result cannot be widened to %s: %w", functionType.Result(), rewriteErr)
 		}
 		newArena, pair := mappedScope.Arena.AppendCellType(BasicCellType{Type: pairType})
 		mappedScope.Arena = newArena.AppendHas(pair,
@@ -701,8 +706,9 @@ func (rewriter *StratifiedRewriter) rewriteSequenceAppend(expression *OperExpr, 
 		return scope, ArenaCell{}, err
 	}
 	sequenceType := sequence.Type.TLAType().(SeqType)
-	if !EqualTypes(appended.Type.TLAType(), sequenceType.Element()) {
-		return scope, ArenaCell{}, fmt.Errorf("appended element has type %s, expected %s", appended.Type, sequenceType.Element())
+	scope, appended, err = rewriter.coerceCell(scope, appended, sequenceType.Element())
+	if err != nil {
+		return scope, ArenaCell{}, fmt.Errorf("appended element cannot be widened to %s: %w", sequenceType.Element(), err)
 	}
 	newLengthExpression := MustOperExpr(Op("PLUS"), Typed(IntT1), length.NameExpr(), NewValueExpr(Int64Value(1), Typed(IntT1)))
 	scope, newLength := rewriter.bindInteger(scope, newLengthExpression)
@@ -1002,8 +1008,9 @@ func (rewriter *StratifiedRewriter) rewriteApplication(expression *OperExpr, sco
 		if err != nil {
 			return scope, ArenaCell{}, err
 		}
-		if !EqualTypes(argument.Type.TLAType(), functionType.Argument()) {
-			return scope, ArenaCell{}, fmt.Errorf("function argument has type %s, expected %s", argument.Type, functionType.Argument())
+		scope, argument, err = rewriter.coerceCell(scope, argument, functionType.Argument())
+		if err != nil {
+			return scope, ArenaCell{}, fmt.Errorf("function argument cannot be widened to %s: %w", functionType.Argument(), err)
 		}
 		relation, err := scope.Arena.Codomain(collection)
 		if err != nil {
@@ -1158,8 +1165,9 @@ func (rewriter *StratifiedRewriter) rewriteTuple(expression *OperExpr, scope Rew
 			if err != nil {
 				return scope, ArenaCell{}, err
 			}
-			if !EqualTypes(elements[index].Type.TLAType(), sequenceType.Element()) {
-				return scope, ArenaCell{}, fmt.Errorf("sequence element %d has type %s, expected %s", index+1, elements[index].Type, sequenceType.Element())
+			scope, elements[index], err = rewriter.coerceCell(scope, elements[index], sequenceType.Element())
+			if err != nil {
+				return scope, ArenaCell{}, fmt.Errorf("sequence element %d cannot be widened to %s: %w", index+1, sequenceType.Element(), err)
 			}
 		}
 		arena, sequenceCell, err := makeSequence(scope.Arena, sequenceType, elements, rewriter.integers)
@@ -1191,8 +1199,9 @@ func (rewriter *StratifiedRewriter) rewriteTuple(expression *OperExpr, scope Rew
 		if err != nil {
 			return scope, ArenaCell{}, err
 		}
-		if !EqualTypes(elements[index].Type.TLAType(), types[index]) {
-			return scope, ArenaCell{}, fmt.Errorf("tuple element %d has type %s, expected %s", index+1, elements[index].Type, types[index])
+		scope, elements[index], err = rewriter.coerceCell(scope, elements[index], types[index])
+		if err != nil {
+			return scope, ArenaCell{}, fmt.Errorf("tuple element %d cannot be widened to %s: %w", index+1, types[index], err)
 		}
 	}
 	newArena, tuple := scope.Arena.AppendCellType(BasicCellType{Type: tupleType})
@@ -1842,8 +1851,9 @@ func (rewriter *StratifiedRewriter) rewriteMembership(expression *OperExpr, scop
 		if domainErr != nil {
 			return scope, ArenaCell{}, domainErr
 		}
-		if !EqualCellTypes(element.Type, domain.Type) {
-			return scope, ArenaCell{}, fmt.Errorf("powerset membership element has type %s, expected %s", element.Type, domain.Type)
+		scope, element, err = rewriter.coerceCell(scope, element, domain.Type.TLAType())
+		if err != nil {
+			return scope, ArenaCell{}, fmt.Errorf("powerset membership element cannot be widened to %s: %w", domain.Type, err)
 		}
 		condition, subsetErr := rewriter.equality.subsetCondition(scope.Arena, element, domain)
 		if subsetErr != nil {

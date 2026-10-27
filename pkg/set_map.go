@@ -66,8 +66,9 @@ func (rewriter *StratifiedRewriter) rewriteSetMap(expression *OperExpr, scope Re
 		if rewriteErr != nil {
 			return rewriteErr
 		}
-		if !EqualTypes(result.Type.TLAType(), setType.Element()) {
-			return fmt.Errorf("set map result has type %s, expected %s", result.Type, setType.Element())
+		mappedScope, result, rewriteErr = rewriter.coerceCell(mappedScope, result, setType.Element())
+		if rewriteErr != nil {
+			return fmt.Errorf("set map result cannot be widened to %s: %w", setType.Element(), rewriteErr)
 		}
 		scope.Arena = mappedScope.Arena
 		pointer, pointerErr := TupleElementPointer(selected, result)

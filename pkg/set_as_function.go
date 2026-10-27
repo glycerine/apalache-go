@@ -22,6 +22,11 @@ func (rewriter *StratifiedRewriter) rewriteSetAsFunction(expression *OperExpr, s
 	if !ok {
 		return scope, ArenaCell{}, fmt.Errorf("SetAsFun has non-function type %s", typ)
 	}
+	expectedPairType, _ := NewTupleType(functionType.Argument(), functionType.Result())
+	scope, source, err = rewriter.coerceCell(scope, source, mustSet(expectedPairType))
+	if err != nil {
+		return scope, ArenaCell{}, fmt.Errorf("SetAsFun relation cannot be widened to %s: %w", expectedPairType, err)
+	}
 	pairType, ok := source.Type.TLAType().(SetType)
 	if !ok {
 		return scope, ArenaCell{}, fmt.Errorf("SetAsFun source has non-set type %s", source.Type)

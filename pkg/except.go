@@ -56,9 +56,14 @@ func (rewriter *StratifiedRewriter) rewriteFunctionExcept(
 	oldFunction, key, newValue ArenaCell,
 	functionType FunType,
 ) (RewriterScope, ArenaCell, error) {
-	if !EqualTypes(key.Type.TLAType(), functionType.Argument()) ||
-		!EqualTypes(newValue.Type.TLAType(), functionType.Result()) {
-		return scope, ArenaCell{}, fmt.Errorf("function EXCEPT received key/value types %s/%s for %s", key.Type, newValue.Type, functionType)
+	var err error
+	scope, key, err = rewriter.coerceCell(scope, key, functionType.Argument())
+	if err != nil {
+		return scope, ArenaCell{}, fmt.Errorf("function EXCEPT key cannot be widened to %s: %w", functionType.Argument(), err)
+	}
+	scope, newValue, err = rewriter.coerceCell(scope, newValue, functionType.Result())
+	if err != nil {
+		return scope, ArenaCell{}, fmt.Errorf("function EXCEPT value cannot be widened to %s: %w", functionType.Result(), err)
 	}
 	relation, err := scope.Arena.Codomain(oldFunction)
 	if err != nil {
@@ -132,8 +137,9 @@ func (rewriter *StratifiedRewriter) rewriteTupleExcept(
 	if index > len(elementTypes) {
 		return scope, ArenaCell{}, fmt.Errorf("tuple EXCEPT index %d is out of bounds for arity %d", index, len(elementTypes))
 	}
-	if !EqualTypes(newValue.Type.TLAType(), elementTypes[index-1]) {
-		return scope, ArenaCell{}, fmt.Errorf("tuple EXCEPT value has type %s, expected %s", newValue.Type, elementTypes[index-1])
+	scope, newValue, err = rewriter.coerceCell(scope, newValue, elementTypes[index-1])
+	if err != nil {
+		return scope, ArenaCell{}, fmt.Errorf("tuple EXCEPT value cannot be widened to %s: %w", elementTypes[index-1], err)
 	}
 	pointers := scope.Arena.GetHas(oldTuple)
 	if len(pointers) != len(elementTypes) {
@@ -173,8 +179,9 @@ func (rewriter *StratifiedRewriter) rewriteRecordExcept(
 	if !found {
 		return scope, ArenaCell{}, fmt.Errorf("record EXCEPT field %q is absent from %s", field, oldRecord.Type)
 	}
-	if !EqualTypes(newValue.Type.TLAType(), expectedType) {
-		return scope, ArenaCell{}, fmt.Errorf("record EXCEPT value has type %s, expected %s", newValue.Type, expectedType)
+	scope, newValue, err = rewriter.coerceCell(scope, newValue, expectedType)
+	if err != nil {
+		return scope, ArenaCell{}, fmt.Errorf("record EXCEPT value cannot be widened to %s: %w", expectedType, err)
 	}
 	pointers := scope.Arena.GetHas(oldRecord)
 	keys := sortedStringKeys(fieldTypes)
@@ -205,8 +212,13 @@ func (rewriter *StratifiedRewriter) rewriteSequenceExcept(
 	oldSequence, key, newValue ArenaCell,
 	sequenceType SeqType,
 ) (RewriterScope, ArenaCell, error) {
-	if !EqualTypes(key.Type.TLAType(), IntT1) || !EqualTypes(newValue.Type.TLAType(), sequenceType.Element()) {
-		return scope, ArenaCell{}, fmt.Errorf("sequence EXCEPT received key/value types %s/%s for %s", key.Type, newValue.Type, sequenceType)
+	if !EqualTypes(key.Type.TLAType(), IntT1) {
+		return scope, ArenaCell{}, fmt.Errorf("sequence EXCEPT received key type %s for %s", key.Type, sequenceType)
+	}
+	var err error
+	scope, newValue, err = rewriter.coerceCell(scope, newValue, sequenceType.Element())
+	if err != nil {
+		return scope, ArenaCell{}, fmt.Errorf("sequence EXCEPT value cannot be widened to %s: %w", sequenceType.Element(), err)
 	}
 	length, _, elements, err := unpackSequence(scope.Arena, oldSequence)
 	if err != nil {

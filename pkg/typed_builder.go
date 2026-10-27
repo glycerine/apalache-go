@@ -345,7 +345,7 @@ func (builder *TypedBuilder) Except(function, argument, replacement Expr) (*Oper
 		return nil, err
 	}
 	from, to, ok := ApplicativeType(functionType, argument)
-	if !ok || !EqualTypes(from, argumentType) || !EqualTypes(to, replacementType) {
+	if !ok || !CompatibleTypes(from, argumentType) || !CompatibleTypes(to, replacementType) {
 		return nil, fmt.Errorf("EXCEPT argument/replacement types do not match %v", functionType)
 	}
 	wrapped, err := builder.Tuple(argument)

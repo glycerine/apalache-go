@@ -126,3 +126,68 @@ func TestStratifiedWidensNestedLegacyRecordFields(t *testing.T) {
 		t.Fatalf("nested sparse record was not widened: %s", nested)
 	}
 }
+
+func TestStratifiedWidensMappedAndFunctionResults(t *testing.T) {
+	narrowType, _ := NewRecordType(map[string]Type{"a": IntT1})
+	wideType, _ := NewRecordType(map[string]Type{"a": IntT1, "b": BoolT1})
+	narrow := MustOperExpr(Op("RECORD"), Typed(narrowType),
+		NewValueExpr(StringValue("a"), Typed(StrT1)), intLiteral(1))
+	domain := MustOperExpr(Op("SET_ENUM"), Typed(mustSet(IntT1)), intLiteral(1))
+	binder := NewNameExpr("x", Typed(IntT1))
+
+	t.Run("set map", func(t *testing.T) {
+		mapped := MustOperExpr(Op("SET_MAP"), Typed(mustSet(wideType)), narrow, binder, domain)
+		rewriter := NewStratifiedRewriter()
+		scope, result, err := rewriter.Rewrite(mapped, InitialRewriterScope())
+		if err != nil {
+			t.Fatal(err)
+		}
+		element := scope.Arena.GetHas(result)[0].Element()
+		if !EqualTypes(element.Type.TLAType(), wideType) || !scope.Arena.HasDomain(element) {
+			t.Fatalf("mapped sparse record was not widened: %s", element)
+		}
+	})
+
+	t.Run("function constructor", func(t *testing.T) {
+		functionType, _ := NewFunType(IntT1, wideType)
+		function := MustOperExpr(Op("FUN_CTOR"), Typed(functionType), narrow, binder, domain)
+		rewriter := NewStratifiedRewriter()
+		scope, result, err := rewriter.Rewrite(function, InitialRewriterScope())
+		if err != nil {
+			t.Fatal(err)
+		}
+		relation, err := scope.Arena.Codomain(result)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pair := scope.Arena.GetHas(relation)[0].Element()
+		mapped := scope.Arena.GetHas(pair)[1].Element()
+		if !EqualTypes(mapped.Type.TLAType(), wideType) || !scope.Arena.HasDomain(mapped) {
+			t.Fatalf("function sparse result was not widened: %s", mapped)
+		}
+	})
+}
+
+func TestStratifiedWidensTupleElements(t *testing.T) {
+	narrowType, _ := NewRecordType(map[string]Type{"a": IntT1})
+	wideType, _ := NewRecordType(map[string]Type{"a": IntT1, "b": BoolT1})
+	narrowTuple, _ := NewTupleType(narrowType)
+	wideTuple, _ := NewTupleType(wideType)
+	narrow := MustOperExpr(Op("RECORD"), Typed(narrowType),
+		NewValueExpr(StringValue("a"), Typed(StrT1)), intLiteral(1))
+	tuple := MustOperExpr(Op("TUPLE"), Typed(narrowTuple), narrow)
+
+	rewriter := NewStratifiedRewriter()
+	scope, tupleCell, err := rewriter.Rewrite(tuple, InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope, widened, err := rewriter.coerceCell(scope, tupleCell, wideTuple)
+	if err != nil {
+		t.Fatal(err)
+	}
+	element := scope.Arena.GetHas(widened)[0].Element()
+	if !EqualTypes(element.Type.TLAType(), wideType) || !scope.Arena.HasDomain(element) {
+		t.Fatalf("tuple sparse record was not widened: %s", element)
+	}
+}

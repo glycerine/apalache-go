@@ -15,6 +15,14 @@ func (rewriter *StratifiedRewriter) rewriteFoldSet(expression *OperExpr, scope R
 	if err != nil {
 		return scope, ArenaCell{}, err
 	}
+	resultType, typed := expression.Tag().Type()
+	if !typed {
+		return scope, ArenaCell{}, fmt.Errorf("FoldSet must be typed")
+	}
+	scope, accumulator, err = rewriter.coerceCell(scope, accumulator, resultType)
+	if err != nil {
+		return scope, ArenaCell{}, fmt.Errorf("FoldSet base cannot be widened to %s: %w", resultType, err)
+	}
 	scope, set, err := rewriter.Rewrite(arguments[2], scope)
 	if err != nil {
 		return scope, ArenaCell{}, err
@@ -22,7 +30,6 @@ func (rewriter *StratifiedRewriter) rewriteFoldSet(expression *OperExpr, scope R
 	if !isFiniteSetCellType(set.Type) {
 		return scope, ArenaCell{}, fmt.Errorf("FoldSet requires an ordinary finite set, found %s", set.Type)
 	}
-	resultType := accumulator.Type.TLAType()
 	pointers := scope.Arena.GetHas(set)
 	for index, pointer := range pointers {
 		body, inlineErr := instantiateEmbeddedOperator(operator, resultType,
@@ -35,8 +42,9 @@ func (rewriter *StratifiedRewriter) rewriteFoldSet(expression *OperExpr, scope R
 		if err != nil {
 			return scope, ArenaCell{}, fmt.Errorf("fold set element %d: %w", index+1, err)
 		}
-		if !EqualTypes(next.Type.TLAType(), resultType) {
-			return scope, ArenaCell{}, fmt.Errorf("fold operator result has type %s, expected %s", next.Type, resultType)
+		scope, next, err = rewriter.coerceCell(scope, next, resultType)
+		if err != nil {
+			return scope, ArenaCell{}, fmt.Errorf("fold operator result cannot be widened to %s: %w", resultType, err)
 		}
 		conditions := []Expr{pointer.ToSMT()}
 		for previous := 0; previous < index; previous++ {
