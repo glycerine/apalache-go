@@ -107,6 +107,33 @@ func TestTransitionExecutorConstantsAlternativesAndPartialAssignments(t *testing
 	}
 }
 
+func TestTransitionExecutorCheckStateIsTemporary(t *testing.T) {
+	executor := NewTransitionExecutor(nil, []string{"x"})
+	prime := MustOperExpr(Op("PRIME"), Typed(IntT1), NewNameExpr("x", Typed(IntT1)))
+	init := MustOperExpr(Op("Apalache!:="), Typed(BoolT1), prime, intLiteral(0))
+	if enabled, err := executor.PrepareTransition(0, init); err != nil || !enabled {
+		t.Fatalf("prepare init = %v, %v", enabled, err)
+	}
+	if err := executor.AssumeTransition(0); err != nil {
+		t.Fatal(err)
+	}
+	if err := executor.NextState(); err != nil {
+		t.Fatal(err)
+	}
+	equals := func(value int64) Expr {
+		return MustOperExpr(Op("EQ"), Typed(BoolT1), NewNameExpr("x", Typed(IntT1)), intLiteral(value))
+	}
+	if status, err := executor.CheckState(context.Background(), equals(0)); err != nil || status != SMTSatisfiable {
+		t.Fatalf("temporary true state = %v, %v", status, err)
+	}
+	if status, err := executor.CheckState(context.Background(), equals(1)); err != nil || status != SMTUnsatisfiable {
+		t.Fatalf("temporary false state = %v, %v", status, err)
+	}
+	if status, err := executor.Check(context.Background()); err != nil || status != SMTSatisfiable {
+		t.Fatalf("temporary checks changed path = %v, %v", status, err)
+	}
+}
+
 func TestTransitionExecutorRejectsInvalidLifecycle(t *testing.T) {
 	executor := NewTransitionExecutor(nil, []string{"x"})
 	if err := executor.NextState(); err == nil || !strings.Contains(err.Error(), "select") {
