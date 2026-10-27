@@ -1,6 +1,10 @@
 package apalache
 
-import "github.com/glycerine/tlago"
+import (
+	"fmt"
+
+	"github.com/glycerine/tlago"
+)
 
 var tlagoApalacheBuiltinCalls = map[string]string{
 	"Guess":          "Apalache!Guess",
@@ -12,6 +16,41 @@ var tlagoApalacheBuiltinCalls = map[string]string{
 	"ApaFoldSet":     "Apalache!ApaFoldSet",
 	"ApaFoldSeqLeft": "Apalache!ApaFoldSeqLeft",
 	"Distinct":       "Apalache!Distinct",
+}
+
+var tlagoBuiltinOperatorArguments = map[string]map[int]string{
+	"=":           {2: "EQ"},
+	"/=":          {2: "NE"},
+	"#":           {2: "NE"},
+	"+":           {2: "PLUS"},
+	"-":           {1: "UNARY_MINUS", 2: "MINUS"},
+	"*":           {2: "MULT"},
+	"\\div":       {2: "DIV"},
+	"%":           {2: "MOD"},
+	"^":           {2: "POW"},
+	"..":          {2: "INT_RANGE"},
+	"<":           {2: "LT"},
+	">":           {2: "GT"},
+	"<=":          {2: "LE"},
+	"=<":          {2: "LE"},
+	"\\leq":       {2: "LE"},
+	">=":          {2: "GE"},
+	"\\geq":       {2: "GE"},
+	"~":           {1: "NOT"},
+	"\\lnot":      {1: "NOT"},
+	"\\in":        {2: "SET_IN"},
+	"\\notin":     {2: "SET_NOT_IN"},
+	"\\union":     {2: "SET_UNION2"},
+	"\\cup":       {2: "SET_UNION2"},
+	"\\intersect": {2: "SET_INTERSECT"},
+	"\\cap":       {2: "SET_INTERSECT"},
+	"\\subseteq":  {2: "SET_SUBSET_EQ"},
+	"\\":          {2: "SET_MINUS"},
+	"\\X":         {2: "SET_TIMES"},
+	"\\times":     {2: "SET_TIMES"},
+	"SUBSET":      {1: "SET_POWERSET"},
+	"UNION":       {1: "SET_UNARY_UNION"},
+	"DOMAIN":      {1: "DOMAIN"},
 }
 
 type tlagoBinderGroup struct {
@@ -283,17 +322,25 @@ func normalizeTlagoApalacheBuiltinCalls(module *Module, sources *SourceStore) *M
 				if !parameter.IsOperator() {
 					continue
 				}
-				application, isApplication := arguments[index+1].(*OperExpr)
-				if !isApplication || application.Operator().Name() != "OPER_APP" {
-					continue
-				}
-				applicationArguments := application.Arguments()
-				if len(applicationArguments) == 1 {
-					if name, isName := applicationArguments[0].(*NameExpr); isName {
-						arguments[index+1] = name
-						changed = true
+				argument := arguments[index+1]
+				if application, isApplication := argument.(*OperExpr); isApplication && application.Operator().Name() == "OPER_APP" {
+					applicationArguments := application.Arguments()
+					if len(applicationArguments) == 1 {
+						if name, isName := applicationArguments[0].(*NameExpr); isName {
+							argument = name
+							changed = true
+						}
 					}
 				}
+				if name, isName := argument.(*NameExpr); isName {
+					if _, shadowed := declared[name.Name()]; !shadowed {
+						if wrapped, wrappedBuiltin := wrapTlagoBuiltinOperator(name, parameter.Arity); wrappedBuiltin {
+							argument = wrapped
+							changed = true
+						}
+					}
+				}
+				arguments[index+1] = argument
 			}
 		}
 		builtin, found := tlagoApalacheBuiltinCalls[callee.Name()]
@@ -328,6 +375,31 @@ func normalizeTlagoApalacheBuiltinCalls(module *Module, sources *SourceStore) *M
 		return MustOperExpr(Op(builtin), operation.Tag(), builtinArguments...), true
 	})
 	return transformTlagoModuleExpressions(module, rewrite, sources)
+}
+
+func wrapTlagoBuiltinOperator(name *NameExpr, arity int) (Expr, bool) {
+	byArity, found := tlagoBuiltinOperatorArguments[name.Name()]
+	if !found {
+		return nil, false
+	}
+	operatorName, found := byArity[arity]
+	if !found {
+		return nil, false
+	}
+	operator := Op(operatorName)
+	if !operator.IsCorrectArity(arity) {
+		return nil, false
+	}
+	definitionName := fmt.Sprintf("__builtin_%s_%s", operatorName, name.ID())
+	parameters := make([]OperatorParam, arity)
+	arguments := make([]Expr, arity)
+	for index := range parameters {
+		parameterName := fmt.Sprintf("__p%d_%s", index+1, name.ID())
+		parameters[index] = ValueParam(parameterName)
+		arguments[index] = NewNameExpr(parameterName, Untyped())
+	}
+	definition := NewOperDecl(definitionName, parameters, MustOperExpr(operator, Untyped(), arguments...), Untyped())
+	return NewLetInExpr(NewNameExpr(definitionName, Untyped()), Untyped(), definition), true
 }
 
 // normalizeTlagoTupleQuantifiers reconstructs a tuple binder that tlago

@@ -115,6 +115,19 @@ Next == UNCHANGED x
 	}
 }
 
+func TestParseAndTypeCheckSourceWrapsBuiltinOperatorArguments(t *testing.T) {
+	result := ParseAndTypeCheckSource(context.Background(), "BuiltinArguments.tla", `---- MODULE BuiltinArguments ----
+EXTENDS Integers
+Apply(F(_, _), x, y) == F(x, y)
+TestPlus == Apply(+, 1, 2) = 3
+TestUnion == Apply(\union, {1}, {2}) = {1, 2}
+====
+`, FrontendOptions{}, TypeCheckOptions{})
+	if !result.OK() {
+		t.Fatalf("ParseAndTypeCheckSource() diagnostics = %v", result.Diagnostics)
+	}
+}
+
 func TestParseAndTypeCheckSourceReconstructsTupleQuantifier(t *testing.T) {
 	result := ParseAndTypeCheckSource(context.Background(), "TupleBound.tla", `---- MODULE TupleBound ----
 EXTENDS Integers
