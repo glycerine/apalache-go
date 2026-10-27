@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/glycerine/tlago"
 )
 
 // TypeAnnotationResult contains parsed declaration types, the closed alias
@@ -120,6 +122,7 @@ func ExtractTypeAnnotations(filename, source string, module *Module, sources *So
 		}
 		result.Types[target.ID()] = typ
 	}
+	propagateExpandedOperatorAnnotations(source, module, sources, result.Types)
 
 	closed, err := NewTypeAliasSubstitution(aliases).Closure()
 	if err != nil {
@@ -130,6 +133,101 @@ func ExtractTypeAnnotations(filename, source string, module *Module, sources *So
 		result.Aliases = closed
 	}
 	return result
+}
+
+// propagateExpandedOperatorAnnotations repairs a tlago v0.1.9 compatibility
+// edge: SANY expands applications of user-defined symbolic operators (for
+// example F1 (+) F2) into the operator body before IR export. The source span
+// still identifies the annotated operator application, so retain that
+// annotation on the generated LET declaration.
+func propagateExpandedOperatorAnnotations(source string, module *Module, sources *SourceStore, annotations map[UID]Type) {
+	type annotatedOperator struct {
+		spellings []string
+		typ       Type
+		arity     int
+	}
+	operators := make([]annotatedOperator, 0)
+	for _, declaration := range module.OperDeclarations() {
+		typ, annotated := annotations[declaration.ID()]
+		if !annotated {
+			continue
+		}
+		spellings := []string{declaration.Name()}
+		for synonym, canonical := range tlago.SanyOperatorSynonymCanonical {
+			if canonical == declaration.Name() {
+				spellings = append(spellings, synonym)
+			}
+		}
+		operators = append(operators, annotatedOperator{spellings: spellings, typ: typ, arity: len(declaration.FormalParams())})
+	}
+	if len(operators) == 0 {
+		return
+	}
+	for _, declaration := range module.OperDeclarations() {
+		RewriteExpressions(nil, func(expression Expr) (Expr, bool) {
+			let, ok := expression.(*LetInExpr)
+			if !ok {
+				return nil, false
+			}
+			for _, local := range let.Declarations() {
+				if _, annotated := annotations[local.ID()]; annotated {
+					continue
+				}
+				location, found := sources.Find(local.Body().ID())
+				if !found || !matchesSourceFilename(location.Filename, sourceModuleNames("", source)) {
+					continue
+				}
+				fragment := sourceRegionText(source, location.Region)
+				var match *annotatedOperator
+				matches := 0
+				for index := range operators {
+					candidate := &operators[index]
+					if candidate.arity != len(local.FormalParams()) || !containsAnySpelling(fragment, candidate.spellings) {
+						continue
+					}
+					matches++
+					match = candidate
+				}
+				if matches == 1 {
+					annotations[local.ID()] = match.typ
+				}
+			}
+			return nil, false
+		})(declaration.Body())
+	}
+}
+
+func containsAnySpelling(source string, spellings []string) bool {
+	for _, spelling := range spellings {
+		if spelling != "" && strings.Contains(source, spelling) {
+			return true
+		}
+	}
+	return false
+}
+
+func sourceRegionText(source string, region SourceRegion) string {
+	lines := strings.Split(source, "\n")
+	if region.Start.Line < 1 || region.End.Line < region.Start.Line || region.Start.Line > len(lines) {
+		return ""
+	}
+	endLine := region.End.Line
+	if endLine > len(lines) {
+		endLine = len(lines)
+	}
+	selected := append([]string(nil), lines[region.Start.Line-1:endLine]...)
+	if len(selected) == 0 {
+		return ""
+	}
+	start := region.Start.Column - 1
+	if start >= 0 && start < len(selected[0]) {
+		selected[0] = selected[0][start:]
+	}
+	end := region.End.Column
+	if end >= 0 && end < len(selected[len(selected)-1]) {
+		selected[len(selected)-1] = selected[len(selected)-1][:end]
+	}
+	return strings.Join(selected, "\n")
 }
 
 func singleAnnotationString(annotation Annotation) (string, bool) {

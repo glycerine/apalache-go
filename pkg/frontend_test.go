@@ -396,6 +396,24 @@ Test == U!Foo(arr) = arr[1]
 	}
 }
 
+func TestParseAndTypeCheckSourcePropagatesExpandedSymbolicOperatorAnnotation(t *testing.T) {
+	result := ParseAndTypeCheckSource(context.Background(), "ExpandedSymbolic.tla", `---- MODULE ExpandedSymbolic ----
+EXTENDS Integers
+\* @type: (a -> Int, a -> Int) => a -> Int;
+F1 (+) F2 ==
+  [e \in DOMAIN F1 \union DOMAIN F2 |->
+    IF e \in DOMAIN F1 THEN F1[e] ELSE F2[e]]
+\* @type: (a -> Int, a -> Int) => a -> Int;
+Use(F1, F2) ==
+  LET NotInfix(A, B) == A (+) B
+  IN NotInfix(F1, F2)
+====
+`, FrontendOptions{}, TypeCheckOptions{})
+	if !result.OK() {
+		t.Fatalf("ParseAndTypeCheckSource() diagnostics = %v", result.Diagnostics)
+	}
+}
+
 func TestParseSourceClearsImportedLocalResultTags(t *testing.T) {
 	source := `---- MODULE ImportedSequencesExt ----
 EXTENDS SequencesExt
