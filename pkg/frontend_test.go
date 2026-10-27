@@ -326,6 +326,41 @@ Test == L!First(<<1, 2>>) = 1
 	}
 }
 
+func TestParseAndTypeCheckSourceImportsVariableAndConstantAnnotations(t *testing.T) {
+	directory := t.TempDir()
+	library := `---- MODULE TypedState ----
+VARIABLE
+\* @type: Int;
+value
+CONSTANT
+\* @type: Set(Str);
+Names
+====
+`
+	if err := os.WriteFile(filepath.Join(directory, "TypedState.tla"), []byte(library), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result := ParseAndTypeCheckSource(context.Background(), "ImportedState.tla", `---- MODULE ImportedState ----
+EXTENDS TypedState, Integers
+Test == value \in Int /\ Names \subseteq {"a", "b"}
+====
+`, FrontendOptions{LibraryPaths: []string{directory}}, TypeCheckOptions{})
+	if !result.OK() {
+		t.Fatalf("ParseAndTypeCheckSource() diagnostics = %v", result.Diagnostics)
+	}
+	variables := result.Native.VarDeclarations()
+	constants := result.Native.ConstDeclarations()
+	if len(variables) != 1 || len(constants) != 1 {
+		t.Fatalf("imported declarations: variables=%d constants=%d", len(variables), len(constants))
+	}
+	variableType, variableTyped := variables[0].Tag().Type()
+	constantType, constantTyped := constants[0].Tag().Type()
+	if !variableTyped || !constantTyped || !EqualTypes(variableType, IntT1) ||
+		!EqualTypes(constantType, mustSet(StrT1)) {
+		t.Fatalf("imported declaration types: variable=%v constant=%v", variableType, constantType)
+	}
+}
+
 func TestParseAndTypeCheckSourceImportsSetToSequence(t *testing.T) {
 	result := ParseAndTypeCheckSource(context.Background(), "SetToSequence.tla", `---- MODULE SetToSequence ----
 EXTENDS Sequences, SequencesExt, Integers

@@ -172,7 +172,7 @@ func parseTlagoModuleAnnotations(module *tlago.Module) tlagoImportedAnnotations 
 				continue
 			}
 			target := nextTlagoAnnotationTarget(candidate.Position, targets)
-			if target == nil || !target.definition {
+			if target == nil {
 				continue
 			}
 			typ, parseErr := ParseType(text)
