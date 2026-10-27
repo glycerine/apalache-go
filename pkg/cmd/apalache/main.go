@@ -126,11 +126,13 @@ func runTranspile(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	if flags.NArg() == 1 {
 		sourcePath = flags.Arg(0)
 	} else {
-		sourcePath, _, err = expandHomePath(*applicationConfig.Source)
+		var cleanup func()
+		sourcePath, cleanup, err = applicationConfig.Source.materializeSpecification()
 		if err != nil {
 			fmt.Fprintln(stderr, err)
 			return exitUsage
 		}
+		defer cleanup()
 	}
 	if *outputPath == "" {
 		fmt.Fprintln(stderr, "transpile output path cannot be empty")
@@ -262,11 +264,13 @@ func runTracee(ctx context.Context, args []string, stdout, stderr io.Writer) int
 			return exitUsage
 		}
 		if sourcePath == "" && applicationConfig.Source != nil {
-			sourcePath, _, err = expandHomePath(*applicationConfig.Source)
+			var cleanup func()
+			sourcePath, cleanup, err = applicationConfig.Source.materializeSpecification()
 			if err != nil {
 				fmt.Fprintln(stderr, err)
 				return exitUsage
 			}
+			defer cleanup()
 		}
 		if !visited["trace"] && flags.NArg() != 3 {
 			if configuredTrace, found, traceErr := applicationConfig.configuredTracePath(); traceErr != nil {
@@ -513,11 +517,13 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	if flags.NArg() == 1 {
 		sourcePath = flags.Arg(0)
 	} else {
-		sourcePath, _, err = expandHomePath(*applicationConfig.Source)
+		var cleanup func()
+		sourcePath, cleanup, err = applicationConfig.Source.materializeSpecification()
 		if err != nil {
 			fmt.Fprintln(stderr, err)
 			return exitUsage
 		}
+		defer cleanup()
 	}
 	if *length < 0 {
 		fmt.Fprintln(stderr, "simulate length cannot be negative")
@@ -670,11 +676,13 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	if flags.NArg() == 1 {
 		sourcePath = flags.Arg(0)
 	} else {
-		sourcePath, _, err = expandHomePath(*applicationConfig.Source)
+		var cleanup func()
+		sourcePath, cleanup, err = applicationConfig.Source.materializeSpecification()
 		if err != nil {
 			fmt.Fprintln(stderr, err)
 			return exitUsage
 		}
+		defer cleanup()
 	}
 	if *length < 0 {
 		fmt.Fprintln(stderr, "check length cannot be negative")
@@ -878,11 +886,13 @@ func runTypeCheck(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	if flags.NArg() == 1 {
 		sourcePath = flags.Arg(0)
 	} else {
-		sourcePath, _, err = expandHomePath(*applicationConfig.Source)
+		var cleanup func()
+		sourcePath, cleanup, err = applicationConfig.Source.materializeSpecification()
 		if err != nil {
 			fmt.Fprintln(stderr, err)
 			return exitUsage
 		}
+		defer cleanup()
 	}
 	if !validModuleOutput(*output) {
 		fmt.Fprintf(stderr, "invalid output %q (want summary, json, or a .tla/.json file)\n", *output)
@@ -1002,11 +1012,13 @@ func runParse(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	if flags.NArg() == 1 {
 		sourcePath = flags.Arg(0)
 	} else {
-		sourcePath, _, err = expandHomePath(*applicationConfig.Source)
+		var cleanup func()
+		sourcePath, cleanup, err = applicationConfig.Source.materializeSpecification()
 		if err != nil {
 			fmt.Fprintln(stderr, err)
 			return exitUsage
 		}
+		defer cleanup()
 	}
 	if !validModuleOutput(*output) {
 		fmt.Fprintf(stderr, "invalid output %q (want summary, json, or a .tla/.json file)\n", *output)

@@ -7,8 +7,234 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
+
+type jsonInputSource struct {
+	Kind    *string   `json:"kind"`
+	Path    *string   `json:"path"`
+	Content *string   `json:"content"`
+	Aux     *[]string `json:"aux"`
+	Format  *string   `json:"format"`
+}
+
+func (source *jsonInputSource) UnmarshalJSON(data []byte) error {
+	var path string
+	if err := json.Unmarshal(data, &path); err == nil {
+		source.Kind = stringPointer("file")
+		source.Path = &path
+		return nil
+	}
+	type sourceObject jsonInputSource
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	var object sourceObject
+	if err := decoder.Decode(&object); err != nil {
+		return fmt.Errorf("source must be a path string or source object: %w", err)
+	}
+	if err := requireJSONEOF(decoder); err != nil {
+		return err
+	}
+	*source = jsonInputSource(object)
+	return source.validate()
+}
+
+func stringPointer(value string) *string { return &value }
+
+func (source *jsonInputSource) validate() error {
+	if source == nil {
+		return nil
+	}
+	kind := ""
+	if source.Kind != nil {
+		kind = strings.ToLower(*source.Kind)
+	} else if source.Content != nil {
+		kind = "string"
+	} else if source.Path != nil {
+		kind = "file"
+	}
+	switch kind {
+	case "file":
+		if source.Path == nil || *source.Path == "" {
+			return fmt.Errorf("file source requires a nonempty path")
+		}
+		if source.Content != nil || source.Aux != nil {
+			return fmt.Errorf("file source cannot contain content or aux")
+		}
+	case "string":
+		if source.Content == nil {
+			return fmt.Errorf("string source requires content")
+		}
+		if source.Path != nil {
+			return fmt.Errorf("string source cannot contain path")
+		}
+	default:
+		return fmt.Errorf("source kind must be file or string")
+	}
+	if source.Format != nil && !validSourceFormat(*source.Format) {
+		return fmt.Errorf("unsupported source format %q", *source.Format)
+	}
+	return nil
+}
+
+func validSourceFormat(format string) bool {
+	switch strings.ToLower(format) {
+	case "tla", "json", "itf", "qnt":
+		return true
+	default:
+		return false
+	}
+}
+
+func inferSourceFormat(path string) string {
+	lower := strings.ToLower(path)
+	switch {
+	case strings.HasSuffix(lower, ".itf.json"):
+		return "itf"
+	case strings.HasSuffix(lower, ".qnt.json"):
+		return "qnt"
+	case strings.HasSuffix(lower, ".json"):
+		return "json"
+	case strings.HasSuffix(lower, ".tla"):
+		return "tla"
+	default:
+		return ""
+	}
+}
+
+var moduleNamePattern = regexp.MustCompile(`(?m)\bMODULE[ \t]+([A-Za-z_][A-Za-z0-9_]*)`)
+
+func tlaModuleName(source string) (string, error) {
+	match := moduleNamePattern.FindStringSubmatch(source)
+	if len(match) != 2 {
+		return "", fmt.Errorf("in-memory TLA+ source has no MODULE declaration")
+	}
+	return match[1], nil
+}
+
+func (source *jsonInputSource) materializeSpecification() (string, func(), error) {
+	noCleanup := func() {}
+	if err := source.validate(); err != nil {
+		return "", noCleanup, err
+	}
+	kind := "file"
+	if source.Kind != nil {
+		kind = strings.ToLower(*source.Kind)
+	} else if source.Content != nil {
+		kind = "string"
+	}
+	format := ""
+	if source.Format != nil {
+		format = strings.ToLower(*source.Format)
+	}
+	if kind == "file" {
+		path, _, err := expandHomePath(*source.Path)
+		if err != nil {
+			return "", noCleanup, err
+		}
+		if format == "" {
+			format = inferSourceFormat(path)
+		}
+		if format == "" {
+			return "", noCleanup, fmt.Errorf("cannot infer source format from %q", path)
+		}
+		if format != "tla" && format != "json" {
+			return "", noCleanup, fmt.Errorf("Go specification commands do not support %s sources", format)
+		}
+		if inferSourceFormat(path) == format {
+			return path, noCleanup, nil
+		}
+		contents, err := os.ReadFile(path)
+		if err != nil {
+			return "", noCleanup, err
+		}
+		materialized, cleanup, err := materializeSourceFiles(string(contents), nil, format)
+		if err != nil || format != "tla" {
+			return materialized, cleanup, err
+		}
+		if err = copyAdjacentTLAModules(filepath.Dir(path), filepath.Dir(materialized)); err != nil {
+			cleanup()
+			return "", noCleanup, err
+		}
+		return materialized, cleanup, nil
+	}
+	if format == "" {
+		format = "tla"
+	}
+	if format != "tla" && format != "json" {
+		return "", noCleanup, fmt.Errorf("Go specification commands do not support %s sources", format)
+	}
+	aux := []string(nil)
+	if source.Aux != nil {
+		aux = *source.Aux
+	}
+	if format != "tla" && len(aux) != 0 {
+		return "", noCleanup, fmt.Errorf("auxiliary modules require TLA+ source format")
+	}
+	return materializeSourceFiles(*source.Content, aux, format)
+}
+
+func copyAdjacentTLAModules(sourceDirectory, targetDirectory string) error {
+	entries, err := os.ReadDir(sourceDirectory)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.EqualFold(filepath.Ext(entry.Name()), ".tla") {
+			continue
+		}
+		target := filepath.Join(targetDirectory, entry.Name())
+		if _, statErr := os.Stat(target); statErr == nil {
+			continue
+		} else if !os.IsNotExist(statErr) {
+			return statErr
+		}
+		contents, readErr := os.ReadFile(filepath.Join(sourceDirectory, entry.Name()))
+		if readErr != nil {
+			return readErr
+		}
+		if writeErr := os.WriteFile(target, contents, 0o600); writeErr != nil {
+			return writeErr
+		}
+	}
+	return nil
+}
+
+func materializeSourceFiles(content string, aux []string, format string) (string, func(), error) {
+	directory, err := os.MkdirTemp("", "apalache-source-")
+	if err != nil {
+		return "", func() {}, err
+	}
+	cleanup := func() { _ = os.RemoveAll(directory) }
+	extension := ".json"
+	name := "source"
+	if format == "tla" {
+		extension = ".tla"
+		name, err = tlaModuleName(content)
+		if err != nil {
+			cleanup()
+			return "", func() {}, err
+		}
+		for _, auxiliary := range aux {
+			auxName, nameErr := tlaModuleName(auxiliary)
+			if nameErr != nil {
+				cleanup()
+				return "", func() {}, nameErr
+			}
+			if writeErr := os.WriteFile(filepath.Join(directory, auxName+extension), []byte(auxiliary), 0o600); writeErr != nil {
+				cleanup()
+				return "", func() {}, writeErr
+			}
+		}
+	}
+	path := filepath.Join(directory, name+extension)
+	if err = os.WriteFile(path, []byte(content), 0o600); err != nil {
+		cleanup()
+		return "", func() {}, err
+	}
+	return path, cleanup, nil
+}
 
 type jsonCheckerConfig struct {
 	Tuning             *map[string]string `json:"tuning"`
@@ -43,7 +269,7 @@ type jsonCommandConfig struct {
 	WriteIntermediate *bool                 `json:"write-intermediate"`
 	Profiling         *bool                 `json:"profiling"`
 	Features          *[]string             `json:"features"`
-	Source            *string               `json:"source"`
+	Source            *jsonInputSource      `json:"source"`
 	Output            *string               `json:"output"`
 	Checker           jsonCheckerConfig     `json:"checker"`
 	Typechecker       jsonTypecheckerConfig `json:"typechecker"`

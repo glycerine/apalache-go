@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +16,7 @@ func TestLoadCommandConfigIsStrict(t *testing.T) {
 		name, document, want string
 	}{
 		{"unknown key", `{"checker":{"length":1,"mystery":true}}`, "unknown field"},
+		{"unknown source key", `{"source":{"kind":"string","content":"---- MODULE M ----\n====","mystery":true}}`, "unknown field"},
 		{"duplicate key", `{"checker":{"length":1,"length":2}}`, "duplicate key"},
 		{"trailing value", `{"checker":{"length":1}} {}`, "trailing"},
 	}
@@ -28,6 +30,67 @@ func TestLoadCommandConfigIsStrict(t *testing.T) {
 				t.Fatalf("loadCommandConfig error = %v, want %q", err, test.want)
 			}
 		})
+	}
+}
+
+func TestRunCheckLoadsInMemoryJSONSourceWithAuxiliaryModule(t *testing.T) {
+	directory := t.TempDir()
+	t.Setenv("HOME", filepath.Join(directory, "home"))
+	t.Chdir(directory)
+	mainSource := `---- MODULE ConfiguredMemory ----
+EXTENDS Aux, Integers
+\* @type: Int;
+VARIABLE x
+Init == x = 0
+Next == x' = Inc(x)
+Inv == x < 2
+====
+`
+	auxiliary := `---- MODULE Aux ----
+EXTENDS Integers
+\* @type: Int => Int;
+Inc(x) == x + 1
+====
+`
+	configuration, err := json.Marshal(map[string]any{
+		"source": map[string]any{
+			"kind": "string", "content": mainSource, "aux": []string{auxiliary}, "format": "tla",
+		},
+		"checker": map[string]any{"length": 2, "inv": []string{"Inv"}, "no-deadlock": true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile("memory.json", configuration, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	if code := run(context.Background(), []string{"check", "--config-file=memory.json"}, &stdout, &stderr); code != exitCounterexample ||
+		!strings.Contains(stdout.String(), "Invariant Inv violated at depth 2") {
+		t.Fatalf("in-memory configured check = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
+	}
+}
+
+func TestRunParseHonorsExplicitJSONSourceFormat(t *testing.T) {
+	directory := t.TempDir()
+	t.Setenv("HOME", filepath.Join(directory, "home"))
+	t.Chdir(directory)
+	if err := os.WriteFile("Spec.input", []byte("---- MODULE ExplicitFormat ----\nEXTENDS Auxiliary\nValue == AuxiliaryValue\n====\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile("Auxiliary.tla", []byte("---- MODULE Auxiliary ----\nAuxiliaryValue == TRUE\n====\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile("parse.json", []byte(`{
+  "source":{"kind":"file","path":"Spec.input","format":"tla"},
+  "output":"summary"
+}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	if code := run(context.Background(), []string{"parse", "--config-file=parse.json"}, &stdout, &stderr); code != exitOK ||
+		!strings.Contains(stdout.String(), "module ExplicitFormat") {
+		t.Fatalf("explicit-format parse = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
 	}
 }
 
