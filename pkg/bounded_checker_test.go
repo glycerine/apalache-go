@@ -200,6 +200,37 @@ func TestCheckBoundedSafetyEnforcesConfiguredConstraints(t *testing.T) {
 	}
 }
 
+func TestCheckBoundedSafetyChecksActionInvariantsOnPendingState(t *testing.T) {
+	x := NewNameExpr("x", Typed(IntT1))
+	prime := MustOperExpr(Op("PRIME"), Typed(IntT1), NewNameExpr("x", Typed(IntT1)))
+	constantInit := boolDefinition("CInit", NewValueExpr(BoolValue(true), Typed(BoolT1)))
+	init := boolDefinition("Init", MustOperExpr(Op("EQ"), Typed(BoolT1), x, intLiteral(0)))
+	next := boolDefinition("Next", MustOperExpr(Op("EQ"), Typed(BoolT1), prime,
+		MustOperExpr(Op("PLUS"), Typed(IntT1), x, intLiteral(1))))
+	actionInvariant := boolDefinition("ActionInv", MustOperExpr(Op("EQ"), Typed(BoolT1), prime, x))
+	module := configuredTestModule(NewVarDecl("x", Typed(IntT1)), constantInit, init, next, actionInvariant)
+	prepared, err := PrepareSafetyTransitions(module, SafetyPipelineOptions{Specification: SpecificationConfiguration{
+		Behavior: InitNextSpec{Init: "Init", Next: "Next"}, ConstantInit: "CInit", Invariants: []string{"ActionInv"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Outcome != SafetyCounterexample || !result.ActionInvariant || result.Invariant != "ActionInv" ||
+		result.Depth != 1 || !reflect.DeepEqual(result.NextTransitions, []int{0}) || len(result.States) != 2 {
+		t.Fatalf("action invariant result = %#v", result)
+	}
+	for index, expected := range []string{"0", "1"} {
+		formatted, formatErr := FormatTLAExpression(result.States[index].Values["x"])
+		if formatErr != nil || formatted != expected {
+			t.Fatalf("action state %d x = %q, %v", index, formatted, formatErr)
+		}
+	}
+}
+
 func TestCheckBoundedSafetyValidatesInputs(t *testing.T) {
 	if _, err := CheckBoundedSafety(context.Background(), nil, DerivedPredicates{}, 0); err == nil {
 		t.Fatal("nil module was accepted")

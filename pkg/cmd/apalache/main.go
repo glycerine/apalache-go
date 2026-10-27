@@ -154,7 +154,11 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	}
 	switch result.Outcome {
 	case pal.SafetyCounterexample:
-		fmt.Fprintf(stdout, "Invariant %s violated at depth %d (Init$%04d", result.Invariant, result.Depth, result.InitTransition)
+		kind := "Invariant"
+		if result.ActionInvariant {
+			kind = "Action invariant"
+		}
+		fmt.Fprintf(stdout, "%s %s violated at depth %d (Init$%04d", kind, result.Invariant, result.Depth, result.InitTransition)
 		for _, number := range result.NextTransitions {
 			fmt.Fprintf(stdout, ", Next$%04d", number)
 		}

@@ -26,6 +26,7 @@ type BoundedSafetyResult struct {
 	Outcome            SafetyOutcome
 	Depth              int
 	Invariant          string
+	ActionInvariant    bool
 	InitTransition     int
 	NextTransitions    []int
 	ExploredExecutions int
@@ -68,13 +69,23 @@ func CheckBoundedSafetyWithOptions(
 		return BoundedSafetyResult{}, fmt.Errorf("module has no normalized initial transitions")
 	}
 	nextTransitions := TransitionsFromModule(module, NormalizedNextPrefix)
-	invariants := make([]namedExpression, len(predicates.Invariants))
-	for index, name := range predicates.Invariants {
+	stateInvariants := make([]namedExpression, 0, len(predicates.Invariants))
+	actionInvariants := make([]namedExpression, 0, len(predicates.Invariants))
+	levelFinder := NewLevelFinder(module)
+	for _, name := range predicates.Invariants {
 		body, found := OperatorBody(module, name)
 		if !found {
 			return BoundedSafetyResult{}, fmt.Errorf("invariant %s was not found", name)
 		}
-		invariants[index] = namedExpression{name: name, expression: body}
+		named := namedExpression{name: name, expression: body}
+		switch levelFinder.LevelOfExpression(body) {
+		case ConstantLevel, StateLevel:
+			stateInvariants = append(stateInvariants, named)
+		case ActionLevel:
+			actionInvariants = append(actionInvariants, named)
+		case TemporalLevel:
+			return BoundedSafetyResult{}, fmt.Errorf("invariant %s is temporal, expected a state or action predicate", name)
+		}
 	}
 	stateConstraints, err := namedOperatorExpressions(module, predicates.StateConstraints, "state constraint")
 	if err != nil {
@@ -96,7 +107,8 @@ func CheckBoundedSafetyWithOptions(
 			constants: constants, variables: variables, constantInit: constantInit,
 			hasConstantInit: hasConstantInit, assumptions: assumptions,
 			initTransitions: initTransitions, nextTransitions: nextTransitions,
-			invariants: invariants, maxSteps: options.MaxSteps, checkDeadlocks: options.CheckDeadlocks,
+			stateInvariants: stateInvariants, actionInvariants: actionInvariants,
+			maxSteps: options.MaxSteps, checkDeadlocks: options.CheckDeadlocks,
 			stateConstraints: stateConstraints, actionConstraints: actionConstraints,
 		}, path, &result)
 		if err != nil {
@@ -127,7 +139,8 @@ type modulePathInputs struct {
 	assumptions       []*AssumeDecl
 	initTransitions   []Expr
 	nextTransitions   []Expr
-	invariants        []namedExpression
+	stateInvariants   []namedExpression
+	actionInvariants  []namedExpression
 	stateConstraints  []namedExpression
 	actionConstraints []namedExpression
 	maxSteps          int
@@ -159,7 +172,7 @@ func searchSafetyPath(
 	if status == SMTUnsatisfiable {
 		return false, nil
 	}
-	for _, invariant := range inputs.invariants {
+	for _, invariant := range inputs.stateInvariants {
 		violation := MustOperExpr(Op("NOT"), Typed(BoolT1), invariant.expression)
 		var states []DecodedState
 		status, states, err = executor.CheckAndDecode(ctx, violation)
@@ -186,7 +199,7 @@ func searchSafetyPath(
 	enabledNext := false
 	for nextNumber := range inputs.nextTransitions {
 		child := boundedPath{init: path.init, next: append(append([]int(nil), path.next...), nextNumber)}
-		childExecutor, childErr := replaySafetyPath(inputs, child)
+		childExecutor, childErr := replayPendingNext(inputs, path, nextNumber)
 		if childErr != nil {
 			if errors.Is(childErr, errDisabledTransition) {
 				continue
@@ -205,6 +218,27 @@ func searchSafetyPath(
 			continue
 		}
 		enabledNext = true
+		for _, invariant := range inputs.actionInvariants {
+			violation := MustOperExpr(Op("NOT"), Typed(BoolT1), invariant.expression)
+			status, states, invariantErr := childExecutor.CheckPendingAndDecode(ctx, violation)
+			if invariantErr != nil {
+				return false, fmt.Errorf("check action invariant %s at depth %d: %w", invariant.name, len(child.next), invariantErr)
+			}
+			if status == SMTUnknown {
+				result.Outcome = SafetyUnknown
+				return true, nil
+			}
+			if status == SMTSatisfiable {
+				result.Outcome = SafetyCounterexample
+				result.Depth = len(child.next)
+				result.Invariant = invariant.name
+				result.ActionInvariant = true
+				result.InitTransition = child.init
+				result.NextTransitions = append([]int(nil), child.next...)
+				result.States = states
+				return true, nil
+			}
+		}
 		if len(path.next) < inputs.maxSteps {
 			found, searchErr := searchSafetyPath(ctx, inputs, child, result)
 			if searchErr != nil || found {
@@ -230,6 +264,26 @@ func searchSafetyPath(
 		return true, nil
 	}
 	return false, nil
+}
+
+func replayPendingNext(inputs modulePathInputs, path boundedPath, nextNumber int) (*TransitionExecutor, error) {
+	executor, err := replaySafetyPath(inputs, path)
+	if err != nil {
+		return nil, err
+	}
+	if err = selectPathTransition(executor, nextNumber, inputs.nextTransitions,
+		fmt.Sprintf("next at depth %d", len(path.next)+1)); err != nil {
+		return nil, err
+	}
+	if err = assertNamedExpressions(executor, inputs.actionConstraints); err != nil {
+		return nil, err
+	}
+	for _, constraint := range inputs.stateConstraints {
+		if err = executor.AssertNextState(constraint.expression); err != nil {
+			return nil, fmt.Errorf("assert target-state constraint %s: %w", constraint.name, err)
+		}
+	}
+	return executor, nil
 }
 
 func replaySafetyPath(inputs modulePathInputs, path boundedPath) (*TransitionExecutor, error) {

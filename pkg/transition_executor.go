@@ -194,6 +194,25 @@ func (executor *TransitionExecutor) AssertState(expression Expr) error {
 	return nil
 }
 
+// AssertNextState rewrites a state predicate against the selected transition's
+// primed binding while retaining the current action binding.
+func (executor *TransitionExecutor) AssertNextState(expression Expr) error {
+	if !executor.picked {
+		return fmt.Errorf("select a transition before asserting its target state")
+	}
+	if err := requireBooleanExpression(expression, "next-state assertion"); err != nil {
+		return err
+	}
+	target := RewriterScope{Arena: executor.scope.Arena, Binding: executor.scope.Binding.Shift(executor.constants)}
+	target, assertion, err := executor.rewriter.Rewrite(expression, target)
+	if err != nil {
+		return fmt.Errorf("rewrite next-state assertion: %w", err)
+	}
+	executor.scope.Arena = target.Arena
+	executor.asserted = append(executor.asserted, assertion.NameExpr())
+	return nil
+}
+
 func requireBooleanExpression(expression Expr, description string) error {
 	if expression == nil {
 		return fmt.Errorf("%s is nil", description)
@@ -249,6 +268,25 @@ func (executor *TransitionExecutor) check(ctx context.Context, temporary []Expr)
 // CheckAndDecode tests a state expression and, when satisfiable, decodes every
 // committed state using the same constrained model.
 func (executor *TransitionExecutor) CheckAndDecode(ctx context.Context, expression Expr) (SMTStatus, []DecodedState, error) {
+	return executor.checkAndDecode(ctx, expression, executor.states)
+}
+
+// CheckPendingAndDecode evaluates an action expression before NextState and
+// decodes the selected transition's target as the final state in the trace.
+func (executor *TransitionExecutor) CheckPendingAndDecode(ctx context.Context, expression Expr) (SMTStatus, []DecodedState, error) {
+	if !executor.picked {
+		return SMTUnknown, nil, fmt.Errorf("select a transition before decoding a pending action")
+	}
+	bindings := append([]Binding(nil), executor.states...)
+	bindings = append(bindings, executor.scope.Binding.Shift(executor.constants))
+	return executor.checkAndDecode(ctx, expression, bindings)
+}
+
+func (executor *TransitionExecutor) checkAndDecode(
+	ctx context.Context,
+	expression Expr,
+	bindings []Binding,
+) (SMTStatus, []DecodedState, error) {
 	if err := requireBooleanExpression(expression, "state expression"); err != nil {
 		return SMTUnknown, nil, err
 	}
@@ -268,8 +306,8 @@ func (executor *TransitionExecutor) CheckAndDecode(ctx context.Context, expressi
 	if err != nil {
 		return SMTUnknown, nil, err
 	}
-	states := make([]DecodedState, len(executor.states))
-	for index, binding := range executor.states {
+	states := make([]DecodedState, len(bindings))
+	for index, binding := range bindings {
 		values, decodeErr := decoder.DecodeBinding(executor.scope.Arena, binding)
 		if decodeErr != nil {
 			return SMTUnknown, nil, fmt.Errorf("decode state %d: %w", index, decodeErr)
