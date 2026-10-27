@@ -120,6 +120,119 @@ func tlagoRecursiveOperatorScopes(spec *tlago.Spec) map[string]map[string]string
 	return result
 }
 
+func tlagoInstantiatedOperatorScopes(spec *tlago.Spec) map[string]map[string]string {
+	result := make(map[string]map[string]string)
+	if spec == nil || spec.Root == nil {
+		return result
+	}
+	seen := make(map[string]bool)
+	var visit func(*tlago.Module, string)
+	visit = func(module *tlago.Module, prefix string) {
+		if module == nil {
+			return
+		}
+		key := module.Name + "\x00" + prefix
+		if seen[key] {
+			return
+		}
+		seen[key] = true
+		scope := make(map[string]string, len(module.Definitions))
+		for _, definition := range module.Definitions {
+			qualified := definition.Name
+			if prefix != "" {
+				qualified = prefix + "!" + definition.Name
+			}
+			scope[definition.Name] = qualified
+		}
+		for _, qualified := range scope {
+			result[qualified] = scope
+		}
+		for _, instance := range module.Instances {
+			nestedPrefix := prefix
+			if instance.Name != "" {
+				if nestedPrefix != "" {
+					nestedPrefix += "!"
+				}
+				nestedPrefix += instance.Name
+			}
+			visit(spec.Modules[instance.Module], nestedPrefix)
+		}
+	}
+	visit(spec.Root, "")
+	return result
+}
+
+func qualifyTlagoInstanceExpression(expression Expr, scope map[string]string, tracker TransformationTracker) Expr {
+	switch typed := expression.(type) {
+	case *NameExpr:
+		if qualified, found := scope[typed.Name()]; found && qualified != typed.Name() {
+			return tracker.TrackExpression(func(Expr) Expr { return NewNameExpr(qualified, typed.Tag()) })(expression)
+		}
+	case *OperExpr:
+		arguments := typed.Arguments()
+		for index, argument := range arguments {
+			arguments[index] = qualifyTlagoInstanceExpression(argument, scope, tracker)
+		}
+		return tracker.TrackExpression(func(Expr) Expr {
+			return MustOperExpr(typed.Operator(), typed.Tag(), arguments...)
+		})(expression)
+	case *LetInExpr:
+		inside := cloneMap(scope)
+		for _, declaration := range typed.Declarations() {
+			delete(inside, declaration.Name())
+		}
+		declarations := typed.Declarations()
+		for index, declaration := range declarations {
+			declarationScope := cloneMap(inside)
+			for _, parameter := range declaration.FormalParams() {
+				delete(declarationScope, parameter.Name)
+			}
+			copy := declaration.copyWithTag(declaration.Tag())
+			copy.SetBody(qualifyTlagoInstanceExpression(declaration.Body(), declarationScope, tracker))
+			declarations[index] = tracker.TrackOperatorDeclaration(func(*OperDecl) *OperDecl { return copy })(declaration)
+		}
+		body := qualifyTlagoInstanceExpression(typed.Body(), inside, tracker)
+		return tracker.TrackExpression(func(Expr) Expr { return NewLetInExpr(body, typed.Tag(), declarations...) })(expression)
+	}
+	return expression
+}
+
+func normalizeTlagoInstantiatedOperatorCalls(module *Module, sources *SourceStore, scopes map[string]map[string]string) *Module {
+	if module == nil || len(scopes) == 0 {
+		return module
+	}
+	var tracker TransformationTracker = IdleTracker{}
+	if sources != nil {
+		tracker = NewListenerTracker(sources)
+	}
+	declarations := module.Declarations()
+	changed := false
+	for index, declaration := range declarations {
+		operator, ok := declaration.(*OperDecl)
+		scope := cloneMap(scopes[declaration.Name()])
+		if !ok || len(scope) == 0 {
+			continue
+		}
+		for _, parameter := range operator.FormalParams() {
+			delete(scope, parameter.Name)
+		}
+		body := qualifyTlagoInstanceExpression(operator.Body(), scope, tracker)
+		if EqualExpr(body, operator.Body()) {
+			continue
+		}
+		copy := operator.copyWithTag(operator.Tag())
+		copy.SetBody(body)
+		declarations[index] = tracker.TrackOperatorDeclaration(func(*OperDecl) *OperDecl { return copy })(operator)
+		changed = true
+	}
+	if !changed {
+		return module
+	}
+	result := NewModule(module.Name(), declarations)
+	result.properties = cloneMap(module.properties)
+	return result
+}
+
 func normalizeTlagoRecursiveOperators(module *Module, sources *SourceStore, scopes map[string]map[string]string) *Module {
 	if module == nil || len(scopes) == 0 {
 		return module

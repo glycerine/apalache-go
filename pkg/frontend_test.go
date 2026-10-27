@@ -438,6 +438,27 @@ Test == I!A(2) = 2
 	}
 }
 
+func TestParseAndTypeCheckSourceQualifiesInstantiatedOperatorCalls(t *testing.T) {
+	result := ParseAndTypeCheckSource(context.Background(), "InstantiatedCalls.tla", `---- MODULE InstantiatedCalls ----
+EXTENDS Integers
+---- MODULE Inner ----
+F(x) == x + 1
+G(x) == F(x) + 1
+====
+I == INSTANCE Inner
+Test == I!G(1) = 3
+====
+`, FrontendOptions{}, TypeCheckOptions{})
+	if !result.OK() {
+		t.Fatalf("ParseAndTypeCheckSource() diagnostics = %v", result.Diagnostics)
+	}
+	declaration, found := declarationNamed(result.Native, "I!G")
+	operator, ok := declaration.(*OperDecl)
+	if !found || !ok || countNamed(operator.Body(), "I!F") != 1 || countNamed(operator.Body(), "F") != 0 {
+		t.Fatalf("I!G declaration = %#v", declaration)
+	}
+}
+
 func TestParseSourceClearsImportedLocalResultTags(t *testing.T) {
 	source := `---- MODULE ImportedSequencesExt ----
 EXTENDS SequencesExt
