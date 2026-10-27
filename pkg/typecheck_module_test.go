@@ -24,6 +24,12 @@ func TestTypeCheckModuleProducesTypedCopy(t *testing.T) {
 			t.Fatalf("untyped declaration %s", declaration.Name())
 		}
 	}
+	if typ, ok := result.Module.ConstDeclarations()[0].Tag().Type(); !ok || !EqualTypes(typ, IntT1) {
+		t.Fatalf("constant type = %v, %v", typ, ok)
+	}
+	if typ, ok := result.Module.VarDeclarations()[0].Tag().Type(); !ok || !EqualTypes(typ, IntT1) {
+		t.Fatalf("variable type = %v, %v", typ, ok)
+	}
 	typedInit := result.Module.OperDeclarations()[0]
 	if typ, ok := typedInit.Body().Tag().Type(); !ok || !EqualTypes(typ, BoolT1) {
 		t.Fatalf("Init body type = %v, %v", typ, ok)

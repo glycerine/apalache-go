@@ -86,6 +86,11 @@ func TypeCheckModule(module *Module, options TypeCheckOptions) TypeCheckResult {
 			}}}
 		}
 	}
+	// Declaration nodes deliberately use ExactRef so their inferred types can
+	// be recorded. Do not also use the outermost declaration as the reference
+	// for the whole scoped program: its result is the terminal Bool expression,
+	// which would overwrite the declaration's own type in the listener.
+	expression = NewEtcApp(BlameRef{SourceID: NewUID()}, []Type{mustOperator([]Type{BoolT1}, BoolT1)}, expression)
 	listener := NewRecordingTypeCheckerListener(options.Sources)
 	checker := NewEtcTypeChecker(pool, !options.DisablePolytypes)
 	_, ok, err := checker.Compute(listener, EmptyTypeContext(), expression)

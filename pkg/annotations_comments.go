@@ -15,6 +15,16 @@ type annotationCommentState struct {
 	quoted  bool
 }
 
+// AnnotationCandidate is an annotation-shaped fragment extracted from a TLA+
+// comment together with the location of its leading '@' in the original text.
+// Offset and Position are byte-based, matching the ASCII-oriented TLA+ source
+// coordinates produced by the frontend.
+type AnnotationCandidate struct {
+	Text     string
+	Offset   int
+	Position SourcePosition
+}
+
 func (s annotationCommentState) inAnnotation() bool { return s.parens || s.colon }
 func (s annotationCommentState) excluding() bool    { return s.oneLine && s.level > 0 || s.level > 1 }
 
@@ -22,9 +32,16 @@ func (s annotationCommentState) excluding() bool    { return s.oneLine && s.leve
 // annotation candidates. It is intentionally total: malformed annotations are
 // returned as candidates for ParseAnnotation to diagnose.
 func PreprocessAnnotationComments(input string) (string, []string) {
+	clean, annotations, _ := preprocessAnnotationComments(input)
+	return clean, annotations
+}
+
+func preprocessAnnotationComments(input string) (string, []string, []int) {
 	var clean strings.Builder
 	var candidate strings.Builder
 	annotations := make([]string, 0)
+	offsets := make([]int, 0)
+	candidateStart := -1
 	last := 0
 	state := annotationCommentState{}
 	for _, match := range annotationCommentTokens.FindAllStringIndex(input, -1) {
@@ -55,6 +72,7 @@ func PreprocessAnnotationComments(input string) (string, []string) {
 				last++
 			} else if annotationParameterlessEnd(lookahead, hasLookahead) {
 				annotations = append(annotations, strings.TrimSpace(group))
+				offsets = append(offsets, start)
 			} else {
 				clean.WriteString(group)
 			}
@@ -64,6 +82,7 @@ func PreprocessAnnotationComments(input string) (string, []string) {
 		case !state.inAnnotation() && !next.inAnnotation():
 		case !state.inAnnotation() && next.inAnnotation():
 			candidate.Reset()
+			candidateStart = start
 			candidate.WriteString(strings.TrimSpace(group))
 			if hasLookahead {
 				candidate.WriteByte(lookahead)
@@ -75,7 +94,9 @@ func PreprocessAnnotationComments(input string) (string, []string) {
 		case state.inAnnotation() && !next.inAnnotation():
 			candidate.WriteString(group)
 			annotations = append(annotations, candidate.String())
+			offsets = append(offsets, candidateStart)
 			candidate.Reset()
+			candidateStart = -1
 		}
 		state = next
 	}
@@ -84,8 +105,44 @@ func PreprocessAnnotationComments(input string) (string, []string) {
 	}
 	if candidate.Len() > 0 {
 		annotations = append(annotations, candidate.String())
+		offsets = append(offsets, candidateStart)
 	}
-	return clean.String(), annotations
+	return clean.String(), annotations, offsets
+}
+
+// FindAnnotationCandidates is the position-preserving counterpart of
+// PreprocessAnnotationComments. Candidates retain their extraction order.
+func FindAnnotationCandidates(input string) []AnnotationCandidate {
+	_, texts, offsets := preprocessAnnotationComments(input)
+	result := make([]AnnotationCandidate, 0, len(texts))
+	for index, candidate := range texts {
+		if index >= len(offsets) || offsets[index] < 0 {
+			continue
+		}
+		offset := offsets[index]
+		result = append(result, AnnotationCandidate{
+			Text: candidate, Offset: offset, Position: sourcePositionAtOffset(input, offset),
+		})
+	}
+	return result
+}
+
+func sourcePositionAtOffset(input string, offset int) SourcePosition {
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > len(input) {
+		offset = len(input)
+	}
+	line, column := 1, 1
+	for index := 0; index < offset; index++ {
+		if input[index] == '\n' {
+			line, column = line+1, 1
+		} else {
+			column++
+		}
+	}
+	return SourcePosition{Line: line, Column: column}
 }
 
 func isAnnotationLeading(ch byte) bool {

@@ -60,6 +60,20 @@ func TestPreprocessAnnotationCommentsReturnsUnclosedCandidate(t *testing.T) {
 	}
 }
 
+func TestFindAnnotationCandidatesPreservesSourcePositions(t *testing.T) {
+	input := "---- MODULE A ----\nValue == \"@type\"\n  (* @typeAlias: ITEM = Int; *)\n\\* @type: ITEM;\nCONSTANT N\n"
+	candidates := FindAnnotationCandidates(input)
+	if len(candidates) != 2 {
+		t.Fatalf("FindAnnotationCandidates() = %#v", candidates)
+	}
+	if candidates[0].Text != "@typeAlias: ITEM = Int;" || candidates[0].Position != (SourcePosition{Line: 3, Column: 6}) {
+		t.Fatalf("alias candidate = %#v", candidates[0])
+	}
+	if candidates[1].Text != "@type: ITEM;" || candidates[1].Position != (SourcePosition{Line: 4, Column: 4}) {
+		t.Fatalf("type candidate = %#v", candidates[1])
+	}
+}
+
 func stringsTrimSpace(value string) string {
 	start, end := 0, len(value)
 	for start < end && (value[start] == ' ' || value[start] == '\n' || value[start] == '\t' || value[start] == '\r') {

@@ -20,11 +20,14 @@ type FrontendOptions struct {
 // Go Apalache IR used by subsequent passes. IR retains the canonical JSON form
 // for interoperability and conformance testing.
 type FrontendResult struct {
-	Module      string          `json:"module,omitempty"`
-	IR          json.RawMessage `json:"ir,omitempty"`
-	Diagnostics []Diagnostic    `json:"diagnostics"`
-	Native      *Module         `json:"-"`
-	Sources     *SourceStore    `json:"-"`
+	Module      string                 `json:"module,omitempty"`
+	IR          json.RawMessage        `json:"ir,omitempty"`
+	Diagnostics []Diagnostic           `json:"diagnostics"`
+	Native      *Module                `json:"-"`
+	Sources     *SourceStore           `json:"-"`
+	Types       map[UID]Type           `json:"-"`
+	Annotations *AnnotationStore       `json:"-"`
+	Aliases     *TypeAliasSubstitution `json:"-"`
 }
 
 // OK reports whether the frontend completed without errors.
@@ -89,6 +92,48 @@ func ParseSource(ctx context.Context, filename, source string, opts FrontendOpti
 		}
 	}
 	return result
+}
+
+// ParseAndTypeCheckSource runs the native Go type checker using @type and
+// @typeAlias comments from source. Native is the typed module on success; IR
+// remains the canonical frontend export used to construct that module.
+func ParseAndTypeCheckSource(ctx context.Context, filename, source string, frontendOptions FrontendOptions, typeOptions TypeCheckOptions) FrontendResult {
+	frontendOptions.IncludeSource = true
+	result := ParseSource(ctx, filename, source, frontendOptions)
+	if !result.OK() {
+		return result
+	}
+	annotations := ExtractTypeAnnotations(filename, source, result.Native, result.Sources)
+	result.Annotations = annotations.Annotations
+	result.Aliases = annotations.Aliases
+	result.Diagnostics = append(result.Diagnostics, annotations.Diagnostics...)
+	if !annotations.OK() {
+		return result
+	}
+	typeOptions.Annotations = annotations.Types
+	typeOptions.Aliases = annotations.Aliases
+	typeOptions.Sources = result.Sources
+	typed := TypeCheckModule(result.Native, typeOptions)
+	result.Types = typed.Types
+	result.Diagnostics = append(result.Diagnostics, typed.Diagnostics...)
+	if typed.Module != nil {
+		result.Native = typed.Module
+	}
+	return result
+}
+
+// ParseAndTypeCheckFile reads a module and runs ParseAndTypeCheckSource.
+func ParseAndTypeCheckFile(ctx context.Context, filename string, frontendOptions FrontendOptions, typeOptions TypeCheckOptions) FrontendResult {
+	if err := contextError(ctx); err != nil {
+		return canceledResult(err)
+	}
+	source, err := os.ReadFile(filename)
+	if err != nil {
+		return FrontendResult{Diagnostics: []Diagnostic{{
+			Code: "E-IO", Severity: SeverityError, Message: err.Error(), Position: Position{Filename: filename},
+		}}}
+	}
+	return ParseAndTypeCheckSource(ctx, filename, string(source), frontendOptions, typeOptions)
 }
 
 func contextError(ctx context.Context) error {
