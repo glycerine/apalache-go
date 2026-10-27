@@ -1,7 +1,9 @@
 package apalache
 
 import (
+	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -162,5 +164,51 @@ func TestVMTDeclarationsKeepEqualLiteralIndicesAcrossSorts(t *testing.T) {
 	declarations := rewriter.Declarations().UninterpretedLiterals
 	if len(declarations) != 2 || declarations["same_A"].Sort.Name != "A" || declarations["same_B"].Sort.Name != "B" {
 		t.Fatalf("cross-sort declarations = %#v", declarations)
+	}
+}
+
+func TestFormatVMTModuleKeepsGeneratedDefinitionsInDependencyOrder(t *testing.T) {
+	functionType := mustFun(IntT1, IntT1)
+	binder := NewNameExpr("x", Typed(IntT1))
+	domain := NewValueExpr(IntSet, Typed(mustSet(IntT1)))
+	body := Expr(NewValueExpr(Int64Value(0), Typed(IntT1)))
+	for range 36 {
+		function := MustOperExpr(Op("FUN_CTOR"), Typed(functionType), body, binder, domain)
+		body = MustOperExpr(Op("FUN_APP"), Typed(IntT1), function, binder)
+	}
+	outer := MustOperExpr(Op("FUN_CTOR"), Typed(functionType), body, binder, domain)
+	f := NewNameExpr("f", Typed(functionType))
+	next := MustOperExpr(Op("Apalache!:="), Typed(BoolT1),
+		MustOperExpr(Op("PRIME"), Typed(functionType), f), outer)
+	module := NewModule("DefinitionOrder", []Decl{
+		NewVarDecl("f", Typed(functionType)), vmtBoolDefinition("Next$0000", next),
+	})
+	document, err := FormatVMTModule(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := strings.Index(document, "(define-fun t_1 ")
+	if previous < 0 {
+		t.Fatalf("first generated definition is missing:\n%s", document)
+	}
+	for number := 2; number <= 37; number++ {
+		marker := fmt.Sprintf("(define-fun t_%s ", strconv.FormatInt(int64(number), 36))
+		position := strings.Index(document, marker)
+		if position <= previous {
+			t.Fatalf("definition %s is not after its dependency:\n%s", marker, document)
+		}
+		previous = position
+	}
+	context, err := cmd_context.NewStandaloneContext()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if closeErr := context.Close(); closeErr != nil {
+			t.Error(closeErr)
+		}
+	})
+	if err = smt2.ParseCommands(context, strings.NewReader(stripVMTAttributes(document)), io.Discard); err != nil {
+		t.Fatalf("g3 rejected dependency-ordered VMT: %v\n%s", err, document)
 	}
 }

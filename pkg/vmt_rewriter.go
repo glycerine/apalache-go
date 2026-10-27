@@ -102,6 +102,7 @@ func (rewriter *VMTRewriter) define(arguments []VMTBinding, body VMTTerm) (VMTTe
 	name := rewriter.names.NewName()
 	definition := VMTFunctionDefinition{Name: name, Arguments: append([]VMTBinding(nil), arguments...), Body: body}
 	rewriter.declarations.DefinedFunctions[name] = definition
+	rewriter.declarations.DefinitionOrder = append(rewriter.declarations.DefinitionOrder, name)
 	domain := make([]VMTSort, len(arguments))
 	for index, argument := range arguments {
 		domain[index] = argument.Sort

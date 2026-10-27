@@ -110,6 +110,9 @@ func TestVMTRewriterFunctionConstructionApplicationAndEquality(t *testing.T) {
 	if got, err := FormatVMTFunctionDefinition(definition); err != nil || got != "(define-fun t_1 ((x SSORT) (y Int)) SSORT x)" {
 		t.Fatalf("function definition = %q, %v", got, err)
 	}
+	if order := rewriter.Declarations().DefinitionOrder; len(order) != 1 || order[0] != "t_1" {
+		t.Fatalf("function definition order = %v", order)
+	}
 
 	f := NewNameExpr("f", Typed(functionType))
 	tuple := MustOperExpr(Op("TUPLE"), Typed(tupleType), x, y)

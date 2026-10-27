@@ -239,11 +239,22 @@ func FormatVMTModuleWithInvariants(module *Module, configuredInvariants []string
 		distinctAssertions[index] = assertion
 	}
 
-	definitionNames := make([]string, 0, len(declarations.DefinedFunctions))
-	for name := range declarations.DefinedFunctions {
-		definitionNames = append(definitionNames, name)
+	definitionNames := append([]string(nil), declarations.DefinitionOrder...)
+	if len(definitionNames) != len(declarations.DefinedFunctions) {
+		// Be robust to declarations assembled by callers rather than VMTRewriter.
+		seen := make(map[string]struct{}, len(definitionNames))
+		for _, name := range definitionNames {
+			seen[name] = struct{}{}
+		}
+		remaining := make([]string, 0)
+		for name := range declarations.DefinedFunctions {
+			if _, found := seen[name]; !found {
+				remaining = append(remaining, name)
+			}
+		}
+		sort.Strings(remaining)
+		definitionNames = append(definitionNames, remaining...)
 	}
-	sort.Strings(definitionNames)
 	functionDefinitions := make([]string, len(definitionNames))
 	for index, name := range definitionNames {
 		functionDefinitions[index], err = FormatVMTFunctionDefinition(declarations.DefinedFunctions[name])

@@ -125,6 +125,7 @@ type VMTFunctionDefinition struct {
 // the declaration state maintained by the Scala backend.
 type VMTDeclarations struct {
 	DefinedFunctions      map[string]VMTFunctionDefinition
+	DefinitionOrder       []string
 	UninterpretedSorts    map[string]VMTSort
 	UninterpretedLiterals map[string]VMTTerm
 }
@@ -143,6 +144,7 @@ func (declarations VMTDeclarations) Clone() VMTDeclarations {
 		definition.Arguments = append([]VMTBinding(nil), definition.Arguments...)
 		clone.DefinedFunctions[name] = definition
 	}
+	clone.DefinitionOrder = append([]string(nil), declarations.DefinitionOrder...)
 	for name, sort := range declarations.UninterpretedSorts {
 		clone.UninterpretedSorts[name] = sort
 	}
