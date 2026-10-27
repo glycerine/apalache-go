@@ -43,7 +43,7 @@ test-oracle: build
 	APALACHE_GO=$(abspath $(BUILD_ROOT)/apalache) GOFLAGS='-p=8' $(CPU_RUN) $(GO) test -tags=oracle -run TestScalaDifferentialSafetyManifest .
 
 test-corpus:
-	GOFLAGS='-p=8' $(CPU_RUN) $(GO) test -tags=corpus -run TestAnnotatedTopLevelScalaFixtureCorpus .
+	GOFLAGS='-p=8' $(CPU_RUN) $(GO) test -tags=corpus -run 'Test.*Corpus' .
 
 test-release:
 	GOFLAGS='-p=8' $(CPU_RUN) $(GO) test -tags=release -run TestReleaseArchiveRunsWithoutSourceOrExternalRuntime .

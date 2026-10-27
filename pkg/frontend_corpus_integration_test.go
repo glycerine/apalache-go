@@ -77,3 +77,52 @@ func TestAnnotatedTopLevelScalaFixtureCorpus(t *testing.T) {
 		}
 	}
 }
+
+func TestTopLevelScalaSyntaxCorpus(t *testing.T) {
+	expectedFailures := map[string]string{
+		"Bug3400.tla":        "undefined identifier IndInv1",
+		"FoldDefined.tla":    "expected EXCEPT component",
+		"NonFoldDefined.tla": "undefined operator +",
+		"typing1.tla":        "Cannot find source file for module Typing",
+	}
+	paths, err := filepath.Glob(filepath.Join("..", "test", "tla", "*.tla"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) < 260 {
+		t.Fatalf("syntax corpus unexpectedly shrank to %d fixtures", len(paths))
+	}
+	seenFailures := make(map[string]struct{}, len(expectedFailures))
+	for _, path := range paths {
+		path := path
+		t.Run(filepath.Base(path), func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			result := ParseFile(ctx, path, FrontendOptions{})
+			name := filepath.Base(path)
+			wantDiagnostic, shouldFail := expectedFailures[name]
+			if !shouldFail {
+				if !result.OK() {
+					t.Fatalf("unexpected diagnostics: %v", result.Diagnostics)
+				}
+				return
+			}
+			seenFailures[name] = struct{}{}
+			if result.OK() {
+				t.Fatal("negative Scala fixture unexpectedly parsed")
+			}
+			text := make([]string, len(result.Diagnostics))
+			for index, diagnostic := range result.Diagnostics {
+				text[index] = diagnostic.Error()
+			}
+			if !strings.Contains(strings.Join(text, "\n"), wantDiagnostic) {
+				t.Fatalf("diagnostics %v do not contain %q", result.Diagnostics, wantDiagnostic)
+			}
+		})
+	}
+	for name := range expectedFailures {
+		if _, seen := seenFailures[name]; !seen {
+			t.Errorf("expected negative fixture %s was not present", name)
+		}
+	}
+}
