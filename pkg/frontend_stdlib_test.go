@@ -108,6 +108,12 @@ SurjectionOK ==
 BijectionOK ==
   LET f == [x \in 1..3 |-> 2 * x]
   IN f \in Bijection(DOMAIN f, Range(f))
+InjectiveEquivOK ==
+  LET \* @type: (a -> b) => Bool;
+      IsInjectivePure(f) ==
+    \A a, b \in DOMAIN f: f[a] = f[b] => a = b
+  IN \A f \in [{0, 1} -> {0, 1}]:
+    IsInjectivePure(f) = IsInjective(f)
 ====
 `, FrontendOptions{}, TypeCheckOptions{UseRows: true})
 	if !frontend.OK() {
@@ -116,7 +122,7 @@ BijectionOK ==
 	prepared, err := PrepareSafetyTransitions(frontend.Native, SafetyPipelineOptions{
 		Specification: SpecificationConfiguration{
 			Behavior:   InitNextSpec{Init: "Init", Next: "Next"},
-			Invariants: []string{"RangeOK", "InjectiveOK", "RestrictOK", "FoldOK", "InjectionOK", "SurjectionOK", "BijectionOK"},
+			Invariants: []string{"RangeOK", "InjectiveOK", "RestrictOK", "FoldOK", "InjectionOK", "SurjectionOK", "BijectionOK", "InjectiveEquivOK"},
 		},
 		Sources: frontend.Sources,
 	})

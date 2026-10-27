@@ -46,13 +46,17 @@ func TestStratifiedPowerSetExpansionPreservesBaseGuards(t *testing.T) {
 	checkRewrittenTruth(t, rewriter, scope, result, false)
 }
 
-func TestStratifiedRejectsFunctionSetExpansion(t *testing.T) {
+func TestStratifiedFunctionSetExpansionStaysCompact(t *testing.T) {
 	functionType, _ := NewFunType(IntT1, BoolT1)
 	functionSet := MustOperExpr(Op("FUN_SET"), Typed(mustSet(functionType)),
-		MustOperExpr(Op("SET_ENUM"), Typed(mustSet(IntT1))),
-		MustOperExpr(Op("SET_ENUM"), Typed(mustSet(BoolT1))))
+		MustOperExpr(Op("SET_ENUM"), Typed(mustSet(IntT1)), NewValueExpr(Int64Value(1), Typed(IntT1))),
+		MustOperExpr(Op("SET_ENUM"), Typed(mustSet(BoolT1)), NewValueExpr(BoolValue(true), Typed(BoolT1))))
 	expression := MustOperExpr(Op("Apalache!Expand"), Typed(mustSet(functionType)), functionSet)
-	if _, _, err := NewStratifiedRewriter().Rewrite(expression, InitialRewriterScope()); err == nil {
-		t.Fatal("function-set expansion was accepted")
+	_, result, err := NewStratifiedRewriter().Rewrite(expression, InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, compact := result.Type.(FiniteFunctionSetCellType); !compact {
+		t.Fatalf("expanded function set type = %T", result.Type)
 	}
 }
