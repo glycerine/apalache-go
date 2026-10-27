@@ -64,6 +64,10 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 			return rewriter.rewriteSetConstructor(typed, scope)
 		case "SET_UNION2":
 			return rewriter.rewriteSetUnion(typed, scope)
+		case "SET_INTERSECT", "SET_MINUS":
+			return rewriter.rewriteSetBinaryFilter(typed, scope)
+		case "SET_SUBSET_EQ":
+			return rewriter.rewriteSubset(typed, scope)
 		case "SET_FILTER":
 			return rewriter.rewriteSetFilter(typed, scope)
 		case "SET_IN", "Apalache!SelectInSet":
@@ -77,6 +81,74 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 		}
 	}
 	return scope, ArenaCell{}, fmt.Errorf("no stratified rule is applicable to %T", expression)
+}
+
+func (rewriter *StratifiedRewriter) rewriteSubset(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
+	arguments := expression.Arguments()
+	if len(arguments) != 2 {
+		return scope, ArenaCell{}, fmt.Errorf("subset comparison requires two operands")
+	}
+	scope, left, err := rewriter.Rewrite(arguments[0], scope)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	scope, right, err := rewriter.Rewrite(arguments[1], scope)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	if !isFiniteSetCellType(left.Type) || !EqualCellTypes(left.Type, right.Type) {
+		return scope, ArenaCell{}, fmt.Errorf("subset comparison requires matching finite sets, found %s and %s", left.Type, right.Type)
+	}
+	condition, err := rewriter.equality.subsetCondition(scope.Arena, left, right)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	newArena, result := scope.Arena.AppendCellType(BasicCellType{Type: BoolT1})
+	scope.Arena = newArena
+	rewriter.assert(MustOperExpr(Op("EQ"), Typed(BoolT1), result.NameExpr(), condition))
+	return scope, result, nil
+}
+
+func (rewriter *StratifiedRewriter) rewriteSetBinaryFilter(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
+	arguments := expression.Arguments()
+	if len(arguments) != 2 {
+		return scope, ArenaCell{}, fmt.Errorf("set operator %s requires two operands", expression.Operator().Name())
+	}
+	scope, left, err := rewriter.Rewrite(arguments[0], scope)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	scope, right, err := rewriter.Rewrite(arguments[1], scope)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	if !isFiniteSetCellType(left.Type) || !EqualCellTypes(left.Type, right.Type) {
+		return scope, ArenaCell{}, fmt.Errorf("set operator %s requires matching finite sets, found %s and %s", expression.Operator().Name(), left.Type, right.Type)
+	}
+	candidates, err := MergeElementPointersByCell(append(scope.Arena.GetHas(left), scope.Arena.GetHas(right)...))
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	resultPointers := make([]ElementPointer, len(candidates))
+	for index, candidate := range candidates {
+		leftIn, membershipErr := rewriter.finiteMembershipCondition(scope.Arena, candidate.Element(), left)
+		if membershipErr != nil {
+			return scope, ArenaCell{}, membershipErr
+		}
+		rightIn, membershipErr := rewriter.finiteMembershipCondition(scope.Arena, candidate.Element(), right)
+		if membershipErr != nil {
+			return scope, ArenaCell{}, membershipErr
+		}
+		guard := rightIn
+		if expression.Operator().Name() == "SET_MINUS" {
+			guard = MustOperExpr(Op("NOT"), Typed(BoolT1), rightIn)
+		}
+		resultPointers[index] = SMTElementPointer{Cell: candidate.Element(), Expression: booleanAnd(leftIn, guard)}
+	}
+	newArena, result := scope.Arena.AppendCellType(left.Type)
+	scope.Arena = newArena.AppendHas(result, resultPointers...)
+	rewriter.addMembershipConstraints(scope.Arena, result)
+	return scope, result, nil
 }
 
 func (rewriter *StratifiedRewriter) rewriteApplication(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
@@ -659,24 +731,33 @@ func (rewriter *StratifiedRewriter) rewriteMembership(expression *OperExpr, scop
 	if !ok {
 		return scope, ArenaCell{}, fmt.Errorf("membership right-hand side has non-set type %s", setType.Type)
 	}
-	elementCellType, err := CellTypeFromType(tlaSetType.Element())
-	if err != nil || !isDirectSMTCellType(elementCellType) {
-		return scope, ArenaCell{}, fmt.Errorf("structural set membership is not yet implemented for %s", tlaSetType.Element())
+	if !EqualTypes(element.Type.TLAType(), tlaSetType.Element()) {
+		return scope, ArenaCell{}, fmt.Errorf("membership element has type %s, expected %s", element.Type, tlaSetType.Element())
 	}
-	pointers := scope.Arena.GetHas(setCell)
-	if len(pointers) == 0 {
+	membership, err := rewriter.finiteMembershipCondition(scope.Arena, element, setCell)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	if value, ok := membership.(*ValueExpr); ok && value.Value() == BoolValue(false) {
 		return scope, scope.Arena.FalseCell(), nil
 	}
 	newArena, result := scope.Arena.AppendCellType(BasicCellType{Type: BoolT1})
 	scope.Arena = newArena
-	disjuncts := make([]Expr, len(pointers))
-	for index, pointer := range pointers {
-		equal := MustOperExpr(Op("EQ"), Typed(BoolT1), element.NameExpr(), pointer.Element().NameExpr())
-		disjuncts[index] = MustOperExpr(Op("AND"), Typed(BoolT1), pointer.ToSMT(), equal)
-	}
-	membership := MustOperExpr(Op("OR"), Typed(BoolT1), disjuncts...)
 	rewriter.assert(MustOperExpr(Op("EQ"), Typed(BoolT1), result.NameExpr(), membership))
 	return scope, result, nil
+}
+
+func (rewriter *StratifiedRewriter) finiteMembershipCondition(arena *PureArena, element, setCell ArenaCell) (Expr, error) {
+	pointers := arena.GetHas(setCell)
+	disjuncts := make([]Expr, len(pointers))
+	for index, pointer := range pointers {
+		equal, err := rewriter.equality.Equal(arena, element, pointer.Element())
+		if err != nil {
+			return nil, fmt.Errorf("compare %s with candidate %s in %s: %w", element, pointer.Element(), setCell, err)
+		}
+		disjuncts[index] = booleanAnd(pointer.ToSMT(), equal)
+	}
+	return booleanOr(disjuncts...), nil
 }
 
 func (rewriter *StratifiedRewriter) addMembershipConstraints(arena *PureArena, setCell ArenaCell) {

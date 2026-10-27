@@ -283,6 +283,96 @@ func TestStratifiedFiniteAndNaturalMembershipThroughG3(t *testing.T) {
 	}
 }
 
+func TestStratifiedFiniteSetAlgebraThroughG3(t *testing.T) {
+	setType := mustSet(IntT1)
+	setTag := Typed(setType)
+	set := func(values ...int64) Expr {
+		elements := make([]Expr, len(values))
+		for index, value := range values {
+			elements[index] = NewValueExpr(Int64Value(value), Typed(IntT1))
+		}
+		return MustOperExpr(Op("SET_ENUM"), setTag, elements...)
+	}
+	tests := []struct {
+		name       string
+		expression Expr
+		contradict func(Expr) Expr
+	}{
+		{
+			name: "intersection",
+			expression: MustOperExpr(Op("EQ"), Typed(BoolT1),
+				MustOperExpr(Op("SET_INTERSECT"), setTag, set(1, 2), set(2, 3)), set(2)),
+			contradict: func(result Expr) Expr { return MustOperExpr(Op("NOT"), Typed(BoolT1), result) },
+		},
+		{
+			name: "difference",
+			expression: MustOperExpr(Op("EQ"), Typed(BoolT1),
+				MustOperExpr(Op("SET_MINUS"), setTag, set(1, 2), set(2, 3)), set(1)),
+			contradict: func(result Expr) Expr { return MustOperExpr(Op("NOT"), Typed(BoolT1), result) },
+		},
+		{
+			name:       "subset",
+			expression: MustOperExpr(Op("SET_SUBSET_EQ"), Typed(BoolT1), set(1), set(1, 2)),
+			contradict: func(result Expr) Expr { return MustOperExpr(Op("NOT"), Typed(BoolT1), result) },
+		},
+		{
+			name:       "not subset",
+			expression: MustOperExpr(Op("SET_SUBSET_EQ"), Typed(BoolT1), set(1, 3), set(1, 2)),
+			contradict: func(result Expr) Expr { return result },
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			rewriter := NewStratifiedRewriter()
+			scope, result, err := rewriter.Rewrite(test.expression, InitialRewriterScope())
+			if err != nil {
+				t.Fatal(err)
+			}
+			solver := newTestG3Solver(t)
+			encoder, err := EncodeRewriterScope(solver, scope, rewriter.Constraints())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := encoder.Assert(test.contradict(result.NameExpr())); err != nil {
+				t.Fatal(err)
+			}
+			if status, err := solver.Check(context.Background()); err != nil || status != SMTUnsatisfiable {
+				t.Fatalf("contradicted set algebra result = %v, %v", status, err)
+			}
+		})
+	}
+}
+
+func TestStratifiedStructuralSetMembershipThroughG3(t *testing.T) {
+	tupleType, err := NewTupleType(IntT1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tupleTag := Typed(tupleType)
+	tuple := func() Expr {
+		return MustOperExpr(Op("TUPLE"), tupleTag, NewValueExpr(Int64Value(1), Typed(IntT1)))
+	}
+	setTag := Typed(mustSet(tupleType))
+	set := MustOperExpr(Op("SET_ENUM"), setTag, tuple())
+	membership := MustOperExpr(Op("SET_IN"), Typed(BoolT1), tuple(), set)
+	rewriter := NewStratifiedRewriter()
+	scope, result, err := rewriter.Rewrite(membership, InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	solver := newTestG3Solver(t)
+	encoder, err := EncodeRewriterScope(solver, scope, rewriter.Constraints())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := encoder.Assert(MustOperExpr(Op("NOT"), Typed(BoolT1), result.NameExpr())); err != nil {
+		t.Fatal(err)
+	}
+	if status, err := solver.Check(context.Background()); err != nil || status != SMTUnsatisfiable {
+		t.Fatalf("structurally equal tuple membership negated = %v, %v", status, err)
+	}
+}
+
 func TestStratifiedFiniteSetEqualityThroughG3(t *testing.T) {
 	setType := Typed(mustSet(IntT1))
 	set := func(values ...int64) Expr {
