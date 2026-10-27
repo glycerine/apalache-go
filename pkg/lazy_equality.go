@@ -63,12 +63,17 @@ func (equality *LazyEquality) Equal(arena *PureArena, left, right ArenaCell) (Ex
 		}
 		return directEquality(left, right), nil
 	}
-	if !isFiniteSetCellType(left.Type) {
-		return nil, fmt.Errorf("structural equality is not yet implemented for %s", left.Type)
-	}
-
 	equality.computing[pair] = true
-	condition, err := equality.setEqualityCondition(arena, left, right)
+	var condition Expr
+	var err error
+	switch {
+	case isFiniteSetCellType(left.Type):
+		condition, err = equality.setEqualityCondition(arena, left, right)
+	case isTupleCellType(left.Type):
+		condition, err = equality.tupleEqualityCondition(arena, left, right)
+	default:
+		err = fmt.Errorf("structural equality is not yet implemented for %s", left.Type)
+	}
 	delete(equality.computing, pair)
 	if err != nil {
 		return nil, err
@@ -79,6 +84,32 @@ func (equality *LazyEquality) Equal(arena *PureArena, left, right ArenaCell) (Ex
 		return nil, err
 	}
 	return rawEquality, nil
+}
+
+func isTupleCellType(cellType CellType) bool {
+	basic, ok := cellType.(BasicCellType)
+	if !ok {
+		return false
+	}
+	_, ok = basic.Type.(TupleType)
+	return ok
+}
+
+func (equality *LazyEquality) tupleEqualityCondition(arena *PureArena, left, right ArenaCell) (Expr, error) {
+	leftElements := arena.GetHas(left)
+	rightElements := arena.GetHas(right)
+	if len(leftElements) != len(rightElements) {
+		return nil, fmt.Errorf("tuple cells %s and %s have different arities %d and %d", left, right, len(leftElements), len(rightElements))
+	}
+	conditions := make([]Expr, len(leftElements))
+	for index := range leftElements {
+		condition, err := equality.Equal(arena, leftElements[index].Element(), rightElements[index].Element())
+		if err != nil {
+			return nil, fmt.Errorf("compare tuple field %d of %s and %s: %w", index+1, left, right, err)
+		}
+		conditions[index] = condition
+	}
+	return booleanAnd(conditions...), nil
 }
 
 func isFiniteSetCellType(cellType CellType) bool {

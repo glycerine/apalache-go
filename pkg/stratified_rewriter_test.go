@@ -342,21 +342,101 @@ func TestStratifiedGuardedSetEqualityThroughG3(t *testing.T) {
 	}
 }
 
+func TestStratifiedTupleConstructionAndEqualityThroughG3(t *testing.T) {
+	tupleType, err := NewTupleType(IntT1, BoolT1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tag := Typed(tupleType)
+	tuple := func(integer int64, boolean bool) Expr {
+		return MustOperExpr(Op("TUPLE"), tag,
+			NewValueExpr(Int64Value(integer), Typed(IntT1)),
+			NewValueExpr(BoolValue(boolean), Typed(BoolT1)),
+		)
+	}
+	tests := []struct {
+		name       string
+		left       Expr
+		right      Expr
+		contradict func(Expr) Expr
+	}{
+		{
+			name: "equal fields", left: tuple(1, true), right: tuple(1, true),
+			contradict: func(result Expr) Expr {
+				return MustOperExpr(Op("NOT"), Typed(BoolT1), result)
+			},
+		},
+		{
+			name: "different integer field", left: tuple(1, true), right: tuple(2, true),
+			contradict: func(result Expr) Expr { return result },
+		},
+		{
+			name: "different boolean field", left: tuple(1, true), right: tuple(1, false),
+			contradict: func(result Expr) Expr { return result },
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			rewriter := NewStratifiedRewriter()
+			equal := MustOperExpr(Op("EQ"), Typed(BoolT1), test.left, test.right)
+			scope, result, err := rewriter.Rewrite(equal, InitialRewriterScope())
+			if err != nil {
+				t.Fatal(err)
+			}
+			solver := newTestG3Solver(t)
+			encoder, err := EncodeRewriterScope(solver, scope, rewriter.Constraints())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := encoder.Assert(test.contradict(result.NameExpr())); err != nil {
+				t.Fatal(err)
+			}
+			if status, err := solver.Check(context.Background()); err != nil || status != SMTUnsatisfiable {
+				t.Fatalf("contradicted tuple equality = %v, %v", status, err)
+			}
+		})
+	}
+}
+
+func TestStratifiedTupleConstructorPreservesFieldOrder(t *testing.T) {
+	tupleType, err := NewTupleType(BoolT1, IntT1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rewriter := NewStratifiedRewriter()
+	expression := MustOperExpr(Op("TUPLE"), Typed(tupleType),
+		NewValueExpr(BoolValue(true), Typed(BoolT1)),
+		NewValueExpr(Int64Value(7), Typed(IntT1)),
+	)
+	scope, tuple, err := rewriter.Rewrite(expression, InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields := scope.Arena.GetHas(tuple)
+	if len(fields) != 2 || !fields[0].Element().Equal(scope.Arena.TrueCell()) {
+		t.Fatalf("tuple fields = %#v", fields)
+	}
+	value, found := rewriter.IntegerCache().FindValue(fields[1].Element())
+	if !found || value.Int64() != 7 {
+		t.Fatalf("tuple integer field = %v, %v", value, found)
+	}
+}
+
 func TestStratifiedEqualityRejectsUnsupportedStructuralCells(t *testing.T) {
 	rewriter := NewStratifiedRewriter()
-	tupleType, err := NewTupleType(IntT1)
+	recordType, err := NewRecordType(map[string]Type{"x": IntT1})
 	if err != nil {
 		t.Fatal(err)
 	}
 	scope := InitialRewriterScope()
 	newArena, cells := scope.Arena.AppendCellTypes(
-		BasicCellType{Type: tupleType}, BasicCellType{Type: tupleType},
+		BasicCellType{Type: recordType}, BasicCellType{Type: recordType},
 	)
 	scope.Arena = newArena
 	scope.Binding = scope.Binding.With("left", cells[0]).With("right", cells[1])
 	equality := MustOperExpr(Op("EQ"), Typed(BoolT1),
-		NewNameExpr("left", Typed(tupleType)), NewNameExpr("right", Typed(tupleType)))
+		NewNameExpr("left", Typed(recordType)), NewNameExpr("right", Typed(recordType)))
 	if _, _, err := rewriter.Rewrite(equality, scope); err == nil {
-		t.Fatal("unsupported tuple equality was approximated as cell equality")
+		t.Fatal("unsupported record equality was approximated as cell equality")
 	}
 }

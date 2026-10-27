@@ -68,9 +68,45 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 			return rewriter.rewriteSetFilter(typed, scope)
 		case "SET_IN", "Apalache!SelectInSet":
 			return rewriter.rewriteMembership(typed, scope)
+		case "TUPLE":
+			return rewriter.rewriteTuple(typed, scope)
 		}
 	}
 	return scope, ArenaCell{}, fmt.Errorf("no stratified rule is applicable to %T", expression)
+}
+
+func (rewriter *StratifiedRewriter) rewriteTuple(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
+	typ, ok := expression.Tag().Type()
+	if !ok {
+		return scope, ArenaCell{}, fmt.Errorf("tuple constructor must be typed")
+	}
+	tupleType, ok := typ.(TupleType)
+	if !ok {
+		return scope, ArenaCell{}, fmt.Errorf("sequence construction through TUPLE is not yet implemented for %s", typ)
+	}
+	types := tupleType.Elements()
+	arguments := expression.Arguments()
+	if len(arguments) != len(types) {
+		return scope, ArenaCell{}, fmt.Errorf("tuple type has arity %d but constructor has %d elements", len(types), len(arguments))
+	}
+	elements := make([]ArenaCell, len(arguments))
+	for index, argument := range arguments {
+		var err error
+		scope, elements[index], err = rewriter.Rewrite(argument, scope)
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+		if !EqualTypes(elements[index].Type.TLAType(), types[index]) {
+			return scope, ArenaCell{}, fmt.Errorf("tuple element %d has type %s, expected %s", index+1, elements[index].Type, types[index])
+		}
+	}
+	newArena, tuple := scope.Arena.AppendCellType(BasicCellType{Type: tupleType})
+	pointers := make([]ElementPointer, len(elements))
+	for index, element := range elements {
+		pointers[index] = FixedElementPointer{Cell: element}
+	}
+	scope.Arena = newArena.AppendHas(tuple, pointers...)
+	return scope, tuple, nil
 }
 
 func (rewriter *StratifiedRewriter) rewriteNegation(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
