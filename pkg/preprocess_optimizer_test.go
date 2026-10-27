@@ -1,0 +1,183 @@
+package apalache
+
+import "testing"
+
+func i(value int64) Expr { return NewValueExpr(Int64Value(value), Typed(IntT1)) }
+func s(value string) Expr {
+	return NewValueExpr(StringValue(value), Typed(StrT1))
+}
+
+func optimizerForTest() *ExprOptimizer {
+	return NewExprOptimizer(NewUniqueNameGenerator(), nil)
+}
+
+func optimizeForTest(t *testing.T, expression Expr) Expr {
+	t.Helper()
+	result, err := optimizerForTest().Expression(expression)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return result
+}
+
+func TestExprOptimizerRecordAccessAndSetBasics(t *testing.T) {
+	intSet := mustSet(IntT1)
+	rangeExpr := MustOperExpr(Op("INT_RANGE"), Typed(intSet), i(1), i(3))
+	membership := MustOperExpr(Op("SET_IN"), Typed(BoolT1), NewNameExpr("x", Typed(IntT1)), rangeExpr)
+	expected := MustOperExpr(Op("AND"), Typed(BoolT1),
+		MustOperExpr(Op("LE"), Typed(BoolT1), i(1), NewNameExpr("x", Typed(IntT1))),
+		MustOperExpr(Op("LE"), Typed(BoolT1), NewNameExpr("x", Typed(IntT1)), i(3)))
+	if got := optimizeForTest(t, membership); !EqualTypedExpr(got, expected) {
+		t.Fatalf("range membership = %v", got)
+	}
+
+	filter := MustOperExpr(Op("SET_FILTER"), Typed(intSet), NewNameExpr("y", Typed(IntT1)),
+		NewNameExpr("S", Typed(intSet)), MustOperExpr(Op("GT"), Typed(BoolT1), NewNameExpr("y", Typed(IntT1)), i(2)))
+	filteredMembership := MustOperExpr(Op("SET_IN"), Typed(BoolT1), NewNameExpr("x", Typed(IntT1)), filter)
+	got := optimizeForTest(t, filteredMembership).(*OperExpr)
+	if got.Operator().Name() != "AND" || got.Arguments()[1].(*OperExpr).Arguments()[0].(*NameExpr).Name() != "x" {
+		t.Fatalf("filtered membership = %v", got)
+	}
+
+	recordType, _ := NewRecordType(map[string]Type{"a": IntT1, "b": IntT1})
+	record := MustOperExpr(Op("RECORD"), Typed(recordType), s("a"), i(1), s("b"), i(2))
+	access := MustOperExpr(Op("FUN_APP"), Typed(IntT1), record, s("b"))
+	if got := optimizeForTest(t, access); !EqualTypedExpr(got, i(2)) {
+		t.Fatalf("record access = %v", got)
+	}
+	missing := MustOperExpr(Op("FUN_APP"), Typed(IntT1), record, s("c"))
+	if _, err := optimizerForTest().Expression(missing); err == nil {
+		t.Fatal("missing record field was accepted")
+	}
+}
+
+func TestExprOptimizerRecordAndTupleMapMembership(t *testing.T) {
+	intSet, boolSet := mustSet(IntT1), mustSet(BoolT1)
+	recordType, _ := NewRecordType(map[string]Type{"a": IntT1, "b": BoolT1})
+	x, y := NewNameExpr("x", Typed(IntT1)), NewNameExpr("y", Typed(BoolT1))
+	record := MustOperExpr(Op("RECORD"), Typed(recordType), s("a"), x, s("b"), y)
+	mapped := MustOperExpr(Op("SET_MAP"), Typed(mustSet(recordType)), record, x,
+		NewNameExpr("S", Typed(intSet)), y, NewNameExpr("T", Typed(boolSet)))
+	member := NewNameExpr("r", Typed(recordType))
+	got := optimizeForTest(t, MustOperExpr(Op("SET_IN"), Typed(BoolT1), member, mapped)).(*OperExpr)
+	if got.Operator().Name() != "AND" || len(got.Arguments()) != 3 || got.Arguments()[0].(*OperExpr).Arguments()[0].(*OperExpr).Operator().Name() != "DOMAIN" {
+		t.Fatalf("record map membership = %v", got)
+	}
+
+	tupleType := mustTuple(IntT1, BoolT1)
+	tuple := MustOperExpr(Op("TUPLE"), Typed(tupleType), x, y)
+	tupleMap := MustOperExpr(Op("SET_MAP"), Typed(mustSet(tupleType)), tuple, x,
+		NewNameExpr("S", Typed(intSet)), y, NewNameExpr("T", Typed(boolSet)))
+	tupleMember := NewNameExpr("t", Typed(tupleType))
+	tupleGot := optimizeForTest(t, MustOperExpr(Op("SET_IN"), Typed(BoolT1), tupleMember, tupleMap)).(*OperExpr)
+	if tupleGot.Operator().Name() != "AND" || len(tupleGot.Arguments()) != 2 {
+		t.Fatalf("tuple map membership = %v", tupleGot)
+	}
+	firstAccess := tupleGot.Arguments()[0].(*OperExpr).Arguments()[0].(*OperExpr)
+	if !firstAccess.Tag().Equal(Typed(IntT1)) || firstAccess.Arguments()[1].(*ValueExpr).Value().(IntValue).BigInt().Int64() != 1 {
+		t.Fatalf("first tuple projection = %v", firstAccess)
+	}
+
+	reversedTuple := MustOperExpr(Op("TUPLE"), Typed(mustTuple(BoolT1, IntT1)), y, x)
+	reversedMap := MustOperExpr(Op("SET_MAP"), Typed(mustSet(mustTuple(BoolT1, IntT1))), reversedTuple, x,
+		NewNameExpr("S", Typed(intSet)), y, NewNameExpr("T", Typed(boolSet)))
+	unchanged := MustOperExpr(Op("SET_IN"), Typed(BoolT1), NewNameExpr("u", Typed(mustTuple(BoolT1, IntT1))), reversedMap)
+	if got := optimizeForTest(t, unchanged); !EqualTypedExpr(got, unchanged) {
+		t.Fatalf("general tuple map was optimized: %v", got)
+	}
+
+	generalRecord := MustOperExpr(Op("RECORD"), Typed(recordType), s("a"), i(1), s("b"), y)
+	generalMap := MustOperExpr(Op("SET_MAP"), Typed(mustSet(recordType)), generalRecord, x,
+		NewNameExpr("S", Typed(intSet)), y, NewNameExpr("T", Typed(boolSet)))
+	generalMembership := MustOperExpr(Op("SET_IN"), Typed(BoolT1), member, generalMap)
+	if got := optimizeForTest(t, generalMembership); !EqualTypedExpr(got, generalMembership) {
+		t.Fatalf("general record map was optimized: %v", got)
+	}
+}
+
+func TestExprOptimizerPowersetMembership(t *testing.T) {
+	intSet := mustSet(IntT1)
+	left, right := NewNameExpr("S", Typed(intSet)), NewNameExpr("T", Typed(intSet))
+	powerset := MustOperExpr(Op("SET_POWERSET"), Typed(mustSet(intSet)), right)
+	got := optimizeForTest(t, MustOperExpr(Op("SET_IN"), Typed(BoolT1), left, powerset)).(*OperExpr)
+	if got.Operator().Name() != "FORALL3" || got.Arguments()[0].(*NameExpr).Name() != "t_1" {
+		t.Fatalf("powerset membership = %v", got)
+	}
+
+	recordType, _ := NewRecordType(map[string]Type{"a": IntT1})
+	x := NewNameExpr("x", Typed(IntT1))
+	record := MustOperExpr(Op("RECORD"), Typed(recordType), s("a"), x)
+	recordSet := MustOperExpr(Op("SET_MAP"), Typed(mustSet(recordType)), record, x, right)
+	setOfRecords := NewNameExpr("R", Typed(mustSet(recordType)))
+	recordPowerset := MustOperExpr(Op("SET_POWERSET"), Typed(mustSet(mustSet(recordType))), recordSet)
+	rewritten := optimizeForTest(t, MustOperExpr(Op("SET_IN"), Typed(BoolT1), setOfRecords, recordPowerset)).(*OperExpr)
+	if rewritten.Operator().Name() != "FORALL3" || rewritten.Arguments()[0].(*NameExpr).Name() != "t_1" || rewritten.Arguments()[2].(*OperExpr).Operator().Name() != "AND" {
+		t.Fatalf("record powerset membership = %v", rewritten)
+	}
+}
+
+func TestExprOptimizerCardinalityRules(t *testing.T) {
+	intSet := mustSet(IntT1)
+	set := NewNameExpr("S", Typed(intSet))
+	card := func(value Expr) Expr { return MustOperExpr(Op("FiniteSets!Cardinality"), Typed(IntT1), value) }
+	empty := MustOperExpr(Op("SET_ENUM"), Typed(intSet))
+	tests := []struct {
+		input, expected Expr
+	}{
+		{MustOperExpr(Op("EQ"), Typed(BoolT1), card(set), i(0)), MustOperExpr(Op("EQ"), Typed(BoolT1), set, empty)},
+		{MustOperExpr(Op("GT"), Typed(BoolT1), card(set), i(0)), MustOperExpr(Op("NOT"), Typed(BoolT1), MustOperExpr(Op("EQ"), Typed(BoolT1), set, empty))},
+		{MustOperExpr(Op("GE"), Typed(BoolT1), card(set), i(1)), MustOperExpr(Op("NOT"), Typed(BoolT1), MustOperExpr(Op("EQ"), Typed(BoolT1), set, empty))},
+		{MustOperExpr(Op("NE"), Typed(BoolT1), card(set), i(0)), MustOperExpr(Op("NOT"), Typed(BoolT1), MustOperExpr(Op("EQ"), Typed(BoolT1), set, empty))},
+	}
+	for _, test := range tests {
+		if got := optimizeForTest(t, test.input); !EqualTypedExpr(got, test.expected) {
+			t.Errorf("cardinality rewrite = %v, want %v", got, test.expected)
+		}
+	}
+
+	rangeExpr := MustOperExpr(Op("INT_RANGE"), Typed(intSet), NewNameExpr("a", Typed(IntT1)), NewNameExpr("b", Typed(IntT1)))
+	rangeGot := optimizeForTest(t, card(rangeExpr)).(*OperExpr)
+	if rangeGot.Operator().Name() != "IF_THEN_ELSE" || rangeGot.Arguments()[1].(*OperExpr).Operator().Name() != "PLUS" {
+		t.Fatalf("range cardinality = %v", rangeGot)
+	}
+	powerGot := optimizeForTest(t, card(MustOperExpr(Op("SET_POWERSET"), Typed(mustSet(intSet)), set))).(*OperExpr)
+	if powerGot.Operator().Name() != "POW" {
+		t.Fatalf("powerset cardinality = %v", powerGot)
+	}
+
+	atLeastTwo := optimizeForTest(t, MustOperExpr(Op("GE"), Typed(BoolT1), card(set), i(2))).(*LetInExpr)
+	if len(atLeastTwo.Declarations()) != 1 || atLeastTwo.Declarations()[0].Name() != "t_3" || atLeastTwo.Body().(*OperExpr).Arguments()[0].(*NameExpr).Name() != "t_1" {
+		t.Fatalf("cardinality >= 2 = %v", atLeastTwo)
+	}
+	greaterThanOne := optimizeForTest(t, MustOperExpr(Op("GT"), Typed(BoolT1), card(set), i(1)))
+	if _, ok := greaterThanOne.(*LetInExpr); !ok {
+		t.Fatalf("cardinality > 1 = %v", greaterThanOne)
+	}
+}
+
+func TestExprOptimizerExistsOverSetComprehensions(t *testing.T) {
+	intSet, boolSet := mustSet(IntT1), mustSet(BoolT1)
+	x, y := NewNameExpr("x", Typed(IntT1)), NewNameExpr("y", Typed(IntT1))
+	set := NewNameExpr("S", Typed(intSet))
+	filter := MustOperExpr(Op("SET_FILTER"), Typed(intSet), y, set,
+		MustOperExpr(Op("GT"), Typed(BoolT1), y, i(0)))
+	predicate := MustOperExpr(Op("EQ"), Typed(BoolT1), NewNameExpr("z", Typed(IntT1)), x)
+	got := optimizeForTest(t, MustOperExpr(Op("EXISTS3"), Typed(BoolT1), x, filter, predicate)).(*OperExpr)
+	if got.Operator().Name() != "EXISTS3" || got.Arguments()[0].(*NameExpr).Name() != "y" || got.Arguments()[2].(*OperExpr).Operator().Name() != "AND" {
+		t.Fatalf("exists over filter = %v", got)
+	}
+
+	function := NewNameExpr("f", Typed(mustFun(IntT1, BoolT1)))
+	application := MustOperExpr(Op("FUN_APP"), Typed(BoolT1), function, y)
+	mapped := MustOperExpr(Op("SET_MAP"), Typed(boolSet), application, y, set)
+	boolX := NewNameExpr("bx", Typed(BoolT1))
+	mapPredicate := MustOperExpr(Op("EQ"), Typed(BoolT1), NewNameExpr("p", Typed(BoolT1)), boolX)
+	mapGot := optimizeForTest(t, MustOperExpr(Op("EXISTS3"), Typed(BoolT1), boolX, mapped, mapPredicate)).(*OperExpr)
+	if mapGot.Operator().Name() != "EXISTS3" || mapGot.Arguments()[0].(*NameExpr).Name() != "y" {
+		t.Fatalf("exists over map = %v", mapGot)
+	}
+	equality := mapGot.Arguments()[2].(*OperExpr)
+	if equality.Arguments()[1].(*OperExpr).Operator().Name() != "FUN_APP" {
+		t.Fatalf("mapped value was not substituted: %v", equality)
+	}
+}
