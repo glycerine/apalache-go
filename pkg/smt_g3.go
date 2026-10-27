@@ -366,6 +366,21 @@ func (solver *G3SolverContext) Modulo(left, right SMTTerm) (SMTTerm, error) {
 	return solver.arithmeticBinary("mod", left, right)
 }
 
+func (solver *G3SolverContext) Power(left, right SMTTerm) (SMTTerm, error) {
+	if err := solver.validateTerm(left, SMTInt); err != nil {
+		return SMTTerm{}, err
+	}
+	if err := solver.validateTerm(right, SMTInt); err != nil {
+		return SMTTerm{}, err
+	}
+	family, err := solver.manager.ArithmeticFamilyID()
+	if err != nil {
+		return SMTTerm{}, err
+	}
+	handle, err := solver.manager.MkFamilyApp(family, 18, nil, []ast.ASTHandle{left.handle, right.handle})
+	return SMTTerm{owner: solver, handle: handle, sort: SMTInt, sortID: "Int"}, err
+}
+
 func (solver *G3SolverContext) Negate(term SMTTerm) (SMTTerm, error) {
 	if err := solver.validateTerm(term, SMTInt); err != nil {
 		return SMTTerm{}, err

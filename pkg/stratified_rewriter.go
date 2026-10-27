@@ -1411,7 +1411,22 @@ func (rewriter *StratifiedRewriter) rewritePower(expression *OperExpr, scope Rew
 	}
 	exponent, constant := constantInteger(arguments[1])
 	if !constant {
-		return scope, ArenaCell{}, fmt.Errorf("integer exponentiation requires a constant exponent with g3")
+		scope, base, err := rewriter.Rewrite(arguments[0], scope)
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+		scope, symbolicExponent, err := rewriter.Rewrite(arguments[1], scope)
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+		if !EqualTypes(base.Type.TLAType(), IntT1) || !EqualTypes(symbolicExponent.Type.TLAType(), IntT1) {
+			return scope, ArenaCell{}, fmt.Errorf("integer exponentiation received operand types %s and %s", base.Type, symbolicExponent.Type)
+		}
+		newArena, result := scope.Arena.AppendCellType(BasicCellType{Type: IntT1})
+		scope.Arena = newArena
+		power := MustOperExpr(Op("POW"), Typed(IntT1), base.NameExpr(), symbolicExponent.NameExpr())
+		rewriter.assert(MustOperExpr(Op("EQ"), Typed(BoolT1), result.NameExpr(), power))
+		return scope, result, nil
 	}
 	if exponent.Sign() < 0 {
 		return scope, ArenaCell{}, fmt.Errorf("integer exponentiation requires a nonnegative exponent, found %s", exponent)

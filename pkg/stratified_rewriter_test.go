@@ -143,10 +143,36 @@ func TestStratifiedConstantExponentiationThroughG3(t *testing.T) {
 	}
 
 	rewriter := NewStratifiedRewriter()
-	if _, _, err := rewriter.Rewrite(MustOperExpr(Op("POW"), Typed(IntT1), intLiteral(2),
-		NewNameExpr("n", Typed(IntT1))), InitialRewriterScope()); err == nil {
-		t.Fatal("symbolic exponent was accepted")
+	scope, exponent, err := rewriter.Rewrite(intLiteral(3), InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
 	}
+	scope.Binding = scope.Binding.With("n", exponent)
+	scope, result, err := rewriter.Rewrite(MustOperExpr(Op("POW"), Typed(IntT1), intLiteral(3),
+		NewNameExpr("n", Typed(IntT1))), scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	solver, err := NewG3SolverContext()
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoder, err := EncodeRewriterScope(solver, scope, rewriter.Constraints())
+	if err != nil {
+		solver.Close()
+		t.Fatal(err)
+	}
+	if err = encoder.Assert(MustOperExpr(Op("NE"), Typed(BoolT1), result.NameExpr(), intLiteral(27))); err != nil {
+		solver.Close()
+		t.Fatal(err)
+	}
+	status, err := solver.Check(context.Background())
+	solver.Close()
+	if err != nil || status != SMTUnsatisfiable {
+		t.Fatalf("3 ^ symbolic 3 = 27: %v, %v", status, err)
+	}
+
+	rewriter = NewStratifiedRewriter()
 	if _, _, err := rewriter.Rewrite(MustOperExpr(Op("POW"), Typed(IntT1), intLiteral(2), intLiteral(-1)),
 		InitialRewriterScope()); err == nil {
 		t.Fatal("negative exponent was accepted")

@@ -173,6 +173,8 @@ func (encoder *G3GroundEncoder) encodeOperator(expression *OperExpr) (SMTTerm, e
 		return binary(encoder.solver.Divide)
 	case "MOD":
 		return binary(encoder.solver.Modulo)
+	case "POW":
+		return binary(encoder.solver.Power)
 	case "UNARY_MINUS":
 		if len(terms) != 1 {
 			return SMTTerm{}, fmt.Errorf("operator UNARY_MINUS requires one SMT term")
