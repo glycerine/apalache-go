@@ -220,17 +220,23 @@ func FormatVMTModuleWithInvariants(module *Module, configuredInvariants []string
 		}
 		literalsBySort[literal.Sort.Name] = append(literalsBySort[literal.Sort.Name], literal)
 	}
-	distinctAssertions := make([]string, 0)
+	distinctSorts := make([]string, 0)
 	for _, name := range sortNames {
-		literals := literalsBySort[name]
-		if len(literals) < 2 {
-			continue
+		if len(literalsBySort[name]) > 1 {
+			distinctSorts = append(distinctSorts, name)
 		}
-		assertion, formatErr := FormatVMTDistinct(literals)
+	}
+	distinctAssertions := make([]string, len(distinctSorts))
+	for index, name := range distinctSorts {
+		axiomName := ".axiom"
+		if len(distinctSorts) > 1 {
+			axiomName = fmt.Sprintf(".axiom.%d", index)
+		}
+		assertion, formatErr := FormatVMTDistinctNamed(axiomName, literalsBySort[name])
 		if formatErr != nil {
 			return "", formatErr
 		}
-		distinctAssertions = append(distinctAssertions, assertion)
+		distinctAssertions[index] = assertion
 	}
 
 	definitionNames := make([]string, 0, len(declarations.DefinedFunctions))

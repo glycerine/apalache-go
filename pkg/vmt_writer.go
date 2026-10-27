@@ -200,6 +200,13 @@ func FormatVMTLiteralDeclaration(literal VMTTerm) (string, error) {
 }
 
 func FormatVMTDistinct(literals []VMTTerm) (string, error) {
+	return FormatVMTDistinctNamed(".axiom", literals)
+}
+
+func FormatVMTDistinctNamed(name string, literals []VMTTerm) (string, error) {
+	if name == "" {
+		return "", fmt.Errorf("VMT distinct axiom requires a name")
+	}
 	terms := make([]string, len(literals))
 	for index, literal := range literals {
 		var err error
@@ -209,7 +216,7 @@ func FormatVMTDistinct(literals []VMTTerm) (string, error) {
 		}
 	}
 	sort.Strings(terms)
-	return "(define-fun .axiom () Bool (! (distinct " + strings.Join(terms, " ") + ") :axiom true))", nil
+	return "(define-fun " + name + " () Bool (! (distinct " + strings.Join(terms, " ") + ") :axiom true))", nil
 }
 
 func FormatVMTFunctionDefinition(definition VMTFunctionDefinition) (string, error) {

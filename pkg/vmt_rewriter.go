@@ -34,7 +34,10 @@ func (rewriter *VMTRewriter) rememberSort(sort VMTSort) {
 func (rewriter *VMTRewriter) rememberTerm(term VMTTerm) {
 	if term.Kind == VMTUninterpretedLiteral {
 		rewriter.rememberSort(term.Sort)
-		rewriter.declarations.UninterpretedLiterals[term.Name] = term
+		// The same source-level literal index may occur in multiple model-value
+		// sorts (for example a_OF_A and a_OF_B). Its emitted SMT symbol includes
+		// the sort, so retain both declarations under that full identity.
+		rewriter.declarations.UninterpretedLiterals[term.Name+"_"+term.Sort.Name] = term
 	} else if term.Kind == VMTVariable {
 		rewriter.rememberSort(term.Sort)
 	}

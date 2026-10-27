@@ -57,7 +57,7 @@ func TestVMTRewriterValuesAndDeclarations(t *testing.T) {
 	if _, ok := declarations.UninterpretedSorts["SSORT"]; !ok {
 		t.Fatal("model-value sort was not retained")
 	}
-	if got := declarations.UninterpretedLiterals["alice"]; got.Name != "alice" {
+	if got := declarations.UninterpretedLiterals["alice_SSORT"]; got.Name != "alice" {
 		t.Fatalf("model value declaration = %#v", got)
 	}
 }
