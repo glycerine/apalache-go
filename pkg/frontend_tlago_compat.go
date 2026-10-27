@@ -513,6 +513,70 @@ func normalizeTlagoLambdaValues(module *Module, sources *SourceStore) *Module {
 	return transformTlagoModuleExpressions(module, rewrite, sources)
 }
 
+// normalizeTlagoOperatorValues repairs a non-nullary operator passed as a
+// higher-order argument. tlago v0.1.9 wraps such a name in a zero-argument
+// OPER_APP, which is never a valid call to a non-nullary definition.
+func normalizeTlagoOperatorValues(module *Module, sources *SourceStore) *Module {
+	if module == nil {
+		return nil
+	}
+	arities := make(map[string]map[int]struct{})
+	add := func(declaration *OperDecl) {
+		byArity := arities[declaration.Name()]
+		if byArity == nil {
+			byArity = make(map[int]struct{})
+			arities[declaration.Name()] = byArity
+		}
+		byArity[len(declaration.FormalParams())] = struct{}{}
+	}
+	for _, declaration := range module.OperDeclarations() {
+		add(declaration)
+	}
+	collect := RewriteExpressions(IdleTracker{}, func(expression Expr) (Expr, bool) {
+		if let, ok := expression.(*LetInExpr); ok {
+			for _, declaration := range let.Declarations() {
+				add(declaration)
+			}
+		}
+		return nil, false
+	})
+	for _, declaration := range module.Declarations() {
+		switch typed := declaration.(type) {
+		case *OperDecl:
+			collect(typed.Body())
+		case *AssumeDecl:
+			collect(typed.Body())
+		}
+	}
+	var tracker TransformationTracker = IdleTracker{}
+	if sources != nil {
+		tracker = NewListenerTracker(sources)
+	}
+	rewrite := RewriteExpressions(tracker, func(expression Expr) (Expr, bool) {
+		operation, ok := expression.(*OperExpr)
+		if !ok || operation.Operator().Name() != "OPER_APP" {
+			return nil, false
+		}
+		arguments := operation.Arguments()
+		if len(arguments) != 1 {
+			return nil, false
+		}
+		name, named := arguments[0].(*NameExpr)
+		if !named {
+			return nil, false
+		}
+		byArity := arities[name.Name()]
+		if len(byArity) == 0 {
+			return nil, false
+		}
+		if _, nullary := byArity[0]; nullary {
+			return nil, false
+		}
+		return name, true
+	})
+	return transformTlagoModuleExpressions(module, rewrite, sources)
+}
+
 // normalizeTlagoNamedAssumptionReferences repairs named ASSUME references
 // that tlago exports as first-class (() => Bool) values. A named assumption
 // denotes its formula body, so inline a fresh copy at every reference.

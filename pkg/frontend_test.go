@@ -362,6 +362,26 @@ Next == x' = x
 	}
 }
 
+func TestParseAndTypeCheckSourcePreservesLocalOperatorValues(t *testing.T) {
+	result := ParseAndTypeCheckSource(context.Background(), "LocalOperatorValue.tla", `---- MODULE LocalOperatorValue ----
+EXTENDS Integers
+Test ==
+  LET
+    \* @type: ((Int) => Int) => Int;
+    Apply(F(_)) == F(1)
+  IN LET Increment(x) == x + 1
+  IN Apply(Increment) = 2
+====
+`, FrontendOptions{}, TypeCheckOptions{})
+	if !result.OK() {
+		t.Fatalf("ParseAndTypeCheckSource() diagnostics = %v", result.Diagnostics)
+	}
+	body, found := OperatorBody(result.Native, "Test")
+	if !found || countNamed(body, "Increment") != 1 {
+		t.Fatalf("local operator value body = %#v", body)
+	}
+}
+
 func TestParseAndTypeCheckSourceReconstructsTupleQuantifier(t *testing.T) {
 	result := ParseAndTypeCheckSource(context.Background(), "TupleBound.tla", `---- MODULE TupleBound ----
 EXTENDS Integers
