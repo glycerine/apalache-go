@@ -112,6 +112,46 @@ type VMTBinding struct {
 	Sort VMTSort
 }
 
+// VMTFunctionDefinition is an SMT-LIB define-fun introduced while lowering a
+// ReTLA function constructor or EXCEPT expression.
+type VMTFunctionDefinition struct {
+	Name      string
+	Arguments []VMTBinding
+	Body      VMTTerm
+}
+
+// VMTDeclarations contains the auxiliary declarations discovered while an
+// expression is lowered. The maps are keyed by source-level names, matching
+// the declaration state maintained by the Scala backend.
+type VMTDeclarations struct {
+	DefinedFunctions      map[string]VMTFunctionDefinition
+	UninterpretedSorts    map[string]VMTSort
+	UninterpretedLiterals map[string]VMTTerm
+}
+
+func NewVMTDeclarations() VMTDeclarations {
+	return VMTDeclarations{
+		DefinedFunctions:      make(map[string]VMTFunctionDefinition),
+		UninterpretedSorts:    make(map[string]VMTSort),
+		UninterpretedLiterals: make(map[string]VMTTerm),
+	}
+}
+
+func (declarations VMTDeclarations) Clone() VMTDeclarations {
+	clone := NewVMTDeclarations()
+	for name, definition := range declarations.DefinedFunctions {
+		definition.Arguments = append([]VMTBinding(nil), definition.Arguments...)
+		clone.DefinedFunctions[name] = definition
+	}
+	for name, sort := range declarations.UninterpretedSorts {
+		clone.UninterpretedSorts[name] = sort
+	}
+	for name, literal := range declarations.UninterpretedLiterals {
+		clone.UninterpretedLiterals[name] = literal
+	}
+	return clone
+}
+
 type VMTTerm struct {
 	Kind     VMTTermKind
 	Sort     VMTSort

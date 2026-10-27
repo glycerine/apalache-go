@@ -212,6 +212,32 @@ func FormatVMTDistinct(literals []VMTTerm) (string, error) {
 	return "(define-fun .axiom () Bool (! (distinct " + strings.Join(terms, " ") + ") :axiom true))", nil
 }
 
+func FormatVMTFunctionDefinition(definition VMTFunctionDefinition) (string, error) {
+	if definition.Name == "" {
+		return "", fmt.Errorf("VMT function definition requires a name")
+	}
+	arguments := make([]string, len(definition.Arguments))
+	for index, binding := range definition.Arguments {
+		if binding.Name == "" || binding.Sort.Kind == VMTFunctionSort {
+			return "", fmt.Errorf("invalid VMT function argument %q", binding.Name)
+		}
+		sortText, err := vmtAtomicSort(binding.Sort)
+		if err != nil {
+			return "", err
+		}
+		arguments[index] = "(" + binding.Name + " " + sortText + ")"
+	}
+	result, err := vmtAtomicSort(definition.Body.Sort)
+	if err != nil {
+		return "", err
+	}
+	body, err := FormatVMTTerm(definition.Body)
+	if err != nil {
+		return "", err
+	}
+	return "(define-fun " + definition.Name + " (" + strings.Join(arguments, " ") + ") " + result + " " + body + ")", nil
+}
+
 type VMTAnnotationKind uint8
 
 const (

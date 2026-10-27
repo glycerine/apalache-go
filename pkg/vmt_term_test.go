@@ -108,4 +108,11 @@ func TestFormatVMTDeclarations(t *testing.T) {
 	if err != nil || distinct != "(define-fun .axiom () Bool (! (distinct one_A) :axiom true))" {
 		t.Fatalf("distinct = %q, %v", distinct, err)
 	}
+	x, _ := VMTVar("x", IntVMTSort())
+	definition, err := FormatVMTFunctionDefinition(VMTFunctionDefinition{
+		Name: "f", Arguments: []VMTBinding{{Name: "x", Sort: IntVMTSort()}}, Body: x,
+	})
+	if err != nil || definition != "(define-fun f ((x Int)) Int x)" {
+		t.Fatalf("function definition = %q, %v", definition, err)
+	}
 }
