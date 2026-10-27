@@ -89,7 +89,7 @@ func TestToEtcExprUsesDeclarationAnnotations(t *testing.T) {
 }
 
 func TestToEtcExprRecordAndFunctionApplication(t *testing.T) {
-	record := tlaOper("RECORD", tlaString("answer"), tlaInt(42))
+	record := tlaOper("RECORD", tlaString("answer"), tlaInt(42), tlaString("other"), tlaString("value"))
 	access := tlaOper("FUN_APP", record, tlaString("answer"))
 	got, events, ok := inferIRExpression(t, access)
 	if !ok || !EqualTypes(got, IntT1) {

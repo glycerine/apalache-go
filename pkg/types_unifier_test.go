@@ -89,6 +89,20 @@ func TestUnifierVariablesCanonicalizeToMinimum(t *testing.T) {
 	assertUnifies(t, unifier, EmptySubstitution(), left, right, want, wantTuple)
 }
 
+func TestUnifierRecordFieldApplication(t *testing.T) {
+	unifier := NewTypeUnifier(NewTypeVarPool(100))
+	result := mustNumberedVar(t, 10)
+	field := mustNumberedVar(t, 11)
+	full, _ := NewRecordType(map[string]Type{"ack": IntT1, "rdy": IntT1, "val": mustConst(t, "DATUM")})
+	selected, _ := NewRecordType(map[string]Type{"rdy": field})
+	actual, _ := NewOperatorType([]Type{full, StrT1}, result)
+	signature, _ := NewOperatorType([]Type{selected, StrT1}, field)
+	_, unified, ok, err := unifier.Unify(EmptySubstitution(), actual, signature)
+	if err != nil || !ok {
+		t.Fatalf("Unify() = %v, %v, %v", unified, ok, err)
+	}
+}
+
 func TestUnifierVariablesAndOccursCheck(t *testing.T) {
 	unifier := NewTypeUnifier(NewTypeVarPool(100))
 	a := mustNumberedVar(t, 0)

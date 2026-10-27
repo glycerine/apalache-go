@@ -61,6 +61,28 @@ func TestConstraintSolverRejectsAmbiguousOverload(t *testing.T) {
 	}
 }
 
+func TestConstraintSolverSelectsRecordFieldApplication(t *testing.T) {
+	pool := NewTypeVarPool(100)
+	solver := NewConstraintSolver(pool, nil)
+	operator := pool.Fresh()
+	result := pool.Fresh()
+	field := pool.Fresh()
+	full, _ := NewRecordType(map[string]Type{"ack": IntT1, "rdy": IntT1, "val": mustConst(t, "DATUM")})
+	selected, _ := NewRecordType(map[string]Type{"rdy": field})
+	actual, _ := NewOperatorType([]Type{full, StrT1}, result)
+	recordSignature, _ := NewOperatorType([]Type{selected, StrT1}, field)
+	functionSignature, _ := NewOperatorType([]Type{mustFun(StrT1, field), StrT1}, field)
+	if err := solver.Add(&EqClause{Unknown: operator, Term: actual}); err != nil {
+		t.Fatal(err)
+	}
+	if err := solver.Add(&OrClause{Clauses: []*EqClause{{Unknown: operator, Term: functionSignature}, {Unknown: operator, Term: recordSignature}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := solver.Solve(); err != nil || !ok {
+		t.Fatalf("Solve() = %v, %v", ok, err)
+	}
+}
+
 func TestConstraintSolverPostponesReverseOrderedConstraints(t *testing.T) {
 	solver := NewConstraintSolver(NewTypeVarPool(100), nil)
 	a, b, c := variableType(t, "a"), variableType(t, "b"), variableType(t, "c")

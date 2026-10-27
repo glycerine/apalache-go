@@ -362,6 +362,19 @@ Outer(LessThan(_, _), seq, newElement) ==
 	}
 }
 
+func TestParseAndTypeCheckSourceAccessesAnnotatedRecordFields(t *testing.T) {
+	result := ParseAndTypeCheckSource(context.Background(), "RecordFields.tla", `---- MODULE RecordFields ----
+VARIABLE
+  \* @type: { val: DATUM, rdy: Int, ack: Int };
+  chan
+Test == chan.rdy = chan.ack
+====
+`, FrontendOptions{}, TypeCheckOptions{})
+	if !result.OK() {
+		t.Fatalf("ParseAndTypeCheckSource() diagnostics = %v", result.Diagnostics)
+	}
+}
+
 func TestParseSourceClearsImportedLocalResultTags(t *testing.T) {
 	source := `---- MODULE ImportedSequencesExt ----
 EXTENDS SequencesExt

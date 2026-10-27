@@ -718,14 +718,9 @@ func (translator *ToEtcExpr) functionLikeOptions(argument Expr) ([]functionLike,
 			if model, _, ok := ParseModelValue(text); ok {
 				return []functionLike{{mustFun(model, a), model, a}}, nil
 			}
-			var record Type
-			if translator.useRows {
-				tail := translator.pool.Fresh()
-				row, _ := NewRowType(map[string]Type{text: a}, &tail)
-				record = NewRecordRowType(row)
-			} else {
-				record, _ = NewRecordType(map[string]Type{text: a})
-			}
+			tail := translator.pool.Fresh()
+			row, _ := NewRowType(map[string]Type{text: a}, &tail)
+			record := NewRecordRowType(row)
 			return []functionLike{{mustFun(StrT1, a), StrT1, a}, {record, StrT1, a}}, nil
 		}
 	}
