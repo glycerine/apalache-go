@@ -1,6 +1,9 @@
 package apalache
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 func TestIntOracleChoicesAndCases(t *testing.T) {
 	scope, oracle, err := CreateIntOracle(InitialRewriterScope(), 3)
@@ -105,5 +108,44 @@ func TestUninterpretedConstOracleCreation(t *testing.T) {
 	missing, _ := oracle.Chosen(scope, 10)
 	if bool(missing.(*ValueExpr).Value().(BoolValue)) {
 		t.Fatal("out-of-range uninterpreted choice was true")
+	}
+}
+
+func TestOracleModelDecodingThroughG3(t *testing.T) {
+	scope, intOracle, err := CreateIntOracle(InitialRewriterScope(), 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	choice, _ := intOracle.Chosen(scope, 2)
+	solver := newTestG3Solver(t)
+	encoder, err := EncodeRewriterScope(solver, scope, []Expr{choice})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status, err := solver.Check(context.Background()); err != nil || status != SMTSatisfiable {
+		t.Fatalf("integer oracle model = %v, %v", status, err)
+	}
+	if decoded, err := intOracle.Decode(encoder); err != nil || decoded != 2 {
+		t.Fatalf("decoded integer oracle = %d, %v", decoded, err)
+	}
+
+	cache := NewUninterpretedLiteralCache()
+	scope, uninterpreted, constraints, err := CreateUninterpretedConstOracle(cache, InitialRewriterScope(), 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, _ := uninterpreted.Chosen(scope, 1)
+	constraints = append(constraints, cache.Constraints()...)
+	constraints = append(constraints, second)
+	solver = newTestG3Solver(t)
+	encoder, err = EncodeRewriterScope(solver, scope, constraints)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status, err := solver.Check(context.Background()); err != nil || status != SMTSatisfiable {
+		t.Fatalf("uninterpreted oracle model = %v, %v", status, err)
+	}
+	if decoded, err := uninterpreted.Decode(encoder); err != nil || decoded != 1 {
+		t.Fatalf("decoded uninterpreted oracle = %d, %v", decoded, err)
 	}
 }

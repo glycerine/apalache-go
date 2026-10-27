@@ -2,6 +2,7 @@ package apalache
 
 import (
 	"context"
+	"math/big"
 	"testing"
 )
 
@@ -78,5 +79,36 @@ func TestG3SolverRejectsCrossContextAndCancellation(t *testing.T) {
 	cancel()
 	if status, err := left.Check(ctx); err != context.Canceled || status != SMTUnknown {
 		t.Fatalf("canceled check = %v, %v", status, err)
+	}
+}
+
+func TestG3SolverEvaluatesBooleanAndIntegerModels(t *testing.T) {
+	solver := newTestG3Solver(t)
+	x, err := solver.Declare("model_x", SMTInt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := new(big.Int).Neg(new(big.Int).Exp(big.NewInt(2), big.NewInt(90), nil))
+	value, err := solver.BigInt(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	equal, err := solver.Equal(x, value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := solver.Assert(equal); err != nil {
+		t.Fatal(err)
+	}
+	if status, err := solver.Check(context.Background()); err != nil || status != SMTSatisfiable {
+		t.Fatalf("model check = %v, %v", status, err)
+	}
+	got, err := solver.EvaluateBigInt(x)
+	if err != nil || got.Cmp(want) != 0 {
+		t.Fatalf("integer model value = %v, %v", got, err)
+	}
+	truth, err := solver.EvaluateBool(equal)
+	if err != nil || !truth {
+		t.Fatalf("Boolean model value = %v, %v", truth, err)
 	}
 }

@@ -2,6 +2,7 @@ package apalache
 
 import (
 	"fmt"
+	"math/big"
 	"sort"
 )
 
@@ -237,6 +238,22 @@ func (encoder *G3GroundEncoder) AssertAll(expressions []Expr) error {
 		}
 	}
 	return nil
+}
+
+func (encoder *G3GroundEncoder) EvaluateBool(expression Expr) (bool, error) {
+	term, err := encoder.Encode(expression)
+	if err != nil {
+		return false, err
+	}
+	return encoder.solver.EvaluateBool(term)
+}
+
+func (encoder *G3GroundEncoder) EvaluateInt(expression Expr) (*big.Int, error) {
+	term, err := encoder.Encode(expression)
+	if err != nil {
+		return nil, err
+	}
+	return encoder.solver.EvaluateBigInt(term)
 }
 
 // EncodeRewriterScope declares a completed solver-free rewrite scope and

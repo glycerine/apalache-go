@@ -72,6 +72,21 @@ func (oracle *IntOracle) Cases(scope RewriterScope, assertions, elseAssertions [
 	return oracleCases(oracle, scope, assertions, elseAssertions)
 }
 
+func (oracle *IntOracle) Decode(encoder *G3GroundEncoder) (int, error) {
+	value, err := encoder.EvaluateInt(oracle.Cell.NameExpr())
+	if err != nil {
+		return 0, err
+	}
+	if !value.IsInt64() {
+		return 0, fmt.Errorf("integer oracle model value %s does not fit in int64", value)
+	}
+	decoded := value.Int64()
+	if int64(int(decoded)) != decoded {
+		return 0, fmt.Errorf("integer oracle model value %s does not fit in int", value)
+	}
+	return int(decoded), nil
+}
+
 type MockOracle struct{ Fixed int }
 
 func NewMockOracle(fixed int) (*MockOracle, error) {
@@ -91,6 +106,8 @@ func (oracle *MockOracle) Cases(_ RewriterScope, assertions, elseAssertions []Ex
 	}
 	return assertions[oracle.Fixed], nil
 }
+
+func (oracle *MockOracle) Decode(*G3GroundEncoder) (int, error) { return oracle.Fixed, nil }
 
 type SparseOracle struct {
 	Oracle  ChoiceOracle
@@ -141,6 +158,20 @@ func (oracle *SparseOracle) Cases(scope RewriterScope, assertions, elseAssertion
 	return oracle.Oracle.Cases(scope, assertions, elseAssertions)
 }
 
+func (oracle *SparseOracle) Decode(encoder *G3GroundEncoder) (int, error) {
+	decoder, ok := oracle.Oracle.(interface {
+		Decode(*G3GroundEncoder) (int, error)
+	})
+	if !ok {
+		return -1, fmt.Errorf("sparse oracle backend does not support model decoding")
+	}
+	index, err := decoder.Decode(encoder)
+	if err != nil || index < 0 || index >= len(oracle.Values) {
+		return -1, err
+	}
+	return oracle.Values[index], nil
+}
+
 type ZipOracle struct {
 	Oracle ChoiceOracle
 	Groups [][]int
@@ -184,6 +215,26 @@ func (oracle *ZipOracle) Cases(scope RewriterScope, assertions, elseAssertions [
 	return oracleCases(oracle, scope, assertions, elseAssertions)
 }
 
+func (oracle *ZipOracle) Decode(encoder *G3GroundEncoder) (int, error) {
+	decoder, ok := oracle.Oracle.(interface {
+		Decode(*G3GroundEncoder) (int, error)
+	})
+	if !ok {
+		return -1, fmt.Errorf("zip oracle backend does not support model decoding")
+	}
+	backendIndex, err := decoder.Decode(encoder)
+	if err != nil {
+		return -1, err
+	}
+	for index, group := range oracle.Groups {
+		position := sort.SearchInts(group, backendIndex)
+		if position < len(group) && group[position] == backendIndex {
+			return index, nil
+		}
+	}
+	return -1, nil
+}
+
 type UninterpretedConstOracle struct {
 	Values []ArenaCell
 	Cell   ArenaCell
@@ -198,6 +249,20 @@ func (oracle *UninterpretedConstOracle) Chosen(_ RewriterScope, index int) (Expr
 }
 func (oracle *UninterpretedConstOracle) Cases(scope RewriterScope, assertions, elseAssertions []Expr) (Expr, error) {
 	return oracleCases(oracle, scope, assertions, elseAssertions)
+}
+
+func (oracle *UninterpretedConstOracle) Decode(encoder *G3GroundEncoder) (int, error) {
+	for index, cell := range oracle.Values {
+		equal := MustOperExpr(Op("EQ"), Typed(BoolT1), cell.NameExpr(), oracle.Cell.NameExpr())
+		matches, err := encoder.EvaluateBool(equal)
+		if err != nil {
+			return -1, err
+		}
+		if matches {
+			return index, nil
+		}
+	}
+	return -1, nil
 }
 
 func CreateUninterpretedConstOracle(cache *UninterpretedLiteralCache, scope RewriterScope, nvalues int) (RewriterScope, *UninterpretedConstOracle, []Expr, error) {

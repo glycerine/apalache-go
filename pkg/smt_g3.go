@@ -1,11 +1,13 @@
 package apalache
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"math/big"
 	"strconv"
+	"strings"
 
 	"github.com/glycerine/g3/pkg/ast"
 	"github.com/glycerine/g3/pkg/cmd_context"
@@ -65,6 +67,64 @@ func NewG3SolverContext() (*G3SolverContext, error) {
 		return fail(err)
 	}
 	return &G3SolverContext{context: command, manager: manager}, nil
+}
+
+func parseG3ValueOutput(output string) (string, error) {
+	const prefix = "(($value "
+	text := strings.TrimSpace(output)
+	if !strings.HasPrefix(text, prefix) || !strings.HasSuffix(text, "))") {
+		return "", fmt.Errorf("unexpected g3 get-value output %q", text)
+	}
+	return strings.TrimSpace(text[len(prefix) : len(text)-2]), nil
+}
+
+// EvaluateText evaluates a term in the most recent satisfiable model and
+// returns its SMT-LIB value representation.
+func (solver *G3SolverContext) EvaluateText(term SMTTerm) (string, error) {
+	if err := solver.validateTerm(term, term.sort); err != nil {
+		return "", err
+	}
+	var output bytes.Buffer
+	if err := solver.context.WriteValuesWithText(&output, []ast.ASTHandle{term.handle}, []string{"$value"}); err != nil {
+		return "", err
+	}
+	return parseG3ValueOutput(output.String())
+}
+
+func (solver *G3SolverContext) EvaluateBool(term SMTTerm) (bool, error) {
+	if err := solver.validateTerm(term, SMTBool); err != nil {
+		return false, err
+	}
+	text, err := solver.EvaluateText(term)
+	if err != nil {
+		return false, err
+	}
+	switch text {
+	case "true":
+		return true, nil
+	case "false":
+		return false, nil
+	default:
+		return false, fmt.Errorf("expected a Boolean model value, found %q", text)
+	}
+}
+
+func (solver *G3SolverContext) EvaluateBigInt(term SMTTerm) (*big.Int, error) {
+	if err := solver.validateTerm(term, SMTInt); err != nil {
+		return nil, err
+	}
+	text, err := solver.EvaluateText(term)
+	if err != nil {
+		return nil, err
+	}
+	if strings.HasPrefix(text, "(- ") && strings.HasSuffix(text, ")") {
+		text = "-" + strings.TrimSpace(text[3:len(text)-1])
+	}
+	value, ok := new(big.Int).SetString(text, 10)
+	if !ok {
+		return nil, fmt.Errorf("expected an integer model value, found %q", text)
+	}
+	return value, nil
 }
 
 func (solver *G3SolverContext) validate() error {
