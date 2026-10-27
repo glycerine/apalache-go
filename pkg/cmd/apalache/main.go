@@ -81,15 +81,29 @@ func runTracee(ctx context.Context, args []string, stdout, stderr io.Writer) int
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
 	}
-	if flags.NArg() != 1 {
-		fmt.Fprintln(stderr, "tracee requires exactly one TLA+ source file")
+	var sourcePath string
+	switch flags.NArg() {
+	case 1:
+		sourcePath = flags.Arg(0)
+	case 3:
+		if *tracePath != "" || len(expressions) != 0 {
+			fmt.Fprintln(stderr, "tracee cannot mix positional trace arguments with -trace or -expressions")
+			return exitUsage
+		}
+		sourcePath, *tracePath = flags.Arg(0), flags.Arg(1)
+		if err := expressions.Set(flags.Arg(2)); err != nil {
+			fmt.Fprintf(stderr, "invalid trace expression list: %v\n", err)
+			return exitUsage
+		}
+	default:
+		fmt.Fprintln(stderr, "tracee requires SOURCE TRACE EXPRESSIONS, or -trace and -expressions with SOURCE")
 		return exitUsage
 	}
 	if *tracePath == "" || len(expressions) == 0 {
-		fmt.Fprintln(stderr, "tracee requires -trace and at least one -expressions operator")
+		fmt.Fprintln(stderr, "tracee requires a trace and at least one expression operator")
 		return exitUsage
 	}
-	frontend := pal.ParseAndTypeCheckFile(ctx, flags.Arg(0), pal.FrontendOptions{
+	frontend := pal.ParseAndTypeCheckFile(ctx, sourcePath, pal.FrontendOptions{
 		LibraryPaths: libraryPaths,
 	}, pal.TypeCheckOptions{UseRows: *useRows, DisablePolytypes: *disablePolytypes})
 	for _, diagnostic := range frontend.Diagnostics {
@@ -652,7 +666,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  parse FILE    parse and semantically check TLA+")
 	fmt.Fprintln(w, "  simulate FILE generate one bounded behavior")
 	fmt.Fprintln(w, "  test FILE BEFORE ACTION ASSERTION run a one-step test")
-	fmt.Fprintln(w, "  tracee FILE   evaluate operators over an ITF trace")
+	fmt.Fprintln(w, "  tracee SOURCE TRACE EXPRESSIONS evaluate operators over an ITF trace")
 	fmt.Fprintln(w, "  typecheck FILE parse and type-check annotated TLA+")
 	fmt.Fprintln(w, "  version       print build version")
 }

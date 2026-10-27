@@ -118,6 +118,40 @@ PlusN == x + N
 	}
 }
 
+func TestRunTraceeAcceptsScalaPositionalInterface(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "TraceEval.tla")
+	tracePath := filepath.Join(dir, "input.itf.json")
+	if err := os.WriteFile(sourcePath, []byte(`---- MODULE TraceEval ----
+EXTENDS Integers
+\* @type: Int;
+VARIABLE x
+Double == x + x
+====
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(tracePath, []byte(`{
+  "#meta":{"format":"ITF","varTypes":{"x":"Int"}},
+  "vars":["x"],"states":[{"x":4}]
+}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	code := run(context.Background(), []string{"tracee", sourcePath, tracePath, "Double"}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("positional tracee = %d, stderr = %q", code, &stderr)
+	}
+	states, err := pal.UnmarshalITFTrace(stdout.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := pal.FormatTLAExpression(states[0]["Double"])
+	if err != nil || value != "8" {
+		t.Fatalf("Double = %q, %v", value, err)
+	}
+}
+
 func TestRunParse(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "Tiny.tla")
