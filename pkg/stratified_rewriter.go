@@ -80,6 +80,8 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 			return rewriter.rewriteSetBinaryFilter(typed, scope)
 		case "SET_SUBSET_EQ":
 			return rewriter.rewriteSubset(typed, scope)
+		case "SET_POWERSET":
+			return rewriter.rewritePowerSet(typed, scope)
 		case "FiniteSets!Cardinality":
 			return rewriter.rewriteCardinality(typed, scope)
 		case "Sequences!Len":
@@ -1488,6 +1490,26 @@ func (rewriter *StratifiedRewriter) rewriteMembership(expression *OperExpr, scop
 		zero := NewValueExpr(Int64Value(0), Typed(IntT1))
 		comparison := MustOperExpr(Op("GE"), Typed(BoolT1), element.NameExpr(), zero)
 		rewriter.assert(MustOperExpr(Op("EQ"), Typed(BoolT1), result.NameExpr(), comparison))
+		return scope, result, nil
+	}
+	if _, powerSet := setCell.Type.(PowerSetCellType); powerSet {
+		if !isFiniteSetCellType(element.Type) {
+			return scope, ArenaCell{}, fmt.Errorf("powerset membership requires a finite set element, found %s", element.Type)
+		}
+		domain, domainErr := scope.Arena.Domain(setCell)
+		if domainErr != nil {
+			return scope, ArenaCell{}, domainErr
+		}
+		if !EqualCellTypes(element.Type, domain.Type) {
+			return scope, ArenaCell{}, fmt.Errorf("powerset membership element has type %s, expected %s", element.Type, domain.Type)
+		}
+		condition, subsetErr := rewriter.equality.subsetCondition(scope.Arena, element, domain)
+		if subsetErr != nil {
+			return scope, ArenaCell{}, subsetErr
+		}
+		newArena, result := scope.Arena.AppendCellType(BasicCellType{Type: BoolT1})
+		scope.Arena = newArena
+		rewriter.assert(MustOperExpr(Op("EQ"), Typed(BoolT1), result.NameExpr(), condition))
 		return scope, result, nil
 	}
 	setType, ok := setCell.Type.(BasicCellType)
