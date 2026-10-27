@@ -90,6 +90,8 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 			return rewriter.rewriteSequenceConcat(typed, scope)
 		case "Sequences!SubSeq":
 			return rewriter.rewriteSubSequence(typed, scope)
+		case "Apalache!Guess", "CHOOSE3":
+			return rewriter.rewriteBoundedChoice(typed, scope)
 		case "SET_FILTER":
 			return rewriter.rewriteSetFilter(typed, scope)
 		case "SET_IN", "Apalache!SelectInSet":
@@ -103,6 +105,70 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 		}
 	}
 	return scope, ArenaCell{}, fmt.Errorf("no stratified rule is applicable to %T", expression)
+}
+
+func (rewriter *StratifiedRewriter) rewriteBoundedChoice(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
+	arguments := expression.Arguments()
+	var setExpression Expr
+	switch expression.Operator().Name() {
+	case "Apalache!Guess":
+		if len(arguments) != 1 {
+			return scope, ArenaCell{}, fmt.Errorf("Guess requires one set")
+		}
+		setExpression = arguments[0]
+	case "CHOOSE3":
+		if len(arguments) != 3 {
+			return scope, ArenaCell{}, fmt.Errorf("bounded CHOOSE requires a name, set, and predicate")
+		}
+		if _, ok := arguments[0].(*NameExpr); !ok {
+			return scope, ArenaCell{}, fmt.Errorf("bounded CHOOSE binder must be a name")
+		}
+		setExpression = MustOperExpr(Op("SET_FILTER"), arguments[1].Tag(), arguments[0], arguments[1], arguments[2])
+	}
+	scope, setCell, err := rewriter.Rewrite(setExpression, scope)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	setType, ok := setCell.Type.TLAType().(SetType)
+	if !ok || !isFiniteSetCellType(setCell.Type) {
+		return scope, ArenaCell{}, fmt.Errorf("bounded choice requires a finite set, found %s", setCell.Type)
+	}
+	pointers := scope.Arena.GetHas(setCell)
+	if len(pointers) == 0 {
+		return rewriter.defaults.GetOrCreate(scope, setType.Element())
+	}
+	candidates := make([]ArenaCell, len(pointers))
+	for index, pointer := range pointers {
+		candidates[index] = pointer.Element()
+	}
+	scope, oracle, err := CreateIntOracle(scope, len(candidates)+1)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	scope, picked, err := NewCherryPicker(rewriter).Pick(scope, oracle, candidates)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	assertions := make([]Expr, oracle.Size())
+	allAbsent := make([]Expr, len(pointers))
+	for index, pointer := range pointers {
+		assertions[index] = pointer.ToSMT()
+		allAbsent[index] = MustOperExpr(Op("NOT"), Typed(BoolT1), pointer.ToSMT())
+	}
+	assertions[len(candidates)] = booleanAnd(allAbsent...)
+	membershipConstraint, err := oracle.Cases(scope, assertions, nil)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	rangeConditions := make([]Expr, oracle.Size())
+	for index := range rangeConditions {
+		rangeConditions[index], err = oracle.Chosen(scope, index)
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+	}
+	rewriter.assert(booleanAnd(booleanOr(rangeConditions...), membershipConstraint))
+	return scope, picked, nil
 }
 
 func (rewriter *StratifiedRewriter) selectSequenceElement(scope RewriterScope, elements []ElementPointer, index Expr, defaultElement ArenaCell) (RewriterScope, ArenaCell, error) {

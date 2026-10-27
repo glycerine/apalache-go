@@ -15,8 +15,8 @@ func (picker *CherryPicker) Pick(scope RewriterScope, oracle ChoiceOracle, cells
 	if picker == nil || picker.rewriter == nil || oracle == nil {
 		return scope, ArenaCell{}, fmt.Errorf("cherry picking requires a rewriter and oracle")
 	}
-	if len(cells) == 0 || oracle.Size() != len(cells) {
-		return scope, ArenaCell{}, fmt.Errorf("oracle size %d does not match %d candidate cells", oracle.Size(), len(cells))
+	if len(cells) == 0 || oracle.Size() < len(cells) {
+		return scope, ArenaCell{}, fmt.Errorf("oracle size %d is below %d candidate cells", oracle.Size(), len(cells))
 	}
 	for _, cell := range cells[1:] {
 		if !EqualCellTypes(cells[0].Type, cell.Type) {
@@ -27,7 +27,7 @@ func (picker *CherryPicker) Pick(scope RewriterScope, oracle ChoiceOracle, cells
 	for _, cell := range cells[1:] {
 		allSame = allSame && cell.Equal(cells[0])
 	}
-	if allSame {
+	if allSame && oracle.Size() == len(cells) {
 		return scope, cells[0], nil
 	}
 	typ := cells[0].Type
@@ -48,7 +48,10 @@ func (picker *CherryPicker) Pick(scope RewriterScope, oracle ChoiceOracle, cells
 func (picker *CherryPicker) pickBasic(scope RewriterScope, oracle ChoiceOracle, cells []ArenaCell) (RewriterScope, ArenaCell, error) {
 	newArena, result := scope.Arena.AppendCellType(cells[0].Type, true)
 	scope.Arena = newArena
-	assertions := make([]Expr, len(cells))
+	assertions := make([]Expr, oracle.Size())
+	for index := range assertions {
+		assertions[index] = boolExpr(true)
+	}
 	for index, cell := range cells {
 		equal, err := picker.rewriter.equality.Equal(scope.Arena, result, cell)
 		if err != nil {
@@ -112,6 +115,24 @@ func (picker *CherryPicker) pickSet(scope RewriterScope, oracle ChoiceOracle, ce
 	merged, err := MergeElementPointersByCell(pointers)
 	if err != nil {
 		return scope, ArenaCell{}, err
+	}
+	if oracle.Size() > len(cells) && len(merged) > 0 {
+		extraChoices := make([]Expr, 0, oracle.Size()-len(cells))
+		for index := len(cells); index < oracle.Size(); index++ {
+			chosen, chosenErr := oracle.Chosen(scope, index)
+			if chosenErr != nil {
+				return scope, ArenaCell{}, chosenErr
+			}
+			extraChoices = append(extraChoices, chosen)
+		}
+		extraChosen := booleanOr(extraChoices...)
+		for index, pointer := range merged {
+			newArena, arbitraryMembership := scope.Arena.AppendCellType(BasicCellType{Type: BoolT1}, true)
+			scope.Arena = newArena
+			merged[index] = SMTElementPointer{Cell: pointer.Element(), Expression: booleanOr(
+				pointer.ToSMT(), booleanAnd(extraChosen, arbitraryMembership.NameExpr()),
+			)}
+		}
 	}
 	newArena, result := scope.Arena.AppendCellType(cells[0].Type)
 	scope.Arena = newArena.AppendHas(result, merged...)

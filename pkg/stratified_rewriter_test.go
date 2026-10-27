@@ -2,6 +2,7 @@ package apalache
 
 import (
 	"context"
+	"fmt"
 	"testing"
 )
 
@@ -659,6 +660,68 @@ func TestStratifiedSequenceAppendAndTailThroughG3(t *testing.T) {
 				t.Fatalf("sequence operation differs from expected = %v, %v", status, err)
 			}
 		})
+	}
+}
+
+func TestStratifiedBoundedChoiceThroughG3(t *testing.T) {
+	setTag := Typed(mustSet(IntT1))
+	set := func(values ...int64) Expr {
+		elements := make([]Expr, len(values))
+		for index, value := range values {
+			elements[index] = NewValueExpr(Int64Value(value), Typed(IntT1))
+		}
+		return MustOperExpr(Op("SET_ENUM"), setTag, elements...)
+	}
+	binder := NewNameExpr("x", Typed(IntT1))
+	choose := MustOperExpr(Op("CHOOSE3"), Typed(IntT1), binder, set(1, 2, 3),
+		MustOperExpr(Op("GT"), Typed(BoolT1), binder, NewValueExpr(Int64Value(1), Typed(IntT1))))
+	guess := MustOperExpr(Op("Apalache!Guess"), Typed(IntT1), set(2, 3))
+	for _, operation := range []struct {
+		name       string
+		expression Expr
+		allowed    []int64
+		forbidden  int64
+	}{
+		{name: "choose", expression: choose, allowed: []int64{2, 3}, forbidden: 1},
+		{name: "guess", expression: guess, allowed: []int64{2, 3}, forbidden: 1},
+	} {
+		for _, value := range append(append([]int64(nil), operation.allowed...), operation.forbidden) {
+			t.Run(fmt.Sprintf("%s_%d", operation.name, value), func(t *testing.T) {
+				rewriter := NewStratifiedRewriter()
+				scope, picked, err := rewriter.Rewrite(operation.expression, InitialRewriterScope())
+				if err != nil {
+					t.Fatal(err)
+				}
+				solver := newTestG3Solver(t)
+				encoder, err := EncodeRewriterScope(solver, scope, rewriter.Constraints())
+				if err != nil {
+					t.Fatal(err)
+				}
+				equal := MustOperExpr(Op("EQ"), Typed(BoolT1), picked.NameExpr(), NewValueExpr(Int64Value(value), Typed(IntT1)))
+				if err := encoder.Assert(equal); err != nil {
+					t.Fatal(err)
+				}
+				status, err := solver.Check(context.Background())
+				want := SMTSatisfiable
+				if value == operation.forbidden {
+					want = SMTUnsatisfiable
+				}
+				if err != nil || status != want {
+					t.Fatalf("choice %d = %v, want %v, %v", value, status, want, err)
+				}
+			})
+		}
+	}
+
+	emptyGuess := MustOperExpr(Op("Apalache!Guess"), Typed(IntT1), set())
+	rewriter := NewStratifiedRewriter()
+	_, picked, err := rewriter.Rewrite(emptyGuess, InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, found := rewriter.IntegerCache().FindValue(picked)
+	if !found || value.Sign() != 0 {
+		t.Fatalf("empty Guess default = %v, %v", value, found)
 	}
 }
 
