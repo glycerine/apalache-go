@@ -43,6 +43,42 @@
       "go_args": ["check", "--length=3", "--no-deadlock", "--inv=BuggyTraceInv", "test/tla/Invariants.tla"]
     },
     {
+      "name": "nested-temporal-safe",
+      "dir": "..",
+      "scala_args": ["check", "--length=4", "--no-deadlock", "--temporal=Liveness", "test/tla/NestedTemporalInBool.tla"],
+      "go_args": ["check", "--length=4", "--no-deadlock", "--temporal=Liveness", "test/tla/NestedTemporalInBool.tla"]
+    },
+    {
+      "name": "nested-temporal-violation",
+      "dir": "..",
+      "scala_args": ["check", "--length=4", "--no-deadlock", "--temporal=FalseLiveness", "test/tla/NestedTemporalInBool.tla"],
+      "go_args": ["check", "--length=4", "--no-deadlock", "--temporal=FalseLiveness", "test/tla/NestedTemporalInBool.tla"]
+    },
+    {
+      "name": "action-temporal-safe",
+      "dir": "..",
+      "scala_args": ["check", "--length=5", "--no-deadlock", "--temporal=Liveness", "test/tla/TemporalPropsOverActions.tla"],
+      "go_args": ["check", "--length=5", "--no-deadlock", "--temporal=Liveness", "test/tla/TemporalPropsOverActions.tla"]
+    },
+    {
+      "name": "action-temporal-violation",
+      "dir": "..",
+      "scala_args": ["check", "--length=5", "--no-deadlock", "--temporal=FalseLiveness", "test/tla/TemporalPropsOverActions.tla"],
+      "go_args": ["check", "--length=5", "--no-deadlock", "--temporal=FalseLiveness", "test/tla/TemporalPropsOverActions.tla"]
+    },
+    {
+      "name": "initial-state-as-temporal-property",
+      "dir": "..",
+      "scala_args": ["check", "--length=2", "--no-deadlock", "--temporal=Property", "test/tla/NoTemporalOperatorsInTemporalProp.tla"],
+      "go_args": ["check", "--length=2", "--no-deadlock", "--temporal=Property", "test/tla/NoTemporalOperatorsInTemporalProp.tla"]
+    },
+    {
+      "name": "global-state-temporal-violation",
+      "dir": "..",
+      "scala_args": ["check", "--length=2", "--no-deadlock", "--temporal=ExplicitInvariant", "test/tla/NoTemporalOperatorsInTemporalProp.tla"],
+      "go_args": ["check", "--length=2", "--no-deadlock", "--temporal=ExplicitInvariant", "test/tla/NoTemporalOperatorsInTemporalProp.tla"]
+    },
+    {
       "name": "finite-sets",
       "dir": "..",
       "scala_args": ["check", "--length=0", "--no-deadlock", "--inv=AllTests", "test/tla/TestSets.tla"],
