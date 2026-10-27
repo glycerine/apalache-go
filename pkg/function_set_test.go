@@ -192,3 +192,47 @@ func TestStratifiedGuessFromFunctionSetWithPowerSetCodomain(t *testing.T) {
 	}
 	checkRewrittenTruth(t, rewriter, scope, result, true)
 }
+
+func TestStratifiedGuessFromPowerSetAndBuiltins(t *testing.T) {
+	intValue := func(value int64) Expr { return NewValueExpr(Int64Value(value), Typed(IntT1)) }
+	intSetType := mustSet(IntT1)
+	base := MustOperExpr(Op("SET_ENUM"), Typed(intSetType), intValue(4), intValue(5))
+	powerSet := MustOperExpr(Op("SET_POWERSET"), Typed(mustSet(intSetType)), base)
+	powerGuess := MustOperExpr(Op("Apalache!Guess"), Typed(intSetType), powerSet)
+	target := MustOperExpr(Op("SET_ENUM"), Typed(intSetType), intValue(4))
+	rewriter := NewStratifiedRewriter()
+	scope, result, err := rewriter.Rewrite(
+		MustOperExpr(Op("EQ"), Typed(BoolT1), powerGuess, target), InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	solver := newTestG3Solver(t)
+	encoder, err := EncodeRewriterScope(solver, scope, rewriter.Constraints())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := encoder.Assert(result.NameExpr()); err != nil {
+		t.Fatal(err)
+	}
+	if status, err := solver.Check(context.Background()); err != nil || status != SMTSatisfiable {
+		t.Fatalf("powerset Guess target subset = %v, %v", status, err)
+	}
+
+	natRewriter := NewStratifiedRewriter()
+	natGuess := MustOperExpr(Op("Apalache!Guess"), Typed(IntT1), NewValueExpr(NatSet, Typed(intSetType)))
+	natScope, nat, err := natRewriter.Rewrite(natGuess, InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	natSolver := newTestG3Solver(t)
+	natEncoder, err := EncodeRewriterScope(natSolver, natScope, natRewriter.Constraints())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := natEncoder.Assert(MustOperExpr(Op("LT"), Typed(BoolT1), nat.NameExpr(), intValue(0))); err != nil {
+		t.Fatal(err)
+	}
+	if status, err := natSolver.Check(context.Background()); err != nil || status != SMTUnsatisfiable {
+		t.Fatalf("negative natural Guess = %v, %v", status, err)
+	}
+}
