@@ -857,6 +857,70 @@ func TestStratifiedFiniteFunctionsThroughG3(t *testing.T) {
 	}
 }
 
+func TestStratifiedStructuralDomainsThroughG3(t *testing.T) {
+	tupleType, _ := NewTupleType(IntT1, BoolT1)
+	tuple := MustOperExpr(Op("TUPLE"), Typed(tupleType),
+		NewValueExpr(Int64Value(7), Typed(IntT1)), NewValueExpr(BoolValue(true), Typed(BoolT1)))
+	intSetTag := Typed(mustSet(IntT1))
+	tupleDomain := MustOperExpr(Op("DOMAIN"), intSetTag, tuple)
+	wantTupleDomain := MustOperExpr(Op("SET_ENUM"), intSetTag,
+		NewValueExpr(Int64Value(1), Typed(IntT1)), NewValueExpr(Int64Value(2), Typed(IntT1)))
+
+	recordType, _ := NewRecordType(map[string]Type{"a": IntT1, "b": BoolT1})
+	record := MustOperExpr(Op("RECORD"), Typed(recordType),
+		NewValueExpr(StringValue("b"), Typed(StrT1)), NewValueExpr(BoolValue(true), Typed(BoolT1)),
+		NewValueExpr(StringValue("a"), Typed(StrT1)), NewValueExpr(Int64Value(1), Typed(IntT1)))
+	stringSetTag := Typed(mustSet(StrT1))
+	recordDomain := MustOperExpr(Op("DOMAIN"), stringSetTag, record)
+	wantRecordDomain := MustOperExpr(Op("SET_ENUM"), stringSetTag,
+		NewValueExpr(StringValue("a"), Typed(StrT1)), NewValueExpr(StringValue("b"), Typed(StrT1)))
+
+	sequenceType, _ := NewSeqType(IntT1)
+	sequenceTag := Typed(sequenceType)
+	sequence := func(values ...int64) Expr {
+		elements := make([]Expr, len(values))
+		for index, value := range values {
+			elements[index] = NewValueExpr(Int64Value(value), Typed(IntT1))
+		}
+		return MustOperExpr(Op("TUPLE"), sequenceTag, elements...)
+	}
+	falsePredicate := MustOperExpr(Op("GT"), Typed(BoolT1),
+		NewValueExpr(Int64Value(1), Typed(IntT1)), NewValueExpr(Int64Value(2), Typed(IntT1)))
+	symbolicSequence := MustOperExpr(Op("IF_THEN_ELSE"), sequenceTag, falsePredicate, sequence(1, 2), sequence(3))
+	sequenceDomain := MustOperExpr(Op("DOMAIN"), intSetTag, symbolicSequence)
+	wantSequenceDomain := MustOperExpr(Op("SET_ENUM"), intSetTag, NewValueExpr(Int64Value(1), Typed(IntT1)))
+
+	for _, test := range []struct {
+		name  string
+		left  Expr
+		right Expr
+	}{
+		{name: "tuple", left: tupleDomain, right: wantTupleDomain},
+		{name: "record", left: recordDomain, right: wantRecordDomain},
+		{name: "symbolic sequence", left: sequenceDomain, right: wantSequenceDomain},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			equal := MustOperExpr(Op("EQ"), Typed(BoolT1), test.left, test.right)
+			rewriter := NewStratifiedRewriter()
+			scope, result, err := rewriter.Rewrite(equal, InitialRewriterScope())
+			if err != nil {
+				t.Fatal(err)
+			}
+			solver := newTestG3Solver(t)
+			encoder, err := EncodeRewriterScope(solver, scope, rewriter.Constraints())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := encoder.Assert(MustOperExpr(Op("NOT"), Typed(BoolT1), result.NameExpr())); err != nil {
+				t.Fatal(err)
+			}
+			if status, err := solver.Check(context.Background()); err != nil || status != SMTUnsatisfiable {
+				t.Fatalf("structural domain equality negated = %v, %v", status, err)
+			}
+		})
+	}
+}
+
 func TestStratifiedFiniteSetEqualityThroughG3(t *testing.T) {
 	setType := Typed(mustSet(IntT1))
 	set := func(values ...int64) Expr {

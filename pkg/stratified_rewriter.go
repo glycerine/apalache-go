@@ -179,6 +179,46 @@ func (rewriter *StratifiedRewriter) rewriteDomain(expression *OperExpr, scope Re
 		domain, domainErr := scope.Arena.Domain(value)
 		return scope, domain, domainErr
 	}
+	if isTupleCellType(value.Type) {
+		tupleType := value.Type.TLAType().(TupleType)
+		elements := make([]Expr, len(tupleType.Elements()))
+		for index := range elements {
+			elements[index] = NewValueExpr(Int64Value(int64(index+1)), Typed(IntT1))
+		}
+		return rewriter.Rewrite(MustOperExpr(Op("SET_ENUM"), Typed(mustSet(IntT1)), elements...), scope)
+	}
+	if isRecordCellType(value.Type) {
+		fields, ok := recordTypeFields(value.Type)
+		if !ok {
+			return scope, ArenaCell{}, fmt.Errorf("DOMAIN requires a closed record type")
+		}
+		keys := sortedStringKeys(fields)
+		elements := make([]Expr, len(keys))
+		for index, key := range keys {
+			elements[index] = NewValueExpr(StringValue(key), Typed(StrT1))
+		}
+		return rewriter.Rewrite(MustOperExpr(Op("SET_ENUM"), Typed(mustSet(StrT1)), elements...), scope)
+	}
+	if isSequenceCellType(value.Type) {
+		length, _, sequenceElements, unpackErr := unpackSequence(scope.Arena, value)
+		if unpackErr != nil {
+			return scope, ArenaCell{}, unpackErr
+		}
+		pointers := make([]ElementPointer, len(sequenceElements))
+		for index := range sequenceElements {
+			var integer ArenaCell
+			scope, integer, err = rewriter.Rewrite(NewValueExpr(Int64Value(int64(index+1)), Typed(IntT1)), scope)
+			if err != nil {
+				return scope, ArenaCell{}, err
+			}
+			pointers[index] = SMTElementPointer{Cell: integer, Expression: MustOperExpr(Op("LE"), Typed(BoolT1),
+				integer.NameExpr(), length.NameExpr())}
+		}
+		newArena, domain := scope.Arena.AppendCellType(BasicCellType{Type: mustSet(IntT1)})
+		scope.Arena = newArena.AppendHas(domain, pointers...)
+		rewriter.addMembershipConstraints(scope.Arena, domain)
+		return scope, domain, nil
+	}
 	return scope, ArenaCell{}, fmt.Errorf("DOMAIN is not yet implemented for %s", value.Type)
 }
 
