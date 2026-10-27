@@ -109,6 +109,8 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 			return rewriter.rewriteMakeSequence(typed, scope)
 		case "Apalache!ApaFoldSeqLeft":
 			return rewriter.rewriteFoldSequence(typed, scope)
+		case "Apalache!ApaFoldSet":
+			return rewriter.rewriteFoldSet(typed, scope)
 		case "Apalache!Guess", "CHOOSE3":
 			return rewriter.rewriteBoundedChoice(typed, scope)
 		case "EXISTS3", "FORALL3":
