@@ -94,3 +94,41 @@ FoldOK ==
 		t.Fatalf("Functions result = %#v", result)
 	}
 }
+
+func TestBundledFiniteSetsExtChecksFiniteOperators(t *testing.T) {
+	frontend := ParseAndTypeCheckSource(context.Background(), "BundledFiniteSetsExt.tla", `---- MODULE BundledFiniteSetsExt ----
+EXTENDS FiniteSetsExt
+Init == TRUE
+Next == TRUE
+Inv ==
+  /\ Quantify({"a", "b", "c"}, LAMBDA x: x = "b") = 1
+  /\ kSubset(2, {1, 2, 3}) = {{1, 2}, {1, 3}, {2, 3}}
+  /\ FoldSet(LAMBDA x, acc: x + acc, 0, {1, 2, 3}) = 6
+  /\ ChooseUnique({2, 3, 4, 5}, LAMBDA x: x % 3 = 1) = 4
+  /\ SymDiff({1, 2}, {2, 3}) = {1, 3}
+  /\ SumSet({1, 2, 3}) = 6
+  /\ ProductSet({1, 2, 3, 4}) = 24
+====
+`, FrontendOptions{}, TypeCheckOptions{UseRows: true})
+	if !frontend.OK() {
+		t.Fatalf("bundled FiniteSetsExt diagnostics = %v", frontend.Diagnostics)
+	}
+	prepared, err := PrepareSafetyTransitions(frontend.Native, SafetyPipelineOptions{
+		Specification: SpecificationConfiguration{
+			Behavior:   InitNextSpec{Init: "Init", Next: "Next"},
+			Invariants: []string{"Inv"},
+		},
+		Sources: frontend.Sources,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := CheckBoundedSafetyWithOptions(context.Background(), prepared.Module, prepared.Predicates,
+		BoundedSafetyOptions{MaxSteps: 0, CheckDeadlocks: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Outcome != SafetyNoCounterexample || result.ExploredExecutions != 1 {
+		t.Fatalf("FiniteSetsExt result = %#v", result)
+	}
+}
