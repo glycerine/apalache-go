@@ -477,21 +477,160 @@ func TestStratifiedTupleConstructorPreservesFieldOrder(t *testing.T) {
 	}
 }
 
+func TestStratifiedRecordConstructionAndEqualityThroughG3(t *testing.T) {
+	setType := mustSet(IntT1)
+	recordType, err := NewRecordType(map[string]Type{"a": IntT1, "b": setType})
+	if err != nil {
+		t.Fatal(err)
+	}
+	recordTag := Typed(recordType)
+	setTag := Typed(setType)
+	key := func(name string) Expr { return NewValueExpr(StringValue(name), Typed(StrT1)) }
+	record := func(integer, setValue int64, reverse bool) Expr {
+		set := MustOperExpr(Op("SET_ENUM"), setTag, NewValueExpr(Int64Value(setValue), Typed(IntT1)))
+		integerExpr := NewValueExpr(Int64Value(integer), Typed(IntT1))
+		if reverse {
+			return MustOperExpr(Op("RECORD"), recordTag, key("b"), set, key("a"), integerExpr)
+		}
+		return MustOperExpr(Op("RECORD"), recordTag, key("a"), integerExpr, key("b"), set)
+	}
+	tests := []struct {
+		name       string
+		left       Expr
+		right      Expr
+		contradict func(Expr) Expr
+	}{
+		{
+			name: "source field order is irrelevant", left: record(1, 2, false), right: record(1, 2, true),
+			contradict: func(result Expr) Expr {
+				return MustOperExpr(Op("NOT"), Typed(BoolT1), result)
+			},
+		},
+		{
+			name: "nested set field differs", left: record(1, 2, false), right: record(1, 3, false),
+			contradict: func(result Expr) Expr { return result },
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			rewriter := NewStratifiedRewriter()
+			equal := MustOperExpr(Op("EQ"), Typed(BoolT1), test.left, test.right)
+			scope, result, err := rewriter.Rewrite(equal, InitialRewriterScope())
+			if err != nil {
+				t.Fatal(err)
+			}
+			solver := newTestG3Solver(t)
+			encoder, err := EncodeRewriterScope(solver, scope, rewriter.Constraints())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := encoder.Assert(test.contradict(result.NameExpr())); err != nil {
+				t.Fatal(err)
+			}
+			if status, err := solver.Check(context.Background()); err != nil || status != SMTUnsatisfiable {
+				t.Fatalf("contradicted record equality = %v, %v", status, err)
+			}
+		})
+	}
+
+	t.Run("conditional record chooses else branch", func(t *testing.T) {
+		predicate := MustOperExpr(Op("GT"), Typed(BoolT1),
+			NewValueExpr(Int64Value(1), Typed(IntT1)), NewValueExpr(Int64Value(2), Typed(IntT1)))
+		conditional := MustOperExpr(Op("IF_THEN_ELSE"), recordTag,
+			predicate, record(1, 2, false), record(3, 4, true))
+		equal := MustOperExpr(Op("EQ"), Typed(BoolT1), conditional, record(3, 4, false))
+		rewriter := NewStratifiedRewriter()
+		scope, result, err := rewriter.Rewrite(equal, InitialRewriterScope())
+		if err != nil {
+			t.Fatal(err)
+		}
+		solver := newTestG3Solver(t)
+		encoder, err := EncodeRewriterScope(solver, scope, rewriter.Constraints())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := encoder.Assert(MustOperExpr(Op("NOT"), Typed(BoolT1), result.NameExpr())); err != nil {
+			t.Fatal(err)
+		}
+		if status, err := solver.Check(context.Background()); err != nil || status != SMTUnsatisfiable {
+			t.Fatalf("conditional record differs from else branch = %v, %v", status, err)
+		}
+	})
+
+	rewriter := NewStratifiedRewriter()
+	scope, recordCell, err := rewriter.Rewrite(record(7, 8, true), InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields := scope.Arena.GetHas(recordCell)
+	if len(fields) != 2 {
+		t.Fatalf("sorted record fields = %#v", fields)
+	}
+	integer, found := rewriter.IntegerCache().FindValue(fields[0].Element())
+	if !found || integer.Int64() != 7 {
+		t.Fatalf("sorted record fields = %#v, integer %v, found %v", fields, integer, found)
+	}
+	missing := MustOperExpr(Op("RECORD"), recordTag, key("a"), NewValueExpr(Int64Value(1), Typed(IntT1)))
+	if _, _, err := NewStratifiedRewriter().Rewrite(missing, InitialRewriterScope()); err == nil {
+		t.Fatal("record constructor accepted a missing typed field")
+	}
+	duplicate := MustOperExpr(Op("RECORD"), recordTag,
+		key("a"), NewValueExpr(Int64Value(1), Typed(IntT1)),
+		key("a"), NewValueExpr(Int64Value(2), Typed(IntT1)),
+		key("b"), MustOperExpr(Op("SET_ENUM"), setTag),
+	)
+	if _, _, err := NewStratifiedRewriter().Rewrite(duplicate, InitialRewriterScope()); err == nil {
+		t.Fatal("record constructor accepted a duplicate field")
+	}
+}
+
+func TestStratifiedClosedRowRecordEqualityThroughG3(t *testing.T) {
+	row, err := NewRowType(map[string]Type{"x": BoolT1}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recordType := NewRecordRowType(row)
+	tag := Typed(recordType)
+	record := func(value bool) Expr {
+		return MustOperExpr(Op("RECORD"), tag,
+			NewValueExpr(StringValue("x"), Typed(StrT1)),
+			NewValueExpr(BoolValue(value), Typed(BoolT1)),
+		)
+	}
+	equal := MustOperExpr(Op("EQ"), Typed(BoolT1), record(true), record(true))
+	rewriter := NewStratifiedRewriter()
+	scope, result, err := rewriter.Rewrite(equal, InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	solver := newTestG3Solver(t)
+	encoder, err := EncodeRewriterScope(solver, scope, rewriter.Constraints())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := encoder.Assert(MustOperExpr(Op("NOT"), Typed(BoolT1), result.NameExpr())); err != nil {
+		t.Fatal(err)
+	}
+	if status, err := solver.Check(context.Background()); err != nil || status != SMTUnsatisfiable {
+		t.Fatalf("closed row-record equality negated = %v, %v", status, err)
+	}
+}
+
 func TestStratifiedEqualityRejectsUnsupportedStructuralCells(t *testing.T) {
 	rewriter := NewStratifiedRewriter()
-	recordType, err := NewRecordType(map[string]Type{"x": IntT1})
+	sequenceType, err := NewSeqType(IntT1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	scope := InitialRewriterScope()
 	newArena, cells := scope.Arena.AppendCellTypes(
-		BasicCellType{Type: recordType}, BasicCellType{Type: recordType},
+		BasicCellType{Type: sequenceType}, BasicCellType{Type: sequenceType},
 	)
 	scope.Arena = newArena
 	scope.Binding = scope.Binding.With("left", cells[0]).With("right", cells[1])
 	equality := MustOperExpr(Op("EQ"), Typed(BoolT1),
-		NewNameExpr("left", Typed(recordType)), NewNameExpr("right", Typed(recordType)))
+		NewNameExpr("left", Typed(sequenceType)), NewNameExpr("right", Typed(sequenceType)))
 	if _, _, err := rewriter.Rewrite(equality, scope); err == nil {
-		t.Fatal("unsupported record equality was approximated as cell equality")
+		t.Fatal("unsupported sequence equality was approximated as cell equality")
 	}
 }

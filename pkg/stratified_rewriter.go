@@ -70,9 +70,65 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 			return rewriter.rewriteMembership(typed, scope)
 		case "TUPLE":
 			return rewriter.rewriteTuple(typed, scope)
+		case "RECORD":
+			return rewriter.rewriteRecord(typed, scope)
 		}
 	}
 	return scope, ArenaCell{}, fmt.Errorf("no stratified rule is applicable to %T", expression)
+}
+
+func (rewriter *StratifiedRewriter) rewriteRecord(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
+	cellType, err := CellTypeFromTag(expression.Tag())
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	fieldTypes, ok := recordTypeFields(cellType)
+	if !ok {
+		return scope, ArenaCell{}, fmt.Errorf("record constructor requires a closed record type, found %s", cellType)
+	}
+	arguments := expression.Arguments()
+	if len(arguments)%2 != 0 {
+		return scope, ArenaCell{}, fmt.Errorf("record constructor requires key/value pairs")
+	}
+	values := make(map[string]ArenaCell, len(arguments)/2)
+	for index := 0; index < len(arguments); index += 2 {
+		keyExpression, ok := arguments[index].(*ValueExpr)
+		if !ok {
+			return scope, ArenaCell{}, fmt.Errorf("record key %d is not a string literal", index/2+1)
+		}
+		keyValue, ok := keyExpression.Value().(StringValue)
+		if !ok {
+			return scope, ArenaCell{}, fmt.Errorf("record key %d is not a string literal", index/2+1)
+		}
+		key := string(keyValue)
+		expectedType, found := fieldTypes[key]
+		if !found {
+			return scope, ArenaCell{}, fmt.Errorf("record key %q is absent from type %s", key, cellType)
+		}
+		if _, duplicate := values[key]; duplicate {
+			return scope, ArenaCell{}, fmt.Errorf("duplicate record key %q", key)
+		}
+		var value ArenaCell
+		scope, value, err = rewriter.Rewrite(arguments[index+1], scope)
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+		if !EqualTypes(value.Type.TLAType(), expectedType) {
+			return scope, ArenaCell{}, fmt.Errorf("record field %q has type %s, expected %s", key, value.Type, expectedType)
+		}
+		values[key] = value
+	}
+	if len(values) != len(fieldTypes) {
+		return scope, ArenaCell{}, fmt.Errorf("record constructor provides %d of %d fields", len(values), len(fieldTypes))
+	}
+	keys := sortedStringKeys(fieldTypes)
+	pointers := make([]ElementPointer, len(keys))
+	for index, key := range keys {
+		pointers[index] = FixedElementPointer{Cell: values[key]}
+	}
+	newArena, record := scope.Arena.AppendCellType(cellType)
+	scope.Arena = newArena.AppendHas(record, pointers...)
+	return scope, record, nil
 }
 
 func (rewriter *StratifiedRewriter) rewriteTuple(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
@@ -290,18 +346,18 @@ func (rewriter *StratifiedRewriter) chooseConditional(scope RewriterScope, predi
 		rewriter.addMembershipConstraints(scope.Arena, result)
 		return scope, result, nil
 	}
-	if isTupleCellType(thenCell.Type) {
+	if isTupleCellType(thenCell.Type) || isRecordCellType(thenCell.Type) {
 		thenFields := scope.Arena.GetHas(thenCell)
 		elseFields := scope.Arena.GetHas(elseCell)
 		if len(thenFields) != len(elseFields) {
-			return scope, ArenaCell{}, fmt.Errorf("conditional tuple branches have different arities %d and %d", len(thenFields), len(elseFields))
+			return scope, ArenaCell{}, fmt.Errorf("conditional structural branches have different arities %d and %d", len(thenFields), len(elseFields))
 		}
 		fields := make([]ArenaCell, len(thenFields))
 		for index := range thenFields {
 			var err error
 			scope, fields[index], err = rewriter.chooseConditional(scope, predicate, thenFields[index].Element(), elseFields[index].Element())
 			if err != nil {
-				return scope, ArenaCell{}, fmt.Errorf("choose conditional tuple field %d: %w", index+1, err)
+				return scope, ArenaCell{}, fmt.Errorf("choose conditional structural field %d: %w", index+1, err)
 			}
 		}
 		newArena, result := scope.Arena.AppendCellType(thenCell.Type)

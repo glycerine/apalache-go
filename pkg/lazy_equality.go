@@ -71,6 +71,8 @@ func (equality *LazyEquality) Equal(arena *PureArena, left, right ArenaCell) (Ex
 		condition, err = equality.setEqualityCondition(arena, left, right)
 	case isTupleCellType(left.Type):
 		condition, err = equality.tupleEqualityCondition(arena, left, right)
+	case isRecordCellType(left.Type):
+		condition, err = equality.recordEqualityCondition(arena, left, right)
 	default:
 		err = fmt.Errorf("structural equality is not yet implemented for %s", left.Type)
 	}
@@ -84,6 +86,58 @@ func (equality *LazyEquality) Equal(arena *PureArena, left, right ArenaCell) (Ex
 		return nil, err
 	}
 	return rawEquality, nil
+}
+
+func isRecordCellType(cellType CellType) bool {
+	basic, ok := cellType.(BasicCellType)
+	if !ok {
+		return false
+	}
+	switch basic.Type.(type) {
+	case RecordType, RecordRowType:
+		return true
+	default:
+		return false
+	}
+}
+
+func recordTypeFields(cellType CellType) (map[string]Type, bool) {
+	basic, ok := cellType.(BasicCellType)
+	if !ok {
+		return nil, false
+	}
+	switch typed := basic.Type.(type) {
+	case RecordType:
+		return typed.Fields(), true
+	case RecordRowType:
+		if _, open := typed.Row().Other(); open {
+			return nil, false
+		}
+		return typed.Row().Fields(), true
+	default:
+		return nil, false
+	}
+}
+
+func (equality *LazyEquality) recordEqualityCondition(arena *PureArena, left, right ArenaCell) (Expr, error) {
+	fields, ok := recordTypeFields(left.Type)
+	if !ok {
+		return nil, fmt.Errorf("record equality requires a closed record type, found %s", left.Type)
+	}
+	leftValues := arena.GetHas(left)
+	rightValues := arena.GetHas(right)
+	if len(leftValues) != len(fields) || len(rightValues) != len(fields) {
+		return nil, fmt.Errorf("record cells %s and %s do not contain all %d fields", left, right, len(fields))
+	}
+	conditions := make([]Expr, len(leftValues))
+	for index := range leftValues {
+		condition, err := equality.Equal(arena, leftValues[index].Element(), rightValues[index].Element())
+		if err != nil {
+			return nil, fmt.Errorf("compare record field %d of %s and %s: %w", index+1, left, right, err)
+		}
+		conditions[index] = condition
+	}
+	return booleanAnd(conditions...), nil
 }
 
 func isTupleCellType(cellType CellType) bool {
