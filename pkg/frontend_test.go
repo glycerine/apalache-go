@@ -375,6 +375,27 @@ Test == chan.rdy = chan.ack
 	}
 }
 
+func TestParseAndTypeCheckSourceRetainsInstantiatedLocalAnnotations(t *testing.T) {
+	result := ParseAndTypeCheckSource(context.Background(), "NestedLocalType.tla", `---- MODULE NestedLocalType ----
+---- MODULE Utils ----
+VARIABLE myArr
+Foo(f) ==
+  LET \* @type: (Int -> Int) => Int;
+      X(g) == g[1]
+  IN X(f)
+====
+VARIABLE
+  \* @type: Int -> Int;
+  arr
+U == INSTANCE Utils WITH myArr <- arr
+Test == U!Foo(arr) = arr[1]
+====
+`, FrontendOptions{}, TypeCheckOptions{})
+	if !result.OK() {
+		t.Fatalf("ParseAndTypeCheckSource() diagnostics = %v", result.Diagnostics)
+	}
+}
+
 func TestParseSourceClearsImportedLocalResultTags(t *testing.T) {
 	source := `---- MODULE ImportedSequencesExt ----
 EXTENDS SequencesExt

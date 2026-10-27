@@ -3,6 +3,7 @@ package apalache
 import (
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -39,7 +40,7 @@ func ExtractTypeAnnotations(filename, source string, module *Module, sources *So
 		return result
 	}
 
-	declarations := locatedDeclarations(filename, module, sources)
+	declarations := locatedDeclarations(sourceModuleNames(filename, source), module, sources)
 	aliases := make(map[string]Type)
 	for _, candidate := range FindAnnotationCandidates(source) {
 		position := Position{Filename: filename, Line: candidate.Position.Line, Column: candidate.Position.Column}
@@ -85,9 +86,13 @@ func ExtractTypeAnnotations(filename, source string, module *Module, sources *So
 			})
 			continue
 		}
-		attached := result.Annotations.Get(declaration.ID())
+		if crossesModuleBoundary(source, candidate.Position.Line, declaration.location.Region.Start.Line) {
+			continue
+		}
+		target := declaration.declaration
+		attached := result.Annotations.Get(target.ID())
 		attached = append(attached, annotation)
-		result.Annotations.Set(declaration.ID(), attached)
+		result.Annotations.Set(target.ID(), attached)
 		if annotation.Name != "type" {
 			continue
 		}
@@ -99,10 +104,10 @@ func ExtractTypeAnnotations(filename, source string, module *Module, sources *So
 			})
 			continue
 		}
-		if _, duplicate := result.Types[declaration.ID()]; duplicate {
+		if _, duplicate := result.Types[target.ID()]; duplicate {
 			result.Diagnostics = append(result.Diagnostics, Diagnostic{
 				Code: "E-TYPE-ANNOTATION", Severity: SeverityError,
-				Message: fmt.Sprintf("duplicate @type annotation for declaration %s", declaration.Name()), Position: position,
+				Message: fmt.Sprintf("duplicate @type annotation for declaration %s", target.Name()), Position: position,
 			})
 			continue
 		}
@@ -113,7 +118,7 @@ func ExtractTypeAnnotations(filename, source string, module *Module, sources *So
 			})
 			continue
 		}
-		result.Types[declaration.ID()] = typ
+		result.Types[target.ID()] = typ
 	}
 
 	closed, err := NewTypeAliasSubstitution(aliases).Closure()
@@ -135,16 +140,34 @@ func singleAnnotationString(annotation Annotation) (string, bool) {
 	return value.Text, ok
 }
 
-func nextDeclaration(position SourcePosition, declarations []locatedDeclaration) Decl {
-	for _, item := range declarations {
+func nextDeclaration(position SourcePosition, declarations []locatedDeclaration) *locatedDeclaration {
+	for index := range declarations {
+		item := &declarations[index]
 		if item.location.Region.Start.Compare(position) >= 0 {
-			return item.declaration
+			return item
 		}
 	}
 	return nil
 }
 
-func locatedDeclarations(filename string, module *Module, sources *SourceStore) []locatedDeclaration {
+func crossesModuleBoundary(source string, fromLine, toLine int) bool {
+	lines := strings.Split(source, "\n")
+	if fromLine < 0 {
+		fromLine = 0
+	}
+	if toLine > len(lines) {
+		toLine = len(lines)
+	}
+	for index := fromLine; index < toLine; index++ {
+		trimmed := strings.TrimSpace(lines[index])
+		if len(trimmed) >= 4 && strings.Trim(trimmed, "=") == "" {
+			return true
+		}
+	}
+	return false
+}
+
+func locatedDeclarations(filenames map[string]struct{}, module *Module, sources *SourceStore) []locatedDeclaration {
 	seen := make(map[UID]struct{})
 	result := make([]locatedDeclaration, 0)
 	var visitExpression func(Expr)
@@ -166,7 +189,7 @@ func locatedDeclarations(filename string, module *Module, sources *SourceStore) 
 		if declaration == nil {
 			return
 		}
-		if location, ok := sources.Find(declaration.ID()); ok && sameSourceFilename(location.Filename, filename) {
+		if location, ok := sources.Find(declaration.ID()); ok && matchesSourceFilename(location.Filename, filenames) {
 			if _, found := seen[declaration.ID()]; !found {
 				seen[declaration.ID()] = struct{}{}
 				result = append(result, locatedDeclaration{declaration: declaration, location: location})
@@ -194,13 +217,22 @@ func locatedDeclarations(filename string, module *Module, sources *SourceStore) 
 	return result
 }
 
-func sameSourceFilename(left, right string) bool {
-	if left == right {
-		return true
+var moduleHeaderPattern = regexp.MustCompile(`(?m)-+\s*MODULE\s+([A-Za-z_][A-Za-z0-9_]*)\s*-+`)
+
+func sourceModuleNames(filename, source string) map[string]struct{} {
+	result := map[string]struct{}{sourceFilenameStem(filename): {}}
+	for _, match := range moduleHeaderPattern.FindAllStringSubmatch(source, -1) {
+		result[match[1]] = struct{}{}
 	}
-	stem := func(name string) string {
-		base := filepath.Base(name)
-		return strings.TrimSuffix(base, filepath.Ext(base))
-	}
-	return stem(left) == stem(right)
+	return result
+}
+
+func matchesSourceFilename(filename string, allowed map[string]struct{}) bool {
+	_, found := allowed[sourceFilenameStem(filename)]
+	return found
+}
+
+func sourceFilenameStem(name string) string {
+	base := filepath.Base(name)
+	return strings.TrimSuffix(base, filepath.Ext(base))
 }

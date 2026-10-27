@@ -88,6 +88,39 @@ Root == 1
 	}
 }
 
+func TestExtractTypeAnnotationsIncludesNestedModulesInSource(t *testing.T) {
+	source := `---- MODULE Root ----
+---- MODULE Nested ----
+\* @type: Int;
+NestedValue == 1
+====
+\* @type: Bool;
+RootValue == TRUE
+====
+`
+	nested := NewOperDecl("NestedValue", nil, NewValueExpr(Int64Value(1), Untyped()), Untyped())
+	root := NewOperDecl("RootValue", nil, NewValueExpr(BoolValue(true), Untyped()), Untyped())
+	module := NewModule("Root", []Decl{nested, root})
+	store := NewSourceStore()
+	if err := store.Add(nested.ID(), SourceLocation{Filename: "Nested", Region: NewSourceRegion(4, 1, 4, 16)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Add(root.ID(), SourceLocation{Filename: "Root", Region: NewSourceRegion(7, 1, 7, 17)}); err != nil {
+		t.Fatal(err)
+	}
+
+	extracted := ExtractTypeAnnotations("Root.tla", source, module, store)
+	if !extracted.OK() {
+		t.Fatalf("ExtractTypeAnnotations() diagnostics = %v", extracted.Diagnostics)
+	}
+	if typ := extracted.Types[nested.ID()]; !EqualTypes(typ, IntT1) {
+		t.Fatalf("nested annotation = %v", typ)
+	}
+	if typ := extracted.Types[root.ID()]; !EqualTypes(typ, BoolT1) {
+		t.Fatalf("root annotation = %v", typ)
+	}
+}
+
 func TestParseAndTypeCheckSourceUsesCommentAnnotations(t *testing.T) {
 	result := ParseAndTypeCheckSource(context.Background(), "Annotated.tla", annotatedModule, FrontendOptions{}, TypeCheckOptions{})
 	if !result.OK() {

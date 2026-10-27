@@ -3,6 +3,7 @@ package apalache
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/glycerine/tlago"
 )
@@ -127,6 +128,7 @@ func parseTlagoModuleAnnotations(module *tlago.Module) tlagoImportedAnnotations 
 		targets = append(targets, tlagoAnnotationTarget{
 			name: definition.Name, position: definition.DeclarationPosition(), definition: true,
 		})
+		collectTlagoLocalAnnotationTargets(definition.Expr, &targets)
 	}
 	for _, declaration := range module.Declarations {
 		for _, name := range declaration.Names {
@@ -188,6 +190,95 @@ func parseTlagoModuleAnnotations(module *tlago.Module) tlagoImportedAnnotations 
 	return result
 }
 
+func collectTlagoLocalAnnotationTargets(expression tlago.Expr, targets *[]tlagoAnnotationTarget) {
+	if expression == nil {
+		return
+	}
+	visit := func(expressions ...tlago.Expr) {
+		for _, child := range expressions {
+			collectTlagoLocalAnnotationTargets(child, targets)
+		}
+	}
+	switch typed := expression.(type) {
+	case *tlago.IdentExpr, *tlago.LiteralExpr:
+	case *tlago.UnaryExpr:
+		visit(typed.Expr)
+	case *tlago.BinaryExpr:
+		visit(typed.Left, typed.Right)
+	case *tlago.CallExpr:
+		visit(typed.Callee)
+		visit(typed.Args...)
+	case *tlago.IfExpr:
+		visit(typed.Cond, typed.Then, typed.Else)
+	case *tlago.LetExpr:
+		for _, definition := range typed.Definitions {
+			*targets = append(*targets, tlagoAnnotationTarget{
+				name: definition.Name, position: definition.DeclarationPosition(), definition: true,
+			})
+			visit(definition.Expr)
+		}
+		for _, instance := range typed.Instances {
+			for _, substitution := range instance.SubstitutionList {
+				visit(substitution.Expr)
+			}
+		}
+		visit(typed.Body)
+	case *tlago.QuantifierExpr:
+		visit(typed.Set, typed.Body)
+	case *tlago.CaseExpr:
+		for _, arm := range typed.Arms {
+			visit(arm.Test, arm.Value)
+		}
+		visit(typed.Other)
+	case *tlago.ChooseExpr:
+		visit(typed.Set, typed.Body)
+	case *tlago.TupleExpr:
+		visit(typed.Elems...)
+	case *tlago.SetExpr:
+		visit(typed.Elems...)
+	case *tlago.RecordExpr:
+		for _, field := range typed.Fields {
+			visit(field.Value)
+		}
+	case *tlago.RecordComponentExpr:
+		visit(typed.Record)
+	case *tlago.RecordSetExpr:
+		for _, field := range typed.Fields {
+			visit(field.Set)
+		}
+	case *tlago.FunctionExpr:
+		for _, bound := range typed.Bounds {
+			visit(bound.Set)
+		}
+		visit(typed.Body)
+	case *tlago.FunctionAppExpr:
+		visit(typed.Function)
+		visit(typed.Args...)
+	case *tlago.ExceptExpr:
+		visit(typed.Base)
+		for _, spec := range typed.Specs {
+			for _, component := range spec.Components {
+				visit(component.Indices...)
+			}
+			visit(spec.Value)
+		}
+	case *tlago.LabelExpr:
+		visit(typed.Body)
+	case *tlago.ActionExpr:
+		visit(typed.Action, typed.Subscript)
+	case *tlago.FairnessExpr:
+		visit(typed.Subscript, typed.Action)
+	case *tlago.FunctionSetExpr:
+		visit(typed.Domain, typed.Range)
+	case *tlago.SetComprehensionExpr:
+		visit(typed.Element)
+		for _, bound := range typed.Bounds {
+			visit(bound.Set)
+		}
+		visit(typed.Predicate)
+	}
+}
+
 func nextTlagoAnnotationTarget(position SourcePosition, targets []tlagoAnnotationTarget) *tlagoAnnotationTarget {
 	for index := range targets {
 		target := &targets[index]
@@ -233,11 +324,32 @@ func mergeTlagoImportedAnnotations(result *TypeAnnotationResult, module *Module,
 	}
 	for _, declaration := range module.Declarations() {
 		typ, found := imported.types[declaration.Name()]
-		if !found {
-			continue
-		}
-		if _, explicitlyAnnotated := result.Types[declaration.ID()]; !explicitlyAnnotated {
+		if _, explicitlyAnnotated := result.Types[declaration.ID()]; found && !explicitlyAnnotated {
 			result.Types[declaration.ID()] = typ
 		}
+		operator, ok := declaration.(*OperDecl)
+		if !ok {
+			continue
+		}
+		prefix := ""
+		if separator := strings.LastIndex(operator.Name(), "!"); separator >= 0 {
+			prefix = operator.Name()[:separator+1]
+		}
+		RewriteExpressions(nil, func(expression Expr) (Expr, bool) {
+			let, ok := expression.(*LetInExpr)
+			if !ok {
+				return nil, false
+			}
+			for _, local := range let.Declarations() {
+				localType, annotated := imported.types[prefix+local.Name()]
+				if !annotated {
+					continue
+				}
+				if _, explicitlyAnnotated := result.Types[local.ID()]; !explicitlyAnnotated {
+					result.Types[local.ID()] = localType
+				}
+			}
+			return nil, false
+		})(operator.Body())
 	}
 }
