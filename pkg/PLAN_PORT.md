@@ -127,11 +127,12 @@ Rules:
   imports a command package.
 - `internal/oraclectl` is an obvious test/tool leaf and must never be imported
   by production core code.
-- `g3` remains its own external package. During local development, use a
-  `replace github.com/glycerine/g3/pkg => /mnt/oldrog/home/jaten/g3/pkg`
-  directive. It is a pure-Go port, so there are no native solver assets to
-  extract. Before reproducible release builds, pin a reviewed commit/version
-  and remove the machine-specific replace directive.
+- `g3` remains its own external package and is pinned to the stable
+  `github.com/glycerine/g3/pkg v0.0.5` release. Use a temporary
+  `replace github.com/glycerine/g3/pkg => /mnt/oldrog/home/jaten/g3/pkg` only
+  when explicitly testing unreleased local `g3` changes; never commit that
+  replacement. It is a pure-Go port, so there are no native solver assets to
+  extract.
 - Solver abstractions and Apalache SMT terms remain in the core package to
   avoid cycles with arena and rewriting code. The production backend adapts
   directly to `g3`'s AST/solver APIs; SMT-LIB recording is a diagnostic/test
@@ -429,8 +430,8 @@ preserving the CPU/parallelism cap.
 - `~/g3` is presently a symlink to
   `/mnt/oldrog/home/jaten/go/src/github.com/glycerine/g3`, with its Go module at
   `pkg/` (`github.com/glycerine/g3/pkg`). It is the required production Z3
-  implementation. Pinning/version strategy and the exact stable adapter API
-  must be settled before reproducible release builds; solver semantic coverage
+  implementation, pinned at `v0.0.5`; the exact stable adapter API must be
+  validated before symbolic rewriting depends on it. Solver semantic coverage
   remains an early technical risk even though native packaging is eliminated.
 - Scala mutation/implicit type tags do not map safely to casual Go pointers.
   Constructors must enforce invariants and mutation must be localized to the
