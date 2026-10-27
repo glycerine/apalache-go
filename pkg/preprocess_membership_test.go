@@ -88,3 +88,28 @@ func TestSimplifySetMembershipFunctionRangeAndEarlyMode(t *testing.T) {
 		t.Fatalf("early nested function was not simplified: %v", early)
 	}
 }
+
+func TestSimplifySetMembershipPowerSetOfSequences(t *testing.T) {
+	intSet := NewNameExpr("Values", Typed(mustSet(IntT1)))
+	sequenceType := mustSeq(IntT1)
+	sequenceSet := MustOperExpr(Op("Sequences!Seq"), Typed(mustSet(sequenceType)), intSet)
+	powerSet := MustOperExpr(Op("SET_POWERSET"), Typed(mustSet(mustSet(sequenceType))), sequenceSet)
+	sequences := NewNameExpr("Sequences", Typed(mustSet(sequenceType)))
+	got, err := SimplifySetMembership(
+		MustOperExpr(Op("SET_IN"), Typed(BoolT1), sequences, powerSet), NewUniqueNameGenerator(), nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outer, ok := got.(*OperExpr)
+	if !ok || outer.Operator().Name() != "FORALL3" || outer.Arguments()[1] != sequences {
+		t.Fatalf("powerset membership = %v", got)
+	}
+	inner, ok := outer.Arguments()[2].(*OperExpr)
+	if !ok || inner.Operator().Name() != "FORALL3" {
+		t.Fatalf("sequence membership = %v", outer.Arguments()[2])
+	}
+	predicate, ok := inner.Arguments()[2].(*OperExpr)
+	if !ok || predicate.Operator().Name() != "SET_IN" || predicate.Arguments()[1] != intSet {
+		t.Fatalf("element membership = %v", inner.Arguments()[2])
+	}
+}

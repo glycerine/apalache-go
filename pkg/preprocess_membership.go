@@ -139,8 +139,43 @@ func simplifyMembership(element, set Expr, generator *UniqueNameGenerator) (Expr
 			return MustOperExpr(Op("GE"), Typed(BoolT1), element, NewValueExpr(Int64Value(0), Typed(IntT1))), true, nil
 		}
 	}
-	functionSet, ok := set.(*OperExpr)
-	if !ok || functionSet.Operator().Name() != "FUN_SET" {
+	structuredSet, ok := set.(*OperExpr)
+	if !ok {
+		return nil, false, nil
+	}
+	structuredArguments := structuredSet.Arguments()
+	switch structuredSet.Operator().Name() {
+	case "SET_POWERSET":
+		elementType, err := setElementType(structuredArguments[0])
+		if err != nil {
+			return nil, false, err
+		}
+		bound := NewNameExpr(generator.NewName(), Typed(elementType))
+		var predicate Expr = MustOperExpr(Op("SET_IN"), Typed(BoolT1), bound, structuredArguments[0])
+		if simplified, found, simplifyErr := simplifyMembership(bound, structuredArguments[0], generator); simplifyErr != nil {
+			return nil, false, simplifyErr
+		} else if found {
+			predicate = simplified
+		}
+		return MustOperExpr(Op("FORALL3"), Typed(BoolT1), bound, element, predicate), true, nil
+	case "Sequences!Seq":
+		sequenceType, ok := mustTagType(element.Tag()).(SeqType)
+		if !ok {
+			return nil, false, fmt.Errorf("expected a sequence in Seq membership")
+		}
+		bound := NewNameExpr(generator.NewName(), Typed(IntT1))
+		domain := MustOperExpr(Op("DOMAIN"), Typed(mustSet(IntT1)), element)
+		application := MustOperExpr(Op("FUN_APP"), Typed(sequenceType.Element()), element, bound)
+		var predicate Expr = MustOperExpr(Op("SET_IN"), Typed(BoolT1), application, structuredArguments[0])
+		if simplified, found, simplifyErr := simplifyMembership(application, structuredArguments[0], generator); simplifyErr != nil {
+			return nil, false, simplifyErr
+		} else if found {
+			predicate = simplified
+		}
+		return MustOperExpr(Op("FORALL3"), Typed(BoolT1), bound, domain, predicate), true, nil
+	}
+	functionSet := structuredSet
+	if functionSet.Operator().Name() != "FUN_SET" {
 		return nil, false, nil
 	}
 	arguments := functionSet.Arguments()

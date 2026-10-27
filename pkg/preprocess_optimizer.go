@@ -76,6 +76,13 @@ func (optimizer *ExprOptimizer) oneLevel(expression Expr) (Expr, error) {
 	}
 	args := op.Arguments()
 	name := op.Operator().Name()
+	if name == "INT_RANGE" {
+		lower, constant := constantInteger(args[0])
+		length, isLength := operNamed(args[1], "Sequences!Len")
+		if constant && lower.Cmp(big.NewInt(1)) == 0 && isLength {
+			return MustOperExpr(Op("DOMAIN"), op.Tag(), length.Arguments()[0]), nil
+		}
+	}
 
 	// A field access into a record literal can be selected statically.
 	if name == "FUN_APP" {

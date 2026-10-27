@@ -67,6 +67,10 @@ func (rewriter *StratifiedRewriter) rewriteIntegerRange(expression *OperExpr, sc
 		scope.Arena = newArena.SetDomain(result, lower).SetCodomain(result, upper)
 		return scope, result, nil
 	}
+	return rewriter.materializeIntegerRange(scope, left, right)
+}
+
+func (rewriter *StratifiedRewriter) materializeIntegerRange(scope RewriterScope, left, right *big.Int) (RewriterScope, ArenaCell, error) {
 	if !left.IsInt64() || !right.IsInt64() || int64(int(left.Int64())) != left.Int64() || int64(int(right.Int64())) != right.Int64() {
 		return scope, ArenaCell{}, fmt.Errorf("integer range bounds must fit in an int")
 	}
@@ -86,4 +90,21 @@ func (rewriter *StratifiedRewriter) rewriteIntegerRange(expression *OperExpr, sc
 	}
 	rewriter.addMembershipConstraints(scope.Arena, value.Set)
 	return scope, value.Set, nil
+}
+
+func (rewriter *StratifiedRewriter) materializeArenaIntegerRange(scope RewriterScope, integerRange ArenaCell) (RewriterScope, ArenaCell, error) {
+	lower, err := scope.Arena.Domain(integerRange)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	upper, err := scope.Arena.Codomain(integerRange)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	left, leftOK := rewriter.integers.FindValue(lower)
+	right, rightOK := rewriter.integers.FindValue(upper)
+	if !leftOK || !rightOK {
+		return scope, ArenaCell{}, fmt.Errorf("integer range quantifier requires concretely known bounds")
+	}
+	return rewriter.materializeIntegerRange(scope, left, right)
 }

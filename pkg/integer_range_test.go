@@ -80,6 +80,46 @@ func TestStratifiedSymbolicIntegerRangeMembershipThroughG3(t *testing.T) {
 	checkRewrittenTruth(t, rewriter, scope, result, true)
 }
 
+func TestStratifiedSymbolicIntegerRangeQuantifiersThroughG3(t *testing.T) {
+	tests := []struct {
+		name       string
+		quantifier string
+		predicate  func(Expr) Expr
+		want       bool
+	}{
+		{"exists", "EXISTS3", func(x Expr) Expr {
+			return MustOperExpr(Op("EQ"), Typed(BoolT1), x, NewValueExpr(Int64Value(2), Typed(IntT1)))
+		}, true},
+		{"forall", "FORALL3", func(x Expr) Expr {
+			return MustOperExpr(Op("GE"), Typed(BoolT1), x, NewValueExpr(Int64Value(1), Typed(IntT1)))
+		}, true},
+		{"false forall", "FORALL3", func(x Expr) Expr {
+			return MustOperExpr(Op("LT"), Typed(BoolT1), x, NewValueExpr(Int64Value(3), Typed(IntT1)))
+		}, false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			rewriter := NewStratifiedRewriter()
+			scope := InitialRewriterScope()
+			var err error
+			scope, bound, err := rewriter.Rewrite(NewValueExpr(Int64Value(1), Typed(IntT1)), scope)
+			if err != nil {
+				t.Fatal(err)
+			}
+			scope.Binding = scope.Binding.With("a", bound)
+			x := NewNameExpr("x", Typed(IntT1))
+			rangeExpression := MustOperExpr(Op("INT_RANGE"), Typed(mustSet(IntT1)),
+				NewNameExpr("a", Typed(IntT1)), NewValueExpr(Int64Value(3), Typed(IntT1)))
+			quantified := MustOperExpr(Op(test.quantifier), Typed(BoolT1), x, rangeExpression, test.predicate(x))
+			scope, result, err := rewriter.Rewrite(quantified, scope)
+			if err != nil {
+				t.Fatal(err)
+			}
+			checkRewrittenTruth(t, rewriter, scope, result, test.want)
+		})
+	}
+}
+
 func TestStratifiedEmptySymbolicIntegerRangeChoiceUsesDefault(t *testing.T) {
 	rewriter := NewStratifiedRewriter()
 	scope := InitialRewriterScope()

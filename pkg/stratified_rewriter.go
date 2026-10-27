@@ -387,6 +387,12 @@ func (rewriter *StratifiedRewriter) rewriteFiniteQuantifier(expression *OperExpr
 	if err != nil {
 		return scope, ArenaCell{}, err
 	}
+	if _, integerRange := setCell.Type.(IntegerRangeCellType); integerRange {
+		scope, setCell, err = rewriter.materializeArenaIntegerRange(scope, setCell)
+		if err != nil {
+			return scope, ArenaCell{}, fmt.Errorf("bounded quantifier over integer range: %w", err)
+		}
+	}
 	if !isFiniteSetCellType(setCell.Type) {
 		return scope, ArenaCell{}, fmt.Errorf("bounded quantifier requires a finite set, found %s", setCell.Type)
 	}

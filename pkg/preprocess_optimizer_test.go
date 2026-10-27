@@ -51,6 +51,17 @@ func TestExprOptimizerRecordAccessAndSetBasics(t *testing.T) {
 	}
 }
 
+func TestExprOptimizerRewritesSequenceIndexRangeToDomain(t *testing.T) {
+	sequence := NewNameExpr("s", Typed(mustSeq(IntT1)))
+	length := MustOperExpr(Op("Sequences!Len"), Typed(IntT1), sequence)
+	rangeExpr := MustOperExpr(Op("INT_RANGE"), Typed(mustSet(IntT1)), i(1), length)
+	got := optimizeForTest(t, rangeExpr)
+	want := MustOperExpr(Op("DOMAIN"), Typed(mustSet(IntT1)), sequence)
+	if !EqualTypedExpr(got, want) {
+		t.Fatalf("sequence index range = %v, want %v", got, want)
+	}
+}
+
 func TestExprOptimizerRecordAndTupleMapMembership(t *testing.T) {
 	intSet, boolSet := mustSet(IntT1), mustSet(BoolT1)
 	recordType, _ := NewRecordType(map[string]Type{"a": IntT1, "b": BoolT1})
