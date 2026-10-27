@@ -585,6 +585,30 @@ Next == /\ x' = x + 1
 	}
 }
 
+func TestRunCheckAcceptsScalaNoDeadlockAlias(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "NoDeadlock.tla")
+	if err := os.WriteFile(path, []byte(`---- MODULE NoDeadlock ----
+Init == TRUE
+Next == FALSE
+Inv == TRUE
+====
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	code := run(context.Background(), []string{"check", "--no-deadlock", "--inv=Inv", "--length=0", path}, &stdout, &stderr)
+	if code != exitOK || !strings.Contains(stdout.String(), "No counterexample") {
+		t.Fatalf("no-deadlock alias = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	code = run(context.Background(), []string{"check", "--no-deadlock", "--deadlock=true", path}, &stdout, &stderr)
+	if code != exitUsage || !strings.Contains(stderr.String(), "conflicts") {
+		t.Fatalf("deadlock conflict = %d, stderr = %q", code, &stderr)
+	}
+}
+
 func TestRunSimulateWritesDecodedAndITFTrace(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "Sim.tla")

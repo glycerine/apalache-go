@@ -496,6 +496,7 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	nextName := flags.String("next", "", "next-state operator")
 	constantInit := flags.String("cinit", "", "constant initializer operator")
 	deadlockFlag := flags.String("deadlock", "", "check deadlocks: true or false (default true)")
+	noDeadlock := flags.Bool("no-deadlock", false, "disable deadlock checking (Scala-compatible alias)")
 	itfPath := flags.String("itf", "", "write a counterexample trace as ITF JSON")
 	useRows := flags.Bool("rows", false, "enable row types")
 	features := flags.String("features", "", "typechecker features: rows or no-rows")
@@ -561,6 +562,13 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 			return exitUsage
 		}
 		checkDeadlocks = parsed
+	}
+	if *noDeadlock {
+		if *deadlockFlag != "" && checkDeadlocks {
+			fmt.Fprintln(stderr, "-no-deadlock conflicts with -deadlock=true")
+			return exitUsage
+		}
+		checkDeadlocks = false
 	}
 
 	frontend := pal.ParseAndTypeCheckFile(ctx, flags.Arg(0), pal.FrontendOptions{
