@@ -2,8 +2,37 @@ package apalache
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 )
+
+func TestBundledRewritesOverrideAdjacentModules(t *testing.T) {
+	directory := t.TempDir()
+	root := `---- MODULE Root ----
+EXTENDS Folds
+Test == MapThenFoldSet(LAMBDA x, y: x, 0, LAMBDA x: x, LAMBDA S: CHOOSE x \in S: TRUE, {1})
+====
+`
+	adjacent := `---- MODULE Folds ----
+Wrong == TRUE
+====
+`
+	rootPath := filepath.Join(directory, "Root.tla")
+	if err := os.WriteFile(rootPath, []byte(root), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "Folds.tla"), []byte(adjacent), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result := ParseFile(context.Background(), rootPath, FrontendOptions{})
+	if !result.OK() {
+		t.Fatalf("ParseFile() diagnostics = %v", result.Diagnostics)
+	}
+	if _, found := OperatorBody(result.Native, "MapThenFoldSet"); !found {
+		t.Fatal("bundled Folds rewrite was not selected")
+	}
+}
 
 func TestBundledVariantsAndOptionModulesTypeCheck(t *testing.T) {
 	result := ParseAndTypeCheckSource(context.Background(), "BundledModules.tla", `---- MODULE BundledModules ----

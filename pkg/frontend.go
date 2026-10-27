@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/glycerine/tlago"
 )
@@ -67,7 +68,15 @@ func ParseSource(ctx context.Context, filename, source string, opts FrontendOpti
 		}}}
 	}
 	defer cleanupLibraries()
-	spec, tlagoDiags := tlago.CheckSanySourceWithOptions(filename, source, tlago.LoadOptions{
+	sanyFilename := filename
+	if directory := filepath.Dir(filename); directory != "." && directory != "" {
+		// The source itself is already supplied in memory. Decouple its logical
+		// filename from its directory so PreferLibraryModules can select bundled
+		// Apalache rewrites before an adjacent module with the same name.
+		libraryPaths = append(libraryPaths, directory)
+		sanyFilename = filepath.Base(filename)
+	}
+	spec, tlagoDiags := tlago.CheckSanySourceWithOptions(sanyFilename, source, tlago.LoadOptions{
 		LibraryPaths: libraryPaths, PreferLibraryModules: true,
 	})
 	result := FrontendResult{Diagnostics: frontendDiagnostics(tlagoDiags)}
