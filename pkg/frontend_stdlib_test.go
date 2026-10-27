@@ -173,3 +173,59 @@ ZipOK == Zip(<<1, 2>>, <<"a", "b">>) = <<<<1, "a">>, <<2, "b">>>>
 		t.Fatalf("SequencesExt result = %#v", result)
 	}
 }
+
+func TestBundledTLCNormalizesTypedRegisterOperators(t *testing.T) {
+	frontend := ParseAndTypeCheckSource(context.Background(), "BundledTLCRegisters.tla", `---- MODULE BundledTLCRegisters ----
+EXTENDS TLC
+Registers ==
+  /\ TLCSet(1, 42)
+  /\ TLCSet("level", 7)
+  /\ TLCGet(1) = TLCGet("level")
+====
+`, FrontendOptions{}, TypeCheckOptions{UseRows: true})
+	if !frontend.OK() {
+		t.Fatalf("bundled TLC diagnostics = %v", frontend.Diagnostics)
+	}
+	body, found := OperatorBody(frontend.Native, "Registers")
+	if !found || countOperator(body, "TLC!TLCGet") != 2 {
+		t.Fatalf("normalized TLC registers = %#v", body)
+	}
+	if _, importedStub := OperatorBody(frontend.Native, "TLCGet"); importedStub {
+		t.Fatal("imported TLCGet stub was retained")
+	}
+}
+
+func TestBundledTLCPureOperatorsCheckSymbolically(t *testing.T) {
+	frontend := ParseAndTypeCheckSource(context.Background(), "BundledTLCPure.tla", `---- MODULE BundledTLCPure ----
+EXTENDS TLC
+Init == TRUE
+Next == TRUE
+Inv ==
+  /\ Print("ignored", 42) = 42
+  /\ PrintT({1, 2})
+  /\ Assert(TRUE, "ignored")
+  /\ TLCEval({1, 2}) = {1, 2}
+====
+`, FrontendOptions{}, TypeCheckOptions{UseRows: true})
+	if !frontend.OK() {
+		t.Fatalf("bundled TLC diagnostics = %v", frontend.Diagnostics)
+	}
+	prepared, err := PrepareSafetyTransitions(frontend.Native, SafetyPipelineOptions{
+		Specification: SpecificationConfiguration{
+			Behavior:   InitNextSpec{Init: "Init", Next: "Next"},
+			Invariants: []string{"Inv"},
+		},
+		Sources: frontend.Sources,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := CheckBoundedSafetyWithOptions(context.Background(), prepared.Module, prepared.Predicates,
+		BoundedSafetyOptions{MaxSteps: 0, CheckDeadlocks: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Outcome != SafetyNoCounterexample || result.ExploredExecutions != 1 {
+		t.Fatalf("TLC result = %#v", result)
+	}
+}

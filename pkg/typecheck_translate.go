@@ -477,6 +477,12 @@ func (translator *ToEtcExpr) translateOperator(expression *OperExpr) (EtcExpr, e
 	case "ApalacheInternal!__NotSupportedByModelChecker":
 		a := fresh()
 		return appAll(mustOperator([]Type{StrT1}, a))
+	case "TLC!TLCGet":
+		key, value := fresh(), fresh()
+		return appAll(mustOperator([]Type{key}, value))
+	case "TLC!ToString":
+		a := fresh()
+		return appAll(mustOperator([]Type{a}, StrT1))
 	default:
 		return nil, fmt.Errorf("unsupported operator %s", name)
 	}

@@ -343,6 +343,10 @@ func InferOperatorType(operator Operator, arguments []Type) (Type, error) {
 		if _, ok, err := CommonSequenceSupertype(arguments); err == nil && ok {
 			return BoolT1, nil
 		}
+	case "TLC!ToString":
+		if len(arguments) == 1 {
+			return StrT1, nil
+		}
 	case "ApalacheInternal!__ApalacheSeqCapacity":
 		if len(arguments) == 1 {
 			if _, ok := arguments[0].(SeqType); ok {

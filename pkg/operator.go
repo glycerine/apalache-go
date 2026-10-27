@@ -278,6 +278,7 @@ func init() {
 		arity Arity
 	}{
 		{"ApalacheInternal!__NotSupportedByModelChecker", fixed(1)}, {"Apalache!Distinct", any},
+		{"TLC!TLCGet", fixed(1)}, {"TLC!ToString", fixed(1)},
 		{"ApalacheInternal!__ApalacheSeqCapacity", fixed(1)}, {"Apalache!SelectInSet", fixed(2)},
 		{"Apalache!SelectInFun", fixed(2)}, {"Apalache!StoreInSet", fixed(2).Or(fixed(3))},
 		{"Apalache!storeNotInSet", fixed(2)}, {"Apalache!storeNotInFun", fixed(2)},

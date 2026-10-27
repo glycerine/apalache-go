@@ -36,8 +36,8 @@ func TestArityCombinatorsMatchScala(t *testing.T) {
 
 func TestOperatorRegistry(t *testing.T) {
 	operators := AllOperators()
-	if len(operators) != 105 {
-		t.Fatalf("registered %d operators, want 105", len(operators))
+	if len(operators) != 107 {
+		t.Fatalf("registered %d operators, want 107", len(operators))
 	}
 	seen := make(map[string]bool)
 	for index, operator := range operators {

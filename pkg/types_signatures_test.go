@@ -44,6 +44,7 @@ func TestRepresentativeOperatorSignatures(t *testing.T) {
 		{"Apalache!Guess", []Type{setInt}, IntT1},
 		{"Apalache!ApaFoldSet", []Type{intIntToInt, IntT1, setInt}, IntT1},
 		{"Apalache!Distinct", []Type{IntT1, IntT1}, BoolT1},
+		{"TLC!ToString", []Type{IntT1}, StrT1},
 		{"Apalache!SelectInFun", []Type{IntT1, intToBool}, BoolT1},
 		{"Apalache!StoreInSet", []Type{BoolT1, intToBool, IntT1}, BoolT1},
 	}

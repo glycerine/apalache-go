@@ -94,7 +94,9 @@ func ParseSource(ctx context.Context, filename, source string, opts FrontendOpti
 		native, conversionErr := UnmarshalSingleModuleIRJSON(ir, result.Sources)
 		result.Native = normalizeTlagoLambdaValues(native, result.Sources)
 		variantsImported := spec.Modules["Variants"] != nil
+		tlcImported := spec.Modules["TLC"] != nil
 		result.Native = removeTlagoNativeVariantDeclarations(result.Native, result.Sources, variantsImported)
+		result.Native = normalizeTlagoTLCCalls(result.Native, result.Sources, tlcImported)
 		result.Native = normalizeTlagoApalacheBuiltinCalls(result.Native, result.Sources)
 		result.Native = normalizeTlagoVariantUnit(result.Native, result.Sources, variantsImported)
 		result.Native = normalizeTlagoTupleBinders(result.Native, result.Sources, binderLayouts)

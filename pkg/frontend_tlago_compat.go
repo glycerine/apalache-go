@@ -30,6 +30,11 @@ var tlagoNativeVariantDeclarations = map[string]struct{}{
 	"Variant": {}, "VariantFilter": {}, "VariantTag": {}, "VariantGetOrElse": {}, "VariantGetUnsafe": {},
 }
 
+var tlagoNativeTLCDeclarations = map[string]struct{}{
+	":>": {}, "@@": {}, "Print": {}, "PrintT": {}, "Assert": {}, "JavaTime": {},
+	"__TLCEmptySet": {}, "TLCGet": {}, "TLCSet": {}, "RandomElement": {}, "ToString": {}, "TLCEval": {},
+}
+
 var tlagoInternalBuiltinCalls = map[string]struct{}{
 	"__ApalacheSeqCapacity": {}, "__NotSupportedByModelChecker": {},
 }
@@ -523,6 +528,84 @@ func removeTlagoNativeVariantDeclarations(module *Module, sources *SourceStore, 
 	}
 	result := NewModule(module.Name(), kept)
 	result.properties = cloneMap(module.properties)
+	return result
+}
+
+// normalizeTlagoTLCCalls uses the typed TLC rewiring module for SANY, then
+// removes its executable stubs before native type checking. Print-like
+// operators are pure erasures in Apalache; stateful register reads remain an
+// explicit unsupported native operator instead of acquiring CHOOSE semantics.
+func normalizeTlagoTLCCalls(module *Module, sources *SourceStore, tlcImported bool) *Module {
+	if module == nil || !tlcImported {
+		return module
+	}
+	var tracker TransformationTracker = IdleTracker{}
+	if sources != nil {
+		tracker = NewListenerTracker(sources)
+	}
+	baseName := func(name string) string {
+		if index := strings.LastIndex(name, "!"); index >= 0 {
+			return name[index+1:]
+		}
+		return name
+	}
+	rewrite := RewriteExpressions(tracker, func(expression Expr) (Expr, bool) {
+		if name, ok := expression.(*NameExpr); ok && baseName(name.Name()) == "JavaTime" {
+			return NewValueExpr(Int64Value(123), Typed(IntT1)), true
+		}
+		operation, ok := expression.(*OperExpr)
+		if !ok || operation.Operator().Name() != "OPER_APP" {
+			return nil, false
+		}
+		arguments := operation.Arguments()
+		if len(arguments) == 0 {
+			return nil, false
+		}
+		callee, ok := arguments[0].(*NameExpr)
+		if !ok {
+			return nil, false
+		}
+		switch baseName(callee.Name()) {
+		case "Print":
+			if len(arguments) == 3 {
+				return arguments[2], true
+			}
+		case "PrintT", "TLCSet":
+			return NewValueExpr(BoolValue(true), Typed(BoolT1)), true
+		case "Assert":
+			if len(arguments) == 3 {
+				return arguments[1], true
+			}
+		case "TLCGet":
+			if len(arguments) == 2 {
+				return MustOperExpr(Op("TLC!TLCGet"), operation.Tag(), arguments[1]), true
+			}
+		case "RandomElement":
+			if len(arguments) == 2 {
+				return MustOperExpr(Op("Apalache!Guess"), operation.Tag(), arguments[1]), true
+			}
+		case "ToString":
+			if len(arguments) == 2 {
+				return MustOperExpr(Op("TLC!ToString"), operation.Tag(), arguments[1]), true
+			}
+		case "TLCEval":
+			if len(arguments) == 2 {
+				return arguments[1], true
+			}
+		}
+		return nil, false
+	})
+	transformed := transformTlagoModuleExpressions(module, rewrite, sources)
+	declarations := transformed.Declarations()
+	kept := make([]Decl, 0, len(declarations))
+	for _, declaration := range declarations {
+		if _, native := tlagoNativeTLCDeclarations[baseName(declaration.Name())]; native {
+			continue
+		}
+		kept = append(kept, declaration)
+	}
+	result := NewModule(transformed.Name(), kept)
+	result.properties = cloneMap(transformed.properties)
 	return result
 }
 
