@@ -2,6 +2,7 @@ package apalache
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -41,11 +42,13 @@ type jsonRPCResponse struct {
 // ExplorationJSONRPCHandler implements the transport boundary of Scala's
 // explorer service. Stateful exploration methods are added to dispatch as the
 // replayable Go session engine is ported.
-type ExplorationJSONRPCHandler struct{}
+type ExplorationJSONRPCHandler struct{ service *ExplorationService }
 
-func NewExplorationJSONRPCHandler() http.Handler { return ExplorationJSONRPCHandler{} }
+func NewExplorationJSONRPCHandler() http.Handler {
+	return &ExplorationJSONRPCHandler{service: NewExplorationService()}
+}
 
-func (ExplorationJSONRPCHandler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
+func (handler *ExplorationJSONRPCHandler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
 	response.Header().Set("Content-Type", "application/json")
 	if request.Method != http.MethodPost || request.URL.Path != "/rpc" {
 		writeJSONRPCResponse(response, jsonRPCFailure(nil, JSONRPCInvalidRequest, "Invalid JSON-RPC request"))
@@ -65,7 +68,7 @@ func (ExplorationJSONRPCHandler) ServeHTTP(response http.ResponseWriter, request
 		writeJSONRPCResponse(response, jsonRPCFailure(nil, parseErr.Code, parseErr.Message))
 		return
 	}
-	result, serviceErr := dispatchExplorationJSONRPC(parsed.Method, parsed.Params)
+	result, serviceErr := handler.dispatch(request.Context(), parsed.Method, parsed.Params)
 	if serviceErr != nil {
 		writeJSONRPCResponse(response, jsonRPCFailure(parsed.ID, serviceErr.Code, serviceErr.Message))
 		return
@@ -112,12 +115,16 @@ func normalizeJSONRPCID(id json.RawMessage) json.RawMessage {
 	return id
 }
 
-func dispatchExplorationJSONRPC(method string, _ json.RawMessage) (any, *jsonRPCError) {
+func (handler *ExplorationJSONRPCHandler) dispatch(ctx context.Context, method string, params json.RawMessage) (any, *jsonRPCError) {
 	switch method {
 	case "health":
 		return struct {
 			Status string `json:"status"`
 		}{Status: "OK"}, nil
+	case "loadSpec":
+		return handler.service.loadSpec(ctx, params)
+	case "disposeSpec":
+		return handler.service.disposeSpec(params)
 	default:
 		return nil, &jsonRPCError{Code: JSONRPCMethodNotFound, Message: fmt.Sprintf("Method not found: %s", method)}
 	}
