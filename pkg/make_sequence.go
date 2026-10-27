@@ -6,10 +6,25 @@ import (
 )
 
 func instantiateEmbeddedOperator(operator Expr, resultType Type, arguments ...Expr) (Expr, error) {
-	if _, ok := operator.(*LetInExpr); !ok {
+	embedded, ok := operator.(*LetInExpr)
+	if !ok || !isPassByNameLet(embedded) {
 		return nil, fmt.Errorf("embedded operator must be represented as LET/IN")
 	}
-	applicationArguments := append([]Expr{operator}, arguments...)
+	argumentTypes := make([]Type, len(arguments))
+	for index, argument := range arguments {
+		typ, typed := argument.Tag().Type()
+		if !typed {
+			return nil, fmt.Errorf("embedded operator argument %d is untyped", index+1)
+		}
+		argumentTypes[index] = typ
+	}
+	callType, err := NewOperatorType(argumentTypes, resultType)
+	if err != nil {
+		return nil, err
+	}
+	callName := embedded.Body().(*NameExpr)
+	specialized := NewLetInExpr(NewNameExpr(callName.Name(), Typed(callType)), Typed(callType), embedded.Declarations()...)
+	applicationArguments := append([]Expr{specialized}, arguments...)
 	application := MustOperExpr(Op("OPER_APP"), Typed(resultType), applicationArguments...)
 	return NewInliner(nil, nil, false, nil).Transform(application)
 }

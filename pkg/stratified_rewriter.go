@@ -961,6 +961,9 @@ func (rewriter *StratifiedRewriter) rewriteApplication(expression *OperExpr, sco
 		return scope, ArenaCell{}, fmt.Errorf("function application must be typed")
 	}
 	project := func(current RewriterScope, cell ArenaCell) (RewriterScope, ArenaCell, error) {
+		if _, residualVariable := expectedType.(VarType); residualVariable {
+			return current, cell, nil
+		}
 		var projectErr error
 		current, cell, projectErr = rewriter.coerceCell(current, cell, expectedType)
 		if projectErr != nil {

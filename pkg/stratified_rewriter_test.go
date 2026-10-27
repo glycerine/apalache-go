@@ -62,6 +62,26 @@ func TestStratifiedRewriterAssignmentAndBooleanRules(t *testing.T) {
 	}
 }
 
+func TestStratifiedApplicationResolvesResidualResultVariable(t *testing.T) {
+	a, _ := NewVarType(1000)
+	sequence := MustOperExpr(Op("TUPLE"), Typed(mustSeq(StrT1)),
+		NewValueExpr(StringValue("value"), Typed(StrT1)))
+	application := MustOperExpr(Op("FUN_APP"), Typed(a), sequence, intLiteral(1))
+	rewriter := NewStratifiedRewriter()
+	scope, result, err := rewriter.Rewrite(application, InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !EqualTypes(result.Type.TLAType(), StrT1) {
+		t.Fatalf("residual application result type = %s", result.Type)
+	}
+	literal, found := rewriter.LiteralCache().FindLiteral(result)
+	if !found || literal.Index != "value" {
+		t.Fatalf("residual application result = %v, %v", literal, found)
+	}
+	_ = scope
+}
+
 func TestStratifiedLabelsAndFiniteSetPredicate(t *testing.T) {
 	rewriter := NewStratifiedRewriter()
 	label := MustOperExpr(Op("LABEL"), Typed(IntT1),

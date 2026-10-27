@@ -113,6 +113,30 @@ func TestInlinerSpecializesPolymorphicBody(t *testing.T) {
 	}
 }
 
+func TestInstantiateEmbeddedOperatorSpecializesFromArguments(t *testing.T) {
+	a, _ := NewVarType(0)
+	setA := mustSet(a)
+	operatorType := mustOperator([]Type{a}, setA)
+	declaration := NewOperDecl("Embedded", []OperatorParam{ValueParam("x")},
+		MustOperExpr(Op("SET_ENUM"), Typed(setA), NewNameExpr("x", Typed(a))), Typed(operatorType))
+	embedded := NewLetInExpr(NewNameExpr("Embedded", Typed(operatorType)), Typed(operatorType), declaration)
+	setStr := mustSet(StrT1)
+	got, err := instantiateEmbeddedOperator(embedded, setStr, NewNameExpr("value", Typed(StrT1)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	set, ok := got.(*OperExpr)
+	if !ok || set.Operator().Name() != "SET_ENUM" {
+		t.Fatalf("instantiated embedded operator = %v", got)
+	}
+	if typ, _ := set.Tag().Type(); !EqualTypes(typ, setStr) {
+		t.Fatalf("instantiated result type = %v", typ)
+	}
+	if typ, _ := set.Arguments()[0].Tag().Type(); !EqualTypes(typ, StrT1) {
+		t.Fatalf("instantiated element type = %v", typ)
+	}
+}
+
 func TestInlinerTransitivePolymorphismIgnoresVariableNumbering(t *testing.T) {
 	for _, numbers := range [][2]int{{0, 1}, {1, 0}, {0, 2}, {2, 0}} {
 		a, _ := NewVarType(numbers[0])
