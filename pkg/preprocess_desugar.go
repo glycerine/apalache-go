@@ -143,6 +143,69 @@ func (desugarer *Desugarer) Expression(expression Expr) (Expr, error) {
 				return nil, err
 			}
 			result = MustOperExpr(Op("GLOBALLY"), Typed(BoolT1), MustOperExpr(Op("IMPLIES"), Typed(BoolT1), antecedent, MustOperExpr(Op("EVENTUALLY"), Typed(BoolT1), consequent)))
+		case "SET_FILTER", "EXISTS3", "FORALL3":
+			bound, err := desugarer.Expression(arguments[0])
+			if err != nil {
+				return nil, err
+			}
+			set, err := desugarer.Expression(arguments[1])
+			if err != nil {
+				return nil, err
+			}
+			predicate, err := desugarer.Expression(arguments[2])
+			if err != nil {
+				return nil, err
+			}
+			collapsed, err := collapseTupleFilter(bound, set, predicate)
+			if err != nil {
+				return nil, err
+			}
+			result = MustOperExpr(typed.Operator(), typed.Tag(), collapsed...)
+		case "SET_MAP":
+			transformed := make([]Expr, len(arguments))
+			for index, argument := range arguments {
+				var err error
+				transformed[index], err = desugarer.Expression(argument)
+				if err != nil {
+					return nil, err
+				}
+			}
+			collapsed, err := collapseTupleMap(transformed[0], transformed[1:])
+			if err != nil {
+				return nil, err
+			}
+			result = MustOperExpr(typed.Operator(), typed.Tag(), collapsed...)
+		case "FUN_CTOR", "FUN_REC_CTOR":
+			transformed := make([]Expr, len(arguments))
+			for index, argument := range arguments {
+				var err error
+				transformed[index], err = desugarer.Expression(argument)
+				if err != nil {
+					return nil, err
+				}
+			}
+			body := transformed[0]
+			bindings := transformed[1:]
+			if len(bindings) > 2 {
+				variables, sets := deinterleaveExpressions(bindings)
+				elements := make([]Type, len(variables))
+				for index, variable := range variables {
+					typ, ok := variable.Tag().Type()
+					if !ok {
+						return nil, fmt.Errorf("untyped function parameter")
+					}
+					elements[index] = typ
+				}
+				tupleType := mustTuple(elements...)
+				tuple := MustOperExpr(Op("TUPLE"), Typed(tupleType), variables...)
+				product := MustOperExpr(Op("SET_TIMES"), Typed(mustSet(tupleType)), sets...)
+				bindings = []Expr{tuple, product}
+			}
+			collapsed, err := collapseTupleMap(body, bindings)
+			if err != nil {
+				return nil, err
+			}
+			result = MustOperExpr(typed.Operator(), typed.Tag(), collapsed...)
 		default:
 			var err error
 			result, err = desugarer.rebuild(typed, arguments)
@@ -154,6 +217,158 @@ func (desugarer *Desugarer) Expression(expression Expr) (Expr, error) {
 		return nil, fmt.Errorf("unsupported expression %T", expression)
 	}
 	return desugarer.tracker.TrackExpression(func(Expr) Expr { return result })(expression), nil
+}
+
+func deinterleaveExpressions(arguments []Expr) ([]Expr, []Expr) {
+	left, right := make([]Expr, 0, (len(arguments)+1)/2), make([]Expr, 0, len(arguments)/2)
+	for index, argument := range arguments {
+		if index%2 == 0 {
+			left = append(left, argument)
+		} else {
+			right = append(right, argument)
+		}
+	}
+	return left, right
+}
+
+func collapseTupleFilter(bound, set, predicate Expr) ([]Expr, error) {
+	name, err := tuplePatternName(bound)
+	if err != nil {
+		return nil, err
+	}
+	substitutions, err := tuplePatternSubstitutions(bound)
+	if err != nil {
+		return nil, err
+	}
+	return []Expr{NewNameExpr(name, bound.Tag()), set, substitutePatternNames(predicate, substitutions)}, nil
+}
+
+func collapseTupleMap(body Expr, bindings []Expr) ([]Expr, error) {
+	if len(bindings)%2 != 0 {
+		return nil, fmt.Errorf("expected variable/set pairs")
+	}
+	variables, sets := deinterleaveExpressions(bindings)
+	boundNames := make([]Expr, len(variables))
+	substitutions := make(map[string]Expr)
+	for index, variable := range variables {
+		name, err := tuplePatternName(variable)
+		if err != nil {
+			return nil, err
+		}
+		boundNames[index] = NewNameExpr(name, variable.Tag())
+		one, err := tuplePatternSubstitutions(variable)
+		if err != nil {
+			return nil, err
+		}
+		for key, value := range one {
+			substitutions[key] = value
+		}
+	}
+	result := []Expr{substitutePatternNames(body, substitutions)}
+	for index := range boundNames {
+		result = append(result, boundNames[index], sets[index])
+	}
+	return result, nil
+}
+
+func tuplePatternName(expression Expr) (string, error) {
+	switch typed := expression.(type) {
+	case *NameExpr:
+		return typed.Name(), nil
+	case *OperExpr:
+		if typed.Operator().Name() != "TUPLE" {
+			break
+		}
+		name := ""
+		for index, argument := range typed.Arguments() {
+			part, err := tuplePatternName(argument)
+			if err != nil {
+				return "", err
+			}
+			if index > 0 {
+				name += "_"
+			}
+			name += part
+		}
+		return name, nil
+	}
+	return "", fmt.Errorf("unexpected %T among tuple-pattern parameters", expression)
+}
+
+func tuplePatternSubstitutions(expression Expr) (map[string]Expr, error) {
+	name, err := tuplePatternName(expression)
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string]Expr)
+	var visit func(Expr, Expr) error
+	visit = func(pattern Expr, access Expr) error {
+		switch typed := pattern.(type) {
+		case *NameExpr:
+			result[typed.Name()] = access
+			return nil
+		case *OperExpr:
+			if typed.Operator().Name() != "TUPLE" {
+				return fmt.Errorf("unexpected operator %s in tuple pattern", typed.Operator().Name())
+			}
+			tupleType, ok := access.Tag().Type()
+			if !ok {
+				return fmt.Errorf("untyped tuple pattern")
+			}
+			elements, ok := tupleType.(TupleType)
+			if !ok {
+				return fmt.Errorf("expected tuple type, found %s", tupleType)
+			}
+			types := elements.Elements()
+			arguments := typed.Arguments()
+			if len(types) != len(arguments) {
+				return fmt.Errorf("tuple pattern arity does not match type")
+			}
+			for index, argument := range arguments {
+				indexExpr := NewValueExpr(Int64Value(int64(index+1)), Typed(IntT1))
+				next := MustOperExpr(Op("FUN_APP"), Typed(types[index]), access, indexExpr)
+				if err := visit(argument, next); err != nil {
+					return err
+				}
+			}
+			return nil
+		default:
+			return fmt.Errorf("unexpected %T in tuple pattern", pattern)
+		}
+	}
+	if _, simple := expression.(*NameExpr); simple {
+		return result, nil
+	}
+	if err := visit(expression, NewNameExpr(name, expression.Tag())); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func substitutePatternNames(expression Expr, substitutions map[string]Expr) Expr {
+	switch typed := expression.(type) {
+	case *NameExpr:
+		if replacement, found := substitutions[typed.Name()]; found {
+			return replacement
+		}
+		return expression
+	case *OperExpr:
+		arguments := typed.Arguments()
+		for index, argument := range arguments {
+			arguments[index] = substitutePatternNames(argument, substitutions)
+		}
+		return MustOperExpr(typed.Operator(), typed.Tag(), arguments...)
+	case *LetInExpr:
+		declarations := typed.Declarations()
+		for index, declaration := range declarations {
+			copy := declaration.copyWithTag(declaration.Tag())
+			copy.SetBody(substitutePatternNames(declaration.Body(), substitutions))
+			declarations[index] = copy
+		}
+		return NewLetInExpr(substitutePatternNames(typed.Body(), substitutions), typed.Tag(), declarations...)
+	default:
+		return expression
+	}
 }
 
 func (desugarer *Desugarer) rebuild(original *OperExpr, arguments []Expr) (Expr, error) {

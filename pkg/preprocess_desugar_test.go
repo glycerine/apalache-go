@@ -102,3 +102,77 @@ func TestDesugarerStutterAndLeadsTo(t *testing.T) {
 		t.Fatalf("leads-to = %v", leads)
 	}
 }
+
+func TestDesugarerCollapsesTuplePatternsInBinders(t *testing.T) {
+	x := NewNameExpr("x", Typed(IntT1))
+	y := NewNameExpr("y", Typed(BoolT1))
+	tupleType := mustTuple(IntT1, BoolT1)
+	pattern := MustOperExpr(Op("TUPLE"), Typed(tupleType), x, y)
+	set := NewNameExpr("Pairs", Typed(mustSet(tupleType)))
+	predicate := MustOperExpr(Op("EQ"), Typed(BoolT1), x, NewValueExpr(Int64Value(1), Typed(IntT1)))
+	desugarer := NewDesugarer(nil, nil, nil, nil)
+	for _, operator := range []string{"SET_FILTER", "EXISTS3", "FORALL3"} {
+		got, err := desugarer.Expression(MustOperExpr(Op(operator), Typed(BoolT1), pattern, set, predicate))
+		if err != nil {
+			t.Fatal(err)
+		}
+		arguments := got.(*OperExpr).Arguments()
+		bound := arguments[0].(*NameExpr)
+		if bound.Name() != "x_y" || !EqualTypes(mustTagType(bound.Tag()), tupleType) {
+			t.Fatalf("%s bound = %v", operator, bound)
+		}
+		comparison := arguments[2].(*OperExpr)
+		access := comparison.Arguments()[0].(*OperExpr)
+		if access.Operator().Name() != "FUN_APP" || access.Arguments()[0].(*NameExpr).Name() != "x_y" {
+			t.Fatalf("%s predicate = %v", operator, comparison)
+		}
+	}
+}
+
+func TestDesugarerCollapsesNestedTuplePatternAndSetMap(t *testing.T) {
+	x := NewNameExpr("x", Typed(IntT1))
+	y := NewNameExpr("y", Typed(BoolT1))
+	z := NewNameExpr("z", Typed(StrT1))
+	innerType := mustTuple(BoolT1, StrT1)
+	outerType := mustTuple(IntT1, innerType)
+	pattern := MustOperExpr(Op("TUPLE"), Typed(outerType), x, MustOperExpr(Op("TUPLE"), Typed(innerType), y, z))
+	set := NewNameExpr("S", Typed(mustSet(outerType)))
+	body := MustOperExpr(Op("TUPLE"), Typed(mustTuple(IntT1, StrT1)), x, z)
+	got, err := NewDesugarer(nil, nil, nil, nil).Expression(MustOperExpr(Op("SET_MAP"), Typed(mustSet(mustTuple(IntT1, StrT1))), body, pattern, set))
+	if err != nil {
+		t.Fatal(err)
+	}
+	arguments := got.(*OperExpr).Arguments()
+	if arguments[1].(*NameExpr).Name() != "x_y_z" {
+		t.Fatalf("map binder = %v", arguments[1])
+	}
+	newBody := arguments[0].(*OperExpr)
+	zAccess := newBody.Arguments()[1].(*OperExpr)
+	if zAccess.Operator().Name() != "FUN_APP" || zAccess.Arguments()[0].(*OperExpr).Operator().Name() != "FUN_APP" {
+		t.Fatalf("nested access = %v", zAccess)
+	}
+}
+
+func TestDesugarerNormalizesMultiArgumentFunction(t *testing.T) {
+	x := NewNameExpr("x", Typed(IntT1))
+	y := NewNameExpr("y", Typed(BoolT1))
+	intSet := NewValueExpr(IntSet, Typed(mustSet(IntT1)))
+	boolSet := NewValueExpr(BoolSet, Typed(mustSet(BoolT1)))
+	body := MustOperExpr(Op("IF_THEN_ELSE"), Typed(IntT1), y, x, NewValueExpr(Int64Value(0), Typed(IntT1)))
+	functionType := mustFun(mustTuple(IntT1, BoolT1), IntT1)
+	got, err := NewDesugarer(nil, nil, nil, nil).Expression(MustOperExpr(Op("FUN_CTOR"), Typed(functionType), body, x, intSet, y, boolSet))
+	if err != nil {
+		t.Fatal(err)
+	}
+	arguments := got.(*OperExpr).Arguments()
+	if len(arguments) != 3 {
+		t.Fatalf("function args = %v", arguments)
+	}
+	if arguments[1].(*NameExpr).Name() != "x_y" || arguments[2].(*OperExpr).Operator().Name() != "SET_TIMES" {
+		t.Fatalf("normalized function = %v", got)
+	}
+	ifBody := arguments[0].(*OperExpr)
+	if ifBody.Arguments()[0].(*OperExpr).Operator().Name() != "FUN_APP" {
+		t.Fatalf("function body not substituted: %v", ifBody)
+	}
+}
