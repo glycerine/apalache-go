@@ -1984,9 +1984,29 @@ func (rewriter *StratifiedRewriter) rewriteSetFilter(expression *OperExpr, scope
 			return scope, ArenaCell{}, fmt.Errorf("set filter over infinite set %s is not supported", predefined.Name())
 		}
 	}
+	if integerRange, ok := arguments[1].(*OperExpr); ok && integerRange.Operator().Name() == "INT_RANGE" {
+		rangeArguments := integerRange.Arguments()
+		if len(rangeArguments) != 2 {
+			return scope, ArenaCell{}, fmt.Errorf("set filter received malformed integer range")
+		}
+		_, leftConstant := constantInteger(rangeArguments[0])
+		_, rightConstant := constantInteger(rangeArguments[1])
+		if !leftConstant || !rightConstant {
+			return scope, ArenaCell{}, fmt.Errorf("set filter requires a constant integer range")
+		}
+	}
 	setScope, setCell, err := rewriter.Rewrite(arguments[1], scope)
 	if err != nil {
 		return scope, ArenaCell{}, err
+	}
+	switch setCell.Type.(type) {
+	case IntegerRangeCellType:
+		setScope, setCell, err = rewriter.materializeArenaIntegerRange(setScope, setCell)
+		if err != nil {
+			return scope, ArenaCell{}, fmt.Errorf("set filter over integer range: %w", err)
+		}
+	case FiniteFunctionSetCellType, PowerSetCellType, InfiniteSetCellType:
+		return scope, ArenaCell{}, fmt.Errorf("set filter over compact set %s is not supported", setCell.Type)
 	}
 	baseBinding := setScope.Binding
 	pointers := setScope.Arena.GetHas(setCell)

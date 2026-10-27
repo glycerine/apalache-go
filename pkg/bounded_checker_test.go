@@ -3,6 +3,7 @@ package apalache
 import (
 	"context"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -234,6 +235,36 @@ Next == A \/ B
 	value, err := FormatTLAExpression(result.States[1].Values["x"])
 	if err != nil || value != "1" {
 		t.Fatalf("deadlocked state x = %q, %v", value, err)
+	}
+}
+
+func TestCheckBoundedSafetyRejectsChooseOverSymbolicIntegerRange(t *testing.T) {
+	frontend := ParseAndTypeCheckSource(context.Background(), "SymbolicRangeChoose.tla", `---- MODULE SymbolicRangeChoose ----
+EXTENDS Integers
+VARIABLE
+\* @type: Int;
+x
+Init == x = 0
+Next == x' = x
+Inv == (CHOOSE i \in x..(x + 2): i > x) > x
+====
+`, FrontendOptions{}, TypeCheckOptions{})
+	if !frontend.OK() {
+		t.Fatalf("frontend diagnostics = %v", frontend.Diagnostics)
+	}
+	prepared, err := PrepareSafetyTransitions(frontend.Native, SafetyPipelineOptions{
+		Specification: SpecificationConfiguration{
+			Behavior: InitNextSpec{Init: "Init", Next: "Next"}, Invariants: []string{"Inv"},
+		},
+		Sources: frontend.Sources,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = CheckBoundedSafetyWithOptions(context.Background(), prepared.Module, prepared.Predicates,
+		BoundedSafetyOptions{MaxSteps: 0, CheckDeadlocks: false}); err == nil ||
+		!strings.Contains(err.Error(), "constant integer range") {
+		t.Fatalf("symbolic range CHOOSE error = %v", err)
 	}
 }
 

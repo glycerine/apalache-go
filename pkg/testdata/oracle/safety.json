@@ -133,6 +133,12 @@
       "go_args": ["check", "-length", "0", "-deadlock=false", "-inv", "AllTests", "test/tla/TestSets.tla"]
     },
     {
+      "name": "symbolic-range-choose-rejected",
+      "dir": "..",
+      "scala_args": ["check", "--length=0", "--no-deadlock", "--inv=Inv", "pkg/testdata/oracle/SymbolicRangeChoose.tla"],
+      "go_args": ["check", "-length", "0", "-deadlock=false", "-inv", "Inv", "pkg/testdata/oracle/SymbolicRangeChoose.tla"]
+    },
+    {
       "name": "json-configuration",
       "dir": "..",
       "scala_args": ["check", "--config-file=pkg/testdata/oracle/ConfiguredCheck.json", "test/tla/TestSets.tla"],

@@ -927,6 +927,9 @@ func TestStratifiedBoundedChoiceThroughG3(t *testing.T) {
 	binder := NewNameExpr("x", Typed(IntT1))
 	choose := MustOperExpr(Op("CHOOSE3"), Typed(IntT1), binder, set(1, 2, 3),
 		MustOperExpr(Op("GT"), Typed(BoolT1), binder, NewValueExpr(Int64Value(1), Typed(IntT1))))
+	rangeSet := MustOperExpr(Op("INT_RANGE"), setTag, intLiteral(1), intLiteral(3))
+	rangeChoose := MustOperExpr(Op("CHOOSE3"), Typed(IntT1), binder, rangeSet,
+		MustOperExpr(Op("GT"), Typed(BoolT1), binder, intLiteral(1)))
 	guess := MustOperExpr(Op("Apalache!Guess"), Typed(IntT1), set(2, 3))
 	for _, operation := range []struct {
 		name       string
@@ -935,6 +938,7 @@ func TestStratifiedBoundedChoiceThroughG3(t *testing.T) {
 		forbidden  int64
 	}{
 		{name: "choose", expression: choose, allowed: []int64{2, 3}, forbidden: 1},
+		{name: "range choose", expression: rangeChoose, allowed: []int64{2, 3}, forbidden: 1},
 		{name: "guess", expression: guess, allowed: []int64{2, 3}, forbidden: 1},
 	} {
 		for _, value := range append(append([]int64(nil), operation.allowed...), operation.forbidden) {
