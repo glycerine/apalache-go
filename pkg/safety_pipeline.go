@@ -61,9 +61,6 @@ func PrepareSafetyTransitions(module *Module, options SafetyPipelineOptions) (Sa
 	if err != nil {
 		return SafetyPipelineResult{}, fmt.Errorf("configuration: %w", err)
 	}
-	if len(configured.Predicates.TemporalProperties) != 0 {
-		return SafetyPipelineResult{}, fmt.Errorf("temporal properties require the temporal encoding pass, which is not yet available")
-	}
 	desugared, err := DesugarModule(configured.Module, names, tracker)
 	if err != nil {
 		return SafetyPipelineResult{}, err
@@ -77,6 +74,13 @@ func PrepareSafetyTransitions(module *Module, options SafetyPipelineOptions) (Sa
 	if err != nil {
 		return SafetyPipelineResult{}, fmt.Errorf("first inline pass: %w", err)
 	}
+	inlined, configured.Predicates, err = EncodeTemporalProperties(
+		inlined, configured.Predicates, names, renamer, tracker,
+	)
+	if err != nil {
+		return SafetyPipelineResult{}, fmt.Errorf("temporal encoding: %w", err)
+	}
+	inlineOptions.Relevant = configured.Predicates.OperatorNames()
 	inlined, err = InlineConfiguredModule(inlined, inlineOptions)
 	if err != nil {
 		return SafetyPipelineResult{}, fmt.Errorf("second inline pass: %w", err)

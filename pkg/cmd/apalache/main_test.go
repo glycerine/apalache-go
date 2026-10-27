@@ -177,6 +177,31 @@ Inv == x = 0
 	}
 }
 
+func TestRunCheckFindsTemporalLassoCounterexample(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "Liveness.tla")
+	configPath := filepath.Join(dir, "Liveness.cfg")
+	if err := os.WriteFile(path, []byte(`---- MODULE Liveness ----
+EXTENDS Integers
+\* @type: Int;
+VARIABLE x
+Init == x = 0
+Next == x' = IF x = 0 THEN 1 ELSE 0
+Live == <> (x = 2)
+====
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, []byte("INIT Init\nNEXT Next\nPROPERTY Live\nCHECK_DEADLOCK FALSE\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	code := run(context.Background(), []string{"check", "-config", configPath, "-length=3", path}, &stdout, &stderr)
+	if code != exitCounterexample || !strings.Contains(stdout.String(), "Invariant Live violated") {
+		t.Fatalf("temporal check = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
+	}
+}
+
 func TestRunCheckReportsDeadlockWithoutInvariant(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "Deadlock.tla")

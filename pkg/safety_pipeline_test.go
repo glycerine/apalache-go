@@ -1,7 +1,8 @@
 package apalache
 
 import (
-	"strings"
+	"context"
+	"reflect"
 	"testing"
 )
 
@@ -61,13 +62,80 @@ func TestPrepareSafetyTransitionsEndToEnd(t *testing.T) {
 	}
 }
 
-func TestPrepareSafetyTransitionsRejectsTemporalPropertiesExplicitly(t *testing.T) {
-	truth := NewValueExpr(BoolValue(true), Typed(BoolT1))
-	module := configuredTestModule(boolDefinition("Init", truth), boolDefinition("Next", truth), boolDefinition("Live", truth))
-	_, err := PrepareSafetyTransitions(module, SafetyPipelineOptions{Specification: SpecificationConfiguration{
+func TestPrepareSafetyTransitionsEncodesTemporalProperties(t *testing.T) {
+	x := NewNameExpr("x", Typed(IntT1))
+	prime := MustOperExpr(Op("PRIME"), Typed(IntT1), NewNameExpr("x", Typed(IntT1)))
+	init := boolDefinition("Init", MustOperExpr(Op("EQ"), Typed(BoolT1), x, intLiteral(0)))
+	nextValue := MustOperExpr(Op("IF_THEN_ELSE"), Typed(IntT1),
+		MustOperExpr(Op("EQ"), Typed(BoolT1), x, intLiteral(0)), intLiteral(1), intLiteral(0))
+	next := boolDefinition("Next", MustOperExpr(Op("EQ"), Typed(BoolT1), prime, nextValue))
+	live := boolDefinition("Live", MustOperExpr(Op("EVENTUALLY"), Typed(BoolT1),
+		MustOperExpr(Op("EQ"), Typed(BoolT1), x, intLiteral(2))))
+	module := configuredTestModule(NewVarDecl("x", Typed(IntT1)), init, next, live)
+	prepared, err := PrepareSafetyTransitions(module, SafetyPipelineOptions{Specification: SpecificationConfiguration{
 		Behavior: InitNextSpec{Init: "Init", Next: "Next"}, TemporalProperties: []string{"Live"},
 	}})
-	if err == nil || !strings.Contains(err.Error(), "temporal encoding") {
-		t.Fatalf("temporal pipeline error = %v", err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(prepared.Predicates.TemporalProperties) != 0 ||
+		!reflect.DeepEqual(prepared.Predicates.Invariants, []string{"Live"}) {
+		t.Fatalf("encoded predicates = %+v", prepared.Predicates)
+	}
+	result, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Outcome != SafetyCounterexample || result.Invariant != "Live" || result.Depth < 2 {
+		t.Fatalf("temporal counterexample = %+v", result)
+	}
+}
+
+func TestPrepareSafetyTransitionsAcceptsSatisfiedEventually(t *testing.T) {
+	x := NewNameExpr("x", Typed(IntT1))
+	prime := MustOperExpr(Op("PRIME"), Typed(IntT1), NewNameExpr("x", Typed(IntT1)))
+	init := boolDefinition("Init", MustOperExpr(Op("EQ"), Typed(BoolT1), x, intLiteral(0)))
+	nextValue := MustOperExpr(Op("IF_THEN_ELSE"), Typed(IntT1),
+		MustOperExpr(Op("EQ"), Typed(BoolT1), x, intLiteral(0)), intLiteral(1), intLiteral(0))
+	next := boolDefinition("Next", MustOperExpr(Op("EQ"), Typed(BoolT1), prime, nextValue))
+	live := boolDefinition("Live", MustOperExpr(Op("EVENTUALLY"), Typed(BoolT1),
+		MustOperExpr(Op("EQ"), Typed(BoolT1), x, intLiteral(1))))
+	module := configuredTestModule(NewVarDecl("x", Typed(IntT1)), init, next, live)
+	prepared, err := PrepareSafetyTransitions(module, SafetyPipelineOptions{Specification: SpecificationConfiguration{
+		Behavior: InitNextSpec{Init: "Init", Next: "Next"}, TemporalProperties: []string{"Live"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Outcome != SafetyNoCounterexample {
+		t.Fatalf("satisfied temporal property = %+v", result)
+	}
+}
+
+func TestPrepareSafetyTransitionsDesugarsLeadsToBeforeTableau(t *testing.T) {
+	x := NewNameExpr("x", Typed(IntT1))
+	init := boolDefinition("Init", MustOperExpr(Op("EQ"), Typed(BoolT1), x, intLiteral(0)))
+	next := boolDefinition("Next", MustOperExpr(Op("EQ"), Typed(BoolT1),
+		MustOperExpr(Op("PRIME"), Typed(IntT1), NewNameExpr("x", Typed(IntT1))), x))
+	leads := boolDefinition("Leads", MustOperExpr(Op("LEADS_TO"), Typed(BoolT1),
+		MustOperExpr(Op("EQ"), Typed(BoolT1), x, intLiteral(0)),
+		MustOperExpr(Op("EQ"), Typed(BoolT1), x, intLiteral(1))))
+	module := configuredTestModule(NewVarDecl("x", Typed(IntT1)), init, next, leads)
+	prepared, err := PrepareSafetyTransitions(module, SafetyPipelineOptions{Specification: SpecificationConfiguration{
+		Behavior: InitNextSpec{Init: "Init", Next: "Next"}, TemporalProperties: []string{"Leads"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Outcome != SafetyCounterexample || result.Invariant != "Leads" {
+		t.Fatalf("leads-to counterexample = %+v", result)
 	}
 }
