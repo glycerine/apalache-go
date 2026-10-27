@@ -61,7 +61,7 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 		switch typed.Operator().Name() {
 		case "Apalache!:=":
 			return rewriter.rewriteAssignment(typed, scope)
-		case "AND", "OR":
+		case "AND", "OR", "IMPLIES", "EQUIV":
 			return rewriter.rewriteBoolean(typed, scope)
 		case "NOT":
 			return rewriter.rewriteNegation(typed, scope)

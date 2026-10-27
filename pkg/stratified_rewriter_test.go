@@ -83,6 +83,30 @@ func TestStratifiedLabelsAndFiniteSetPredicate(t *testing.T) {
 	}
 }
 
+func TestStratifiedImplicationAndEquivalenceTruthTables(t *testing.T) {
+	boolean := func(value bool) Expr { return NewValueExpr(BoolValue(value), Typed(BoolT1)) }
+	for _, operator := range []string{"IMPLIES", "EQUIV"} {
+		for _, left := range []bool{false, true} {
+			for _, right := range []bool{false, true} {
+				want := left == right
+				if operator == "IMPLIES" {
+					want = !left || right
+				}
+				name := fmt.Sprintf("%s/%v/%v", operator, left, right)
+				t.Run(name, func(t *testing.T) {
+					rewriter := NewStratifiedRewriter()
+					expression := MustOperExpr(Op(operator), Typed(BoolT1), boolean(left), boolean(right))
+					scope, result, err := rewriter.Rewrite(expression, InitialRewriterScope())
+					if err != nil {
+						t.Fatal(err)
+					}
+					checkRewrittenTruth(t, rewriter, scope, result, want)
+				})
+			}
+		}
+	}
+}
+
 func TestStratifiedRewriterSetConstructionUnionAndFilter(t *testing.T) {
 	rewriter := NewStratifiedRewriter()
 	intSet := Typed(mustSet(IntT1))
