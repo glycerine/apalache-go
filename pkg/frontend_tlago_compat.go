@@ -513,6 +513,64 @@ func normalizeTlagoLambdaValues(module *Module, sources *SourceStore) *Module {
 	return transformTlagoModuleExpressions(module, rewrite, sources)
 }
 
+// normalizeTlagoRecursiveFunctions reconstructs FUN_REC_CTOR/FUN_REC_REF.
+// tlago v0.1.9 exports a recursive function as an ordinary constructor whose
+// body calls the enclosing nullary declaration by name.
+func normalizeTlagoRecursiveFunctions(module *Module, sources *SourceStore) *Module {
+	if module == nil {
+		return nil
+	}
+	var tracker TransformationTracker = IdleTracker{}
+	if sources != nil {
+		tracker = NewListenerTracker(sources)
+	}
+	declarations := module.Declarations()
+	changedModule := false
+	for index, declaration := range declarations {
+		operator, ok := declaration.(*OperDecl)
+		if !ok || len(operator.FormalParams()) != 0 {
+			continue
+		}
+		constructor, ok := operator.Body().(*OperExpr)
+		if !ok || constructor.Operator().Name() != "FUN_CTOR" {
+			continue
+		}
+		foundReference := false
+		rewrite := RewriteExpressions(tracker, func(expression Expr) (Expr, bool) {
+			application, ok := expression.(*OperExpr)
+			if !ok || application.Operator().Name() != "OPER_APP" {
+				return nil, false
+			}
+			arguments := application.Arguments()
+			if len(arguments) != 1 {
+				return nil, false
+			}
+			name, named := arguments[0].(*NameExpr)
+			if !named || name.Name() != operator.Name() {
+				return nil, false
+			}
+			foundReference = true
+			return MustOperExpr(Op("FUN_REC_REF"), application.Tag()), true
+		})
+		arguments := constructor.Arguments()
+		arguments[0] = rewrite(arguments[0])
+		if !foundReference {
+			continue
+		}
+		recursive := MustOperExpr(Op("FUN_REC_CTOR"), constructor.Tag(), arguments...)
+		copy := operator.copyWithTag(operator.Tag())
+		copy.SetBody(recursive)
+		declarations[index] = tracker.TrackOperatorDeclaration(func(*OperDecl) *OperDecl { return copy })(operator)
+		changedModule = true
+	}
+	if !changedModule {
+		return module
+	}
+	result := NewModule(module.Name(), declarations)
+	result.properties = cloneMap(module.properties)
+	return result
+}
+
 // normalizeTlagoOperatorValues repairs a non-nullary operator passed as a
 // higher-order argument. tlago v0.1.9 wraps such a name in a zero-argument
 // OPER_APP, which is never a valid call to a non-nullary definition.

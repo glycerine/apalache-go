@@ -382,6 +382,22 @@ Test ==
 	}
 }
 
+func TestParseAndTypeCheckSourceReconstructsRecursiveFunction(t *testing.T) {
+	result := ParseAndTypeCheckSource(context.Background(), "RecursiveFunction.tla", `---- MODULE RecursiveFunction ----
+EXTENDS Integers
+Fact[k \in 1..4] == IF k <= 1 THEN 1 ELSE k * Fact[k - 1]
+Test == Fact[3] = 6
+====
+`, FrontendOptions{}, TypeCheckOptions{})
+	if !result.OK() {
+		t.Fatalf("ParseAndTypeCheckSource() diagnostics = %v", result.Diagnostics)
+	}
+	body, found := OperatorBody(result.Native, "Fact")
+	if !found || countOperator(body, "FUN_REC_CTOR") != 1 || countOperator(body, "FUN_REC_REF") != 1 {
+		t.Fatalf("recursive function body = %#v", body)
+	}
+}
+
 func TestParseAndTypeCheckSourceReconstructsTupleQuantifier(t *testing.T) {
 	result := ParseAndTypeCheckSource(context.Background(), "TupleBound.tla", `---- MODULE TupleBound ----
 EXTENDS Integers
