@@ -152,6 +152,7 @@ Inv ==
   /\ SymDiff({1, 2}, {2, 3}) = {1, 3}
   /\ SumSet({1, 2, 3}) = 6
   /\ ProductSet({1, 2, 3, 4}) = 24
+  /\ \A k \in -1..Cardinality({"a", "b", "c", "c"}) + 1: k >= -1 /\ k <= 4
 ====
 `, FrontendOptions{}, TypeCheckOptions{UseRows: true})
 	if !frontend.OK() {

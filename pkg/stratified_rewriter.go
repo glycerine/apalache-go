@@ -836,6 +836,29 @@ func (rewriter *StratifiedRewriter) rewriteCardinality(expression *OperExpr, sco
 		return scope, ArenaCell{}, fmt.Errorf("cardinality requires a finite set, found %s", setCell.Type)
 	}
 	pointers := scope.Arena.GetHas(setCell)
+	seen := make(map[int]struct{}, len(pointers))
+	constantCardinality := true
+	for _, pointer := range pointers {
+		if _, fixed := pointer.(FixedElementPointer); !fixed {
+			constantCardinality = false
+			break
+		}
+		element := pointer.Element()
+		if _, duplicate := seen[element.ID]; duplicate {
+			continue
+		}
+		seen[element.ID] = struct{}{}
+		_, integer := rewriter.integers.FindValue(element)
+		_, literal := rewriter.literals.FindLiteral(element)
+		boolean := element.Equal(scope.Arena.TrueCell()) || element.Equal(scope.Arena.FalseCell())
+		if !integer && !literal && !boolean {
+			constantCardinality = false
+			break
+		}
+	}
+	if constantCardinality {
+		return rewriter.Rewrite(NewValueExpr(Int64Value(int64(len(seen))), Typed(IntT1)), scope)
+	}
 	sum := Expr(NewValueExpr(Int64Value(0), Typed(IntT1)))
 	for index, pointer := range pointers {
 		uniqueConditions := []Expr{pointer.ToSMT()}
@@ -1404,6 +1427,7 @@ func (rewriter *StratifiedRewriter) rewriteBasicEquality(expression *OperExpr, s
 func (rewriter *StratifiedRewriter) rewriteArithmetic(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
 	arguments := expression.Arguments()
 	terms := make([]Expr, len(arguments))
+	cells := make([]ArenaCell, len(arguments))
 	for index, argument := range arguments {
 		var cell ArenaCell
 		var err error
@@ -1414,7 +1438,43 @@ func (rewriter *StratifiedRewriter) rewriteArithmetic(expression *OperExpr, scop
 		if !EqualTypes(cell.Type.TLAType(), IntT1) {
 			return scope, ArenaCell{}, fmt.Errorf("integer operator %s received %s", expression.Operator().Name(), cell.Type)
 		}
+		cells[index] = cell
 		terms[index] = cell.NameExpr()
+	}
+	if len(cells) == 1 && expression.Operator().Name() == "UNARY_MINUS" {
+		if value, known := rewriter.integers.FindValue(cells[0]); known {
+			return rewriter.Rewrite(NewValueExpr(NewIntValue(value.Neg(value)), Typed(IntT1)), scope)
+		}
+	}
+	if len(cells) == 2 {
+		left, leftKnown := rewriter.integers.FindValue(cells[0])
+		right, rightKnown := rewriter.integers.FindValue(cells[1])
+		if leftKnown && rightKnown {
+			value := left
+			switch expression.Operator().Name() {
+			case "PLUS":
+				value.Add(left, right)
+			case "MINUS":
+				value.Sub(left, right)
+			case "MULT":
+				value.Mul(left, right)
+			case "DIV":
+				if right.Sign() == 0 {
+					return scope, ArenaCell{}, fmt.Errorf("division by zero")
+				}
+				value.Quo(left, right)
+			case "MOD":
+				if right.Sign() == 0 {
+					return scope, ArenaCell{}, fmt.Errorf("modulo by zero")
+				}
+				value.Rem(left, right)
+			default:
+				value = nil
+			}
+			if value != nil {
+				return rewriter.Rewrite(NewValueExpr(NewIntValue(value), Typed(IntT1)), scope)
+			}
+		}
 	}
 	newArena, result := scope.Arena.AppendCellType(BasicCellType{Type: IntT1})
 	scope.Arena = newArena

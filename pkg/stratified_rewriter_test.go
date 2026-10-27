@@ -300,6 +300,11 @@ func TestStratifiedPrimeAndConstCardinalityWrapper(t *testing.T) {
 	setType := mustSet(IntT1)
 	set := MustOperExpr(Op("SET_ENUM"), Typed(setType), intValue(1), intValue(2))
 	cardinality := MustOperExpr(Op("FiniteSets!Cardinality"), Typed(IntT1), set)
+	scope, cardinalityCell, err := rewriter.Rewrite(cardinality, scope)
+	cardinalityValue, cardinalityKnown := rewriter.IntegerCache().FindValue(cardinalityCell)
+	if err != nil || !cardinalityKnown || cardinalityValue.Int64() != 2 {
+		t.Fatalf("fixed cardinality = %v, %v, %v", cardinalityValue, cardinalityKnown, err)
+	}
 	comparison := MustOperExpr(Op("GE"), Typed(BoolT1), cardinality, intValue(2))
 	wrapper := MustOperExpr(Op("Apalache!ConstCardinality"), Typed(BoolT1), comparison)
 	scope, result, err = rewriter.Rewrite(wrapper, scope)
