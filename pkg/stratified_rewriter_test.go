@@ -107,6 +107,52 @@ func TestStratifiedImplicationAndEquivalenceTruthTables(t *testing.T) {
 	}
 }
 
+func TestStratifiedConstantExponentiationThroughG3(t *testing.T) {
+	for _, test := range []struct {
+		base, exponent, expected int64
+	}{
+		{2, 0, 1},
+		{3, 4, 81},
+		{-2, 5, -32},
+	} {
+		rewriter := NewStratifiedRewriter()
+		expression := MustOperExpr(Op("POW"), Typed(IntT1), intLiteral(test.base), intLiteral(test.exponent))
+		scope, result, err := rewriter.Rewrite(expression, InitialRewriterScope())
+		if err != nil {
+			t.Fatal(err)
+		}
+		solver, err := NewG3SolverContext()
+		if err != nil {
+			t.Fatal(err)
+		}
+		encoder, err := EncodeRewriterScope(solver, scope, rewriter.Constraints())
+		if err != nil {
+			solver.Close()
+			t.Fatal(err)
+		}
+		claim := MustOperExpr(Op("NE"), Typed(BoolT1), result.NameExpr(), intLiteral(test.expected))
+		if err = encoder.Assert(claim); err != nil {
+			solver.Close()
+			t.Fatal(err)
+		}
+		status, err := solver.Check(context.Background())
+		solver.Close()
+		if err != nil || status != SMTUnsatisfiable {
+			t.Fatalf("%d ^ %d = %d: %v, %v", test.base, test.exponent, test.expected, status, err)
+		}
+	}
+
+	rewriter := NewStratifiedRewriter()
+	if _, _, err := rewriter.Rewrite(MustOperExpr(Op("POW"), Typed(IntT1), intLiteral(2),
+		NewNameExpr("n", Typed(IntT1))), InitialRewriterScope()); err == nil {
+		t.Fatal("symbolic exponent was accepted")
+	}
+	if _, _, err := rewriter.Rewrite(MustOperExpr(Op("POW"), Typed(IntT1), intLiteral(2), intLiteral(-1)),
+		InitialRewriterScope()); err == nil {
+		t.Fatal("negative exponent was accepted")
+	}
+}
+
 func TestStratifiedPrimeAndConstCardinalityWrapper(t *testing.T) {
 	intValue := func(value int64) Expr { return NewValueExpr(Int64Value(value), Typed(IntT1)) }
 	rewriter := NewStratifiedRewriter()

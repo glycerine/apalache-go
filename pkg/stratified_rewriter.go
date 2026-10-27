@@ -69,6 +69,8 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 			return rewriter.rewriteBasicEquality(typed, scope)
 		case "PLUS", "MINUS", "MULT", "DIV", "MOD", "UNARY_MINUS":
 			return rewriter.rewriteArithmetic(typed, scope)
+		case "POW":
+			return rewriter.rewritePower(typed, scope)
 		case "INT_RANGE":
 			return rewriter.rewriteIntegerRange(typed, scope)
 		case "LT", "LE", "GT", "GE":
@@ -1162,6 +1164,54 @@ func (rewriter *StratifiedRewriter) rewriteArithmetic(expression *OperExpr, scop
 	operation := MustOperExpr(expression.Operator(), Typed(IntT1), terms...)
 	rewriter.assert(MustOperExpr(Op("EQ"), Typed(BoolT1), result.NameExpr(), operation))
 	return scope, result, nil
+}
+
+func (rewriter *StratifiedRewriter) rewritePower(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
+	arguments := expression.Arguments()
+	if len(arguments) != 2 {
+		return scope, ArenaCell{}, fmt.Errorf("integer exponentiation requires two arguments")
+	}
+	exponent, constant := constantInteger(arguments[1])
+	if !constant {
+		return scope, ArenaCell{}, fmt.Errorf("integer exponentiation requires a constant exponent with g3")
+	}
+	if exponent.Sign() < 0 {
+		return scope, ArenaCell{}, fmt.Errorf("integer exponentiation requires a nonnegative exponent, found %s", exponent)
+	}
+	if !exponent.IsUint64() || exponent.Uint64() > 65535 {
+		return scope, ArenaCell{}, fmt.Errorf("integer exponent %s exceeds the supported bound 65535", exponent)
+	}
+	scope, base, err := rewriter.Rewrite(arguments[0], scope)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	if !EqualTypes(base.Type.TLAType(), IntT1) {
+		return scope, ArenaCell{}, fmt.Errorf("integer exponentiation received base type %s", base.Type)
+	}
+	scope, result, err := rewriter.Rewrite(NewValueExpr(Int64Value(1), Typed(IntT1)), scope)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	factor := base
+	power := exponent.Uint64()
+	for power != 0 {
+		if power&1 != 0 {
+			scope, result = rewriter.multiplyCells(scope, result, factor)
+		}
+		power >>= 1
+		if power != 0 {
+			scope, factor = rewriter.multiplyCells(scope, factor, factor)
+		}
+	}
+	return scope, result, nil
+}
+
+func (rewriter *StratifiedRewriter) multiplyCells(scope RewriterScope, left, right ArenaCell) (RewriterScope, ArenaCell) {
+	newArena, result := scope.Arena.AppendCellType(BasicCellType{Type: IntT1})
+	scope.Arena = newArena
+	product := MustOperExpr(Op("MULT"), Typed(IntT1), left.NameExpr(), right.NameExpr())
+	rewriter.assert(MustOperExpr(Op("EQ"), Typed(BoolT1), result.NameExpr(), product))
+	return scope, result
 }
 
 func (rewriter *StratifiedRewriter) rewriteComparison(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
