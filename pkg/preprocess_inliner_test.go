@@ -137,6 +137,33 @@ func TestInstantiateEmbeddedOperatorSpecializesFromArguments(t *testing.T) {
 	}
 }
 
+func TestInstantiateEmbeddedOperatorPreservesNullaryLetSharing(t *testing.T) {
+	boolOperator := mustOperator([]Type{IntT1}, BoolT1)
+	nullaryInt := mustOperator(nil, IntT1)
+	pick := NewOperDecl("Pick", nil, NewNameExpr("x", Typed(IntT1)), Typed(nullaryInt))
+	pickCall := func() Expr {
+		return MustOperExpr(Op("OPER_APP"), Typed(IntT1), NewNameExpr("Pick", Typed(nullaryInt)))
+	}
+	body := NewLetInExpr(MustOperExpr(Op("EQ"), Typed(BoolT1), pickCall(), pickCall()), Typed(BoolT1), pick)
+	outer := NewOperDecl("Outer", []OperatorParam{ValueParam("x")}, body, Typed(boolOperator))
+	embedded := NewLetInExpr(NewNameExpr("Outer", Typed(boolOperator)), Typed(boolOperator), outer)
+
+	got, err := instantiateEmbeddedOperator(embedded, BoolT1, intLiteral(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	shared, ok := got.(*LetInExpr)
+	if !ok || len(shared.Declarations()) != 1 {
+		t.Fatalf("instantiated sharing = %v", got)
+	}
+	equality := shared.Body().(*OperExpr)
+	left := equality.Arguments()[0].(*OperExpr).Arguments()[0].(*NameExpr)
+	right := equality.Arguments()[1].(*OperExpr).Arguments()[0].(*NameExpr)
+	if left.Name() != shared.Declarations()[0].Name() || right.Name() != left.Name() {
+		t.Fatalf("shared calls = %s, %s; declaration = %s", left.Name(), right.Name(), shared.Declarations()[0].Name())
+	}
+}
+
 func TestInlinerTransitivePolymorphismIgnoresVariableNumbering(t *testing.T) {
 	for _, numbers := range [][2]int{{0, 1}, {1, 0}, {0, 2}, {2, 0}} {
 		a, _ := NewVarType(numbers[0])

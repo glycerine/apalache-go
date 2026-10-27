@@ -164,9 +164,10 @@ Inv ==
 
 func TestBundledSequencesExtChecksFiniteSequenceOperators(t *testing.T) {
 	frontend := ParseAndTypeCheckSource(context.Background(), "BundledSequencesExt.tla", `---- MODULE BundledSequencesExt ----
-EXTENDS SequencesExt
+EXTENDS SequencesExt, Integers
 Init == TRUE
 Next == TRUE
+Less(i, j) == i < j
 ConversionsOK ==
   /\ ToSet(<<1, 2, 1>>) = {1, 2}
   /\ ToSet(SetToSeq({1, 2})) = {1, 2}
@@ -175,6 +176,7 @@ RemoveOK == Remove(<<1, 2, 1>>, 1) = <<2>>
 ReplaceAllOK == ReplaceAll(<<1, 2, 1>>, 1, 4) = <<4, 2, 4>>
 InsertAtOK == InsertAt(<<1, 3>>, 2, 2) = <<1, 2, 3>>
 FoldOK == FoldLeft(LAMBDA acc, x: acc + x, 0, <<1, 2, 3>>) = 6
+SortOK == SetToSortSeq({2, 1}, Less) = <<1, 2>>
 ZipOK == Zip(<<1, 2>>, <<"a", "b">>) = <<<<1, "a">>, <<2, "b">>>>
 ====
 `, FrontendOptions{}, TypeCheckOptions{UseRows: true})
@@ -185,7 +187,7 @@ ZipOK == Zip(<<1, 2>>, <<"a", "b">>) = <<<<1, "a">>, <<2, "b">>>>
 		Specification: SpecificationConfiguration{
 			Behavior: InitNextSpec{Init: "Init", Next: "Next"},
 			Invariants: []string{
-				"ConversionsOK", "ReverseOK", "RemoveOK", "ReplaceAllOK", "InsertAtOK", "FoldOK", "ZipOK",
+				"ConversionsOK", "ReverseOK", "RemoveOK", "ReplaceAllOK", "InsertAtOK", "FoldOK", "SortOK", "ZipOK",
 			},
 		},
 		Sources: frontend.Sources,

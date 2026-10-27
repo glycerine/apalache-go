@@ -26,7 +26,7 @@ func instantiateEmbeddedOperator(operator Expr, resultType Type, arguments ...Ex
 	specialized := NewLetInExpr(NewNameExpr(callName.Name(), Typed(callType)), Typed(callType), embedded.Declarations()...)
 	applicationArguments := append([]Expr{specialized}, arguments...)
 	application := MustOperExpr(Op("OPER_APP"), Typed(resultType), applicationArguments...)
-	return NewInliner(nil, nil, false, nil).Transform(application)
+	return NewInliner(nil, nil, true, nil).Transform(application)
 }
 
 func (rewriter *StratifiedRewriter) sequenceCapacity(scope RewriterScope, expression Expr) (RewriterScope, int, error) {
