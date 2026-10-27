@@ -89,6 +89,102 @@ Inv == Reverse(<<1, 2, 3>>) = <<3, 2, 1>>
 	if err != nil || !strings.Contains(string(output), "No counterexample found through depth 0") {
 		t.Fatalf("release smoke check: %v\n%s", err, output)
 	}
+
+	unsafePath := filepath.Join(runDir, "Unsafe.tla")
+	unsafeSpec := `---- MODULE Unsafe ----
+EXTENDS Integers
+\* @type: Int;
+VARIABLE x
+Init == x = 0
+Next == x' = x + 1
+Inv == x = 0
+====
+`
+	if err := os.WriteFile(unsafePath, []byte(unsafeSpec), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tracePath := filepath.Join(runDir, "counterexample.itf.json")
+	unsafe := releaseCommand(ctx, binary, runDir,
+		"check", "-length", "1", "-deadlock=false", "-inv", "Inv", "-itf", tracePath, unsafePath)
+	output, err = unsafe.CombinedOutput()
+	if exitCode(err) != 12 || !strings.Contains(string(output), "Invariant Inv violated at depth 1") {
+		t.Fatalf("release counterexample: %v\n%s", err, output)
+	}
+	traceData, err := os.ReadFile(tracePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	trace, err := UnmarshalITFTrace(traceData)
+	if err != nil || len(trace) != 2 {
+		t.Fatalf("release ITF trace = %#v, %v", trace, err)
+	}
+
+	parsePath := filepath.Join(runDir, "BadParse.tla")
+	if err := os.WriteFile(parsePath, []byte("---- MODULE BadParse ----\nValue == (1 + )\n====\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	parse := releaseCommand(ctx, binary, runDir, "parse", parsePath)
+	if output, err = parse.CombinedOutput(); exitCode(err) != 4 || len(output) == 0 {
+		t.Fatalf("release parse failure: %v\n%s", err, output)
+	}
+
+	typePath := filepath.Join(runDir, "BadType.tla")
+	if err := os.WriteFile(typePath, []byte("---- MODULE BadType ----\nCONSTANT N\nValue == N\n====\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	typecheck := releaseCommand(ctx, binary, runDir, "typecheck", typePath)
+	if output, err = typecheck.CombinedOutput(); exitCode(err) != 4 || !strings.Contains(string(output), "type annotation") {
+		t.Fatalf("release type failure: %v\n%s", err, output)
+	}
+
+	if runtime.GOOS != "windows" {
+		cancelPath := filepath.Join(runDir, "Cancel.tla")
+		cancelSpec := `---- MODULE Cancel ----
+EXTENDS Integers
+\* @type: Int;
+VARIABLE x
+Init == x = 0
+Next == x' = x + 1
+Inv == TRUE
+====
+`
+		if err := os.WriteFile(cancelPath, []byte(cancelSpec), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		cancel := releaseCommand(ctx, binary, runDir,
+			"check", "-length", "100000", "-deadlock=false", "-inv", "Inv", cancelPath)
+		if err := cancel.Start(); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case <-time.After(50 * time.Millisecond):
+			if err := cancel.Process.Signal(os.Interrupt); err != nil {
+				t.Fatal(err)
+			}
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		}
+		if err := cancel.Wait(); exitCode(err) != 1 {
+			t.Fatalf("release cancellation exit = %d, %v", exitCode(err), err)
+		}
+	}
+}
+
+func releaseCommand(ctx context.Context, binary, dir string, args ...string) *exec.Cmd {
+	command := exec.CommandContext(ctx, binary, args...)
+	command.Dir = dir
+	command.Env = []string{"HOME=" + dir, "PATH=" + filepath.Join(dir, "no-executables")}
+	return command
+}
+
+func exitCode(err error) int {
+	if err == nil {
+		return 0
+	}
+	if exitError, ok := err.(*exec.ExitError); ok {
+		return exitError.ExitCode()
+	}
+	return -1
 }
 
 func extractReleaseArchive(archivePath, destination, releaseName string) error {
