@@ -350,6 +350,12 @@ func normalizeTlagoApalacheBuiltinCalls(module *Module, sources *SourceStore) *M
 				return expanded, true
 			}
 		}
+		if _, shadowed := declared[callee.Name()]; !shadowed &&
+			(callee.Name() == "SelectSeq" || strings.HasSuffix(callee.Name(), "!SelectSeq")) {
+			if expanded, expandedOK := expandTlagoSelectSeq(operation, arguments); expandedOK {
+				return expanded, true
+			}
+		}
 		builtin, found := tlagoApalacheBuiltinCalls[callee.Name()]
 		if !found {
 			if changed {
@@ -398,6 +404,38 @@ func expandTlagoFunAsSeq(operation *OperExpr, arguments []Expr) (Expr, bool) {
 	sequence := MustOperExpr(Op("Apalache!MkSeq"), Untyped(), arguments[3], embedded)
 	return MustOperExpr(Op("Sequences!SubSeq"), operation.Tag(), sequence,
 		NewValueExpr(Int64Value(1), Untyped()), arguments[2]), true
+}
+
+func expandTlagoSelectSeq(operation *OperExpr, arguments []Expr) (Expr, bool) {
+	if len(arguments) != 3 {
+		return nil, false
+	}
+	predicate := arguments[2]
+	if application, ok := predicate.(*OperExpr); ok && application.Operator().Name() == "OPER_APP" {
+		applicationArguments := application.Arguments()
+		if len(applicationArguments) == 1 {
+			predicate = applicationArguments[0]
+		}
+	}
+	if _, name := predicate.(*NameExpr); !name {
+		if _, embedded := predicate.(*LetInExpr); !embedded {
+			return nil, false
+		}
+	}
+	suffix := operation.ID().String()
+	accumulatorName := "__select_seq_acc_" + suffix
+	elementName := "__select_seq_element_" + suffix
+	definitionName := "__select_seq_append_" + suffix
+	accumulator := NewNameExpr(accumulatorName, Untyped())
+	element := NewNameExpr(elementName, Untyped())
+	test := MustOperExpr(Op("OPER_APP"), Untyped(), predicate, element)
+	appendElement := MustOperExpr(Op("Sequences!Append"), Untyped(), accumulator, element)
+	body := MustOperExpr(Op("IF_THEN_ELSE"), Untyped(), test, appendElement, accumulator)
+	definition := NewOperDecl(definitionName,
+		[]OperatorParam{ValueParam(accumulatorName), ValueParam(elementName)}, body, Untyped())
+	embedded := NewLetInExpr(NewNameExpr(definitionName, Untyped()), Untyped(), definition)
+	empty := MustOperExpr(Op("TUPLE"), Untyped())
+	return MustOperExpr(Op("Apalache!ApaFoldSeqLeft"), operation.Tag(), embedded, empty, arguments[1]), true
 }
 
 func wrapTlagoBuiltinOperator(name *NameExpr, arity int) (Expr, bool) {

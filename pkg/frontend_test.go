@@ -143,6 +143,22 @@ Test == FunAsSeq([i \in 1..3 |-> i + 1], 3, 3) = <<2, 3, 4>>
 	}
 }
 
+func TestParseAndTypeCheckSourceExpandsSelectSeq(t *testing.T) {
+	result := ParseAndTypeCheckSource(context.Background(), "SelectSequence.tla", `---- MODULE SelectSequence ----
+EXTENDS Sequences, Integers
+IsOdd(i) == i % 2 = 1
+Test == SelectSeq(<<2, 3, 4>>, IsOdd) = <<3>>
+====
+`, FrontendOptions{}, TypeCheckOptions{})
+	if !result.OK() {
+		t.Fatalf("ParseAndTypeCheckSource() diagnostics = %v", result.Diagnostics)
+	}
+	body, found := OperatorBody(result.Native, "Test")
+	if !found || countOperator(body, "Apalache!ApaFoldSeqLeft") != 1 {
+		t.Fatalf("expanded SelectSeq body = %#v", body)
+	}
+}
+
 func TestParseAndTypeCheckSourceReconstructsTupleQuantifier(t *testing.T) {
 	result := ParseAndTypeCheckSource(context.Background(), "TupleBound.tla", `---- MODULE TupleBound ----
 EXTENDS Integers
