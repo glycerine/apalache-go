@@ -125,6 +125,12 @@ func (handler *ExplorationJSONRPCHandler) dispatch(ctx context.Context, method s
 		return handler.service.loadSpec(ctx, params)
 	case "disposeSpec":
 		return handler.service.disposeSpec(params)
+	case "assumeTransition":
+		return handler.service.assumeTransition(ctx, params)
+	case "nextStep":
+		return handler.service.nextStep(params)
+	case "rollback":
+		return handler.service.rollback(params)
 	default:
 		return nil, &jsonRPCError{Code: JSONRPCMethodNotFound, Message: fmt.Sprintf("Method not found: %s", method)}
 	}

@@ -70,6 +70,7 @@ Init == I:: x = 0
 Next ==
   \/ A:: x < 3 /\ x' = x + 1
   \/ B:: x > -3 /\ x' = x - 1
+  \/ C:: x > 10 /\ x' = x
 Inv1 == I1:: x >= -3
 Inv2 == I2:: x' - x = 1 \/ x' - x = -1
 ====`
@@ -88,7 +89,7 @@ Inv2 == I2:: x' - x = 1 \/ x' - x = -1
 		t.Fatalf("loadSpec identity = %#v", result)
 	}
 	for name, count := range map[string]int{
-		"initTransitions": 1, "nextTransitions": 2, "stateInvariants": 1, "actionInvariants": 1,
+		"initTransitions": 1, "nextTransitions": 3, "stateInvariants": 1, "actionInvariants": 1,
 	} {
 		entries, ok := parameters[name].([]any)
 		if !ok || len(entries) != count {
@@ -98,11 +99,58 @@ Inv2 == I2:: x' - x = 1 \/ x' - x = -1
 	assertMetadataLabels(t, parameters["initTransitions"], 0, "I")
 	assertMetadataLabels(t, parameters["nextTransitions"], 0, "A")
 	assertMetadataLabels(t, parameters["nextTransitions"], 1, "B")
+	assertMetadataLabels(t, parameters["nextTransitions"], 2, "C")
 	assertMetadataLabels(t, parameters["stateInvariants"], 0, "I1")
 	assertMetadataLabels(t, parameters["actionInvariants"], 0, "I2")
+	assume := postJSONRPC(t, handler, fmt.Sprintf(
+		`{"jsonrpc":"2.0","method":"assumeTransition","params":{"sessionId":%q,"transitionId":0,"checkEnabled":true},"id":2}`,
+		sessionID,
+	))
+	assumeResult, _ := assume["result"].(map[string]any)
+	if assumeResult["status"] != "ENABLED" || assumeResult["transitionId"] != float64(0) {
+		t.Fatalf("assumeTransition = %#v", assume)
+	}
+	next := postJSONRPC(t, handler, fmt.Sprintf(
+		`{"jsonrpc":"2.0","method":"nextStep","params":{"sessionId":%q},"id":3}`,
+		sessionID,
+	))
+	nextResult, _ := next["result"].(map[string]any)
+	if nextResult["newStepNo"] != float64(1) {
+		t.Fatalf("nextStep = %#v", next)
+	}
+	disabled := postJSONRPC(t, handler, fmt.Sprintf(
+		`{"jsonrpc":"2.0","method":"assumeTransition","params":{"sessionId":%q,"transitionId":2,"checkEnabled":true},"id":4}`,
+		sessionID,
+	))
+	disabledResult, _ := disabled["result"].(map[string]any)
+	if disabledResult["status"] != "DISABLED" {
+		t.Fatalf("disabled assumeTransition = %#v", disabled)
+	}
+	enabledAfterDisabled := postJSONRPC(t, handler, fmt.Sprintf(
+		`{"jsonrpc":"2.0","method":"assumeTransition","params":{"sessionId":%q,"transitionId":0,"checkEnabled":true},"id":5}`,
+		sessionID,
+	))
+	if result, _ := enabledAfterDisabled["result"].(map[string]any); result["status"] != "ENABLED" {
+		t.Fatalf("assumeTransition after disabled = %#v", enabledAfterDisabled)
+	}
+	rollback := postJSONRPC(t, handler, fmt.Sprintf(
+		`{"jsonrpc":"2.0","method":"rollback","params":{"sessionId":%q,"snapshotId":0},"id":6}`,
+		sessionID,
+	))
+	rollbackResult, _ := rollback["result"].(map[string]any)
+	if rollbackResult["snapshotId"] != float64(0) {
+		t.Fatalf("rollback = %#v", rollback)
+	}
+	assumeAgain := postJSONRPC(t, handler, fmt.Sprintf(
+		`{"jsonrpc":"2.0","method":"assumeTransition","params":{"sessionId":%q,"transitionId":0,"checkEnabled":true},"id":7}`,
+		sessionID,
+	))
+	if result, _ := assumeAgain["result"].(map[string]any); result["status"] != "ENABLED" {
+		t.Fatalf("assumeTransition after rollback = %#v", assumeAgain)
+	}
 
 	disposeBody := fmt.Sprintf(
-		`{"jsonrpc":"2.0","method":"disposeSpec","params":{"sessionId":%q},"id":2}`,
+		`{"jsonrpc":"2.0","method":"disposeSpec","params":{"sessionId":%q},"id":8}`,
 		sessionID,
 	)
 	dispose := postJSONRPC(t, handler, disposeBody)

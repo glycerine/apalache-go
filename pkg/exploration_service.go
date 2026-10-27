@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 type loadSpecParams struct {
@@ -48,9 +49,52 @@ type disposeSpecResult struct {
 	SessionID string `json:"sessionId"`
 }
 
+type assumeTransitionParams struct {
+	SessionID    string `json:"sessionId"`
+	TransitionID int    `json:"transitionId"`
+	CheckEnabled bool   `json:"checkEnabled"`
+	TimeoutSec   int    `json:"timeoutSec"`
+}
+
+type assumeTransitionResult struct {
+	SessionID    string `json:"sessionId"`
+	SnapshotID   int    `json:"snapshotId"`
+	TransitionID int    `json:"transitionId"`
+	Status       string `json:"status"`
+}
+
+type nextStepParams struct {
+	SessionID string `json:"sessionId"`
+}
+
+type nextStepResult struct {
+	SessionID  string `json:"sessionId"`
+	SnapshotID int    `json:"snapshotId"`
+	NewStepNo  int    `json:"newStepNo"`
+}
+
+type rollbackParams struct {
+	SessionID  string `json:"sessionId"`
+	SnapshotID int    `json:"snapshotId"`
+}
+
+type rollbackResult struct {
+	SessionID  string `json:"sessionId"`
+	SnapshotID int    `json:"snapshotId"`
+}
+
+type explorationOperation struct {
+	transition *int
+	advance    bool
+}
+
 type explorationSession struct {
-	mu       sync.Mutex
-	prepared SafetyPipelineResult
+	mu             sync.Mutex
+	prepared       SafetyPipelineResult
+	executor       *TransitionExecutor
+	operations     []explorationOperation
+	snapshots      map[int][]explorationOperation
+	lastSnapshotID int
 }
 
 // ExplorationService owns the independent symbolic exploration sessions used
@@ -94,10 +138,103 @@ func (service *ExplorationService) loadSpec(ctx context.Context, raw json.RawMes
 		return nil, &jsonRPCError{Code: JSONRPCInternalError, Message: "Failed to load specification: " + err.Error()}
 	}
 	sessionID := fmt.Sprintf("%x", service.lastSessionID.Add(1))
+	executor, err := newExplorationExecutor(prepared)
+	if err != nil {
+		return nil, &jsonRPCError{Code: JSONRPCInternalError, Message: "Failed to initialize specification: " + err.Error()}
+	}
 	service.mu.Lock()
-	service.sessions[sessionID] = &explorationSession{prepared: prepared}
+	service.sessions[sessionID] = &explorationSession{
+		prepared: prepared, executor: executor, snapshots: map[int][]explorationOperation{0: {}},
+	}
 	service.mu.Unlock()
 	return loadSpecResult{SessionID: sessionID, SnapshotID: 0, SpecParameters: parameters}, nil
+}
+
+func (service *ExplorationService) assumeTransition(ctx context.Context, raw json.RawMessage) (any, *jsonRPCError) {
+	var params assumeTransitionParams
+	if err := decodeJSONRPCParams(raw, &params); err != nil {
+		return nil, invalidParams(fmt.Errorf("Parse error in assumeTransition: %w", err))
+	}
+	if params.SessionID == "" || params.TransitionID < 0 || params.TimeoutSec < 0 {
+		return nil, invalidParams(fmt.Errorf("assumeTransition requires a non-empty sessionId, non-negative transitionId, and non-negative timeoutSec"))
+	}
+	return service.withSession(params.SessionID, func(session *explorationSession) (any, *jsonRPCError) {
+		beforeID := session.takeSnapshot()
+		transitions := TransitionsFromModule(session.prepared.Module, NormalizedNextPrefix)
+		if session.executor.Step() == 0 {
+			transitions = TransitionsFromModule(session.prepared.Module, NormalizedInitPrefix)
+		}
+		if params.TransitionID >= len(transitions) {
+			return nil, invalidParams(fmt.Errorf("Invalid transition ID: %d not in [0, %d)", params.TransitionID, len(transitions)))
+		}
+		enabled, err := session.executor.PrepareTransition(params.TransitionID, transitions[params.TransitionID])
+		if err != nil {
+			return nil, &jsonRPCError{Code: JSONRPCInternalError, Message: err.Error()}
+		}
+		if !enabled {
+			if err = session.recoverSnapshot(beforeID); err != nil {
+				return nil, &jsonRPCError{Code: JSONRPCInternalError, Message: err.Error()}
+			}
+			return assumeTransitionResult{params.SessionID, beforeID, params.TransitionID, "DISABLED"}, nil
+		}
+		if err = session.executor.AssumeTransition(params.TransitionID); err != nil {
+			return nil, &jsonRPCError{Code: JSONRPCInternalError, Message: err.Error()}
+		}
+		transitionID := params.TransitionID
+		session.operations = append(session.operations, explorationOperation{transition: &transitionID})
+		afterID := session.takeSnapshot()
+		if !params.CheckEnabled {
+			return assumeTransitionResult{params.SessionID, afterID, params.TransitionID, "UNKNOWN"}, nil
+		}
+		checkContext, cancel := explorationTimeout(ctx, params.TimeoutSec)
+		defer cancel()
+		status, err := session.executor.Check(checkContext)
+		if err != nil {
+			return nil, &jsonRPCError{Code: JSONRPCInternalError, Message: err.Error()}
+		}
+		switch status {
+		case SMTSatisfiable:
+			return assumeTransitionResult{params.SessionID, afterID, params.TransitionID, "ENABLED"}, nil
+		case SMTUnsatisfiable:
+			if err = session.recoverSnapshot(beforeID); err != nil {
+				return nil, &jsonRPCError{Code: JSONRPCInternalError, Message: err.Error()}
+			}
+			return assumeTransitionResult{params.SessionID, beforeID, params.TransitionID, "DISABLED"}, nil
+		default:
+			return assumeTransitionResult{params.SessionID, afterID, params.TransitionID, "UNKNOWN"}, nil
+		}
+	})
+}
+
+func (service *ExplorationService) nextStep(raw json.RawMessage) (any, *jsonRPCError) {
+	var params nextStepParams
+	if err := decodeJSONRPCParams(raw, &params); err != nil || params.SessionID == "" {
+		return nil, invalidParams(fmt.Errorf("nextStep parameters must contain a non-empty sessionId"))
+	}
+	return service.withSession(params.SessionID, func(session *explorationSession) (any, *jsonRPCError) {
+		if err := session.executor.NextState(); err != nil {
+			return nil, &jsonRPCError{Code: JSONRPCInternalError, Message: err.Error()}
+		}
+		session.operations = append(session.operations, explorationOperation{advance: true})
+		snapshotID := session.takeSnapshot()
+		return nextStepResult{params.SessionID, snapshotID, session.executor.Step()}, nil
+	})
+}
+
+func (service *ExplorationService) rollback(raw json.RawMessage) (any, *jsonRPCError) {
+	var params rollbackParams
+	if err := decodeJSONRPCParams(raw, &params); err != nil || params.SessionID == "" || params.SnapshotID < 0 {
+		return nil, invalidParams(fmt.Errorf("rollback requires a non-empty sessionId and non-negative snapshotId"))
+	}
+	return service.withSession(params.SessionID, func(session *explorationSession) (any, *jsonRPCError) {
+		if _, found := session.snapshots[params.SnapshotID]; !found {
+			return nil, invalidParams(fmt.Errorf("Snapshot not found: %d in session %s", params.SnapshotID, params.SessionID))
+		}
+		if err := session.recoverSnapshot(params.SnapshotID); err != nil {
+			return nil, &jsonRPCError{Code: JSONRPCInternalError, Message: err.Error()}
+		}
+		return rollbackResult{params.SessionID, params.SnapshotID}, nil
+	})
 }
 
 func (service *ExplorationService) disposeSpec(raw json.RawMessage) (any, *jsonRPCError) {
@@ -109,7 +246,7 @@ func (service *ExplorationService) disposeSpec(raw json.RawMessage) (any, *jsonR
 		return nil, invalidParams(fmt.Errorf("disposeSpec parameters must contain a non-empty sessionId"))
 	}
 	service.mu.Lock()
-	_, found := service.sessions[params.SessionID]
+	serviceSession, found := service.sessions[params.SessionID]
 	if found {
 		delete(service.sessions, params.SessionID)
 	}
@@ -117,6 +254,10 @@ func (service *ExplorationService) disposeSpec(raw json.RawMessage) (any, *jsonR
 	if !found {
 		return nil, &jsonRPCError{Code: JSONRPCSessionMissing, Message: "Session not found: " + params.SessionID}
 	}
+	// Wait for an in-flight operation on this session before reporting that its
+	// resources have been retired.
+	serviceSession.mu.Lock()
+	serviceSession.mu.Unlock()
 	return disposeSpecResult{SessionID: params.SessionID}, nil
 }
 
@@ -252,6 +393,96 @@ func expressionLabels(expression Expr) []string {
 	}
 	sort.Strings(result)
 	return result
+}
+
+func newExplorationExecutor(prepared SafetyPipelineResult) (*TransitionExecutor, error) {
+	executor := NewTransitionExecutor(
+		declarationNameSlice(prepared.Module.ConstDeclarations()),
+		declarationNameSlice(prepared.Module.VarDeclarations()),
+	)
+	if initializer, found := OperatorBody(prepared.Module, NormalizedConstInit); found {
+		if err := executor.InitializeConstants(initializer); err != nil {
+			return nil, err
+		}
+	}
+	for _, assumption := range prepared.Module.AssumeDeclarations() {
+		if err := executor.AssertState(assumption.Body()); err != nil {
+			return nil, fmt.Errorf("assert assumption %s: %w", assumption.Name(), err)
+		}
+	}
+	return executor, nil
+}
+
+func (session *explorationSession) takeSnapshot() int {
+	session.lastSnapshotID++
+	session.snapshots[session.lastSnapshotID] = append([]explorationOperation(nil), session.operations...)
+	return session.lastSnapshotID
+}
+
+func (session *explorationSession) recoverSnapshot(snapshotID int) error {
+	operations, found := session.snapshots[snapshotID]
+	if !found {
+		return fmt.Errorf("snapshot %d was not found", snapshotID)
+	}
+	executor, err := newExplorationExecutor(session.prepared)
+	if err != nil {
+		return err
+	}
+	for _, operation := range operations {
+		if operation.advance {
+			if err = executor.NextState(); err != nil {
+				return err
+			}
+			continue
+		}
+		if operation.transition == nil {
+			return fmt.Errorf("invalid empty exploration operation")
+		}
+		transitions := TransitionsFromModule(session.prepared.Module, NormalizedNextPrefix)
+		if executor.Step() == 0 {
+			transitions = TransitionsFromModule(session.prepared.Module, NormalizedInitPrefix)
+		}
+		number := *operation.transition
+		if number < 0 || number >= len(transitions) {
+			return fmt.Errorf("transition %d is out of range while recovering snapshot", number)
+		}
+		enabled, prepareErr := executor.PrepareTransition(number, transitions[number])
+		if prepareErr != nil {
+			return prepareErr
+		}
+		if !enabled {
+			return fmt.Errorf("transition %d became disabled while recovering snapshot", number)
+		}
+		if err = executor.AssumeTransition(number); err != nil {
+			return err
+		}
+	}
+	session.executor = executor
+	session.operations = append([]explorationOperation(nil), operations...)
+	return nil
+}
+
+func (service *ExplorationService) withSession(
+	sessionID string,
+	callback func(*explorationSession) (any, *jsonRPCError),
+) (any, *jsonRPCError) {
+	service.mu.RLock()
+	session, found := service.sessions[sessionID]
+	if !found {
+		service.mu.RUnlock()
+		return nil, &jsonRPCError{Code: JSONRPCSessionMissing, Message: "Session not found: " + sessionID}
+	}
+	session.mu.Lock()
+	service.mu.RUnlock()
+	defer session.mu.Unlock()
+	return callback(session)
+}
+
+func explorationTimeout(parent context.Context, seconds int) (context.Context, context.CancelFunc) {
+	if seconds <= 0 {
+		return context.WithCancel(parent)
+	}
+	return context.WithTimeout(parent, time.Duration(seconds)*time.Second)
 }
 
 func decodeJSONRPCParams(raw json.RawMessage, destination any) error {
