@@ -46,10 +46,19 @@ SubBag(B) ==
   LET All == UNION {[S -> {n \in Nat: n > 0}]: S \in SUBSET DOMAIN B}
   IN {SB \in All: \A x \in DOMAIN SB: SB[x] \leq B[x]}
 
+\* @type: ((a) => b, a -> Int, b -> Int, a) => b -> Int;
+__BagOfAllExtend(F(_), B, partial, x) ==
+  LET k == F(x)
+  IN IF k \in DOMAIN partial
+     THEN [y \in DOMAIN partial |->
+            IF y = k THEN partial[y] + B[x] ELSE partial[y]]
+     ELSE [y \in DOMAIN partial \union {k} |->
+            IF y = k THEN B[x] ELSE partial[y]]
+
 \* @type: ((a) => b, a -> Int) => b -> Int;
 BagOfAll(F(_), B) ==
-  LET Extend(partial, x) == partial (+) [y \in {F(x)} |-> B[x]]
-  IN ApaFoldSet(Extend, EmptyBag, DOMAIN B)
+  LET Extend(partial, x) == __BagOfAllExtend(F, B, partial, x)
+  IN ApaFoldSet(Extend, [z \in {} |-> 0], DOMAIN B)
 
 \* @type: (a -> Int) => Int;
 BagCardinality(B) ==
