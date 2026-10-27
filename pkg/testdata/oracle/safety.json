@@ -157,6 +157,12 @@
       "go_args": ["check", "-length", "0", "-deadlock=false", "-inv", "AllTests", "test/tla/TestCommunityFunctions.tla"]
     },
     {
+      "name": "core-functions",
+      "dir": "..",
+      "scala_args": ["check", "--features=rows", "--length=0", "--no-deadlock", "--inv=TestFunCtorSet,TestFunCtorSetToSet,TestFunCtorOnPowerset,TestFunSetToPowerset,TestFunFromFunSet", "test/tla/TestFunctions.tla"],
+      "go_args": ["check", "-rows", "-length", "0", "-deadlock=false", "-inv", "TestFunCtorSet,TestFunCtorSetToSet,TestFunCtorOnPowerset,TestFunSetToPowerset,TestFunFromFunSet", "test/tla/TestFunctions.tla"]
+    },
+    {
       "name": "row-records",
       "dir": "..",
       "scala_args": ["check", "--features=rows", "--length=0", "--no-deadlock", "--inv=AllTests", "test/tla/TestRecordsNew.tla"],
