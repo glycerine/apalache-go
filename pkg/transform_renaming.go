@@ -151,6 +151,9 @@ func (renamer *IncrementalRenamer) next(name string) string {
 	return MakeRenamedName(base, renamer.counters[base])
 }
 
+// FreshName returns the next incremental spelling for base.
+func (renamer *IncrementalRenamer) FreshName(base string) string { return renamer.next(base) }
+
 func (renamer *IncrementalRenamer) Rename(expression Expr) Expr {
 	return renamer.rename(expression, make(map[string]string))
 }
