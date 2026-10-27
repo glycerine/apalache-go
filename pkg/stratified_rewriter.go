@@ -403,8 +403,43 @@ func (rewriter *StratifiedRewriter) rewriteFiniteQuantifier(expression *OperExpr
 			return scope, ArenaCell{}, fmt.Errorf("bounded quantifier over integer range: %w", err)
 		}
 	}
+	if _, functionSet := setCell.Type.(FiniteFunctionSetCellType); functionSet {
+		if expression.Operator().Name() != "EXISTS3" {
+			return scope, ArenaCell{}, fmt.Errorf("bounded quantifier %s over a compact function set is not supported", expression.Operator().Name())
+		}
+		emptiness, classifyErr := rewriter.classifySetEmptiness(scope, setCell)
+		if classifyErr != nil {
+			return scope, ArenaCell{}, classifyErr
+		}
+		if emptiness.kind != nonEmptyStatic {
+			return scope, ArenaCell{}, fmt.Errorf("existential quantification over a possibly empty compact function set is not supported")
+		}
+		var picked ArenaCell
+		scope, picked, err = rewriter.pickFunctionFromSet(scope, setCell)
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+		baseBinding := scope.Binding
+		scope.Binding = scope.Binding.With(binder.Name(), picked)
+		var predicate ArenaCell
+		scope, predicate, err = rewriter.Rewrite(arguments[2], scope)
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+		binding := scope.Binding.Map()
+		if previous, shadowed := baseBinding.Get(binder.Name()); shadowed {
+			binding[binder.Name()] = previous
+		} else {
+			delete(binding, binder.Name())
+		}
+		scope.Binding = NewBinding(binding)
+		if !EqualTypes(predicate.Type.TLAType(), BoolT1) {
+			return scope, ArenaCell{}, fmt.Errorf("bounded quantifier predicate has type %s", predicate.Type)
+		}
+		return scope, predicate, nil
+	}
 	if !isFiniteSetCellType(setCell.Type) {
-		return scope, ArenaCell{}, fmt.Errorf("bounded quantifier requires a finite set, found %s", setCell.Type)
+		return scope, ArenaCell{}, fmt.Errorf("bounded quantifier %s requires a finite set, found %s", expression.Operator().Name(), setCell.Type)
 	}
 	baseBinding := scope.Binding
 	pointers := scope.Arena.GetHas(setCell)
@@ -1120,7 +1155,8 @@ func (rewriter *StratifiedRewriter) rewriteApplication(expression *OperExpr, sco
 				return scope, ArenaCell{}, pairErr
 			}
 			results[index] = pairResult
-			if argument.Equal(pairArgument) {
+			active, unconditional := boolConstant(pointer.ToSMT())
+			if argument.Equal(pairArgument) && unconditional && active {
 				if exactMatch == -1 {
 					exactMatch = index
 				} else {
@@ -1133,11 +1169,9 @@ func (rewriter *StratifiedRewriter) rewriteApplication(expression *OperExpr, sco
 			}
 			matches[index] = booleanAnd(pointer.ToSMT(), equal)
 		}
-		// Function constructors and SetAsFun retain their domain cells as the
-		// keys in the relation. Projecting such a key is exact and needs no
-		// choice oracle; the surrounding domain guard determines whether this
-		// application is relevant. Duplicate identical keys retain the general
-		// first-match encoding below.
+		// An unconditionally active relation edge can be projected directly.
+		// Guarded edges must retain the first-match oracle: a different arena
+		// cell may denote the same key and deactivate this exact-cell edge.
 		if exactMatch >= 0 {
 			return project(scope, results[exactMatch])
 		}

@@ -50,6 +50,9 @@ func (rewriter *StratifiedRewriter) rewriteSetAsFunction(expression *OperExpr, s
 		keys[index] = key
 		conditions := []Expr{pointer.ToSMT()}
 		for previous := 0; previous < index; previous++ {
+			if rewriter.cellsKnownDistinct(scope.Arena, key, keys[previous]) {
+				continue
+			}
 			equal, equalErr := rewriter.equality.Equal(scope.Arena, key, keys[previous])
 			if equalErr != nil {
 				return scope, ArenaCell{}, equalErr

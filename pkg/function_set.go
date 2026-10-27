@@ -2,6 +2,19 @@ package apalache
 
 import "fmt"
 
+func (rewriter *StratifiedRewriter) cellsKnownDistinct(arena *PureArena, left, right ArenaCell) bool {
+	if leftInteger, found := rewriter.integers.FindValue(left); found {
+		rightInteger, rightFound := rewriter.integers.FindValue(right)
+		return rightFound && leftInteger.Cmp(rightInteger) != 0
+	}
+	if leftLiteral, found := rewriter.literals.FindLiteral(left); found {
+		rightLiteral, rightFound := rewriter.literals.FindLiteral(right)
+		return rightFound && (leftLiteral.Index != rightLiteral.Index || !EqualTypes(leftLiteral.Type, rightLiteral.Type))
+	}
+	return left.Equal(arena.TrueCell()) && right.Equal(arena.FalseCell()) ||
+		left.Equal(arena.FalseCell()) && right.Equal(arena.TrueCell())
+}
+
 type emptinessKind uint8
 
 const (
@@ -262,7 +275,14 @@ func (rewriter *StratifiedRewriter) pickFromCompactCollection(scope RewriterScop
 		if err != nil {
 			return scope, ArenaCell{}, err
 		}
-		rewriter.assert(constraint)
+		rangeConditions := make([]Expr, oracle.Size())
+		for index := range rangeConditions {
+			rangeConditions[index], err = oracle.Chosen(scope, index)
+			if err != nil {
+				return scope, ArenaCell{}, err
+			}
+		}
+		rewriter.assert(booleanAnd(booleanOr(rangeConditions...), constraint))
 		return NewCherryPicker(rewriter).Pick(scope, oracle, candidates)
 	default:
 		return scope, ArenaCell{}, fmt.Errorf("choice from %s is unsupported", set.Type)
@@ -298,6 +318,9 @@ func (rewriter *StratifiedRewriter) pickFunctionFromSet(scope RewriterScope, fun
 			FixedElementPointer{Cell: pointer.Element()}, FixedElementPointer{Cell: result})
 		conditions := []Expr{pointer.ToSMT()}
 		for previous := 0; previous < index; previous++ {
+			if rewriter.cellsKnownDistinct(scope.Arena, pointer.Element(), domainPointers[previous].Element()) {
+				continue
+			}
 			equal, equalErr := rewriter.equality.Equal(scope.Arena,
 				pointer.Element(), domainPointers[previous].Element())
 			if equalErr != nil {

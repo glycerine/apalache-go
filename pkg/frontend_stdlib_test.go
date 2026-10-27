@@ -114,6 +114,11 @@ InjectiveEquivOK ==
     \A a, b \in DOMAIN f: f[a] = f[b] => a = b
   IN \A f \in [{0, 1} -> {0, 1}]:
     IsInjectivePure(f) = IsInjective(f)
+FunctionDomainOK ==
+  \A f \in [{0, 1} -> {2, 3}]: DOMAIN f = {0, 1}
+FunctionRangeOK ==
+  \A f \in [{0, 1} -> {2, 3}]:
+    \A x \in {0, 1}: f[x] \in {2, 3}
 ====
 `, FrontendOptions{}, TypeCheckOptions{UseRows: true})
 	if !frontend.OK() {
@@ -122,7 +127,7 @@ InjectiveEquivOK ==
 	prepared, err := PrepareSafetyTransitions(frontend.Native, SafetyPipelineOptions{
 		Specification: SpecificationConfiguration{
 			Behavior:   InitNextSpec{Init: "Init", Next: "Next"},
-			Invariants: []string{"RangeOK", "InjectiveOK", "RestrictOK", "FoldOK", "InjectionOK", "SurjectionOK", "BijectionOK", "InjectiveEquivOK"},
+			Invariants: []string{"RangeOK", "InjectiveOK", "RestrictOK", "FoldOK", "InjectionOK", "SurjectionOK", "BijectionOK", "InjectiveEquivOK", "FunctionDomainOK", "FunctionRangeOK"},
 		},
 		Sources: frontend.Sources,
 	})
