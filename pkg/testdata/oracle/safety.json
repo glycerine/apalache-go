@@ -33,6 +33,18 @@
       "go_args": ["check", "--length=3", "--inv=Inv", "pkg/testdata/oracle/DeterministicDeadlock.tla"]
     },
     {
+      "name": "ignored-tlc-state-constraint",
+      "dir": "..",
+      "scala_args": ["check", "--length=3", "--config=pkg/testdata/oracle/StateConstraint.cfg", "pkg/testdata/oracle/ConfiguredConstraints.tla"],
+      "go_args": ["check", "--length=3", "--config=pkg/testdata/oracle/StateConstraint.cfg", "pkg/testdata/oracle/ConfiguredConstraints.tla"]
+    },
+    {
+      "name": "ignored-tlc-action-constraint",
+      "dir": "..",
+      "scala_args": ["check", "--length=3", "--config=pkg/testdata/oracle/ActionConstraint.cfg", "pkg/testdata/oracle/ConfiguredConstraints.tla"],
+      "go_args": ["check", "--length=3", "--config=pkg/testdata/oracle/ActionConstraint.cfg", "pkg/testdata/oracle/ConfiguredConstraints.tla"]
+    },
+    {
       "name": "action-invariant-safe",
       "dir": "..",
       "scala_args": ["check", "--length=2", "--no-deadlock", "--inv=IncreaseInv", "test/tla/ActionInv.tla"],

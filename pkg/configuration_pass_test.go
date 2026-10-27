@@ -111,6 +111,25 @@ func TestConfigureModuleExtractsCanonicalSpecification(t *testing.T) {
 	}
 }
 
+func TestConfigureModuleMatchesScalaByIgnoringTLCConstraints(t *testing.T) {
+	truth := NewValueExpr(BoolValue(true), Typed(BoolT1))
+	module := configuredTestModule(
+		boolDefinition("Init", truth), boolDefinition("Next", truth),
+		boolDefinition("StateOK", truth), boolDefinition("ActionOK", truth),
+	)
+	config := TLCConfig{
+		Behavior:         InitNextSpec{Init: "Init", Next: "Next"},
+		StateConstraints: []string{"StateOK"}, ActionConstraints: []string{"ActionOK"},
+	}
+	result, err := ConfigureModule(module, SpecificationConfiguration{TLCConfig: &config})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Predicates.StateConstraints) != 0 || len(result.Predicates.ActionConstraints) != 0 {
+		t.Fatalf("TLC constraints leaked into derived predicates: %#v", result.Predicates)
+	}
+}
+
 func TestConfigureModuleRejectsTypeMismatchMissingAndRecursion(t *testing.T) {
 	truth := NewValueExpr(BoolValue(true), Typed(BoolT1))
 	module := configuredTestModule(NewConstDecl("N", Typed(IntT1)), boolDefinition("Init", truth), boolDefinition("Next", truth))

@@ -119,12 +119,9 @@ func ConfigureModule(module *Module, options SpecificationConfiguration) (Config
 		if len(predicates.Invariants) == 0 {
 			predicates.Invariants = append([]string(nil), options.TLCConfig.Invariants...)
 		}
-		if len(predicates.StateConstraints) == 0 {
-			predicates.StateConstraints = append([]string(nil), options.TLCConfig.StateConstraints...)
-		}
-		if len(predicates.ActionConstraints) == 0 {
-			predicates.ActionConstraints = append([]string(nil), options.TLCConfig.ActionConstraints...)
-		}
+		// Scala's ConfigurationPass currently imports TLC constraint declarations
+		// but does not expose them through DerivedPredicates. Preserve that
+		// behavior until the Scala command path starts enforcing them.
 		if len(predicates.TemporalProperties) == 0 {
 			predicates.TemporalProperties = append([]string(nil), options.TLCConfig.TemporalProperties...)
 		}
