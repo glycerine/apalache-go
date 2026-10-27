@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
 	"strconv"
 
 	"github.com/glycerine/g3/pkg/ast"
@@ -25,6 +26,7 @@ type SMTSort uint8
 const (
 	SMTBool SMTSort = iota
 	SMTInt
+	SMTUninterpreted
 )
 
 // SMTTerm is an opaque solver term. Terms are owned by the context that
@@ -33,6 +35,7 @@ type SMTTerm struct {
 	owner  *G3SolverContext
 	handle ast.ASTHandle
 	sort   SMTSort
+	sortID string
 }
 
 func (term SMTTerm) Sort() SMTSort { return term.sort }
@@ -54,7 +57,7 @@ func NewG3SolverContext() (*G3SolverContext, error) {
 	fail := func(err error) (*G3SolverContext, error) {
 		return nil, errors.Join(err, command.Close())
 	}
-	if err = command.SetLogic("QF_LIA"); err != nil {
+	if err = command.SetLogic("QF_AUFLIA"); err != nil {
 		return fail(err)
 	}
 	manager, err := command.Manager()
@@ -84,6 +87,16 @@ func (solver *G3SolverContext) validateTerm(term SMTTerm, sort SMTSort) error {
 	return nil
 }
 
+func (solver *G3SolverContext) validateSameSort(left, right SMTTerm) error {
+	if left.sort != right.sort || left.sortID != right.sortID {
+		return fmt.Errorf("cannot combine SMT terms of different sorts")
+	}
+	if err := solver.validateTerm(left, left.sort); err != nil {
+		return err
+	}
+	return solver.validateTerm(right, right.sort)
+}
+
 func (solver *G3SolverContext) Declare(name string, sort SMTSort) (SMTTerm, error) {
 	if err := solver.validate(); err != nil {
 		return SMTTerm{}, err
@@ -102,7 +115,30 @@ func (solver *G3SolverContext) Declare(name string, sort SMTSort) (SMTTerm, erro
 		return SMTTerm{}, err
 	}
 	handle, err := solver.context.MakeApp(name, nil, nil, ast.ASTHandle{})
-	return SMTTerm{owner: solver, handle: handle, sort: sort}, err
+	return SMTTerm{owner: solver, handle: handle, sort: sort, sortID: sortName}, err
+}
+
+// DeclareUninterpreted declares a constant in a named uninterpreted sort,
+// creating the sort the first time it is used.
+func (solver *G3SolverContext) DeclareUninterpreted(name, sortName string) (SMTTerm, error) {
+	if err := solver.validate(); err != nil {
+		return SMTTerm{}, err
+	}
+	if sortName == "" {
+		return SMTTerm{}, fmt.Errorf("uninterpreted SMT sort name cannot be empty")
+	}
+	rangeSort, err := solver.context.LookupSort(sortName)
+	if err != nil {
+		rangeSort, err = solver.context.DeclareSort(sortName)
+		if err != nil {
+			return SMTTerm{}, err
+		}
+	}
+	if _, err = solver.context.DeclareFunction(name, nil, rangeSort); err != nil {
+		return SMTTerm{}, err
+	}
+	handle, err := solver.context.MakeApp(name, nil, nil, ast.ASTHandle{})
+	return SMTTerm{owner: solver, handle: handle, sort: SMTUninterpreted, sortID: sortName}, err
 }
 
 func (solver *G3SolverContext) Bool(value bool) (SMTTerm, error) {
@@ -116,7 +152,7 @@ func (solver *G3SolverContext) Bool(value bool) (SMTTerm, error) {
 	} else {
 		handle, err = solver.manager.MkFalse()
 	}
-	return SMTTerm{owner: solver, handle: handle, sort: SMTBool}, err
+	return SMTTerm{owner: solver, handle: handle, sort: SMTBool, sortID: "Bool"}, err
 }
 
 func (solver *G3SolverContext) Int(value int64) (SMTTerm, error) {
@@ -124,7 +160,18 @@ func (solver *G3SolverContext) Int(value int64) (SMTTerm, error) {
 		return SMTTerm{}, err
 	}
 	handle, err := solver.manager.ArithmeticIntegerNumeralText(strconv.FormatInt(value, 10))
-	return SMTTerm{owner: solver, handle: handle, sort: SMTInt}, err
+	return SMTTerm{owner: solver, handle: handle, sort: SMTInt, sortID: "Int"}, err
+}
+
+func (solver *G3SolverContext) BigInt(value *big.Int) (SMTTerm, error) {
+	if value == nil {
+		return SMTTerm{}, fmt.Errorf("SMT integer cannot be nil")
+	}
+	if err := solver.validate(); err != nil {
+		return SMTTerm{}, err
+	}
+	handle, err := solver.manager.ArithmeticIntegerNumeralText(value.String())
+	return SMTTerm{owner: solver, handle: handle, sort: SMTInt, sortID: "Int"}, err
 }
 
 func (solver *G3SolverContext) application(name string, sort SMTSort, arguments ...SMTTerm) (SMTTerm, error) {
@@ -139,7 +186,11 @@ func (solver *G3SolverContext) application(name string, sort SMTSort, arguments 
 		handles[i] = argument.handle
 	}
 	handle, err := solver.context.MakeApp(name, handles, nil, ast.ASTHandle{})
-	return SMTTerm{owner: solver, handle: handle, sort: sort}, err
+	sortID := "Bool"
+	if sort == SMTInt {
+		sortID = "Int"
+	}
+	return SMTTerm{owner: solver, handle: handle, sort: sort, sortID: sortID}, err
 }
 
 func (solver *G3SolverContext) Not(term SMTTerm) (SMTTerm, error) {
@@ -147,7 +198,7 @@ func (solver *G3SolverContext) Not(term SMTTerm) (SMTTerm, error) {
 		return SMTTerm{}, err
 	}
 	handle, err := solver.manager.MkNot(term.handle)
-	return SMTTerm{owner: solver, handle: handle, sort: SMTBool}, err
+	return SMTTerm{owner: solver, handle: handle, sort: SMTBool, sortID: "Bool"}, err
 }
 
 func (solver *G3SolverContext) And(terms ...SMTTerm) (SMTTerm, error) {
@@ -159,21 +210,64 @@ func (solver *G3SolverContext) And(terms ...SMTTerm) (SMTTerm, error) {
 		handles[i] = term.handle
 	}
 	handle, err := solver.manager.MkAndArray(handles)
-	return SMTTerm{owner: solver, handle: handle, sort: SMTBool}, err
+	return SMTTerm{owner: solver, handle: handle, sort: SMTBool, sortID: "Bool"}, err
+}
+
+func (solver *G3SolverContext) Or(terms ...SMTTerm) (SMTTerm, error) {
+	handles := make([]ast.ASTHandle, len(terms))
+	for i, term := range terms {
+		if err := solver.validateTerm(term, SMTBool); err != nil {
+			return SMTTerm{}, fmt.Errorf("argument %d: %w", i, err)
+		}
+		handles[i] = term.handle
+	}
+	handle, err := solver.manager.MkOrArray(handles)
+	return SMTTerm{owner: solver, handle: handle, sort: SMTBool, sortID: "Bool"}, err
 }
 
 func (solver *G3SolverContext) Equal(left, right SMTTerm) (SMTTerm, error) {
-	if left.sort != right.sort {
-		return SMTTerm{}, fmt.Errorf("cannot compare SMT terms of different sorts")
-	}
-	if err := solver.validateTerm(left, left.sort); err != nil {
-		return SMTTerm{}, err
-	}
-	if err := solver.validateTerm(right, right.sort); err != nil {
+	if err := solver.validateSameSort(left, right); err != nil {
 		return SMTTerm{}, err
 	}
 	handle, err := solver.manager.MkEq(left.handle, right.handle)
-	return SMTTerm{owner: solver, handle: handle, sort: SMTBool}, err
+	return SMTTerm{owner: solver, handle: handle, sort: SMTBool, sortID: "Bool"}, err
+}
+
+func (solver *G3SolverContext) Distinct(terms ...SMTTerm) (SMTTerm, error) {
+	if len(terms) < 2 {
+		return solver.Bool(true)
+	}
+	handles := make([]ast.ASTHandle, len(terms))
+	for index, term := range terms {
+		if err := solver.validateSameSort(terms[0], term); err != nil {
+			return SMTTerm{}, fmt.Errorf("argument %d: %w", index, err)
+		}
+		handles[index] = term.handle
+	}
+	handle, err := solver.manager.MkDistinct(handles)
+	return SMTTerm{owner: solver, handle: handle, sort: SMTBool, sortID: "Bool"}, err
+}
+
+func (solver *G3SolverContext) Implies(left, right SMTTerm) (SMTTerm, error) {
+	if err := solver.validateTerm(left, SMTBool); err != nil {
+		return SMTTerm{}, err
+	}
+	if err := solver.validateTerm(right, SMTBool); err != nil {
+		return SMTTerm{}, err
+	}
+	handle, err := solver.manager.MkImplies(left.handle, right.handle)
+	return SMTTerm{owner: solver, handle: handle, sort: SMTBool, sortID: "Bool"}, err
+}
+
+func (solver *G3SolverContext) IfThenElse(condition, thenTerm, elseTerm SMTTerm) (SMTTerm, error) {
+	if err := solver.validateTerm(condition, SMTBool); err != nil {
+		return SMTTerm{}, err
+	}
+	if err := solver.validateSameSort(thenTerm, elseTerm); err != nil {
+		return SMTTerm{}, err
+	}
+	handle, err := solver.manager.MkIte(condition.handle, thenTerm.handle, elseTerm.handle)
+	return SMTTerm{owner: solver, handle: handle, sort: thenTerm.sort, sortID: thenTerm.sortID}, err
 }
 
 func (solver *G3SolverContext) Add(left, right SMTTerm) (SMTTerm, error) {
@@ -186,14 +280,63 @@ func (solver *G3SolverContext) Add(left, right SMTTerm) (SMTTerm, error) {
 	return solver.application("+", SMTInt, left, right)
 }
 
-func (solver *G3SolverContext) GreaterEqual(left, right SMTTerm) (SMTTerm, error) {
+func (solver *G3SolverContext) arithmeticBinary(name string, left, right SMTTerm) (SMTTerm, error) {
 	if err := solver.validateTerm(left, SMTInt); err != nil {
 		return SMTTerm{}, err
 	}
 	if err := solver.validateTerm(right, SMTInt); err != nil {
 		return SMTTerm{}, err
 	}
-	return solver.application(">=", SMTBool, left, right)
+	return solver.application(name, SMTInt, left, right)
+}
+
+func (solver *G3SolverContext) Subtract(left, right SMTTerm) (SMTTerm, error) {
+	return solver.arithmeticBinary("-", left, right)
+}
+
+func (solver *G3SolverContext) Multiply(left, right SMTTerm) (SMTTerm, error) {
+	return solver.arithmeticBinary("*", left, right)
+}
+
+func (solver *G3SolverContext) Divide(left, right SMTTerm) (SMTTerm, error) {
+	return solver.arithmeticBinary("div", left, right)
+}
+
+func (solver *G3SolverContext) Modulo(left, right SMTTerm) (SMTTerm, error) {
+	return solver.arithmeticBinary("mod", left, right)
+}
+
+func (solver *G3SolverContext) Negate(term SMTTerm) (SMTTerm, error) {
+	if err := solver.validateTerm(term, SMTInt); err != nil {
+		return SMTTerm{}, err
+	}
+	return solver.application("-", SMTInt, term)
+}
+
+func (solver *G3SolverContext) arithmeticCompare(name string, left, right SMTTerm) (SMTTerm, error) {
+	if err := solver.validateTerm(left, SMTInt); err != nil {
+		return SMTTerm{}, err
+	}
+	if err := solver.validateTerm(right, SMTInt); err != nil {
+		return SMTTerm{}, err
+	}
+	return solver.application(name, SMTBool, left, right)
+}
+
+func (solver *G3SolverContext) GreaterEqual(left, right SMTTerm) (SMTTerm, error) {
+	return solver.arithmeticCompare(">=", left, right)
+}
+
+func (solver *G3SolverContext) Greater(left, right SMTTerm) (SMTTerm, error) {
+	return solver.arithmeticCompare(">", left, right)
+}
+
+func (solver *G3SolverContext) LessEqual(left, right SMTTerm) (SMTTerm, error) {
+	return solver.arithmeticCompare("<=", left, right)
+}
+
+func (solver *G3SolverContext) Less(left, right SMTTerm) (SMTTerm, error) {
+	return solver.arithmeticCompare("<", left, right)
 }
 
 func (solver *G3SolverContext) Assert(formula SMTTerm) error {
