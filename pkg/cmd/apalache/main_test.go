@@ -210,6 +210,42 @@ func TestRunTranspileValidatesArguments(t *testing.T) {
 	}
 }
 
+func TestRunTranspileLowersReTLAFunctionsEndToEnd(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "Functions.tla")
+	if err := os.WriteFile(sourcePath, []byte(`---- MODULE Functions ----
+\* @type: Set(A);
+CONSTANT S
+\* @type: A -> A;
+VARIABLE f
+Init == f = [x \in S |-> "a_OF_A"]
+Next == f' = [f EXCEPT !["a_OF_A"] = "b_OF_A"]
+Inv == f["a_OF_A"] = "a_OF_A" \/ f["a_OF_A"] = "b_OF_A"
+====
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	code := run(context.Background(), []string{
+		"transpile", "-inv=Inv", "-output=-", sourcePath,
+	}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("function transpile = %d, stderr = %q", code, &stderr)
+	}
+	for _, fragment := range []string{
+		"(declare-sort A 0)",
+		"(declare-fun f (A) A)",
+		"(define-fun t_",
+		"(ite (= ",
+		"(f a_A)",
+		"b_A",
+	} {
+		if !strings.Contains(stdout.String(), fragment) {
+			t.Errorf("function VMT does not contain %q:\n%s", fragment, &stdout)
+		}
+	}
+}
+
 func TestRunParse(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "Tiny.tla")
