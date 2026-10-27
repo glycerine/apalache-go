@@ -201,6 +201,41 @@ Next == /\ x' = x + 1
 	}
 }
 
+func TestRunSimulateWritesDecodedAndITFTrace(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "Sim.tla")
+	itfPath := filepath.Join(dir, "sim.itf.json")
+	if err := os.WriteFile(path, []byte(`---- MODULE Sim ----
+EXTENDS Integers
+\* @type: Int;
+VARIABLE x
+Init == x = 0
+Next == x' = x + 1
+====
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	code := run(context.Background(), []string{
+		"simulate", "-init=Init", "-next=Next", "-length=2", "-itf=" + itfPath, path,
+	}, &stdout, &stderr)
+	if code != exitOK || !strings.Contains(stdout.String(), "Simulation completed through depth 2") ||
+		!strings.Contains(stdout.String(), "State 2: x = 2") {
+		t.Fatalf("simulate = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
+	}
+	data, err := os.ReadFile(itfPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var trace map[string]any
+	if err = json.Unmarshal(data, &trace); err != nil {
+		t.Fatal(err)
+	}
+	if states, ok := trace["states"].([]any); !ok || len(states) != 3 {
+		t.Fatalf("ITF simulation = %#v", trace)
+	}
+}
+
 func TestRunCheckValidatesConfigurationFlags(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := run(context.Background(), []string{"check", "-init=Init", "M.tla"}, &stdout, &stderr)

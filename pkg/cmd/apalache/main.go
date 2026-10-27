@@ -49,11 +49,112 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return runTypeCheck(ctx, args[1:], stdout, stderr)
 	case "check":
 		return runCheck(ctx, args[1:], stdout, stderr)
+	case "simulate":
+		return runSimulate(ctx, args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command %q\n", args[0])
 		printUsage(stderr)
 		return exitUsage
 	}
+}
+
+func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	flags := flag.NewFlagSet("simulate", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	length := flags.Int("length", 10, "maximum number of Next steps")
+	configPath := flags.String("config", "", "TLC configuration file")
+	initName := flags.String("init", "", "initial-state operator")
+	nextName := flags.String("next", "", "next-state operator")
+	constantInit := flags.String("cinit", "", "constant initializer operator")
+	itfPath := flags.String("itf", "", "write the simulated trace as ITF JSON")
+	useRows := flags.Bool("rows", false, "enable row types")
+	disablePolytypes := flags.Bool("no-polytypes", false, "disable let-polymorphism")
+	var libraryPaths stringList
+	flags.Var(&libraryPaths, "I", "add a TLA+ module search directory (repeatable)")
+	if err := flags.Parse(args); err != nil {
+		return exitUsage
+	}
+	if flags.NArg() != 1 {
+		fmt.Fprintln(stderr, "simulate requires exactly one TLA+ file")
+		return exitUsage
+	}
+	if *length < 0 {
+		fmt.Fprintln(stderr, "simulate length cannot be negative")
+		return exitUsage
+	}
+	configuration := pal.SpecificationConfiguration{ConstantInit: *constantInit}
+	if *configPath != "" {
+		contents, err := os.ReadFile(*configPath)
+		if err != nil {
+			fmt.Fprintf(stderr, "cannot read TLC configuration: %v\n", err)
+			return exitFrontend
+		}
+		parsed, err := pal.ParseTLCConfig(string(contents))
+		if err != nil {
+			fmt.Fprintf(stderr, "cannot parse TLC configuration: %v\n", err)
+			return exitFrontend
+		}
+		configuration.TLCConfig = &parsed
+		configuration.ContextName = *configPath
+	}
+	if (*initName == "") != (*nextName == "") {
+		fmt.Fprintln(stderr, "-init and -next must be provided together")
+		return exitUsage
+	}
+	if *initName != "" {
+		configuration.Behavior = pal.InitNextSpec{Init: *initName, Next: *nextName}
+	} else if configuration.TLCConfig == nil {
+		fmt.Fprintln(stderr, "simulate requires either -config or both -init and -next")
+		return exitUsage
+	}
+
+	frontend := pal.ParseAndTypeCheckFile(ctx, flags.Arg(0), pal.FrontendOptions{
+		LibraryPaths: libraryPaths,
+	}, pal.TypeCheckOptions{UseRows: *useRows, DisablePolytypes: *disablePolytypes})
+	for _, diagnostic := range frontend.Diagnostics {
+		fmt.Fprintln(stderr, diagnostic.Error())
+	}
+	if !frontend.OK() {
+		return exitFrontend
+	}
+	prepared, err := pal.PrepareSafetyTransitions(frontend.Native, pal.SafetyPipelineOptions{
+		Specification: configuration, Sources: frontend.Sources,
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "cannot prepare simulation: %v\n", err)
+		return exitTool
+	}
+	result, err := pal.SimulateBehavior(ctx, prepared.Module, prepared.Predicates, *length)
+	if err != nil {
+		fmt.Fprintf(stderr, "simulation failed: %v\n", err)
+		return exitTool
+	}
+	if result.Outcome == pal.SimulationUnknown {
+		fmt.Fprintln(stderr, "solver returned unknown")
+		return exitTool
+	}
+	if *itfPath != "" {
+		data, encodeErr := pal.MarshalDecodedTraceITF(prepared.Module, result.States, pal.ITFOptions{})
+		if encodeErr != nil {
+			fmt.Fprintf(stderr, "cannot encode ITF simulation: %v\n", encodeErr)
+			return exitTool
+		}
+		if writeErr := os.WriteFile(*itfPath, append(data, '\n'), 0o644); writeErr != nil {
+			fmt.Fprintf(stderr, "cannot write ITF simulation: %v\n", writeErr)
+			return exitTool
+		}
+		fmt.Fprintf(stdout, "Wrote ITF trace to %s.\n", *itfPath)
+	}
+	if result.Outcome == pal.SimulationDeadlock {
+		fmt.Fprintf(stdout, "Simulation deadlocked at depth %d.\n", result.Depth)
+	} else {
+		fmt.Fprintf(stdout, "Simulation completed through depth %d.\n", result.Depth)
+	}
+	if err = printDecodedStates(stdout, result.States); err != nil {
+		fmt.Fprintf(stderr, "cannot format simulated state: %v\n", err)
+		return exitTool
+	}
+	return exitOK
 }
 
 func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int {
@@ -337,6 +438,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "commands:")
 	fmt.Fprintln(w, "  check FILE    bounded safety check")
 	fmt.Fprintln(w, "  parse FILE    parse and semantically check TLA+")
+	fmt.Fprintln(w, "  simulate FILE generate one bounded behavior")
 	fmt.Fprintln(w, "  typecheck FILE parse and type-check annotated TLA+")
 	fmt.Fprintln(w, "  version       print build version")
 }
