@@ -78,6 +78,7 @@ func runTranspile(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	constantInit := flags.String("cinit", "", "constant initializer operator")
 	outputPath := flags.String("output", "output.vmt", "write VMT constraints to this file, or - for stdout")
 	useRows := flags.Bool("rows", false, "enable row types")
+	features := flags.String("features", "", "typechecker features: rows or no-rows")
 	disablePolytypes := flags.Bool("no-polytypes", false, "disable let-polymorphism")
 	var invariants, temporalProperties csvStringList
 	var libraryPaths stringList
@@ -93,6 +94,11 @@ func runTranspile(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	}
 	if *outputPath == "" {
 		fmt.Fprintln(stderr, "transpile output path cannot be empty")
+		return exitUsage
+	}
+	rows, featureErr := resolveRowsFeature(*useRows, *features)
+	if featureErr != nil {
+		fmt.Fprintln(stderr, featureErr)
 		return exitUsage
 	}
 	configuration := pal.SpecificationConfiguration{
@@ -125,7 +131,7 @@ func runTranspile(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	}
 	frontend := pal.ParseAndTypeCheckFile(ctx, flags.Arg(0), pal.FrontendOptions{
 		LibraryPaths: libraryPaths,
-	}, pal.TypeCheckOptions{UseRows: *useRows, DisablePolytypes: *disablePolytypes})
+	}, pal.TypeCheckOptions{UseRows: rows, DisablePolytypes: *disablePolytypes})
 	for _, diagnostic := range frontend.Diagnostics {
 		fmt.Fprintln(stderr, diagnostic.Error())
 	}
@@ -170,6 +176,7 @@ func runTracee(ctx context.Context, args []string, stdout, stderr io.Writer) int
 	tracePath := flags.String("trace", "", "input ITF trace")
 	itfPath := flags.String("itf", "", "write evaluated ITF trace to this file (default stdout)")
 	useRows := flags.Bool("rows", false, "enable row types")
+	features := flags.String("features", "", "typechecker features: rows or no-rows")
 	disablePolytypes := flags.Bool("no-polytypes", false, "disable let-polymorphism")
 	var expressions csvStringList
 	var libraryPaths stringList
@@ -200,9 +207,14 @@ func runTracee(ctx context.Context, args []string, stdout, stderr io.Writer) int
 		fmt.Fprintln(stderr, "tracee requires a trace and at least one expression operator")
 		return exitUsage
 	}
+	rows, featureErr := resolveRowsFeature(*useRows, *features)
+	if featureErr != nil {
+		fmt.Fprintln(stderr, featureErr)
+		return exitUsage
+	}
 	frontend := pal.ParseAndTypeCheckFile(ctx, sourcePath, pal.FrontendOptions{
 		LibraryPaths: libraryPaths,
-	}, pal.TypeCheckOptions{UseRows: *useRows, DisablePolytypes: *disablePolytypes})
+	}, pal.TypeCheckOptions{UseRows: rows, DisablePolytypes: *disablePolytypes})
 	for _, diagnostic := range frontend.Diagnostics {
 		fmt.Fprintln(stderr, diagnostic.Error())
 	}
@@ -304,6 +316,7 @@ func runTest(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	flags.SetOutput(stderr)
 	constantInit := flags.String("cinit", "", "constant initializer operator")
 	useRows := flags.Bool("rows", false, "enable row types")
+	features := flags.String("features", "", "typechecker features: rows or no-rows")
 	disablePolytypes := flags.Bool("no-polytypes", false, "disable let-polymorphism")
 	var libraryPaths stringList
 	flags.Var(&libraryPaths, "I", "add a TLA+ module search directory (repeatable)")
@@ -315,9 +328,14 @@ func runTest(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return exitUsage
 	}
 	path, before, action, assertion := flags.Arg(0), flags.Arg(1), flags.Arg(2), flags.Arg(3)
+	rows, featureErr := resolveRowsFeature(*useRows, *features)
+	if featureErr != nil {
+		fmt.Fprintln(stderr, featureErr)
+		return exitUsage
+	}
 	frontend := pal.ParseAndTypeCheckFile(ctx, path, pal.FrontendOptions{
 		LibraryPaths: libraryPaths,
-	}, pal.TypeCheckOptions{UseRows: *useRows, DisablePolytypes: *disablePolytypes})
+	}, pal.TypeCheckOptions{UseRows: rows, DisablePolytypes: *disablePolytypes})
 	for _, diagnostic := range frontend.Diagnostics {
 		fmt.Fprintln(stderr, diagnostic.Error())
 	}
@@ -375,6 +393,7 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	constantInit := flags.String("cinit", "", "constant initializer operator")
 	itfPath := flags.String("itf", "", "write the simulated trace as ITF JSON")
 	useRows := flags.Bool("rows", false, "enable row types")
+	features := flags.String("features", "", "typechecker features: rows or no-rows")
 	disablePolytypes := flags.Bool("no-polytypes", false, "disable let-polymorphism")
 	var libraryPaths stringList
 	flags.Var(&libraryPaths, "I", "add a TLA+ module search directory (repeatable)")
@@ -387,6 +406,11 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	}
 	if *length < 0 {
 		fmt.Fprintln(stderr, "simulate length cannot be negative")
+		return exitUsage
+	}
+	rows, featureErr := resolveRowsFeature(*useRows, *features)
+	if featureErr != nil {
+		fmt.Fprintln(stderr, featureErr)
 		return exitUsage
 	}
 	configuration := pal.SpecificationConfiguration{ConstantInit: *constantInit}
@@ -416,7 +440,7 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 
 	frontend := pal.ParseAndTypeCheckFile(ctx, flags.Arg(0), pal.FrontendOptions{
 		LibraryPaths: libraryPaths,
-	}, pal.TypeCheckOptions{UseRows: *useRows, DisablePolytypes: *disablePolytypes})
+	}, pal.TypeCheckOptions{UseRows: rows, DisablePolytypes: *disablePolytypes})
 	for _, diagnostic := range frontend.Diagnostics {
 		fmt.Fprintln(stderr, diagnostic.Error())
 	}
@@ -474,6 +498,7 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	deadlockFlag := flags.String("deadlock", "", "check deadlocks: true or false (default true)")
 	itfPath := flags.String("itf", "", "write a counterexample trace as ITF JSON")
 	useRows := flags.Bool("rows", false, "enable row types")
+	features := flags.String("features", "", "typechecker features: rows or no-rows")
 	disablePolytypes := flags.Bool("no-polytypes", false, "disable let-polymorphism")
 	var invariants, temporalProperties csvStringList
 	var libraryPaths stringList
@@ -489,6 +514,11 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	}
 	if *length < 0 {
 		fmt.Fprintln(stderr, "check length cannot be negative")
+		return exitUsage
+	}
+	rows, featureErr := resolveRowsFeature(*useRows, *features)
+	if featureErr != nil {
+		fmt.Fprintln(stderr, featureErr)
 		return exitUsage
 	}
 
@@ -535,7 +565,7 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 
 	frontend := pal.ParseAndTypeCheckFile(ctx, flags.Arg(0), pal.FrontendOptions{
 		LibraryPaths: libraryPaths,
-	}, pal.TypeCheckOptions{UseRows: *useRows, DisablePolytypes: *disablePolytypes})
+	}, pal.TypeCheckOptions{UseRows: rows, DisablePolytypes: *disablePolytypes})
 	for _, diagnostic := range frontend.Diagnostics {
 		fmt.Fprintln(stderr, diagnostic.Error())
 	}
@@ -632,6 +662,7 @@ func runTypeCheck(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	output := flags.String("output", "summary", "output format (summary/json) or .tla/.json file")
 	includeSource := flags.Bool("source", false, "include source positions in JSON IR")
 	useRows := flags.Bool("rows", false, "enable row types")
+	features := flags.String("features", "", "typechecker features: rows or no-rows")
 	disablePolytypes := flags.Bool("no-polytypes", false, "disable let-polymorphism")
 	var libraryPaths stringList
 	flags.Var(&libraryPaths, "I", "add a TLA+ module search directory (repeatable)")
@@ -646,10 +677,15 @@ func runTypeCheck(ctx context.Context, args []string, stdout, stderr io.Writer) 
 		fmt.Fprintf(stderr, "invalid output %q (want summary, json, or a .tla/.json file)\n", *output)
 		return exitUsage
 	}
+	rows, featureErr := resolveRowsFeature(*useRows, *features)
+	if featureErr != nil {
+		fmt.Fprintln(stderr, featureErr)
+		return exitUsage
+	}
 
 	result := pal.ParseAndTypeCheckFile(ctx, flags.Arg(0), pal.FrontendOptions{
 		LibraryPaths: libraryPaths,
-	}, pal.TypeCheckOptions{UseRows: *useRows, DisablePolytypes: *disablePolytypes})
+	}, pal.TypeCheckOptions{UseRows: rows, DisablePolytypes: *disablePolytypes})
 	for _, diagnostic := range result.Diagnostics {
 		fmt.Fprintln(stderr, diagnostic.Error())
 	}
@@ -723,6 +759,7 @@ func runParse(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	flags.SetOutput(stderr)
 	output := flags.String("output", "summary", "output format (summary/json) or .tla/.json file")
 	includeSource := flags.Bool("source", false, "include source positions in JSON IR")
+	features := flags.String("features", "", "typechecker features: rows or no-rows")
 	var libraryPaths stringList
 	flags.Var(&libraryPaths, "I", "add a TLA+ module search directory (repeatable)")
 	if err := flags.Parse(args); err != nil {
@@ -734,6 +771,10 @@ func runParse(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	}
 	if !validModuleOutput(*output) {
 		fmt.Fprintf(stderr, "invalid output %q (want summary, json, or a .tla/.json file)\n", *output)
+		return exitUsage
+	}
+	if _, err := resolveRowsFeature(false, *features); err != nil {
+		fmt.Fprintln(stderr, err)
 		return exitUsage
 	}
 
@@ -788,6 +829,22 @@ func runParse(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 func validModuleOutput(output string) bool {
 	return output == "summary" || output == "json" ||
 		strings.EqualFold(filepath.Ext(output), ".tla") || strings.EqualFold(filepath.Ext(output), ".json")
+}
+
+func resolveRowsFeature(rows bool, features string) (bool, error) {
+	switch features {
+	case "":
+		return rows, nil
+	case "rows":
+		return true, nil
+	case "no-rows":
+		if rows {
+			return false, fmt.Errorf("-rows conflicts with -features=no-rows")
+		}
+		return false, nil
+	default:
+		return false, fmt.Errorf("unsupported feature %q (want rows or no-rows)", features)
+	}
 }
 
 func writePrettyJSONOutput(output string, value any, stdout io.Writer) error {

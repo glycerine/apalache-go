@@ -347,6 +347,43 @@ func TestRunParseFailure(t *testing.T) {
 	}
 }
 
+func TestRunAcceptsScalaFeaturesOption(t *testing.T) {
+	dir := t.TempDir()
+	emptyPath := filepath.Join(dir, "Empty.tla")
+	if err := os.WriteFile(emptyPath, []byte("---- MODULE Empty ----\n====\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, feature := range []string{"rows", "no-rows"} {
+		var stdout, stderr bytes.Buffer
+		if code := run(context.Background(), []string{"parse", "--features=" + feature, emptyPath}, &stdout, &stderr); code != exitOK {
+			t.Fatalf("parse feature %s = %d, stderr = %q", feature, code, &stderr)
+		}
+	}
+	var stdout, stderr bytes.Buffer
+	if code := run(context.Background(), []string{"parse", "--features=unsupported", emptyPath}, &stdout, &stderr); code != exitUsage || !strings.Contains(stderr.String(), "unsupported feature") {
+		t.Fatalf("unsupported parse feature = %d, stderr = %q", code, &stderr)
+	}
+
+	rowsPath := filepath.Join(dir, "Rows.tla")
+	if err := os.WriteFile(rowsPath, []byte(`---- MODULE Rows ----
+\* @type: { a: b, c } => b;
+GetA(r) == r.a
+====
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := run(context.Background(), []string{"typecheck", "--features=rows", rowsPath}, &stdout, &stderr); code != exitOK {
+		t.Fatalf("row feature was not propagated = %d, stderr = %q", code, &stderr)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := run(context.Background(), []string{"typecheck", "-rows", "--features=no-rows", rowsPath}, &stdout, &stderr); code != exitUsage || !strings.Contains(stderr.String(), "conflicts") {
+		t.Fatalf("row feature conflict = %d, stderr = %q", code, &stderr)
+	}
+}
+
 func TestRunTypeCheckAndTypedJSON(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "Typed.tla")
