@@ -44,6 +44,15 @@ func TestCheckBoundedSafetyFindsFirstBadDepth(t *testing.T) {
 		unsafe.InitTransition != 0 || !reflect.DeepEqual(unsafe.NextTransitions, []int{0, 0}) {
 		t.Fatalf("counterexample result = %#v", unsafe)
 	}
+	if len(unsafe.States) != 3 {
+		t.Fatalf("decoded counterexample states = %#v", unsafe.States)
+	}
+	for index, expected := range []string{"0", "1", "2"} {
+		formatted, formatErr := FormatTLAExpression(unsafe.States[index].Values["x"])
+		if formatErr != nil || formatted != expected {
+			t.Fatalf("state %d x = %q, %v", index, formatted, formatErr)
+		}
+	}
 }
 
 func TestCheckBoundedSafetyReportsInitialViolation(t *testing.T) {

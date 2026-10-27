@@ -132,7 +132,9 @@ Inv == x < 2
 		t.Fatalf("unsafe check = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
 	}
 	if !strings.Contains(stdout.String(), "Invariant Inv violated at depth 2") ||
-		!strings.Contains(stdout.String(), "Init$0000, Next$0000, Next$0000") {
+		!strings.Contains(stdout.String(), "Init$0000, Next$0000, Next$0000") ||
+		!strings.Contains(stdout.String(), "State 0: x = 0") ||
+		!strings.Contains(stdout.String(), "State 2: x = 2") {
 		t.Fatalf("counterexample output = %q", &stdout)
 	}
 }

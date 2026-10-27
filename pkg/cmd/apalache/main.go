@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"sort"
 	"strings"
 
 	pal "github.com/glycerine/apalache-go"
@@ -142,6 +143,21 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 			fmt.Fprintf(stdout, ", Next$%04d", number)
 		}
 		fmt.Fprintln(stdout, ").")
+		for index, state := range result.States {
+			names := make([]string, 0, len(state.Values))
+			for name := range state.Values {
+				names = append(names, name)
+			}
+			sort.Strings(names)
+			for _, name := range names {
+				value, formatErr := pal.FormatTLAExpression(state.Values[name])
+				if formatErr != nil {
+					fmt.Fprintf(stderr, "cannot format counterexample state: %v\n", formatErr)
+					return exitTool
+				}
+				fmt.Fprintf(stdout, "State %d: %s = %s\n", index, name, value)
+			}
+		}
 		return exitCounterexample
 	case pal.SafetyNoCounterexample:
 		fmt.Fprintf(stdout, "No counterexample found through depth %d (%d symbolic executions).\n", *length, result.ExploredExecutions)

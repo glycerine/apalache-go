@@ -24,6 +24,7 @@ type TransitionExecutor struct {
 	scope     RewriterScope
 	asserted  []Expr
 	prepared  map[int]EncodedTransition
+	states    []Binding
 	step      int
 	picked    bool
 }
@@ -49,6 +50,10 @@ func stringSet(names []string) map[string]struct{} {
 func (executor *TransitionExecutor) Step() int { return executor.step }
 
 func (executor *TransitionExecutor) Binding() Binding { return executor.scope.Binding }
+
+func (executor *TransitionExecutor) StateBindings() []Binding {
+	return append([]Binding(nil), executor.states...)
+}
 
 func (executor *TransitionExecutor) PreparedTransitionNumbers() []int {
 	result := make([]int, 0, len(executor.prepared))
@@ -206,6 +211,7 @@ func (executor *TransitionExecutor) NextState() error {
 		return fmt.Errorf("select a transition before advancing from step %d", executor.step)
 	}
 	executor.scope.Binding = executor.scope.Binding.Shift(executor.constants)
+	executor.states = append(executor.states, executor.scope.Binding)
 	executor.prepared = make(map[int]EncodedTransition)
 	executor.picked = false
 	executor.step++
@@ -233,20 +239,72 @@ func (executor *TransitionExecutor) CheckState(ctx context.Context, expression E
 }
 
 func (executor *TransitionExecutor) check(ctx context.Context, temporary []Expr) (SMTStatus, error) {
+	solver, _, status, err := executor.solve(ctx, temporary)
+	if solver != nil {
+		_ = solver.Close()
+	}
+	return status, err
+}
+
+// CheckAndDecode tests a state expression and, when satisfiable, decodes every
+// committed state using the same constrained model.
+func (executor *TransitionExecutor) CheckAndDecode(ctx context.Context, expression Expr) (SMTStatus, []DecodedState, error) {
+	if err := requireBooleanExpression(expression, "state expression"); err != nil {
+		return SMTUnknown, nil, err
+	}
+	scope, assertion, err := executor.rewriter.Rewrite(expression, executor.scope)
+	if err != nil {
+		return SMTUnknown, nil, fmt.Errorf("rewrite state expression: %w", err)
+	}
+	executor.scope = scope
+	solver, encoder, status, err := executor.solve(ctx, []Expr{assertion.NameExpr()})
+	if solver != nil {
+		defer solver.Close()
+	}
+	if err != nil || status != SMTSatisfiable {
+		return status, nil, err
+	}
+	decoder, err := NewSymbolicDecoder(encoder, executor.rewriter)
+	if err != nil {
+		return SMTUnknown, nil, err
+	}
+	states := make([]DecodedState, len(executor.states))
+	for index, binding := range executor.states {
+		values, decodeErr := decoder.DecodeBinding(executor.scope.Arena, binding)
+		if decodeErr != nil {
+			return SMTUnknown, nil, fmt.Errorf("decode state %d: %w", index, decodeErr)
+		}
+		states[index] = DecodedState{Values: values}
+	}
+	return status, states, nil
+}
+
+type DecodedState struct {
+	Values map[string]Expr
+}
+
+func (executor *TransitionExecutor) solve(ctx context.Context, temporary []Expr) (*G3SolverContext, *G3GroundEncoder, SMTStatus, error) {
 	solver, err := NewG3SolverContext()
 	if err != nil {
-		return SMTUnknown, err
+		return nil, nil, SMTUnknown, err
 	}
-	defer solver.Close()
 	encoder, err := EncodeRewriterScope(solver, executor.scope, executor.rewriter.Constraints())
 	if err != nil {
-		return SMTUnknown, err
+		_ = solver.Close()
+		return nil, nil, SMTUnknown, err
 	}
 	if err = encoder.AssertAll(executor.asserted); err != nil {
-		return SMTUnknown, fmt.Errorf("assert symbolic path: %w", err)
+		_ = solver.Close()
+		return nil, nil, SMTUnknown, fmt.Errorf("assert symbolic path: %w", err)
 	}
 	if err = encoder.AssertAll(temporary); err != nil {
-		return SMTUnknown, fmt.Errorf("assert temporary state expression: %w", err)
+		_ = solver.Close()
+		return nil, nil, SMTUnknown, fmt.Errorf("assert temporary state expression: %w", err)
 	}
-	return solver.Check(ctx)
+	status, err := solver.Check(ctx)
+	if err != nil {
+		_ = solver.Close()
+		return nil, nil, status, err
+	}
+	return solver, encoder, status, nil
 }

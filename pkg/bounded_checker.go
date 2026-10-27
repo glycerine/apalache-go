@@ -23,6 +23,7 @@ type BoundedSafetyResult struct {
 	InitTransition     int
 	NextTransitions    []int
 	ExploredExecutions int
+	States             []DecodedState
 }
 
 // CheckBoundedSafety checks every normalized transition path through maxSteps
@@ -134,7 +135,8 @@ func searchSafetyPath(
 	}
 	for _, invariant := range inputs.invariants {
 		violation := MustOperExpr(Op("NOT"), Typed(BoolT1), invariant.expression)
-		status, err = executor.CheckState(ctx, violation)
+		var states []DecodedState
+		status, states, err = executor.CheckAndDecode(ctx, violation)
 		if err != nil {
 			return false, fmt.Errorf("check invariant %s at depth %d: %w", invariant.name, len(path.next), err)
 		}
@@ -148,6 +150,7 @@ func searchSafetyPath(
 			result.Invariant = invariant.name
 			result.InitTransition = path.init
 			result.NextTransitions = append([]int(nil), path.next...)
+			result.States = states
 			return true, nil
 		}
 	}
