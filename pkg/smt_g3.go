@@ -57,7 +57,7 @@ func NewG3SolverContext() (*G3SolverContext, error) {
 	fail := func(err error) (*G3SolverContext, error) {
 		return nil, errors.Join(err, command.Close())
 	}
-	if err = command.SetLogic("QF_AUFLIA"); err != nil {
+	if err = command.SetLogic("QF_AUFNIA"); err != nil {
 		return fail(err)
 	}
 	manager, err := command.Manager()

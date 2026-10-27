@@ -138,3 +138,103 @@ func TestStratifiedRewriteScopeDischargesThroughG3(t *testing.T) {
 		t.Fatalf("rewritten TRUE /\\ FALSE asserted true = %v, %v", status, err)
 	}
 }
+
+func TestStratifiedArithmeticEqualityAndConditionalThroughG3(t *testing.T) {
+	rewriter := NewStratifiedRewriter()
+	two := NewValueExpr(Int64Value(2), Typed(IntT1))
+	three := NewValueExpr(Int64Value(3), Typed(IntT1))
+	ten := NewValueExpr(Int64Value(10), Typed(IntT1))
+	sum := MustOperExpr(Op("PLUS"), Typed(IntT1), two, three)
+	product := MustOperExpr(Op("MULT"), Typed(IntT1), sum, two)
+	equality := MustOperExpr(Op("EQ"), Typed(BoolT1), product, ten)
+	scope, equalCell, err := rewriter.Rewrite(equality, InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	solver := newTestG3Solver(t)
+	encoder, err := EncodeRewriterScope(solver, scope, rewriter.Constraints())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := encoder.Assert(MustOperExpr(Op("NOT"), Typed(BoolT1), equalCell.NameExpr())); err != nil {
+		t.Fatal(err)
+	}
+	if status, err := solver.Check(context.Background()); err != nil || status != SMTUnsatisfiable {
+		t.Fatalf("(2 + 3) * 2 = 10 negated = %v, %v", status, err)
+	}
+
+	rewriter = NewStratifiedRewriter()
+	predicate := MustOperExpr(Op("LT"), Typed(BoolT1),
+		NewValueExpr(Int64Value(1), Typed(IntT1)), NewValueExpr(Int64Value(2), Typed(IntT1)))
+	conditional := MustOperExpr(Op("IF_THEN_ELSE"), Typed(IntT1), predicate,
+		NewValueExpr(Int64Value(11), Typed(IntT1)), NewValueExpr(Int64Value(22), Typed(IntT1)))
+	scope, result, err := rewriter.Rewrite(conditional, InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	solver = newTestG3Solver(t)
+	encoder, err = EncodeRewriterScope(solver, scope, rewriter.Constraints())
+	if err != nil {
+		t.Fatal(err)
+	}
+	notEleven := MustOperExpr(Op("NE"), Typed(BoolT1), result.NameExpr(), NewValueExpr(Int64Value(11), Typed(IntT1)))
+	if err := encoder.Assert(notEleven); err != nil {
+		t.Fatal(err)
+	}
+	if status, err := solver.Check(context.Background()); err != nil || status != SMTUnsatisfiable {
+		t.Fatalf("conditional result != 11 = %v, %v", status, err)
+	}
+}
+
+func TestStratifiedFiniteAndNaturalMembershipThroughG3(t *testing.T) {
+	rewriter := NewStratifiedRewriter()
+	setType := Typed(mustSet(IntT1))
+	set := MustOperExpr(Op("SET_ENUM"), setType,
+		NewValueExpr(Int64Value(1), Typed(IntT1)), NewValueExpr(Int64Value(2), Typed(IntT1)))
+	membership := MustOperExpr(Op("SET_IN"), Typed(BoolT1), NewValueExpr(Int64Value(2), Typed(IntT1)), set)
+	scope, memberCell, err := rewriter.Rewrite(membership, InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	solver := newTestG3Solver(t)
+	encoder, err := EncodeRewriterScope(solver, scope, rewriter.Constraints())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := encoder.Assert(MustOperExpr(Op("NOT"), Typed(BoolT1), memberCell.NameExpr())); err != nil {
+		t.Fatal(err)
+	}
+	if status, err := solver.Check(context.Background()); err != nil || status != SMTUnsatisfiable {
+		t.Fatalf("2 not in {1, 2} = %v, %v", status, err)
+	}
+
+	rewriter = NewStratifiedRewriter()
+	natural := MustOperExpr(Op("SET_IN"), Typed(BoolT1),
+		NewValueExpr(Int64Value(-1), Typed(IntT1)), NewValueExpr(NatSet, setType))
+	scope, naturalCell, err := rewriter.Rewrite(natural, InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	solver = newTestG3Solver(t)
+	encoder, err = EncodeRewriterScope(solver, scope, rewriter.Constraints())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := encoder.Assert(naturalCell.NameExpr()); err != nil {
+		t.Fatal(err)
+	}
+	if status, err := solver.Check(context.Background()); err != nil || status != SMTUnsatisfiable {
+		t.Fatalf("-1 in Nat = %v, %v", status, err)
+	}
+}
+
+func TestStratifiedEqualityRejectsStructuralCells(t *testing.T) {
+	rewriter := NewStratifiedRewriter()
+	setType := Typed(mustSet(IntT1))
+	left := MustOperExpr(Op("SET_ENUM"), setType, NewValueExpr(Int64Value(1), Typed(IntT1)))
+	right := MustOperExpr(Op("SET_ENUM"), setType, NewValueExpr(Int64Value(2), Typed(IntT1)))
+	equality := MustOperExpr(Op("EQ"), Typed(BoolT1), left, right)
+	if _, _, err := rewriter.Rewrite(equality, InitialRewriterScope()); err == nil {
+		t.Fatal("structural set equality was approximated as cell equality")
+	}
+}
