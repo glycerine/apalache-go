@@ -1540,3 +1540,26 @@ func TestStratifiedRewritesRetainedNullaryLet(t *testing.T) {
 		t.Fatal("LET binding escaped its lexical scope")
 	}
 }
+
+func TestStratifiedLetPreservesAssignmentsFromBody(t *testing.T) {
+	valueType := mustOperator(nil, IntT1)
+	value := NewOperDecl("value", nil, intLiteral(2), Typed(valueType))
+	application := MustOperExpr(Op("OPER_APP"), Typed(IntT1), NewNameExpr("value", Typed(valueType)))
+	prime := MustOperExpr(Op("PRIME"), Typed(IntT1), NewNameExpr("x", Typed(IntT1)))
+	let := NewLetInExpr(MustOperExpr(Op("Apalache!:="), Typed(BoolT1), prime, application), Typed(BoolT1), value)
+	rewriter := NewStratifiedRewriter()
+	scope, _, err := rewriter.Rewrite(let, InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	assigned, found := scope.Binding.Get("x'")
+	if !found {
+		t.Fatal("assignment made in LET body was discarded")
+	}
+	if _, leaked := scope.Binding.Get("value"); leaked {
+		t.Fatal("LET binding escaped its lexical scope")
+	}
+	if integer, ok := rewriter.IntegerCache().FindValue(assigned); !ok || integer.Int64() != 2 {
+		t.Fatalf("assigned x' = %v", assigned)
+	}
+}

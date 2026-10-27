@@ -196,6 +196,7 @@ func (rewriter *StratifiedRewriter) rewriteNullaryOperatorApplication(
 
 func (rewriter *StratifiedRewriter) rewriteLetIn(expression *LetInExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
 	baseBinding := scope.Binding
+	localNames := make([]string, 0, len(expression.Declarations()))
 	for _, declaration := range expression.Declarations() {
 		if len(declaration.FormalParams()) != 0 {
 			return scope, ArenaCell{}, fmt.Errorf("cannot directly rewrite parameterized LET operator %s", declaration.Name())
@@ -207,9 +208,18 @@ func (rewriter *StratifiedRewriter) rewriteLetIn(expression *LetInExpr, scope Re
 			return scope, ArenaCell{}, fmt.Errorf("rewrite LET operator %s: %w", declaration.Name(), err)
 		}
 		scope.Binding = scope.Binding.With(declaration.Name(), value)
+		localNames = append(localNames, declaration.Name())
 	}
 	resultScope, result, err := rewriter.Rewrite(expression.Body(), scope)
-	resultScope.Binding = baseBinding
+	binding := resultScope.Binding.Map()
+	for _, name := range localNames {
+		if previous, shadowed := baseBinding.Get(name); shadowed {
+			binding[name] = previous
+		} else {
+			delete(binding, name)
+		}
+	}
+	resultScope.Binding = NewBinding(binding)
 	return resultScope, result, err
 }
 
