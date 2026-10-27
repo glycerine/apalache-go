@@ -5,8 +5,58 @@ import (
 	"math/big"
 	"regexp"
 	"strings"
+	"sync"
 	"unicode"
 )
+
+type AnnotationStore struct {
+	mu      sync.RWMutex
+	entries map[UID][]Annotation
+}
+
+func NewAnnotationStore() *AnnotationStore {
+	return &AnnotationStore{entries: make(map[UID][]Annotation)}
+}
+func (store *AnnotationStore) Set(id UID, annotations []Annotation) {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	store.entries[id] = cloneAnnotations(annotations)
+}
+func (store *AnnotationStore) Get(id UID) []Annotation {
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	return cloneAnnotations(store.entries[id])
+}
+
+func cloneAnnotations(annotations []Annotation) []Annotation {
+	result := make([]Annotation, len(annotations))
+	for index, annotation := range annotations {
+		result[index] = Annotation{Name: annotation.Name, Arguments: make([]AnnotationArg, len(annotation.Arguments))}
+		for argumentIndex, argument := range annotation.Arguments {
+			switch typed := argument.(type) {
+			case AnnotationInteger:
+				if typed.Value != nil {
+					result[index].Arguments[argumentIndex] = AnnotationInteger{Value: new(big.Int).Set(typed.Value)}
+				} else {
+					result[index].Arguments[argumentIndex] = typed
+				}
+			default:
+				result[index].Arguments[argumentIndex] = argument
+			}
+		}
+	}
+	return result
+}
+func (store *AnnotationStore) Find(id UID, name string) (Annotation, bool) {
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	for _, annotation := range store.entries[id] {
+		if annotation.Name == name {
+			return cloneAnnotations([]Annotation{annotation})[0], true
+		}
+	}
+	return Annotation{}, false
+}
 
 type AnnotationArg interface {
 	fmt.Stringer
