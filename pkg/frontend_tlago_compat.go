@@ -2,6 +2,18 @@ package apalache
 
 import "github.com/glycerine/tlago"
 
+var tlagoApalacheBuiltinCalls = map[string]string{
+	"Guess":          "Apalache!Guess",
+	"Gen":            "Apalache!Gen",
+	"Expand":         "Apalache!Expand",
+	"MkSeq":          "Apalache!MkSeq",
+	"SetAsFun":       "Apalache!SetAsFun",
+	"Repeat":         "Apalache!Repeat",
+	"ApaFoldSet":     "Apalache!ApaFoldSet",
+	"ApaFoldSeqLeft": "Apalache!ApaFoldSeqLeft",
+	"Distinct":       "Apalache!Distinct",
+}
+
 // normalizeTlagoApalacheAssignments works around tlago v0.1.9's ApalacheIR
 // exporter rejecting the imported infix := operator. Replacing it by its
 // standard-library definition is semantics-preserving: x := e is defined as
@@ -118,4 +130,63 @@ func normalizeTlagoAssignmentExprs(expressions []tlago.Expr) {
 	for _, expression := range expressions {
 		normalizeTlagoAssignmentExpr(expression)
 	}
+}
+
+// normalizeTlagoApalacheBuiltinCalls repairs imported Apalache operators that
+// tlago v0.1.9 exports as unresolved OPER_APP calls instead of builtin IR
+// operators. A declaration in the root module intentionally shadows a builtin.
+func normalizeTlagoApalacheBuiltinCalls(module *Module, sources *SourceStore) *Module {
+	if module == nil {
+		return nil
+	}
+	declared := make(map[string]struct{}, len(module.Declarations()))
+	for _, declaration := range module.Declarations() {
+		declared[declaration.Name()] = struct{}{}
+	}
+	var tracker TransformationTracker = IdleTracker{}
+	if sources != nil {
+		tracker = NewListenerTracker(sources)
+	}
+	rewrite := RewriteExpressions(tracker, func(expression Expr) (Expr, bool) {
+		operation, ok := expression.(*OperExpr)
+		if !ok || operation.Operator().Name() != "OPER_APP" {
+			return nil, false
+		}
+		arguments := operation.Arguments()
+		if len(arguments) == 0 {
+			return nil, false
+		}
+		callee, ok := arguments[0].(*NameExpr)
+		if !ok {
+			return nil, false
+		}
+		builtin, found := tlagoApalacheBuiltinCalls[callee.Name()]
+		if !found {
+			return nil, false
+		}
+		if _, shadowed := declared[callee.Name()]; shadowed {
+			return nil, false
+		}
+		builtinArguments := arguments[1:]
+		operatorArgument := -1
+		switch builtin {
+		case "Apalache!ApaFoldSet", "Apalache!ApaFoldSeqLeft", "Apalache!Repeat":
+			operatorArgument = 0
+		case "Apalache!MkSeq":
+			operatorArgument = 1
+		}
+		if operatorArgument >= 0 && operatorArgument < len(builtinArguments) {
+			application, isApplication := builtinArguments[operatorArgument].(*OperExpr)
+			if isApplication && application.Operator().Name() == "OPER_APP" {
+				applicationArguments := application.Arguments()
+				if len(applicationArguments) == 1 {
+					if name, isName := applicationArguments[0].(*NameExpr); isName {
+						builtinArguments[operatorArgument] = name
+					}
+				}
+			}
+		}
+		return MustOperExpr(Op(builtin), operation.Tag(), builtinArguments...), true
+	})
+	return TransformModuleExpressions(module, rewrite, nil)
 }

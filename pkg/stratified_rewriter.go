@@ -57,6 +57,8 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 		return rewriter.rewriteValue(typed, scope)
 	case *NameExpr:
 		return rewriter.rewriteName(typed, scope)
+	case *LetInExpr:
+		return rewriter.rewriteLetIn(typed, scope)
 	case *OperExpr:
 		switch typed.Operator().Name() {
 		case "Apalache!:=":
@@ -163,9 +165,50 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 			return rewriter.rewriteTransparentUnary(typed, scope, "ConstCardinality")
 		case "PRIME":
 			return rewriter.rewritePrime(typed, scope)
+		case "OPER_APP":
+			return rewriter.rewriteNullaryOperatorApplication(typed, scope)
 		}
+		return scope, ArenaCell{}, fmt.Errorf("no stratified rule is applicable to operator %s", typed.Operator().Name())
 	}
 	return scope, ArenaCell{}, fmt.Errorf("no stratified rule is applicable to %T", expression)
+}
+
+func (rewriter *StratifiedRewriter) rewriteNullaryOperatorApplication(
+	expression *OperExpr,
+	scope RewriterScope,
+) (RewriterScope, ArenaCell, error) {
+	arguments := expression.Arguments()
+	if len(arguments) != 1 {
+		return scope, ArenaCell{}, fmt.Errorf("residual operator application has %d arguments", len(arguments)-1)
+	}
+	name, ok := arguments[0].(*NameExpr)
+	if !ok {
+		return scope, ArenaCell{}, fmt.Errorf("residual nullary operator application has callee %T", arguments[0])
+	}
+	cell, found := scope.Binding.Get(name.Name())
+	if !found {
+		return scope, ArenaCell{}, fmt.Errorf("nullary operator %s is unbound", name.Name())
+	}
+	return scope, cell, nil
+}
+
+func (rewriter *StratifiedRewriter) rewriteLetIn(expression *LetInExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
+	baseBinding := scope.Binding
+	for _, declaration := range expression.Declarations() {
+		if len(declaration.FormalParams()) != 0 {
+			return scope, ArenaCell{}, fmt.Errorf("cannot directly rewrite parameterized LET operator %s", declaration.Name())
+		}
+		var value ArenaCell
+		var err error
+		scope, value, err = rewriter.Rewrite(declaration.Body(), scope)
+		if err != nil {
+			return scope, ArenaCell{}, fmt.Errorf("rewrite LET operator %s: %w", declaration.Name(), err)
+		}
+		scope.Binding = scope.Binding.With(declaration.Name(), value)
+	}
+	resultScope, result, err := rewriter.Rewrite(expression.Body(), scope)
+	resultScope.Binding = baseBinding
+	return resultScope, result, err
 }
 
 func (rewriter *StratifiedRewriter) rewriteTransparentUnary(

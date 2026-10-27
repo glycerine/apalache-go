@@ -85,6 +85,21 @@ Next == x' := 1
 	}
 }
 
+func TestParseAndTypeCheckSourceRecognizesImportedApalacheBuiltins(t *testing.T) {
+	result := ParseAndTypeCheckSource(context.Background(), "Builtins.tla", `---- MODULE Builtins ----
+EXTENDS Apalache, Integers
+Inv == LET Op(a, i) == a + i IN Repeat(Op, 2, 0) = 3
+====
+`, FrontendOptions{}, TypeCheckOptions{})
+	if !result.OK() {
+		t.Fatalf("ParseAndTypeCheckSource() diagnostics = %v", result.Diagnostics)
+	}
+	body, found := OperatorBody(result.Native, "Inv")
+	if !found || countOperator(body, "Apalache!Repeat") != 1 {
+		t.Fatalf("normalized Repeat body = %#v", body)
+	}
+}
+
 func TestParseSourceReportsSemanticErrors(t *testing.T) {
 	result := ParseSource(context.Background(), "Bad.tla", `---- MODULE Bad ----
 Op == missing

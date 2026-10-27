@@ -1522,3 +1522,21 @@ func TestStratifiedEqualityRejectsUnsupportedStructuralCells(t *testing.T) {
 		t.Fatal("unsupported sequence equality was approximated as cell equality")
 	}
 }
+
+func TestStratifiedRewritesRetainedNullaryLet(t *testing.T) {
+	valueType := mustOperator(nil, IntT1)
+	value := NewOperDecl("value", nil, intLiteral(2), Typed(valueType))
+	application := MustOperExpr(Op("OPER_APP"), Typed(IntT1), NewNameExpr("value", Typed(valueType)))
+	let := NewLetInExpr(
+		MustOperExpr(Op("EQ"), Typed(BoolT1), application, intLiteral(2)),
+		Typed(BoolT1), value)
+	rewriter := NewStratifiedRewriter()
+	scope, result, err := rewriter.Rewrite(let, InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkRewrittenTruth(t, rewriter, scope, result, true)
+	if _, leaked := scope.Binding.Get("value"); leaked {
+		t.Fatal("LET binding escaped its lexical scope")
+	}
+}
