@@ -200,6 +200,43 @@ func TestCheckBoundedSafetyDetectsAndCanIgnoreDeadlocks(t *testing.T) {
 	}
 }
 
+// Regression for apalache-mc/apalache#712. The legacy Scala checker can miss
+// the x = 1 deadlock because another branch has an infinite continuation.
+// The bounded search must check each reachable branch independently.
+func TestCheckBoundedSafetyDetectsDeadlockAlongOneOfSeveralBranches(t *testing.T) {
+	frontend := ParseAndTypeCheckSource(context.Background(), "Deadlock712.tla", `---- MODULE Deadlock712 ----
+EXTENDS Integers
+\* @type: Int;
+VARIABLE x
+Init == x = 0
+A == /\ x % 2 = 0 /\ x' = x + 1
+B == /\ x % 2 = 0 /\ x' = x + 2
+Next == A \/ B
+====
+`, FrontendOptions{}, TypeCheckOptions{})
+	if !frontend.OK() {
+		t.Fatalf("frontend diagnostics = %v", frontend.Diagnostics)
+	}
+	prepared, err := PrepareSafetyTransitions(frontend.Native, SafetyPipelineOptions{
+		Specification: SpecificationConfiguration{Behavior: InitNextSpec{Init: "Init", Next: "Next"}},
+		Sources:       frontend.Sources,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Outcome != SafetyDeadlock || result.Depth != 1 || len(result.States) != 2 {
+		t.Fatalf("branch-local deadlock result = %#v", result)
+	}
+	value, err := FormatTLAExpression(result.States[1].Values["x"])
+	if err != nil || value != "1" {
+		t.Fatalf("deadlocked state x = %q, %v", value, err)
+	}
+}
+
 func TestCheckBoundedSafetyEnforcesConfiguredConstraints(t *testing.T) {
 	for _, test := range []struct {
 		name              string
