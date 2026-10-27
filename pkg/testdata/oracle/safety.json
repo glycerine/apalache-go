@@ -1,0 +1,22 @@
+{
+  "cases": [
+    {
+      "name": "builtins-as-arguments",
+      "dir": "..",
+      "scala_args": ["check", "--length=0", "--no-deadlock", "--inv=AllTests", "test/tla/TestBuiltinAsArg1626.tla"],
+      "go_args": ["check", "-length", "0", "-deadlock=false", "-inv", "AllTests", "test/tla/TestBuiltinAsArg1626.tla"]
+    },
+    {
+      "name": "bags-extensions",
+      "dir": "..",
+      "scala_args": ["check", "--length=0", "--no-deadlock", "--inv=AllTests", "test/tla/TestBagsExt.tla"],
+      "go_args": ["check", "-length", "0", "-deadlock=false", "-inv", "AllTests", "test/tla/TestBagsExt.tla"]
+    },
+    {
+      "name": "function-counterexample",
+      "dir": "..",
+      "scala_args": ["check", "--length=2", "--no-deadlock", "--inv=Inv", "test/tla/Test1305.tla"],
+      "go_args": ["check", "-length", "2", "-deadlock=false", "-inv", "Inv", "test/tla/Test1305.tla"]
+    }
+  ]
+}

@@ -136,24 +136,32 @@ func CheckBoundedSafetyWithOptions(
 	assumptions := module.AssumeDeclarations()
 
 	result := BoundedSafetyResult{Outcome: SafetyNoCounterexample, Depth: -1, InitTransition: -1}
+	inputs := modulePathInputs{
+		constants: constants, variables: variables, constantInit: constantInit,
+		hasConstantInit: hasConstantInit, assumptions: assumptions,
+		initTransitions: initTransitions, nextTransitions: nextTransitions,
+		stateInvariants: stateInvariants, actionInvariants: actionInvariants,
+		traceInvariants: traceInvariants, variableDeclarations: variableDeclarations,
+		maxSteps: options.MaxSteps, checkDeadlocks: options.CheckDeadlocks,
+		invariantMinimumDepth: options.InvariantMinimumDepth,
+		stateConstraints:      stateConstraints, actionConstraints: actionConstraints,
+	}
+	queue := make([]boundedPath, len(initTransitions))
 	for initNumber := range initTransitions {
-		path := boundedPath{init: initNumber}
-		found, err := searchSafetyPath(ctx, modulePathInputs{
-			constants: constants, variables: variables, constantInit: constantInit,
-			hasConstantInit: hasConstantInit, assumptions: assumptions,
-			initTransitions: initTransitions, nextTransitions: nextTransitions,
-			stateInvariants: stateInvariants, actionInvariants: actionInvariants,
-			traceInvariants: traceInvariants, variableDeclarations: variableDeclarations,
-			maxSteps: options.MaxSteps, checkDeadlocks: options.CheckDeadlocks,
-			invariantMinimumDepth: options.InvariantMinimumDepth,
-			stateConstraints:      stateConstraints, actionConstraints: actionConstraints,
-		}, path, &result)
+		queue[initNumber] = boundedPath{init: initNumber}
+	}
+	for len(queue) > 0 {
+		path := queue[0]
+		queue = queue[1:]
+		children := make([]boundedPath, 0, len(nextTransitions))
+		found, err := searchSafetyPath(ctx, inputs, path, &result, &children)
 		if err != nil {
 			return BoundedSafetyResult{}, err
 		}
 		if found {
 			return result, nil
 		}
+		queue = append(queue, children...)
 	}
 	return result, nil
 }
@@ -263,6 +271,7 @@ func searchSafetyPath(
 	inputs modulePathInputs,
 	path boundedPath,
 	result *BoundedSafetyResult,
+	children *[]boundedPath,
 ) (bool, error) {
 	executor, err := replaySafetyPath(inputs, path)
 	if err != nil {
@@ -373,10 +382,7 @@ func searchSafetyPath(
 			}
 		}
 		if len(path.next) < inputs.maxSteps {
-			found, searchErr := searchSafetyPath(ctx, inputs, child, result)
-			if searchErr != nil || found {
-				return found, searchErr
-			}
+			*children = append(*children, child)
 		}
 	}
 	if inputs.checkDeadlocks && !enabledNext {
