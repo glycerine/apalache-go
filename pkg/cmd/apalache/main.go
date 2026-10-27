@@ -401,6 +401,7 @@ func runConfig(args []string, stdout, stderr io.Writer) int {
 func runTest(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("test", flag.ContinueOnError)
 	flags.SetOutput(stderr)
+	configFile := flags.String("config-file", "", "Apalache JSON configuration file")
 	constantInit := flags.String("cinit", "", "constant initializer operator")
 	useRows := flags.Bool("rows", false, "enable row types")
 	features := flags.String("features", "", "typechecker features: rows or no-rows")
@@ -410,11 +411,42 @@ func runTest(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
 	}
-	if flags.NArg() != 4 {
-		fmt.Fprintln(stderr, "test requires FILE BEFORE ACTION ASSERTION")
+	visited := make(map[string]bool)
+	flags.Visit(func(flag *flag.Flag) { visited[flag.Name] = true })
+	applicationConfig, selectedConfig, err := loadCommandConfig(*configFile)
+	if err != nil {
+		fmt.Fprintf(stderr, "cannot load Apalache configuration: %v\n", err)
 		return exitUsage
 	}
-	path, before, action, assertion := flags.Arg(0), flags.Arg(1), flags.Arg(2), flags.Arg(3)
+	if selectedConfig != "" {
+		if err = applicationConfig.validateForModelCommand("test", false); err != nil {
+			fmt.Fprintln(stderr, err)
+			return exitUsage
+		}
+		if err = applyJSONModelDefaults(applicationConfig, visited, jsonModelConfigTargets{
+			constantInit: constantInit, useRows: useRows, disablePolytypes: disablePolytypes,
+		}); err != nil {
+			fmt.Fprintln(stderr, err)
+			return exitUsage
+		}
+	}
+	var path, before, action, assertion string
+	switch {
+	case flags.NArg() == 4:
+		path, before, action, assertion = flags.Arg(0), flags.Arg(1), flags.Arg(2), flags.Arg(3)
+	case flags.NArg() == 3 && applicationConfig.Source != nil:
+		before, action, assertion = flags.Arg(0), flags.Arg(1), flags.Arg(2)
+		var cleanup func()
+		path, cleanup, err = applicationConfig.Source.materializeSpecification()
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return exitUsage
+		}
+		defer cleanup()
+	default:
+		fmt.Fprintln(stderr, "test requires FILE BEFORE ACTION ASSERTION, or BEFORE ACTION ASSERTION with a JSON source")
+		return exitUsage
+	}
 	rows, featureErr := resolveRowsFeature(*useRows, *features)
 	if featureErr != nil {
 		fmt.Fprintln(stderr, featureErr)

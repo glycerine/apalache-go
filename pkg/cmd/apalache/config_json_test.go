@@ -180,6 +180,40 @@ Next == x' = x + 1
 	}
 }
 
+func TestRunTestLoadsJSONConfiguration(t *testing.T) {
+	directory := t.TempDir()
+	t.Setenv("HOME", filepath.Join(directory, "home"))
+	t.Chdir(directory)
+	source := `---- MODULE ConfiguredTest ----
+EXTENDS Integers
+\* @type: Int;
+CONSTANT N
+\* @type: Int;
+VARIABLE x
+CInit == N = 1
+Before == x = 0
+Increment == x' = x + N
+Positive == x > 0
+====
+`
+	configuration, err := json.Marshal(map[string]any{
+		"source":  map[string]any{"kind": "string", "content": source, "format": "tla"},
+		"checker": map[string]any{"cinit": "CInit"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile("test.json", configuration, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	args := []string{"test", "--config-file=test.json", "Before", "Increment", "Positive"}
+	if code := run(context.Background(), args, &stdout, &stderr); code != exitOK ||
+		!strings.Contains(stdout.String(), "No example found") {
+		t.Fatalf("configured test = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
+	}
+}
+
 func TestRunFrontendCommandsLoadJSONSourceAndOutput(t *testing.T) {
 	directory := t.TempDir()
 	t.Setenv("HOME", filepath.Join(directory, "home"))
