@@ -59,6 +59,35 @@ func TestExtractTypeAnnotationsAttachesDeclarationsAndClosesAliases(t *testing.T
 	}
 }
 
+func TestExtractTypeAnnotationsIgnoresImportedSourceLocations(t *testing.T) {
+	source := `---- MODULE Root ----
+\* @type: Int;
+Root == 1
+====
+`
+	imported := NewOperDecl("Imported", nil, NewValueExpr(Int64Value(1), Untyped()), Untyped())
+	root := NewOperDecl("Root", nil, NewValueExpr(Int64Value(1), Untyped()), Untyped())
+	module := NewModule("Root", []Decl{imported, root})
+	store := NewSourceStore()
+	if err := store.Add(imported.ID(), SourceLocation{Filename: "Imported.tla", Region: NewSourceRegion(2, 1, 2, 12)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Add(root.ID(), SourceLocation{Filename: "Root.tla", Region: NewSourceRegion(3, 1, 3, 9)}); err != nil {
+		t.Fatal(err)
+	}
+
+	extracted := ExtractTypeAnnotations("Root.tla", source, module, store)
+	if !extracted.OK() {
+		t.Fatalf("ExtractTypeAnnotations() diagnostics = %v", extracted.Diagnostics)
+	}
+	if _, found := extracted.Types[imported.ID()]; found {
+		t.Fatal("root annotation attached to imported declaration")
+	}
+	if typ, found := extracted.Types[root.ID()]; !found || !EqualTypes(typ, IntT1) {
+		t.Fatalf("root annotation = %v, %v", typ, found)
+	}
+}
+
 func TestParseAndTypeCheckSourceUsesCommentAnnotations(t *testing.T) {
 	result := ParseAndTypeCheckSource(context.Background(), "Annotated.tla", annotatedModule, FrontendOptions{}, TypeCheckOptions{})
 	if !result.OK() {

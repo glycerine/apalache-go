@@ -86,6 +86,7 @@ func ParseSource(ctx context.Context, filename, source string, opts FrontendOpti
 	normalizeTlagoRootLocalInstances(spec)
 	normalizeTlagoLambdas(spec)
 	binderLayouts := normalizeTlagoApalacheAssignments(spec)
+	apalacheInstancePrefixes := tlagoApalacheInstancePrefixes(spec)
 	ir, irDiags := tlago.ApalacheIRJSON(spec, tlago.ApalacheIROptions{IncludeSource: opts.IncludeSource})
 	result.Diagnostics = append(result.Diagnostics, frontendDiagnostics(irDiags)...)
 	if !hasErrors(result.Diagnostics) {
@@ -100,7 +101,8 @@ func ParseSource(ctx context.Context, filename, source string, opts FrontendOpti
 		tlcImported := spec.Modules["TLC"] != nil
 		result.Native = removeTlagoNativeVariantDeclarations(result.Native, result.Sources, variantsImported)
 		result.Native = normalizeTlagoTLCCalls(result.Native, result.Sources, tlcImported)
-		result.Native = normalizeTlagoApalacheBuiltinCalls(result.Native, result.Sources)
+		result.Native = normalizeTlagoApalacheBuiltinCalls(result.Native, result.Sources, apalacheInstancePrefixes)
+		result.Native = normalizeTlagoLocalDeclarationTags(result.Native, result.Sources)
 		result.Native = normalizeTlagoVariantUnit(result.Native, result.Sources, variantsImported)
 		result.Native = normalizeTlagoTupleBinders(result.Native, result.Sources, binderLayouts)
 		result.Native = normalizeTlagoTupleQuantifiers(result.Native, result.Sources)

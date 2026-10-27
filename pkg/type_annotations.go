@@ -2,7 +2,9 @@ package apalache
 
 import (
 	"fmt"
+	"path/filepath"
 	"sort"
+	"strings"
 )
 
 // TypeAnnotationResult contains parsed declaration types, the closed alias
@@ -37,7 +39,7 @@ func ExtractTypeAnnotations(filename, source string, module *Module, sources *So
 		return result
 	}
 
-	declarations := locatedDeclarations(module, sources)
+	declarations := locatedDeclarations(filename, module, sources)
 	aliases := make(map[string]Type)
 	for _, candidate := range FindAnnotationCandidates(source) {
 		position := Position{Filename: filename, Line: candidate.Position.Line, Column: candidate.Position.Column}
@@ -142,7 +144,7 @@ func nextDeclaration(position SourcePosition, declarations []locatedDeclaration)
 	return nil
 }
 
-func locatedDeclarations(module *Module, sources *SourceStore) []locatedDeclaration {
+func locatedDeclarations(filename string, module *Module, sources *SourceStore) []locatedDeclaration {
 	seen := make(map[UID]struct{})
 	result := make([]locatedDeclaration, 0)
 	var visitExpression func(Expr)
@@ -164,9 +166,9 @@ func locatedDeclarations(module *Module, sources *SourceStore) []locatedDeclarat
 		if declaration == nil {
 			return
 		}
-		if _, found := seen[declaration.ID()]; !found {
-			seen[declaration.ID()] = struct{}{}
-			if location, ok := sources.Find(declaration.ID()); ok {
+		if location, ok := sources.Find(declaration.ID()); ok && sameSourceFilename(location.Filename, filename) {
+			if _, found := seen[declaration.ID()]; !found {
+				seen[declaration.ID()] = struct{}{}
 				result = append(result, locatedDeclaration{declaration: declaration, location: location})
 			}
 		}
@@ -190,4 +192,15 @@ func locatedDeclarations(module *Module, sources *SourceStore) []locatedDeclarat
 		return result[left].location.Region.End.Compare(result[right].location.Region.End) < 0
 	})
 	return result
+}
+
+func sameSourceFilename(left, right string) bool {
+	if left == right {
+		return true
+	}
+	stem := func(name string) string {
+		base := filepath.Base(name)
+		return strings.TrimSuffix(base, filepath.Ext(base))
+	}
+	return stem(left) == stem(right)
 }

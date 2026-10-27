@@ -39,6 +39,43 @@ var tlagoInternalBuiltinCalls = map[string]struct{}{
 	"__ApalacheSeqCapacity": {}, "__NotSupportedByModelChecker": {},
 }
 
+func tlagoApalacheInstancePrefixes(spec *tlago.Spec) map[string]struct{} {
+	result := make(map[string]struct{})
+	if spec == nil || spec.Root == nil {
+		return result
+	}
+	seen := make(map[string]bool)
+	var visit func(string, string)
+	visit = func(moduleName, prefix string) {
+		key := moduleName + "\x00" + prefix
+		if moduleName == "" || seen[key] {
+			return
+		}
+		seen[key] = true
+		if moduleName == "Apalache" && prefix != "" {
+			result[prefix] = struct{}{}
+		}
+		module := spec.Modules[moduleName]
+		if module == nil {
+			return
+		}
+		for _, nested := range module.Instances {
+			nestedPrefix := prefix
+			if nested.Name != "" {
+				if nestedPrefix != "" {
+					nestedPrefix += "!"
+				}
+				nestedPrefix += nested.Name
+			}
+			visit(nested.Module, nestedPrefix)
+		}
+	}
+	for _, instance := range spec.Root.Instances {
+		visit(instance.Module, instance.Name)
+	}
+	return result
+}
+
 var tlagoOpaqueBuiltinModules = map[string]struct{}{
 	"Naturals": {}, "Integers": {}, "Reals": {}, "Sequences": {}, "FiniteSets": {},
 	"TLC": {}, "TLCExt": {}, "Apalache": {}, "__apalache_internal": {},
@@ -1004,12 +1041,64 @@ func transformTlagoModuleExpressions(module *Module, transform ExprTransform, so
 	return result
 }
 
+// normalizeTlagoLocalDeclarationTags removes inferred tags that tlago v0.1.9
+// copies from the enclosing operator onto LET definitions. Explicit @type
+// annotations are collected separately and reapplied by the native checker.
+func normalizeTlagoLocalDeclarationTags(module *Module, sources *SourceStore) *Module {
+	if module == nil {
+		return nil
+	}
+	var tracker TransformationTracker = IdleTracker{}
+	if sources != nil {
+		tracker = NewListenerTracker(sources)
+	}
+	rewrite := RewriteExpressions(tracker, func(expression Expr) (Expr, bool) {
+		let, ok := expression.(*LetInExpr)
+		if !ok {
+			return nil, false
+		}
+		declarations := let.Declarations()
+		changed := false
+		for index, declaration := range declarations {
+			if _, typed := declaration.Tag().Type(); !typed {
+				continue
+			}
+			copy := declaration.copyWithTag(Untyped())
+			declarations[index] = tracker.TrackOperatorDeclaration(func(*OperDecl) *OperDecl { return copy })(declaration)
+			changed = true
+		}
+		if !changed {
+			return nil, false
+		}
+		return NewLetInExpr(let.Body(), let.Tag(), declarations...), true
+	})
+	return transformTlagoModuleExpressions(module, rewrite, sources)
+}
+
 // normalizeTlagoApalacheBuiltinCalls repairs imported Apalache operators that
 // tlago v0.1.9 exports as unresolved OPER_APP calls instead of builtin IR
 // operators. A declaration in the root module intentionally shadows a builtin.
-func normalizeTlagoApalacheBuiltinCalls(module *Module, sources *SourceStore) *Module {
+func normalizeTlagoApalacheBuiltinCalls(module *Module, sources *SourceStore, instancePrefixes map[string]struct{}) *Module {
 	if module == nil {
 		return nil
+	}
+	declarations := module.Declarations()
+	kept := make([]Decl, 0, len(declarations))
+	for _, declaration := range declarations {
+		separator := strings.LastIndex(declaration.Name(), "!")
+		qualifiedStub := false
+		if separator >= 0 {
+			prefix, base := declaration.Name()[:separator], declaration.Name()[separator+1:]
+			_, apalacheInstance := instancePrefixes[prefix]
+			_, nativeBuiltin := tlagoApalacheBuiltinCalls[base]
+			qualifiedStub = apalacheInstance && (nativeBuiltin || base == ":=" || base == "FunAsSeq")
+		}
+		if !qualifiedStub {
+			kept = append(kept, declaration)
+		}
+	}
+	if len(kept) != len(declarations) {
+		module = NewModule(module.Name(), kept)
 	}
 	declared := make(map[string]struct{}, len(module.Declarations()))
 	parameters := make(map[string][]OperatorParam, len(module.Declarations()))
@@ -1087,14 +1176,21 @@ func normalizeTlagoApalacheBuiltinCalls(module *Module, sources *SourceStore) *M
 				return expanded, true
 			}
 		}
-		builtin, found := tlagoApalacheBuiltinCalls[callee.Name()]
+		builtinName := callee.Name()
+		builtin, found := tlagoApalacheBuiltinCalls[builtinName]
+		if !found {
+			if separator := strings.LastIndex(builtinName, "!"); separator >= 0 {
+				builtinName = builtinName[separator+1:]
+				builtin, found = tlagoApalacheBuiltinCalls[builtinName]
+			}
+		}
 		if !found {
 			if changed {
 				return MustOperExpr(operation.Operator(), operation.Tag(), arguments...), true
 			}
 			return nil, false
 		}
-		_, internalBuiltin := tlagoInternalBuiltinCalls[callee.Name()]
+		_, internalBuiltin := tlagoInternalBuiltinCalls[builtinName]
 		if _, shadowed := declared[callee.Name()]; shadowed && !internalBuiltin {
 			return nil, false
 		}

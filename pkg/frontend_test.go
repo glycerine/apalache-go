@@ -326,6 +326,96 @@ Test == L!First(<<1, 2>>) = 1
 	}
 }
 
+func TestParseAndTypeCheckSourceRecognizesQualifiedApalacheBuiltins(t *testing.T) {
+	result := ParseAndTypeCheckSource(context.Background(), "QualifiedApalache.tla", `---- MODULE QualifiedApalache ----
+EXTENDS Integers
+A == INSTANCE Apalache
+Test == A!SetAsFun({<<"a", 1>>, <<"b", 2>>})["a"] = 1
+====
+`, FrontendOptions{}, TypeCheckOptions{})
+	if !result.OK() {
+		declarations := []string(nil)
+		if result.Native != nil {
+			declarations = declarationNames(result.Native)
+		}
+		t.Fatalf("ParseAndTypeCheckSource() diagnostics = %v; declarations = %v", result.Diagnostics, declarations)
+	}
+	body, found := OperatorBody(result.Native, "Test")
+	if !found || countOperator(body, "Apalache!SetAsFun") != 1 || countNamed(body, "A!SetAsFun") != 0 {
+		t.Fatalf("qualified SetAsFun body = %#v", body)
+	}
+}
+
+func TestParseAndTypeCheckSourceInfersUnannotatedLocalResult(t *testing.T) {
+	source := `---- MODULE LocalResult ----
+EXTENDS Integers, Sequences
+\* @type: ((Int, Int) => Bool, Seq(Int), Int) => Seq(Int);
+Outer(LessThan(_, _), seq, newElement) ==
+  LET nextLen == Len(seq) + 1 IN
+  LET first == 1 IN
+  SubSeq(seq, first, nextLen)
+====
+`
+	result := ParseAndTypeCheckSource(context.Background(), "LocalResult.tla", source, FrontendOptions{}, TypeCheckOptions{})
+	if !result.OK() {
+		t.Fatalf("ParseAndTypeCheckSource() diagnostics = %v", result.Diagnostics)
+	}
+}
+
+func TestParseSourceClearsImportedLocalResultTags(t *testing.T) {
+	source := `---- MODULE ImportedSequencesExt ----
+EXTENDS SequencesExt
+Test == TRUE
+====
+`
+	result := ParseSource(context.Background(), "ImportedSequencesExt.tla", source, FrontendOptions{})
+	if !result.OK() {
+		t.Fatalf("ParseSource() diagnostics = %v", result.Diagnostics)
+	}
+	insertSorted, found := declarationNamed(result.Native, "__InsertSorted")
+	if !found {
+		t.Fatalf("missing __InsertSorted in %v", declarationNames(result.Native))
+	}
+	operator, ok := insertSorted.(*OperDecl)
+	if !ok {
+		t.Fatalf("__InsertSorted declaration = %T", insertSorted)
+	}
+	if got := operator.FormalParams(); len(got) != 3 {
+		t.Fatalf("__InsertSorted parameters = %v", got)
+	}
+	body := operator.Body()
+	if _, topLevel := declarationNamed(result.Native, "nextLen"); topLevel {
+		t.Fatalf("nextLen leaked to top-level declarations %v", declarationNames(result.Native))
+	}
+	var locals []*OperDecl
+	RewriteExpressions(nil, func(expression Expr) (Expr, bool) {
+		if let, ok := expression.(*LetInExpr); ok {
+			locals = append(locals, let.Declarations()...)
+		}
+		return nil, false
+	})(body)
+	foundNextLen := 0
+	for _, local := range locals {
+		if local.Name() == "nextLen" {
+			foundNextLen++
+			if typ, typed := local.Tag().Type(); typed {
+				t.Fatalf("nextLen retained frontend tag %s", typ)
+			}
+			if typ, typed := local.Body().Tag().Type(); typed {
+				t.Fatalf("nextLen body retained frontend tag %s in %#v", typ, local.Body())
+			}
+			annotations := ExtractTypeAnnotations("ImportedSequencesExt.tla", source, result.Native, result.Sources)
+			mergeTlagoImportedAnnotations(&annotations, result.Native, result.imported)
+			if typ, annotated := annotations.Types[local.ID()]; annotated {
+				t.Fatalf("nextLen inherited imported annotation %s", typ)
+			}
+		}
+	}
+	if foundNextLen == 0 {
+		t.Fatalf("nextLen not found among local declarations %v", locals)
+	}
+}
+
 func TestParseAndTypeCheckSourceImportsVariableAndConstantAnnotations(t *testing.T) {
 	directory := t.TempDir()
 	library := `---- MODULE TypedState ----
