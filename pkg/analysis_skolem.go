@@ -64,6 +64,23 @@ func MarkSkolemizableExpression(expression Expr, tracker TransformationTracker) 
 	return transform(expression)
 }
 
+// RemoveSkolemizationMarkers restores the formula that existed before the
+// polarity-sensitive analysis pass. Consumers that reverse a formula's
+// polarity must analyze the reversed formula again.
+func RemoveSkolemizationMarkers(expression Expr, tracker TransformationTracker) Expr {
+	return RewriteExpressions(tracker, func(current Expr) (Expr, bool) {
+		operation, ok := current.(*OperExpr)
+		if !ok || operation.Operator().Name() != "Apalache!Skolem" {
+			return nil, false
+		}
+		arguments := operation.Arguments()
+		if len(arguments) != 1 {
+			return nil, false
+		}
+		return arguments[0], true
+	})(expression)
+}
+
 func MarkSkolemizableModule(module *Module, tracker TransformationTracker) (*Module, error) {
 	if module == nil {
 		return nil, fmt.Errorf("cannot analyze a nil module")

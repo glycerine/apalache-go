@@ -346,6 +346,59 @@ func TestCheckBoundedSafetySkolemizesExistentialAssignments(t *testing.T) {
 	}
 }
 
+func TestCheckBoundedSafetyAllowsUnusedConstantsWithoutInitializer(t *testing.T) {
+	truth := NewValueExpr(BoolValue(true), Typed(BoolT1))
+	module := configuredTestModule(
+		NewConstDecl("Unused", Typed(IntT1)),
+		boolDefinition("Init", truth),
+		boolDefinition("Next", truth),
+		boolDefinition("Inv", truth),
+	)
+	prepared, err := PrepareSafetyTransitions(module, SafetyPipelineOptions{Specification: SpecificationConfiguration{
+		Behavior: InitNextSpec{Init: "Init", Next: "Next"}, Invariants: []string{"Inv"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Outcome != SafetyNoCounterexample {
+		t.Fatalf("unused-constant result = %#v", result)
+	}
+}
+
+func TestCheckBoundedSafetyNegatesInvariantBeforeSkolemization(t *testing.T) {
+	truth := NewValueExpr(BoolValue(true), Typed(BoolT1))
+	setType := mustSet(IntT1)
+	a := NewNameExpr("a", Typed(IntT1))
+	b := NewNameExpr("b", Typed(IntT1))
+	inner := MustOperExpr(Op("EXISTS3"), Typed(BoolT1), b,
+		MustOperExpr(Op("SET_ENUM"), Typed(setType), intLiteral(1), intLiteral(2)),
+		MustOperExpr(Op("EQ"), Typed(BoolT1), a, b))
+	invariant := MustOperExpr(Op("EXISTS3"), Typed(BoolT1), a,
+		MustOperExpr(Op("SET_ENUM"), Typed(setType), intLiteral(0), intLiteral(1)), inner)
+	module := configuredTestModule(
+		boolDefinition("Init", truth),
+		boolDefinition("Next", truth),
+		boolDefinition("Inv", invariant),
+	)
+	prepared, err := PrepareSafetyTransitions(module, SafetyPipelineOptions{Specification: SpecificationConfiguration{
+		Behavior: InitNextSpec{Init: "Init", Next: "Next"}, Invariants: []string{"Inv"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Outcome != SafetyNoCounterexample {
+		t.Fatalf("existential invariant result = %#v", result)
+	}
+}
+
 func TestCheckBoundedSafetyValidatesInputs(t *testing.T) {
 	if _, err := CheckBoundedSafety(context.Background(), nil, DerivedPredicates{}, 0); err == nil {
 		t.Fatal("nil module was accepted")

@@ -93,8 +93,12 @@ func CheckBoundedSafetyWithOptions(
 			if err != nil {
 				return BoundedSafetyResult{}, err
 			}
+			violation, err := invariantViolationExpression(operator.Body())
+			if err != nil {
+				return BoundedSafetyResult{}, fmt.Errorf("prepare trace invariant %s violation: %w", name, err)
+			}
 			traceInvariants = append(traceInvariants, namedTraceInvariant{
-				name: name, parameter: parameters[0].Name, expression: operator.Body(),
+				name: name, parameter: parameters[0].Name, expression: violation,
 				historyType: historyType,
 			})
 			continue
@@ -103,7 +107,11 @@ func CheckBoundedSafetyWithOptions(
 			return BoundedSafetyResult{}, fmt.Errorf("invariant %s has %d parameters; expected zero or one trace parameter", name, len(parameters))
 		}
 		body := invariantAssignmentsToEquality(operator.Body())
-		named := namedExpression{name: name, expression: body}
+		violation, err := invariantViolationExpression(body)
+		if err != nil {
+			return BoundedSafetyResult{}, fmt.Errorf("prepare invariant %s violation: %w", name, err)
+		}
+		named := namedExpression{name: name, expression: violation}
 		switch levelFinder.LevelOfExpression(body) {
 		case ConstantLevel, StateLevel:
 			stateInvariants = append(stateInvariants, named)
@@ -158,6 +166,16 @@ func invariantAssignmentsToEquality(expression Expr) Expr {
 		}
 		return MustOperExpr(Op("EQ"), assignment.Tag(), assignment.Arguments()...), true
 	})(expression)
+}
+
+func invariantViolationExpression(expression Expr) (Expr, error) {
+	original := RemoveSkolemizationMarkers(expression, nil)
+	negated := MustOperExpr(Op("NOT"), Typed(BoolT1), original)
+	normalized, err := NormalizeNNF(negated, nil)
+	if err != nil {
+		return nil, err
+	}
+	return MarkSkolemizableExpression(normalized, nil), nil
 }
 
 type namedExpression struct {
@@ -267,9 +285,8 @@ func searchSafetyPath(
 	}
 	if len(path.next) >= inputs.invariantMinimumDepth {
 		for _, invariant := range inputs.stateInvariants {
-			violation := MustOperExpr(Op("NOT"), Typed(BoolT1), invariant.expression)
 			var states []DecodedState
-			status, states, err = executor.CheckAndDecode(ctx, violation)
+			status, states, err = executor.CheckAndDecode(ctx, invariant.expression)
 			if err != nil {
 				return false, fmt.Errorf("check invariant %s at depth %d: %w", invariant.name, len(path.next), err)
 			}
@@ -288,9 +305,8 @@ func searchSafetyPath(
 			}
 		}
 		for _, invariant := range inputs.traceInvariants {
-			violation := MustOperExpr(Op("NOT"), Typed(BoolT1), invariant.expression)
 			var states []DecodedState
-			status, states, err = executor.CheckTraceAndDecode(ctx, invariant.parameter, violation,
+			status, states, err = executor.CheckTraceAndDecode(ctx, invariant.parameter, invariant.expression,
 				invariant.historyType, inputs.variableDeclarations)
 			if err != nil {
 				return false, fmt.Errorf("check trace invariant %s at depth %d: %w", invariant.name, len(path.next), err)
@@ -337,8 +353,7 @@ func searchSafetyPath(
 		}
 		enabledNext = true
 		for _, invariant := range inputs.actionInvariants {
-			violation := MustOperExpr(Op("NOT"), Typed(BoolT1), invariant.expression)
-			status, states, invariantErr := childExecutor.CheckPendingAndDecode(ctx, violation)
+			status, states, invariantErr := childExecutor.CheckPendingAndDecode(ctx, invariant.expression)
 			if invariantErr != nil {
 				return false, fmt.Errorf("check action invariant %s at depth %d: %w", invariant.name, len(child.next), invariantErr)
 			}
@@ -410,8 +425,6 @@ func replaySafetyPath(inputs modulePathInputs, path boundedPath) (*TransitionExe
 		if err := executor.InitializeConstants(inputs.constantInit); err != nil {
 			return nil, err
 		}
-	} else if len(inputs.constants) != 0 {
-		return nil, fmt.Errorf("constants require a normalized constant initializer")
 	}
 	for _, assumption := range inputs.assumptions {
 		if err := executor.AssertState(assumption.Body()); err != nil {
