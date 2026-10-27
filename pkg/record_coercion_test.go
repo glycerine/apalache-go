@@ -79,6 +79,30 @@ func TestStratifiedWidensFiniteSetsOfLegacyRecords(t *testing.T) {
 	}
 }
 
+func TestStratifiedCoercesClosedRowRecordToLegacyRecord(t *testing.T) {
+	row, err := NewRowType(map[string]Type{"cnt": IntT1}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rowType := NewRecordRowType(row)
+	legacyType, _ := NewRecordType(map[string]Type{"cnt": IntT1})
+	record := MustOperExpr(Op("RECORD"), Typed(rowType),
+		NewValueExpr(StringValue("cnt"), Typed(StrT1)), intLiteral(2))
+
+	rewriter := NewStratifiedRewriter()
+	scope, rowRecord, err := rewriter.Rewrite(record, InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope, coerced, err := rewriter.coerceCell(scope, rowRecord, legacyType)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !EqualTypes(coerced.Type.TLAType(), legacyType) || len(scope.Arena.GetHas(coerced)) != 1 || !scope.Arena.HasDomain(coerced) {
+		t.Fatalf("coerced row record = %s, %#v", coerced, scope.Arena.GetHas(coerced))
+	}
+}
+
 func TestStratifiedEqualityWidensSparseLegacyRecords(t *testing.T) {
 	narrowType, _ := NewRecordType(map[string]Type{"a": IntT1})
 	wideType, _ := NewRecordType(map[string]Type{"a": IntT1, "b": BoolT1})

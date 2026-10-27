@@ -17,11 +17,26 @@ func (rewriter *StratifiedRewriter) coerceCell(
 	}
 	switch expectedType := expected.(type) {
 	case RecordType:
-		actualType, ok := actual.(RecordType)
+		switch actualType := actual.(type) {
+		case RecordType:
+			return rewriter.coerceLegacyRecord(scope, cell, actualType, expectedType)
+		case RecordRowType:
+			if _, open := actualType.Row().Other(); open {
+				return scope, ArenaCell{}, fmt.Errorf("cannot materialize open row-record type %s", actual)
+			}
+			return rewriter.coerceRowRecordToLegacy(scope, cell, actualType, expectedType)
+		default:
+			return scope, ArenaCell{}, fmt.Errorf("cannot widen %s to %s", actual, expected)
+		}
+	case RecordRowType:
+		if _, open := expectedType.Row().Other(); open {
+			return scope, ArenaCell{}, fmt.Errorf("cannot materialize open row-record type %s", expected)
+		}
+		actualFields, ok := recordTypeFields(cell.Type)
 		if !ok {
 			return scope, ArenaCell{}, fmt.Errorf("cannot widen %s to %s", actual, expected)
 		}
-		return rewriter.coerceLegacyRecord(scope, cell, actualType, expectedType)
+		return rewriter.coerceClosedRowRecord(scope, cell, actualFields, expectedType)
 	case SetType:
 		actualType, ok := actual.(SetType)
 		if !ok {
@@ -94,6 +109,97 @@ func (rewriter *StratifiedRewriter) coerceCell(
 	default:
 		return scope, ArenaCell{}, fmt.Errorf("cannot coerce %s to %s", actual, expected)
 	}
+}
+
+func (rewriter *StratifiedRewriter) coerceRowRecordToLegacy(
+	scope RewriterScope,
+	record ArenaCell,
+	actual RecordRowType,
+	expected RecordType,
+) (RewriterScope, ArenaCell, error) {
+	actualFields := actual.Row().Fields()
+	expectedFields := expected.Fields()
+	actualKeys := sortedStringKeys(actualFields)
+	actualValues := scope.Arena.GetHas(record)
+	if len(actualValues) != len(actualKeys) {
+		return scope, ArenaCell{}, fmt.Errorf("row record %s has %d of %d fields", record, len(actualValues), len(actualKeys))
+	}
+	byName := make(map[string]ArenaCell, len(actualKeys))
+	for index, key := range actualKeys {
+		expectedField, found := expectedFields[key]
+		if !found || !CompatibleTypes(actualFields[key], expectedField) {
+			return scope, ArenaCell{}, fmt.Errorf("record field %q cannot be widened from %s to %s", key, actualFields[key], expectedField)
+		}
+		var value ArenaCell
+		var err error
+		scope, value, err = rewriter.coerceCell(scope, actualValues[index].Element(), expectedField)
+		if err != nil {
+			return scope, ArenaCell{}, fmt.Errorf("widen record field %q: %w", key, err)
+		}
+		byName[key] = value
+	}
+	expectedKeys := sortedStringKeys(expectedFields)
+	pointers := make([]ElementPointer, len(expectedKeys))
+	for index, key := range expectedKeys {
+		value, found := byName[key]
+		if !found {
+			var err error
+			scope, value, err = rewriter.defaults.GetOrCreate(scope, expectedFields[key])
+			if err != nil {
+				return scope, ArenaCell{}, fmt.Errorf("default widened record field %q: %w", key, err)
+			}
+		}
+		pointers[index] = FixedElementPointer{Cell: value}
+	}
+	newArena, result := scope.Arena.AppendCellType(BasicCellType{Type: expected})
+	scope.Arena = newArena.AppendHas(result, pointers...)
+	domainElements := make([]Expr, len(actualKeys))
+	for index, key := range actualKeys {
+		domainElements[index] = NewValueExpr(StringValue(key), Typed(StrT1))
+	}
+	domainExpression := MustOperExpr(Op("SET_ENUM"), Typed(mustSet(StrT1)), domainElements...)
+	var domain ArenaCell
+	var err error
+	scope, domain, err = rewriter.Rewrite(domainExpression, scope)
+	if err != nil {
+		return scope, ArenaCell{}, fmt.Errorf("materialize widened record domain: %w", err)
+	}
+	scope.Arena = scope.Arena.SetDomain(result, domain)
+	return scope, result, nil
+}
+
+func (rewriter *StratifiedRewriter) coerceClosedRowRecord(
+	scope RewriterScope,
+	record ArenaCell,
+	actualFields map[string]Type,
+	expected RecordRowType,
+) (RewriterScope, ArenaCell, error) {
+	expectedFields := expected.Row().Fields()
+	actualKeys := sortedStringKeys(actualFields)
+	expectedKeys := sortedStringKeys(expectedFields)
+	if len(actualKeys) != len(expectedKeys) {
+		return scope, ArenaCell{}, fmt.Errorf("record fields %v cannot be widened to %v", actualKeys, expectedKeys)
+	}
+	actualValues := scope.Arena.GetHas(record)
+	if len(actualValues) != len(actualKeys) {
+		return scope, ArenaCell{}, fmt.Errorf("record %s has %d of %d fields", record, len(actualValues), len(actualKeys))
+	}
+	pointers := make([]ElementPointer, len(expectedKeys))
+	for index, key := range expectedKeys {
+		if actualKeys[index] != key || !CompatibleTypes(actualFields[key], expectedFields[key]) {
+			return scope, ArenaCell{}, fmt.Errorf("record field %q cannot be widened from %s to %s", key, actualFields[key], expectedFields[key])
+		}
+		var value ArenaCell
+		var err error
+		scope, value, err = rewriter.coerceCell(scope, actualValues[index].Element(), expectedFields[key])
+		if err != nil {
+			return scope, ArenaCell{}, fmt.Errorf("widen record field %q: %w", key, err)
+		}
+		pointers[index] = PointerWithSameCondition(actualValues[index], value)
+	}
+	newArena, result := scope.Arena.AppendCellType(BasicCellType{Type: expected})
+	scope.Arena = newArena.AppendHas(result, pointers...)
+	return scope, result, nil
 }
 
 func (rewriter *StratifiedRewriter) coerceLegacyRecord(
