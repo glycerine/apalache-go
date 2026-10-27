@@ -114,5 +114,9 @@ func PrepareSafetyTransitions(module *Module, options SafetyPipelineOptions) (Sa
 	if err != nil {
 		return SafetyPipelineResult{}, err
 	}
+	analyzed, err = MarkSetExpansionsModule(analyzed, tracker)
+	if err != nil {
+		return SafetyPipelineResult{}, err
+	}
 	return SafetyPipelineResult{Module: analyzed, Predicates: configured.Predicates}, nil
 }

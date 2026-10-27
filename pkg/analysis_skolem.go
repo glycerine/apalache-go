@@ -76,3 +76,117 @@ func MarkSkolemizableModule(module *Module, tracker TransformationTracker) (*Mod
 	result.AddProperty(PropertyAnalyzed)
 	return result, nil
 }
+
+// MarkSetExpansionsExpression propagates whether a consumer needs explicit
+// arena elements and wraps compact powersets/function sets at that boundary.
+func MarkSetExpansionsExpression(expression Expr, tracker TransformationTracker) Expr {
+	if expression == nil {
+		panic("cannot mark expansions in a nil expression")
+	}
+	if tracker == nil {
+		tracker = IdleTracker{}
+	}
+	var transform func(Expr, bool) Expr
+	transform = func(current Expr, expand bool) Expr {
+		tracked := tracker.TrackExpression(func(input Expr) Expr {
+			switch typed := input.(type) {
+			case *OperExpr:
+				arguments := typed.Arguments()
+				rebuild := func(args []Expr) Expr { return MustOperExpr(typed.Operator(), typed.Tag(), args...) }
+				switch typed.Operator().Name() {
+				case "SET_POWERSET":
+					if len(arguments) != 1 {
+						return input
+					}
+					constructor := rebuild([]Expr{transform(arguments[0], true)})
+					if expand {
+						return MustOperExpr(Op("Apalache!Expand"), typed.Tag(), constructor)
+					}
+					return constructor
+				case "FUN_SET":
+					if len(arguments) != 2 {
+						return input
+					}
+					constructor := rebuild([]Expr{transform(arguments[0], true), transform(arguments[1], false)})
+					if expand {
+						return MustOperExpr(Op("Apalache!Expand"), typed.Tag(), constructor)
+					}
+					return constructor
+				case "Apalache!Skolem":
+					if len(arguments) == 1 {
+						if exists, ok := arguments[0].(*OperExpr); ok && exists.Operator().Name() == "EXISTS3" && len(exists.Arguments()) == 3 {
+							existsArgs := exists.Arguments()
+							marked := MustOperExpr(exists.Operator(), exists.Tag(), existsArgs[0],
+								transform(existsArgs[1], false), transform(existsArgs[2], false))
+							return rebuild([]Expr{marked})
+						}
+					}
+				case "CHOOSE3":
+					if len(arguments) == 3 {
+						return rebuild([]Expr{arguments[0], transform(arguments[1], false), transform(arguments[2], expand)})
+					}
+				case "Apalache!Guess":
+					if len(arguments) == 1 {
+						return rebuild([]Expr{transform(arguments[0], false)})
+					}
+				case "EXISTS3", "FORALL3":
+					if len(arguments) == 3 {
+						return rebuild([]Expr{arguments[0], transform(arguments[1], true), transform(arguments[2], expand)})
+					}
+				case "SET_IN", "SET_NOT_IN", "Apalache!SelectInSet", "Apalache!SelectInFun", "Apalache!StoreInSet", "Apalache!storeNotInSet", "Apalache!storeNotInFun":
+					if len(arguments) == 2 {
+						return rebuild([]Expr{transform(arguments[0], true), transform(arguments[1], false)})
+					}
+				case "SET_UNION2", "SET_UNARY_UNION":
+					marked := make([]Expr, len(arguments))
+					for index, argument := range arguments {
+						marked[index] = transform(argument, true)
+					}
+					return rebuild(marked)
+				case "Apalache!ApaFoldSet":
+					if len(arguments) == 3 {
+						return rebuild([]Expr{transform(arguments[0], expand), transform(arguments[1], expand), transform(arguments[2], true)})
+					}
+				case "SET_FILTER":
+					if len(arguments) == 3 {
+						return rebuild([]Expr{arguments[0], transform(arguments[1], true), transform(arguments[2], expand)})
+					}
+				case "SET_MAP", "FUN_CTOR", "FUN_REC_CTOR":
+					if len(arguments) != 0 {
+						marked := make([]Expr, len(arguments))
+						marked[0] = transform(arguments[0], expand)
+						for index := 1; index < len(arguments); index++ {
+							marked[index] = transform(arguments[index], true)
+						}
+						return rebuild(marked)
+					}
+				}
+				marked := make([]Expr, len(arguments))
+				for index, argument := range arguments {
+					marked[index] = transform(argument, expand)
+				}
+				return rebuild(marked)
+			case *LetInExpr:
+				declarations := typed.Declarations()
+				for index, declaration := range declarations {
+					copy := declaration.copyWithTag(declaration.Tag())
+					copy.SetBody(transform(declaration.Body(), expand))
+					declarations[index] = copy
+				}
+				return NewLetInExpr(transform(typed.Body(), expand), typed.Tag(), declarations...)
+			default:
+				return input
+			}
+		})
+		return tracked(current)
+	}
+	return transform(expression, false)
+}
+
+func MarkSetExpansionsModule(module *Module, tracker TransformationTracker) (*Module, error) {
+	if module == nil {
+		return nil, fmt.Errorf("cannot mark expansions in a nil module")
+	}
+	return transformModuleExpressionsWithError(module, "set expansion analysis", nil,
+		func(expression Expr) (Expr, error) { return MarkSetExpansionsExpression(expression, tracker), nil })
+}

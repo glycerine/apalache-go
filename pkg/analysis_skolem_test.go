@@ -45,3 +45,49 @@ func TestMarkSkolemizableModuleMarksCardinalityAndProperty(t *testing.T) {
 		t.Fatalf("marked module = %v, %v", marked.HasProperty(PropertyAnalyzed), markedBody)
 	}
 }
+
+func TestMarkSetExpansionsPropagatesConsumerRequirements(t *testing.T) {
+	intSet := mustSet(IntT1)
+	powerSet := mustSet(intSet)
+	base := MustOperExpr(Op("SET_ENUM"), Typed(intSet), intLiteral(1), intLiteral(2))
+	power := func() Expr { return MustOperExpr(Op("SET_POWERSET"), Typed(powerSet), base) }
+
+	union := MustOperExpr(Op("SET_UNARY_UNION"), Typed(intSet), power())
+	markedUnion := MarkSetExpansionsExpression(union, nil).(*OperExpr)
+	if markedUnion.Arguments()[0].(*OperExpr).Operator().Name() != "Apalache!Expand" {
+		t.Fatal("UNION did not request explicit powerset expansion")
+	}
+	membership := MustOperExpr(Op("SET_IN"), Typed(BoolT1),
+		MustOperExpr(Op("SET_ENUM"), Typed(intSet), intLiteral(1)), power())
+	markedMembership := MarkSetExpansionsExpression(membership, nil).(*OperExpr)
+	if markedMembership.Arguments()[1].(*OperExpr).Operator().Name() != "SET_POWERSET" {
+		t.Fatal("membership unnecessarily expanded its powerset")
+	}
+	binder := NewNameExpr("s", Typed(intSet))
+	skolem := MustOperExpr(Op("Apalache!Skolem"), Typed(BoolT1),
+		MustOperExpr(Op("EXISTS3"), Typed(BoolT1), binder, power(),
+			NewValueExpr(BoolValue(true), Typed(BoolT1))))
+	markedSkolem := MarkSetExpansionsExpression(skolem, nil).(*OperExpr)
+	markedExists := markedSkolem.Arguments()[0].(*OperExpr)
+	if markedExists.Arguments()[1].(*OperExpr).Operator().Name() != "SET_POWERSET" {
+		t.Fatal("Skolemized existential unnecessarily expanded its powerset")
+	}
+}
+
+func TestMarkedPowersetExpansionFeedsUnaryUnion(t *testing.T) {
+	intSet := mustSet(IntT1)
+	setOfSets := mustSet(intSet)
+	base := MustOperExpr(Op("SET_ENUM"), Typed(setOfSets),
+		MustOperExpr(Op("SET_ENUM"), Typed(intSet), intLiteral(1)),
+		MustOperExpr(Op("SET_ENUM"), Typed(intSet), intLiteral(2)))
+	powerType := mustSet(setOfSets)
+	expression := MustOperExpr(Op("SET_UNARY_UNION"), Typed(setOfSets),
+		MustOperExpr(Op("SET_POWERSET"), Typed(powerType), base))
+	marked := MarkSetExpansionsExpression(expression, nil)
+	rewriter := NewStratifiedRewriter()
+	scope, result, err := rewriter.Rewrite(MustOperExpr(Op("EQ"), Typed(BoolT1), marked, base), InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkRewrittenTruth(t, rewriter, scope, result, true)
+}
