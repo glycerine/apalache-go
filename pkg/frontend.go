@@ -28,6 +28,7 @@ type FrontendResult struct {
 	Types       map[UID]Type           `json:"-"`
 	Annotations *AnnotationStore       `json:"-"`
 	Aliases     *TypeAliasSubstitution `json:"-"`
+	imported    tlagoImportedAnnotations
 }
 
 // OK reports whether the frontend completed without errors.
@@ -69,6 +70,7 @@ func ParseSource(ctx context.Context, filename, source string, opts FrontendOpti
 	if hasErrors(result.Diagnostics) {
 		return result
 	}
+	result.imported = collectTlagoImportedAnnotations(spec)
 	if err := contextError(ctx); err != nil {
 		return canceledResult(err)
 	}
@@ -107,6 +109,7 @@ func ParseAndTypeCheckSource(ctx context.Context, filename, source string, front
 		return result
 	}
 	annotations := ExtractTypeAnnotations(filename, source, result.Native, result.Sources)
+	mergeTlagoImportedAnnotations(&annotations, result.Native, result.imported)
 	result.Annotations = annotations.Annotations
 	result.Aliases = annotations.Aliases
 	result.Diagnostics = append(result.Diagnostics, annotations.Diagnostics...)

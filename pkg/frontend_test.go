@@ -3,6 +3,8 @@ package apalache
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -171,6 +173,36 @@ Test == ToSet(<<1>>) = {1}
 	body, found := OperatorBody(result.Native, "Test")
 	if !found || countOperator(body, "SequencesExt!ToSet") != 1 {
 		t.Fatalf("normalized ToSet body = %#v", body)
+	}
+}
+
+func TestParseAndTypeCheckSourceImportsQualifiedAnnotationsAndAliases(t *testing.T) {
+	directory := t.TempDir()
+	library := `---- MODULE TypedLibrary ----
+EXTENDS Integers
+\* @typeAlias: PAIR = <<Int, Int>>;
+TypeAliases == TRUE
+\* @type: PAIR => Int;
+First(pair) == pair[1]
+====
+`
+	if err := os.WriteFile(filepath.Join(directory, "TypedLibrary.tla"), []byte(library), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result := ParseAndTypeCheckSource(context.Background(), "QualifiedImport.tla", `---- MODULE QualifiedImport ----
+L == INSTANCE TypedLibrary
+Test == L!First(<<1, 2>>) = 1
+====
+`, FrontendOptions{LibraryPaths: []string{directory}}, TypeCheckOptions{})
+	if !result.OK() {
+		t.Fatalf("ParseAndTypeCheckSource() diagnostics = %v", result.Diagnostics)
+	}
+	body, found := OperatorBody(result.Native, "L!First")
+	if !found {
+		t.Fatalf("missing qualified imported definition in %#v", result.Native.Declarations())
+	}
+	if typ, typed := body.Tag().Type(); !typed || !EqualTypes(typ, IntT1) {
+		t.Fatalf("qualified imported body type = %v, %v", typ, typed)
 	}
 }
 
