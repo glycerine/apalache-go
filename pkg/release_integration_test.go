@@ -90,6 +90,30 @@ Inv == Reverse(<<1, 2, 3>>) = <<3, 2, 1>>
 		t.Fatalf("release smoke check: %v\n%s", err, output)
 	}
 
+	vmtPath := filepath.Join(runDir, "ReleaseVMT.tla")
+	vmtSpec := `---- MODULE ReleaseVMT ----
+\* @type: Int;
+VARIABLE x
+Init == x = 0
+Next == x' = x
+Inv == x = x
+====
+`
+	if err := os.WriteFile(vmtPath, []byte(vmtSpec), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	vmtOutput := filepath.Join(runDir, "release.vmt")
+	transpile := releaseCommand(ctx, binary, runDir,
+		"transpile", "-inv", "Inv", "-output", vmtOutput, vmtPath)
+	output, err = transpile.CombinedOutput()
+	if err != nil || !strings.Contains(string(output), vmtOutput) {
+		t.Fatalf("release VMT transpile: %v\n%s", err, output)
+	}
+	vmtDocument, err := os.ReadFile(vmtOutput)
+	if err != nil || !bytes.Contains(vmtDocument, []byte(":action Next$0000")) {
+		t.Fatalf("release VMT output: %v\n%s", err, vmtDocument)
+	}
+
 	unsafePath := filepath.Join(runDir, "Unsafe.tla")
 	unsafeSpec := `---- MODULE Unsafe ----
 EXTENDS Integers
