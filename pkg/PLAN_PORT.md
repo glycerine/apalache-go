@@ -1,6 +1,7 @@
 # Apalache Scala-to-Go port plan
 
-Status: initial survey and implementation plan (2026-10-27)
+Status: implementation in progress; standalone safety, temporal, and VMT
+vertical slices are operational (2026-10-27)
 
 This document is the working plan for a behavior-preserving Go port of
 Apalache. The deliverable lives under `pkg/`, builds as a standalone model
@@ -454,19 +455,19 @@ preserving the CPU/parallelism cap.
 Before declaring the port complete, fill every evidence cell with a file,
 command log, or CI artifact; absence of a discrepancy is not evidence.
 
-| Requirement | Required evidence |
-| --- | --- |
-| All reachable Scala semantics surveyed | source-to-Go manifest covering every production Scala file/command |
-| Parsing uses `tlago` | pinned dependency plus frontend integration tests for full syntax corpus |
-| Core model checker is Go | dependency/license audit and production-call-graph review showing no Scala/JVM/native-Z3 delegation |
-| Z3 uses `g3` | pinned `github.com/glycerine/g3/pkg` dependency plus incremental/array/integer/UF/quantifier/model adapter tests |
-| Standalone runtime | clean release-archive tests with Java/Scala/SBT, native Z3, external solver executables, and source checkout unavailable |
-| Safety and deadlock correctness | unit, solver-cross, small exhaustive, and Scala differential suites |
-| Temporal/ReTLA/VMT correctness | dedicated semantic and end-to-end differential suites |
-| Counterexample correctness | state-by-state normalized trace comparisons and ITF round trips |
-| CLI/config compatibility | command/precedence/exit-code/output-file matrix |
-| Comprehensive tests | mapped Scala-test manifest, Go coverage report by subsystem, property/fuzz inventory |
-| Robustness | race, cancellation, resource/leak, deterministic-repeat, malformed-input results |
-| CPU constraint | build/test scripts and CI settings capped at CPUs/parallelism 1-8 |
-| Green repository state | final `go test`, race, oracle, corpus, vet/static, build, and package logs |
+| Requirement | Required evidence | Current evidence and remaining work |
+| --- | --- | --- |
+| All reachable Scala semantics surveyed | source-to-Go manifest covering every production Scala file/command | **Incomplete.** The dependency survey above is complete enough to order implementation, but a file/command-level port manifest is still required. |
+| Parsing uses `tlago` | pinned dependency plus frontend integration tests for full syntax corpus | **Partial.** `go.mod` pins `tlago v0.1.9`; `frontend_tlago_*.go`, frontend unit tests, and the tagged annotated corpus exercise the native checked AST. Full syntax and negative-diagnostic mapping remain open. |
+| Core model checker is Go | dependency/license audit and production-call-graph review showing no Scala/JVM/native-Z3 delegation | **Partial.** Production code is Go and release tests run without external runtimes. A final dependency/license and production-call-graph audit remains open. |
+| Z3 uses `g3` | pinned `github.com/glycerine/g3/pkg` dependency plus incremental/array/integer/UF/quantifier/model adapter tests | **Partial.** `g3` tag `v0.0.5` is pinned by exact pseudo-version and `smt_g3*_test.go` covers the active ground encoding, models, scopes, and cancellation. Alternative array/quantifier coverage is not complete. |
+| Standalone runtime | clean release-archive tests with Java/Scala/SBT, native Z3, external solver executables, and source checkout unavailable | **Implemented for the current command surface.** `release_integration_test.go` builds and exercises the archive in a scrubbed environment, including typed JSON input, violations, ITF, VMT, diagnostics, and cancellation. Repeat after every packaging change. |
+| Safety and deadlock correctness | unit, solver-cross, small exhaustive, and Scala differential suites | **Partial, strong vertical slice.** Bounded checker/executor tests and 38 live Scala differential cases compare verdict and available depths, including a depth-4 deadlock. Broader exhaustive and cross-solver generation remains open. |
+| Temporal/ReTLA/VMT correctness | dedicated semantic and end-to-end differential suites | **Partial.** Temporal loop/tableau unit tests and nine live lasso differential cases are green; VMT has semantic and release smoke tests. Broader ReTLA/VMT differential coverage remains open. |
+| Counterexample correctness | state-by-state normalized trace comparisons and ITF round trips | **Partial.** Decoder and ITF round-trip tests are present, and oracle comparison checks verdict/property/depth. The live oracle does not yet compare every decoded state value. |
+| CLI/config compatibility | command/precedence/exit-code/output-file matrix | **Partial.** Principal commands, TLC configuration, backend flags, per-query timeouts, exit codes, JSON, and ITF are tested. JSON configuration precedence, multi-error/run controls, dumps/output directories, and service commands remain open. |
+| Comprehensive tests | mapped Scala-test manifest, Go coverage report by subsystem, property/fuzz inventory | **Incomplete.** Unit coverage is broad, the annotated corpus and live oracle manifests exist, and type parsing has a fuzz smoke gate. A mapped Scala-suite manifest and subsystem coverage report remain open. |
+| Robustness | race, cancellation, resource/leak, deterministic-repeat, malformed-input results | **Partial.** Race, cancellation, malformed-input, deterministic archive, and parser fuzz checks are green. Dedicated leak/resource and broader deterministic-repeat gates remain open. |
+| CPU constraint | build/test scripts and CI settings capped at CPUs/parallelism 1-8 | **Implemented locally.** `Makefile` caps `-p=8` and uses `taskset -c 1-8` when that affinity is available; CI invocation still needs final review. |
+| Green repository state | final `go test`, race, oracle, corpus, vet/static, build, and package logs | **Not a final claim.** Fast tests, vet, build, fuzz smoke, release/race checks, and the full 38-case live oracle have been green during implementation; all gates must be rerun together for completion. |
 
