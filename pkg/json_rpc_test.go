@@ -154,6 +154,18 @@ View == x = 0
 	if result, _ := queryAfterState["result"].(map[string]any); result["operatorValue"] != true {
 		t.Fatalf("query after assumeState rollback = %#v", queryAfterState)
 	}
+	nextModel := postJSONRPC(t, handler, fmt.Sprintf(
+		`{"jsonrpc":"2.0","method":"nextModel","params":{"sessionId":%q,"operator":"View"},"id":4}`,
+		sessionID,
+	))
+	nextModelResult, _ := nextModel["result"].(map[string]any)
+	if nextModelResult["oldValue"] != true || nextModelResult["hasOld"] != "TRUE" || nextModelResult["hasNext"] != "FALSE" {
+		t.Fatalf("nextModel deterministic operator = %#v", nextModel)
+	}
+	postJSONRPC(t, handler, fmt.Sprintf(
+		`{"jsonrpc":"2.0","method":"rollback","params":{"sessionId":%q,"snapshotId":%d},"id":4}`,
+		sessionID, int(nextResult["snapshotId"].(float64)),
+	))
 	disabled := postJSONRPC(t, handler, fmt.Sprintf(
 		`{"jsonrpc":"2.0","method":"assumeTransition","params":{"sessionId":%q,"transitionId":2,"checkEnabled":true},"id":4}`,
 		sessionID,

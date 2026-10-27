@@ -111,6 +111,19 @@ type queryResult struct {
 	OperatorValue any    `json:"operatorValue"`
 }
 
+type nextModelParams struct {
+	SessionID  string `json:"sessionId"`
+	Operator   string `json:"operator"`
+	TimeoutSec int    `json:"timeoutSec"`
+}
+
+type nextModelResult struct {
+	SessionID string `json:"sessionId"`
+	OldValue  any    `json:"oldValue"`
+	HasOld    string `json:"hasOld"`
+	HasNext   string `json:"hasNext"`
+}
+
 type explorationOperation struct {
 	transition *int
 	advance    bool
@@ -486,6 +499,54 @@ func (service *ExplorationService) query(ctx context.Context, raw json.RawMessag
 			}
 		}
 		return result, nil
+	})
+}
+
+func (service *ExplorationService) nextModel(ctx context.Context, raw json.RawMessage) (any, *jsonRPCError) {
+	var params nextModelParams
+	if err := decodeJSONRPCParams(raw, &params); err != nil || params.SessionID == "" || params.Operator == "" || params.TimeoutSec < 0 {
+		return nil, invalidParams(fmt.Errorf("nextModel requires sessionId, operator, and non-negative timeoutSec"))
+	}
+	return service.withSession(params.SessionID, func(session *explorationSession) (any, *jsonRPCError) {
+		if _, exported := session.exports[params.Operator]; !exported {
+			return nil, invalidParams(fmt.Errorf("Operator not found: %s", params.Operator))
+		}
+		body, found := OperatorBody(session.prepared.Module, params.Operator)
+		if !found {
+			return nil, invalidParams(fmt.Errorf("Operator not found: %s", params.Operator))
+		}
+		checkContext, cancel := explorationTimeout(ctx, params.TimeoutSec)
+		oldValue, status, err := session.executor.Evaluate(checkContext, body)
+		cancel()
+		if err != nil {
+			return nil, &jsonRPCError{Code: JSONRPCInternalError, Message: err.Error()}
+		}
+		if status != SMTSatisfiable {
+			return nextModelResult{SessionID: params.SessionID, HasOld: "FALSE", HasNext: "FALSE"}, nil
+		}
+		encodedOld, err := EncodeITFValue(oldValue)
+		if err != nil {
+			return nil, &jsonRPCError{Code: JSONRPCInternalError, Message: err.Error()}
+		}
+		equality := MustOperExpr(Op("EQ"), Typed(BoolT1), body, oldValue)
+		disequality := MustOperExpr(Op("NOT"), Typed(BoolT1), equality)
+		if err = session.executor.AssertState(disequality); err != nil {
+			return nil, &jsonRPCError{Code: JSONRPCInternalError, Message: err.Error()}
+		}
+		session.operations = append(session.operations, explorationOperation{assertion: disequality})
+		checkContext, cancel = explorationTimeout(ctx, params.TimeoutSec)
+		defer cancel()
+		status, err = session.executor.Check(checkContext)
+		if err != nil {
+			return nil, &jsonRPCError{Code: JSONRPCInternalError, Message: err.Error()}
+		}
+		hasNext := "UNKNOWN"
+		if status == SMTSatisfiable {
+			hasNext = "TRUE"
+		} else if status == SMTUnsatisfiable {
+			hasNext = "FALSE"
+		}
+		return nextModelResult{params.SessionID, encodedOld, "TRUE", hasNext}, nil
 	})
 }
 
