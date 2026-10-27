@@ -41,6 +41,54 @@
       "dir": "..",
       "scala_args": ["check", "--features=rows", "--length=0", "--no-deadlock", "--inv=AllTests", "test/tla/TestVariants.tla"],
       "go_args": ["check", "-rows", "-length", "0", "-deadlock=false", "-inv", "AllTests", "test/tla/TestVariants.tla"]
+    },
+    {
+      "name": "sequences",
+      "dir": "..",
+      "scala_args": ["check", "--length=0", "--no-deadlock", "--inv=AllTests", "test/tla/TestSequences.tla"],
+      "go_args": ["check", "-length", "0", "-deadlock=false", "-inv", "AllTests", "test/tla/TestSequences.tla"]
+    },
+    {
+      "name": "bags",
+      "dir": "..",
+      "scala_args": ["check", "--length=0", "--no-deadlock", "--inv=Inv", "test/tla/TestBags.tla"],
+      "go_args": ["check", "-length", "0", "-deadlock=false", "-inv", "Inv", "test/tla/TestBags.tla"]
+    },
+    {
+      "name": "named-instance-operator-parameter",
+      "dir": "..",
+      "scala_args": ["check", "--length=2", "--no-deadlock", "--inv=GOAL", "test/tla/Test1254.tla"],
+      "go_args": ["check", "-length", "2", "-deadlock=false", "-inv", "GOAL", "test/tla/Test1254.tla"]
+    },
+    {
+      "name": "quantified-disabled-branch",
+      "dir": "..",
+      "scala_args": ["check", "--length=2", "test/tla/Test1343.tla"],
+      "go_args": ["check", "-length", "2", "test/tla/Test1343.tla"]
+    },
+    {
+      "name": "function-except-in-disabled-branch",
+      "dir": "..",
+      "scala_args": ["check", "--length=2", "test/tla/Test1425.tla"],
+      "go_args": ["check", "-length", "2", "test/tla/Test1425.tla"]
+    },
+    {
+      "name": "nested-and-multiple-except",
+      "dir": "..",
+      "scala_args": ["check", "--length=1", "test/tla/Except617.tla"],
+      "go_args": ["check", "-length", "1", "test/tla/Except617.tla"]
+    },
+    {
+      "name": "tlc-integer-constant",
+      "dir": "..",
+      "scala_args": ["check", "--config=test/tla/Test1623.cfg", "--length=5", "--no-deadlock", "--inv=Inv", "test/tla/Test1623.tla"],
+      "go_args": ["check", "-config", "test/tla/Test1623.cfg", "-length", "5", "-deadlock=false", "-inv", "Inv", "test/tla/Test1623.tla"]
+    },
+    {
+      "name": "tlc-model-value-constant",
+      "dir": "..",
+      "scala_args": ["check", "--config=test/tla/Test2750.cfg", "--length=5", "--no-deadlock", "test/tla/Test2750.tla"],
+      "go_args": ["check", "-config", "test/tla/Test2750.cfg", "-length", "5", "-deadlock=false", "test/tla/Test2750.tla"]
     }
   ]
 }
