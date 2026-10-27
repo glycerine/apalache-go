@@ -22,5 +22,28 @@ diagnostic, and cancellation paths with an empty executable search path.
 Some imported dependency packages contain optional external-process helpers
 (`tlago` XML schema validation, and g3 diagnostic/LP utilities). The Go port
 does not call those helpers. The scrubbed release test guards the exercised
-production command surface against accidental delegation; a recorded
-whole-program call-graph artifact is still required for final completion.
+production command surface against accidental solver delegation.
+
+## Whole-program symbol audit
+
+An unstripped `CGO_ENABLED=0` production binary was inspected with `nm` and
+`objdump`. Link-time dead-code elimination removes `tlago.ValidateSanyXML` and
+`g3/pkg/util/lp.RunDriverGLPK`, so neither the XML validator nor the optional
+GLPK comparison driver is present. The g3 solver assertion machinery does,
+however, retain `diagnostic.(*DebugActionContext).InvokeDebugger` and its Linux
+`hostRunCommand` branch, which executes `/bin/sh` if an interactive assertion
+failure receives the `G` debugger command. This is not a solver delegation
+path, but it is an external-process capability in the production call graph.
+
+Reproduce the check from `pkg/` with an unstripped build and inspect these
+symbols:
+
+```sh
+CGO_ENABLED=0 go build -trimpath -o /tmp/apalache-callgraph ./cmd/apalache
+nm -an /tmp/apalache-callgraph | grep -E 'ValidateSanyXML|RunDriverGLPK|hostRunCommand|os/exec\.(Command|LookPath)'
+```
+
+Final hardening requires a tagged g3 API/profile that disables the interactive
+debugger path, followed by updating the pinned dependency and rerunning this
+audit. A local replacement is intentionally not used because release builds
+must stay pinned to tagged g3 code.
