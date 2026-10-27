@@ -10,7 +10,7 @@ RELEASE_NAME := apalache-go_$(VERSION)_$(GOOS_VALUE)-$(GOARCH_VALUE)
 STAGING_DIR := $(BUILD_ROOT)/$(RELEASE_NAME)
 ARCHIVE := $(DIST_ROOT)/$(RELEASE_NAME).tar.gz
 
-.PHONY: build dist test vet verify test-race test-fuzz-smoke test-oracle test-corpus test-release
+.PHONY: build dist test vet verify test-race test-fuzz-smoke test-oracle test-corpus test-release test-deterministic
 
 FUZZ_TIME ?= 10s
 
@@ -46,3 +46,6 @@ test-corpus:
 
 test-release:
 	GOFLAGS='-p=8' $(CPU_RUN) $(GO) test -tags=release -run TestReleaseArchiveRunsWithoutSourceOrExternalRuntime .
+
+test-deterministic:
+	GOFLAGS='-p=8' $(CPU_RUN) $(GO) test -tags=deterministic -run TestStandaloneCounterexampleIsDeterministicAcrossWorkerCounts .
