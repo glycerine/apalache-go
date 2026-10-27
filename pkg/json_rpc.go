@@ -129,6 +129,8 @@ func (handler *ExplorationJSONRPCHandler) dispatch(ctx context.Context, method s
 		return handler.service.assumeTransition(ctx, params)
 	case "nextStep":
 		return handler.service.nextStep(params)
+	case "assumeState":
+		return handler.service.assumeState(ctx, params)
 	case "rollback":
 		return handler.service.rollback(params)
 	case "checkInvariant":

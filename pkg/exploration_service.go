@@ -1,6 +1,7 @@
 package apalache
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -113,6 +114,20 @@ type queryResult struct {
 type explorationOperation struct {
 	transition *int
 	advance    bool
+	assertion  Expr
+}
+
+type assumeStateParams struct {
+	SessionID    string          `json:"sessionId"`
+	Equalities   json.RawMessage `json:"equalities"`
+	CheckEnabled bool            `json:"checkEnabled"`
+	TimeoutSec   int             `json:"timeoutSec"`
+}
+
+type assumeStateResult struct {
+	SessionID  string `json:"sessionId"`
+	SnapshotID int    `json:"snapshotId"`
+	Status     string `json:"status"`
 }
 
 type explorationSession struct {
@@ -122,6 +137,7 @@ type explorationSession struct {
 	operations     []explorationOperation
 	snapshots      map[int][]explorationOperation
 	lastSnapshotID int
+	exports        map[string]struct{}
 }
 
 // ExplorationService owns the independent symbolic exploration sessions used
@@ -172,6 +188,7 @@ func (service *ExplorationService) loadSpec(ctx context.Context, raw json.RawMes
 	service.mu.Lock()
 	service.sessions[sessionID] = &explorationSession{
 		prepared: prepared, executor: executor, snapshots: map[int][]explorationOperation{0: {}},
+		exports: stringSet(params.Exports),
 	}
 	service.mu.Unlock()
 	return loadSpecResult{SessionID: sessionID, SnapshotID: 0, SpecParameters: parameters}, nil
@@ -245,6 +262,74 @@ func (service *ExplorationService) nextStep(raw json.RawMessage) (any, *jsonRPCE
 		session.operations = append(session.operations, explorationOperation{advance: true})
 		snapshotID := session.takeSnapshot()
 		return nextStepResult{params.SessionID, snapshotID, session.executor.Step()}, nil
+	})
+}
+
+func (service *ExplorationService) assumeState(ctx context.Context, raw json.RawMessage) (any, *jsonRPCError) {
+	var params assumeStateParams
+	if err := decodeJSONRPCParams(raw, &params); err != nil || params.SessionID == "" || params.TimeoutSec < 0 {
+		return nil, invalidParams(fmt.Errorf("assumeState requires a non-empty sessionId, equalities, and non-negative timeoutSec"))
+	}
+	var equalities map[string]any
+	decoder := json.NewDecoder(bytes.NewReader(params.Equalities))
+	decoder.UseNumber()
+	if len(params.Equalities) == 0 || decoder.Decode(&equalities) != nil {
+		return nil, invalidParams(fmt.Errorf("assumeState equalities must be a JSON object"))
+	}
+	return service.withSession(params.SessionID, func(session *explorationSession) (any, *jsonRPCError) {
+		types := make(map[string]Type)
+		for _, variable := range session.prepared.Module.VarDeclarations() {
+			if variable.IsInternal() {
+				continue
+			}
+			typ, typed := variable.Tag().Type()
+			if typed {
+				types[variable.Name()] = typ
+			}
+		}
+		assertions := make([]Expr, 0, len(equalities))
+		for _, name := range sortedStringKeys(equalities) {
+			if name == ITFMetaField {
+				continue
+			}
+			typ, found := types[name]
+			if !found {
+				return nil, invalidParams(fmt.Errorf("Failed to parse the state: unknown variable %s", name))
+			}
+			value, err := DecodeITFValue(equalities[name], typ)
+			if err != nil {
+				return nil, invalidParams(fmt.Errorf("Failed to parse the state variable %s: %w", name, err))
+			}
+			assertions = append(assertions, MustOperExpr(Op("EQ"), Typed(BoolT1), NewNameExpr(name, Typed(typ)), value))
+		}
+		beforeID := session.takeSnapshot()
+		for _, assertion := range assertions {
+			if err := session.executor.AssertState(assertion); err != nil {
+				_ = session.recoverSnapshot(beforeID)
+				return nil, &jsonRPCError{Code: JSONRPCInternalError, Message: err.Error()}
+			}
+			session.operations = append(session.operations, explorationOperation{assertion: assertion})
+		}
+		afterID := session.takeSnapshot()
+		if !params.CheckEnabled {
+			return assumeStateResult{params.SessionID, afterID, "UNKNOWN"}, nil
+		}
+		checkContext, cancel := explorationTimeout(ctx, params.TimeoutSec)
+		defer cancel()
+		status, err := session.executor.Check(checkContext)
+		if err != nil {
+			return nil, &jsonRPCError{Code: JSONRPCInternalError, Message: err.Error()}
+		}
+		if status == SMTUnsatisfiable {
+			if err = session.recoverSnapshot(beforeID); err != nil {
+				return nil, &jsonRPCError{Code: JSONRPCInternalError, Message: err.Error()}
+			}
+			return assumeStateResult{params.SessionID, beforeID, "DISABLED"}, nil
+		}
+		if status == SMTSatisfiable {
+			return assumeStateResult{params.SessionID, afterID, "ENABLED"}, nil
+		}
+		return assumeStateResult{params.SessionID, afterID, "UNKNOWN"}, nil
 	})
 }
 
@@ -324,7 +409,7 @@ func (service *ExplorationService) query(ctx context.Context, raw json.RawMessag
 	if err := decodeJSONRPCParams(raw, &params); err != nil || params.SessionID == "" || len(params.Kinds) == 0 || params.TimeoutSec < 0 {
 		return nil, invalidParams(fmt.Errorf("query requires a non-empty sessionId and kinds, and non-negative timeoutSec"))
 	}
-	wantTrace, wantState := false, false
+	wantTrace, wantState, wantOperator := false, false, false
 	for _, kind := range params.Kinds {
 		switch kind {
 		case "TRACE":
@@ -332,12 +417,40 @@ func (service *ExplorationService) query(ctx context.Context, raw json.RawMessag
 		case "STATE":
 			wantState = true
 		case "OPERATOR":
-			return nil, invalidParams(fmt.Errorf("query kind OPERATOR is not implemented by the Go explorer yet"))
+			wantOperator = true
 		default:
 			return nil, invalidParams(fmt.Errorf("unsupported query kind %q", kind))
 		}
 	}
 	return service.withSession(params.SessionID, func(session *explorationSession) (any, *jsonRPCError) {
+		result := queryResult{SessionID: params.SessionID}
+		if wantOperator {
+			if params.Operator == "" {
+				return nil, invalidParams(fmt.Errorf("operator must be provided for an OPERATOR query"))
+			}
+			if _, exported := session.exports[params.Operator]; !exported {
+				return nil, invalidParams(fmt.Errorf("Operator not found: %s", params.Operator))
+			}
+			body, found := OperatorBody(session.prepared.Module, params.Operator)
+			if !found {
+				return nil, invalidParams(fmt.Errorf("Operator not found: %s", params.Operator))
+			}
+			checkContext, cancel := explorationTimeout(ctx, params.TimeoutSec)
+			value, status, evaluateErr := session.executor.Evaluate(checkContext, body)
+			cancel()
+			if evaluateErr != nil {
+				return nil, &jsonRPCError{Code: JSONRPCInternalError, Message: evaluateErr.Error()}
+			}
+			if status == SMTSatisfiable {
+				result.OperatorValue, evaluateErr = EncodeITFValue(value)
+				if evaluateErr != nil {
+					return nil, &jsonRPCError{Code: JSONRPCInternalError, Message: evaluateErr.Error()}
+				}
+			}
+		}
+		if !wantTrace && !wantState {
+			return result, nil
+		}
 		truth := NewValueExpr(BoolValue(true), Typed(BoolT1))
 		checkContext, cancel := explorationTimeout(ctx, params.TimeoutSec)
 		defer cancel()
@@ -352,7 +465,6 @@ func (service *ExplorationService) query(ctx context.Context, raw json.RawMessag
 		if err != nil {
 			return nil, &jsonRPCError{Code: JSONRPCInternalError, Message: err.Error()}
 		}
-		result := queryResult{SessionID: params.SessionID}
 		if status != SMTSatisfiable || len(states) == 0 {
 			return result, nil
 		}
@@ -611,6 +723,12 @@ func replayExplorationOperations(prepared SafetyPipelineResult, operations []exp
 		return nil, err
 	}
 	for _, operation := range operations {
+		if operation.assertion != nil {
+			if err = executor.AssertState(operation.assertion); err != nil {
+				return nil, err
+			}
+			continue
+		}
 		if operation.advance {
 			if err = executor.NextState(); err != nil {
 				return nil, err

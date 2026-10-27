@@ -257,6 +257,35 @@ func (executor *TransitionExecutor) CheckState(ctx context.Context, expression E
 	return executor.check(ctx, []Expr{assertion.NameExpr()})
 }
 
+// Evaluate rewrites and decodes an expression in one model of the current
+// symbolic path. Rewriter definitions are retained for subsequent queries.
+func (executor *TransitionExecutor) Evaluate(ctx context.Context, expression Expr) (Expr, SMTStatus, error) {
+	if expression == nil {
+		return nil, SMTUnknown, fmt.Errorf("evaluation expression is nil")
+	}
+	scope, cell, err := executor.rewriter.Rewrite(expression, executor.scope)
+	if err != nil {
+		return nil, SMTUnknown, fmt.Errorf("rewrite evaluation expression: %w", err)
+	}
+	executor.scope = scope
+	solver, encoder, status, err := executor.solve(ctx, nil)
+	if solver != nil {
+		defer solver.Close()
+	}
+	if err != nil || status != SMTSatisfiable {
+		return nil, status, err
+	}
+	decoder, err := NewSymbolicDecoder(encoder, executor.rewriter)
+	if err != nil {
+		return nil, SMTUnknown, err
+	}
+	value, err := decoder.DecodeCell(executor.scope.Arena, cell)
+	if err != nil {
+		return nil, SMTUnknown, fmt.Errorf("decode evaluation expression: %w", err)
+	}
+	return value, status, nil
+}
+
 func (executor *TransitionExecutor) check(ctx context.Context, temporary []Expr) (SMTStatus, error) {
 	solver, _, status, err := executor.solve(ctx, temporary)
 	if solver != nil {

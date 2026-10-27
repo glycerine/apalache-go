@@ -74,10 +74,11 @@ Next ==
 Inv1 == I1:: x >= -3
 Inv2 == I2:: x' - x = 1 \/ x' - x = -1
 Bad == IBad:: x /= 0
+View == x = 0
 ====`
 	encoded := base64.StdEncoding.EncodeToString([]byte(source))
 	load := postJSONRPC(t, handler, fmt.Sprintf(
-		`{"jsonrpc":"2.0","method":"loadSpec","params":{"sources":[%q],"invariants":["Inv1","Inv2","Bad"]},"id":1}`,
+		`{"jsonrpc":"2.0","method":"loadSpec","params":{"sources":[%q],"invariants":["Inv1","Inv2","Bad"],"exports":["View"]},"id":1}`,
 		encoded,
 	))
 	result, ok := load["result"].(map[string]any)
@@ -129,14 +130,29 @@ Bad == IBad:: x /= 0
 		t.Fatalf("checkInvariant violation = %#v", violated)
 	}
 	query := postJSONRPC(t, handler, fmt.Sprintf(
-		`{"jsonrpc":"2.0","method":"query","params":{"sessionId":%q,"kinds":["TRACE","STATE"]},"id":4}`,
+		`{"jsonrpc":"2.0","method":"query","params":{"sessionId":%q,"kinds":["TRACE","STATE","OPERATOR"],"operator":"View"},"id":4}`,
 		sessionID,
 	))
 	queryResult, _ := query["result"].(map[string]any)
 	trace, traceOK := queryResult["trace"].(map[string]any)
 	state, stateOK := queryResult["state"].(map[string]any)
-	if !traceOK || !stateOK || trace["states"] == nil || state["x"] == nil {
+	if !traceOK || !stateOK || trace["states"] == nil || state["x"] == nil || queryResult["operatorValue"] != true {
 		t.Fatalf("query trace/state = %#v", query)
+	}
+	assumeState := postJSONRPC(t, handler, fmt.Sprintf(
+		`{"jsonrpc":"2.0","method":"assumeState","params":{"sessionId":%q,"equalities":{"x":1},"checkEnabled":true},"id":4}`,
+		sessionID,
+	))
+	assumeStateResult, _ := assumeState["result"].(map[string]any)
+	if assumeStateResult["status"] != "DISABLED" {
+		t.Fatalf("assumeState inconsistent = %#v", assumeState)
+	}
+	queryAfterState := postJSONRPC(t, handler, fmt.Sprintf(
+		`{"jsonrpc":"2.0","method":"query","params":{"sessionId":%q,"kinds":["OPERATOR"],"operator":"View"},"id":4}`,
+		sessionID,
+	))
+	if result, _ := queryAfterState["result"].(map[string]any); result["operatorValue"] != true {
+		t.Fatalf("query after assumeState rollback = %#v", queryAfterState)
 	}
 	disabled := postJSONRPC(t, handler, fmt.Sprintf(
 		`{"jsonrpc":"2.0","method":"assumeTransition","params":{"sessionId":%q,"transitionId":2,"checkEnabled":true},"id":4}`,

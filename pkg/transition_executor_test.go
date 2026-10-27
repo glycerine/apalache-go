@@ -134,6 +134,27 @@ func TestTransitionExecutorCheckStateIsTemporary(t *testing.T) {
 	}
 }
 
+func TestTransitionExecutorEvaluatesCurrentModel(t *testing.T) {
+	executor := NewTransitionExecutor(nil, []string{"x"})
+	prime := MustOperExpr(Op("PRIME"), Typed(IntT1), NewNameExpr("x", Typed(IntT1)))
+	initial := MustOperExpr(Op("Apalache!:="), Typed(BoolT1),
+		prime, NewValueExpr(Int64Value(7), Typed(IntT1)))
+	enabled, err := executor.PrepareTransition(0, initial)
+	if err != nil || !enabled {
+		t.Fatalf("prepare = %v, %v", enabled, err)
+	}
+	if err = executor.AssumeTransition(0); err != nil {
+		t.Fatal(err)
+	}
+	if err = executor.NextState(); err != nil {
+		t.Fatal(err)
+	}
+	value, status, err := executor.Evaluate(context.Background(), NewNameExpr("x", Typed(IntT1)))
+	if err != nil || status != SMTSatisfiable || !EqualValues(value.(*ValueExpr).Value(), Int64Value(7)) {
+		t.Fatalf("Evaluate(x) = %v, %v, %v", value, status, err)
+	}
+}
+
 func TestTransitionExecutorRejectsInvalidLifecycle(t *testing.T) {
 	executor := NewTransitionExecutor(nil, []string{"x"})
 	if err := executor.NextState(); err == nil || !strings.Contains(err.Error(), "select") {
