@@ -96,7 +96,7 @@ Inv == Reverse(<<1, 2, 3>>) = <<3, 2, 1>>
 	}
 	checkJSON := releaseCommand(ctx, binary, runDir,
 		"check", "--algo=incremental", "--smt-encoding=oopsla19", "--smt-solver=z3",
-		"-length", "0", "-deadlock=false", "-inv", "Inv", typedJSON)
+		"--timeout-smt=30", "-length", "0", "-deadlock=false", "-inv", "Inv", typedJSON)
 	output, err = checkJSON.CombinedOutput()
 	if err != nil || !strings.Contains(string(output), "No counterexample found through depth 0") {
 		t.Fatalf("release JSON smoke check: %v\n%s", err, output)

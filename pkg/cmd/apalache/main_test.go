@@ -657,6 +657,16 @@ Next == x' = x + 1
 	}
 }
 
+func TestRunCheckerCommandsValidateSMTTimeout(t *testing.T) {
+	for _, command := range []string{"check", "simulate"} {
+		var stdout, stderr bytes.Buffer
+		code := run(context.Background(), []string{command, "--timeout-smt=-1", "ignored.tla"}, &stdout, &stderr)
+		if code != exitUsage || !strings.Contains(stderr.String(), "SMT timeout cannot be negative") {
+			t.Fatalf("%s negative timeout = %d, stderr = %q", command, code, &stderr)
+		}
+	}
+}
+
 func TestRunTestChecksAssertionOnlyAfterAction(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "OneStep.tla")

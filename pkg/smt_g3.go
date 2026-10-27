@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/glycerine/g3/pkg/ast"
 	"github.com/glycerine/g3/pkg/cmd_context"
@@ -16,6 +17,29 @@ import (
 )
 
 type SMTStatus uint8
+
+type smtQueryTimeoutKey struct{}
+
+// WithSMTQueryTimeout configures a fresh timeout for every SMT query made
+// with the returned context. A non-positive duration disables a timeout
+// inherited through this mechanism.
+func WithSMTQueryTimeout(ctx context.Context, timeout time.Duration) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, smtQueryTimeoutKey{}, timeout)
+}
+
+func smtQueryContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	timeout, _ := ctx.Value(smtQueryTimeoutKey{}).(time.Duration)
+	if timeout <= 0 {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, timeout)
+}
 
 const (
 	SMTUnknown SMTStatus = iota
@@ -439,9 +463,8 @@ func (solver *G3SolverContext) Check(ctx context.Context) (SMTStatus, error) {
 	if err := solver.validate(); err != nil {
 		return SMTUnknown, err
 	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
+	ctx, cancel := smtQueryContext(ctx)
+	defer cancel()
 	if err := ctx.Err(); err != nil {
 		return SMTUnknown, err
 	}

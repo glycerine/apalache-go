@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	pal "github.com/glycerine/apalache-go"
 )
@@ -388,6 +389,7 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	flags.SetOutput(stderr)
 	backend := addCheckerBackendFlags(flags)
 	length := flags.Int("length", 10, "maximum number of Next steps")
+	timeoutSMT := flags.Int("timeout-smt", 0, "limit each SMT query to this many seconds (0 is unlimited)")
 	configPath := flags.String("config", "", "TLC configuration file")
 	initName := flags.String("init", "", "initial-state operator")
 	nextName := flags.String("next", "", "next-state operator")
@@ -409,10 +411,15 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 		fmt.Fprintln(stderr, "simulate length cannot be negative")
 		return exitUsage
 	}
+	if err := validateSMTTimeout(*timeoutSMT); err != nil {
+		fmt.Fprintln(stderr, err)
+		return exitUsage
+	}
 	if err := validateCheckerBackendOptions(backend); err != nil {
 		fmt.Fprintln(stderr, err)
 		return exitUsage
 	}
+	ctx = pal.WithSMTQueryTimeout(ctx, time.Duration(*timeoutSMT)*time.Second)
 	rows, featureErr := resolveRowsFeature(*useRows, *features)
 	if featureErr != nil {
 		fmt.Fprintln(stderr, featureErr)
@@ -497,6 +504,7 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	flags.SetOutput(stderr)
 	backend := addCheckerBackendFlags(flags)
 	length := flags.Int("length", 10, "maximum number of Next steps")
+	timeoutSMT := flags.Int("timeout-smt", 0, "limit each SMT query to this many seconds (0 is unlimited)")
 	configPath := flags.String("config", "", "TLC configuration file")
 	initName := flags.String("init", "", "initial-state operator")
 	nextName := flags.String("next", "", "next-state operator")
@@ -523,10 +531,15 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		fmt.Fprintln(stderr, "check length cannot be negative")
 		return exitUsage
 	}
+	if err := validateSMTTimeout(*timeoutSMT); err != nil {
+		fmt.Fprintln(stderr, err)
+		return exitUsage
+	}
 	if err := validateCheckerBackendOptions(backend); err != nil {
 		fmt.Fprintln(stderr, err)
 		return exitUsage
 	}
+	ctx = pal.WithSMTQueryTimeout(ctx, time.Duration(*timeoutSMT)*time.Second)
 	rows, featureErr := resolveRowsFeature(*useRows, *features)
 	if featureErr != nil {
 		fmt.Fprintln(stderr, featureErr)
@@ -891,6 +904,17 @@ func validateCheckerBackendOptions(options *checkerBackendOptions) error {
 	}
 	if solver := strings.ToLower(options.solver); solver != "z3" {
 		return fmt.Errorf("unsupported SMT solver %q (Go port uses g3 v0.0.5 as its Z3 backend)", options.solver)
+	}
+	return nil
+}
+
+func validateSMTTimeout(seconds int) error {
+	const maxDuration = time.Duration(1<<63 - 1)
+	if seconds < 0 {
+		return fmt.Errorf("SMT timeout cannot be negative")
+	}
+	if int64(seconds) > int64(maxDuration/time.Second) {
+		return fmt.Errorf("SMT timeout is too large")
 	}
 	return nil
 }
