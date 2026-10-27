@@ -55,3 +55,42 @@ Inv ==
 		t.Fatalf("BagOfAll result = %#v", result)
 	}
 }
+
+func TestBundledFunctionsChecksFiniteFunctionOperators(t *testing.T) {
+	frontend := ParseAndTypeCheckSource(context.Background(), "BundledFunctions.tla", `---- MODULE BundledFunctions ----
+EXTENDS Functions
+Init == TRUE
+Next == TRUE
+RangeOK == Range([x \in 1..3 |-> 1]) = {1}
+InjectiveOK == ~IsInjective([x \in 1..3 |-> 1])
+RestrictOK ==
+  LET f == [x \in 1..3 |-> 1]
+  IN Restrict(f, {1, 2}) = [x \in {1, 2} |-> 1]
+FoldOK ==
+  LET f == [x \in 1..3 |-> 1]
+      AddToSet(x, acc) == {x} \union acc
+  IN FoldFunctionOnSet(AddToSet, {}, f, {1, 2}) = {1}
+====
+`, FrontendOptions{}, TypeCheckOptions{UseRows: true})
+	if !frontend.OK() {
+		t.Fatalf("bundled Functions diagnostics = %v", frontend.Diagnostics)
+	}
+	prepared, err := PrepareSafetyTransitions(frontend.Native, SafetyPipelineOptions{
+		Specification: SpecificationConfiguration{
+			Behavior:   InitNextSpec{Init: "Init", Next: "Next"},
+			Invariants: []string{"RangeOK", "InjectiveOK", "RestrictOK", "FoldOK"},
+		},
+		Sources: frontend.Sources,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := CheckBoundedSafetyWithOptions(context.Background(), prepared.Module, prepared.Predicates,
+		BoundedSafetyOptions{MaxSteps: 0, CheckDeadlocks: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Outcome != SafetyNoCounterexample || result.ExploredExecutions != 1 {
+		t.Fatalf("Functions result = %#v", result)
+	}
+}
