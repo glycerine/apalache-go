@@ -127,8 +127,11 @@ Rules:
   imports a command package.
 - `internal/oraclectl` is an obvious test/tool leaf and must never be imported
   by production core code.
-- `g3` remains its own external package and is pinned to the stable
-  `github.com/glycerine/g3/pkg v0.0.5` release. Use a temporary
+- `g3` remains its own external package and is pinned to the stable repository
+  tag `v0.0.5` (commit `fe4e2f4f6dae`). Since the repository tags the root
+  while its Go module is rooted at `pkg/`, Go records this exact commit as
+  `github.com/glycerine/g3/pkg v0.0.0-20261027115743-fe4e2f4f6dae` rather than
+  accepting the semver spelling `v0.0.5`. Use a temporary
   `replace github.com/glycerine/g3/pkg => /mnt/oldrog/home/jaten/g3/pkg` only
   when explicitly testing unreleased local `g3` changes; never commit that
   replacement. It is a pure-Go port, so there are no native solver assets to
