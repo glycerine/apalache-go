@@ -72,6 +72,59 @@ func TestStratifiedFunctionSetRetainsOperands(t *testing.T) {
 	}
 }
 
+func TestStratifiedHigherOrderFunctionSetEmptiness(t *testing.T) {
+	innerFunctionType := mustFun(IntT1, BoolT1)
+	innerDomain := MustOperExpr(Op("SET_ENUM"), Typed(mustSet(IntT1)), intLiteral(1))
+	innerCodomain := MustOperExpr(Op("SET_ENUM"), Typed(mustSet(BoolT1)),
+		NewValueExpr(BoolValue(true), Typed(BoolT1)))
+	innerFunctionSet := MustOperExpr(Op("FUN_SET"), Typed(mustSet(innerFunctionType)),
+		innerDomain, innerCodomain)
+
+	outerFunctionType := mustFun(innerFunctionType, IntT1)
+	emptyOuterCodomain := MustOperExpr(Op("SET_ENUM"), Typed(mustSet(IntT1)))
+	outerFunctionSet := MustOperExpr(Op("FUN_SET"), Typed(mustSet(outerFunctionType)),
+		innerFunctionSet, emptyOuterCodomain)
+
+	rewriter := NewStratifiedRewriter()
+	scope, result, err := rewriter.Rewrite(outerFunctionSet, InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ordinary := result.Type.(BasicCellType); !ordinary {
+		t.Fatalf("empty higher-order function set type = %T", result.Type)
+	}
+	if pointers := scope.Arena.GetHas(result); len(pointers) != 0 {
+		t.Fatalf("empty higher-order function set elements = %#v", pointers)
+	}
+}
+
+func TestFunctionSetEmptinessTruthTable(t *testing.T) {
+	p := NewNameExpr("p", Typed(BoolT1))
+	q := NewNameExpr("q", Typed(BoolT1))
+	notP := MustOperExpr(Op("NOT"), Typed(BoolT1), p)
+	tests := []struct {
+		name             string
+		domain, codomain setEmptiness
+		want             setEmptiness
+	}{
+		{"empty domain", staticEmpty(), symbolicEmpty(q), staticNonEmpty()},
+		{"nonempty codomain", symbolicEmpty(p), staticNonEmpty(), staticNonEmpty()},
+		{"nonempty to empty", staticNonEmpty(), staticEmpty(), staticEmpty()},
+		{"nonempty to symbolic", staticNonEmpty(), symbolicEmpty(q), symbolicEmpty(q)},
+		{"symbolic to empty", symbolicEmpty(p), staticEmpty(), symbolicEmpty(notP)},
+		{"symbolic to symbolic", symbolicEmpty(p), symbolicEmpty(q),
+			symbolicEmpty(booleanAnd(notP, q))},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := functionSetEmptiness(test.domain, test.codomain)
+			if got.kind != test.want.kind || !EqualExpr(got.predicate, test.want.predicate) {
+				t.Fatalf("function-set emptiness = %#v, want %#v", got, test.want)
+			}
+		})
+	}
+}
+
 func TestStratifiedFunctionSetMembership(t *testing.T) {
 	intValue := func(value int64) Expr { return NewValueExpr(Int64Value(value), Typed(IntT1)) }
 	boolValue := func(value bool) Expr { return NewValueExpr(BoolValue(value), Typed(BoolT1)) }
