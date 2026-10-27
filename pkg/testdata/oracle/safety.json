@@ -17,6 +17,30 @@
       "dir": "..",
       "scala_args": ["check", "--length=2", "--no-deadlock", "--inv=Inv", "test/tla/Test1305.tla"],
       "go_args": ["check", "-length", "2", "-deadlock=false", "-inv", "Inv", "test/tla/Test1305.tla"]
+    },
+    {
+      "name": "finite-sets",
+      "dir": "..",
+      "scala_args": ["check", "--length=0", "--no-deadlock", "--inv=AllTests", "test/tla/TestSets.tla"],
+      "go_args": ["check", "-length", "0", "-deadlock=false", "-inv", "AllTests", "test/tla/TestSets.tla"]
+    },
+    {
+      "name": "community-functions",
+      "dir": "..",
+      "scala_args": ["check", "--length=0", "--no-deadlock", "--inv=AllTests", "test/tla/TestCommunityFunctions.tla"],
+      "go_args": ["check", "-length", "0", "-deadlock=false", "-inv", "AllTests", "test/tla/TestCommunityFunctions.tla"]
+    },
+    {
+      "name": "row-records",
+      "dir": "..",
+      "scala_args": ["check", "--features=rows", "--length=0", "--no-deadlock", "--inv=AllTests", "test/tla/TestRecordsNew.tla"],
+      "go_args": ["check", "-rows", "-length", "0", "-deadlock=false", "-inv", "AllTests", "test/tla/TestRecordsNew.tla"]
+    },
+    {
+      "name": "variants",
+      "dir": "..",
+      "scala_args": ["check", "--features=rows", "--length=0", "--no-deadlock", "--inv=AllTests", "test/tla/TestVariants.tla"],
+      "go_args": ["check", "-rows", "-length", "0", "-deadlock=false", "-inv", "AllTests", "test/tla/TestVariants.tla"]
     }
   ]
 }
