@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"debug/buildinfo"
 	"debug/elf"
 	"io"
 	"os"
@@ -54,13 +55,42 @@ func TestReleaseArchiveRunsWithoutSourceOrExternalRuntime(t *testing.T) {
 	if err := extractReleaseArchive(archivePath, extractRoot, releaseName); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"apalache", "LICENSE", "NOTICE", "README.md"} {
+	for _, name := range []string{"apalache", "DEPENDENCY_AUDIT.md", "LICENSE", "NOTICE", "README.md"} {
 		if _, err := os.Stat(filepath.Join(extractRoot, releaseName, name)); err != nil {
 			t.Fatalf("release entry %s: %v", name, err)
 		}
 	}
 
 	binary := filepath.Join(extractRoot, releaseName, "apalache")
+	build, buildErr := buildinfo.ReadFile(binary)
+	if buildErr != nil {
+		t.Fatal(buildErr)
+	}
+	wantModules := map[string]string{
+		"github.com/cespare/xxhash/v2": "v2.3.0",
+		"github.com/glycerine/g3/pkg":  "v0.0.0-20261027115743-fe4e2f4f6dae",
+		"github.com/glycerine/insdict": "v0.14.6",
+		"github.com/glycerine/rbtree":  "v0.2.2",
+		"github.com/glycerine/tlago":   "v0.1.9",
+		"golang.org/x/text":            "v0.28.0",
+	}
+	for _, dependency := range build.Deps {
+		if dependency.Replace != nil {
+			t.Fatalf("release module %s has unaudited replacement %s %s",
+				dependency.Path, dependency.Replace.Path, dependency.Replace.Version)
+		}
+		wantVersion, reviewed := wantModules[dependency.Path]
+		if !reviewed {
+			t.Fatalf("release contains unaudited module %s %s", dependency.Path, dependency.Version)
+		}
+		if dependency.Version != wantVersion {
+			t.Fatalf("release module %s = %s, audited %s", dependency.Path, dependency.Version, wantVersion)
+		}
+		delete(wantModules, dependency.Path)
+	}
+	if len(wantModules) != 0 {
+		t.Fatalf("audited modules absent from release: %v", wantModules)
+	}
 	if runtime.GOOS == "linux" {
 		executable, openErr := elf.Open(binary)
 		if openErr != nil {
