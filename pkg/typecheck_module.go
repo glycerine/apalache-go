@@ -68,6 +68,13 @@ func TypeCheckModule(module *Module, options TypeCheckOptions) TypeCheckResult {
 			Code: "E-TYPE", Severity: SeverityError, Message: "cannot type-check a nil module",
 		}}}
 	}
+	sorted, err := SortDeclarations(module)
+	if err != nil {
+		return TypeCheckResult{Diagnostics: []Diagnostic{{
+			Code: "E-TYPE-INPUT", Severity: SeverityError, Message: fmt.Sprintf("cannot order declarations for type checking: %v", err),
+		}}}
+	}
+	module = sorted
 	start := options.VariableStart
 	if start <= 0 {
 		start = 1000

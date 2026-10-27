@@ -76,9 +76,6 @@ func collectTlagoImportedAnnotations(spec *tlago.Spec) tlagoImportedAnnotations 
 		ownDefinitions[definition.Name] = struct{}{}
 	}
 	for _, instance := range spec.Root.Instances {
-		if instance.Local {
-			continue
-		}
 		module := spec.Modules[instance.Module]
 		annotations := moduleAnnotations(module)
 		for declaration, typ := range annotations.types {

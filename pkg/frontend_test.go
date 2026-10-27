@@ -191,6 +191,25 @@ Next == f' = [f EXCEPT !["a"] = [@ EXCEPT !.cnt = @ + 1]]
 	}
 }
 
+func TestParseAndTypeCheckSourceRetainsRootLocalInstanceDefinitions(t *testing.T) {
+	result := ParseAndTypeCheckSource(context.Background(), "LocalInstance.tla", `---- MODULE LocalInstance ----
+---- MODULE Helper ----
+EXTENDS Integers
+\* @type: Int => Int;
+Inc(x) == x + 1
+====
+LOCAL INSTANCE Helper
+Value == Inc(1)
+====
+`, FrontendOptions{}, TypeCheckOptions{})
+	if !result.OK() {
+		t.Fatalf("ParseAndTypeCheckSource() diagnostics = %v", result.Diagnostics)
+	}
+	if _, found := OperatorBody(result.Native, "Inc"); !found {
+		t.Fatal("LOCAL INSTANCE definition Inc was omitted")
+	}
+}
+
 func TestParseAndTypeCheckSourceWrapsBuiltinOperatorArguments(t *testing.T) {
 	result := ParseAndTypeCheckSource(context.Background(), "BuiltinArguments.tla", `---- MODULE BuiltinArguments ----
 EXTENDS Integers

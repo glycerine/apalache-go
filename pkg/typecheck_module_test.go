@@ -36,6 +36,19 @@ func TestTypeCheckModuleProducesTypedCopy(t *testing.T) {
 	}
 }
 
+func TestTypeCheckModuleSortsDeclarationsBeforeChecking(t *testing.T) {
+	callee := NewOperDecl("Callee", nil, NewValueExpr(Int64Value(1), Untyped()), Untyped())
+	caller := NewOperDecl("Caller", nil,
+		MustOperExpr(Op("OPER_APP"), Untyped(), NewNameExpr("Callee", Untyped())), Untyped())
+	result := TypeCheckModule(NewModule("OutOfOrder", []Decl{caller, callee}), TypeCheckOptions{})
+	if !result.OK() {
+		t.Fatalf("TypeCheckModule() diagnostics = %+v", result.Diagnostics)
+	}
+	if names := declarationNames(result.Module); len(names) != 2 || names[0] != "Callee" || names[1] != "Caller" {
+		t.Fatalf("sorted declarations = %v", names)
+	}
+}
+
 func TestTypeCheckModuleReportsSourceAwareFailure(t *testing.T) {
 	variable := NewVarDecl("x", Untyped())
 	bad := NewOperDecl("Bad", nil, tlaOper("PLUS", tlaName("x"), NewValueExpr(BoolValue(true), Untyped())), Untyped())

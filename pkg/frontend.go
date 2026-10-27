@@ -75,6 +75,7 @@ func ParseSource(ctx context.Context, filename, source string, opts FrontendOpti
 		return canceledResult(err)
 	}
 
+	normalizeTlagoRootLocalInstances(spec)
 	normalizeTlagoLambdas(spec)
 	binderLayouts := normalizeTlagoApalacheAssignments(spec)
 	ir, irDiags := tlago.ApalacheIRJSON(spec, tlago.ApalacheIROptions{IncludeSource: opts.IncludeSource})

@@ -65,6 +65,18 @@ type tlagoBinderLayout struct {
 	groups   []tlagoBinderGroup
 }
 
+// normalizeTlagoRootLocalInstances retains definitions imported by a LOCAL
+// INSTANCE. The exported IR is already a flattened root module, so retaining
+// these root-visible definitions cannot expose them to another module.
+func normalizeTlagoRootLocalInstances(spec *tlago.Spec) {
+	if spec == nil || spec.Root == nil {
+		return
+	}
+	for index := range spec.Root.Instances {
+		spec.Root.Instances[index].Local = false
+	}
+}
+
 // normalizeTlagoLambdas works around tlago v0.1.9's ApalacheIR exporter
 // treating a domainless LAMBDA like a function constructor. An operator-valued
 // lambda is equivalently represented as a local operator definition whose
