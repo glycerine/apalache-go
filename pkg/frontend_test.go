@@ -179,6 +179,27 @@ F == [x, y \in {1, 2} |-> x + y]
 	}
 }
 
+func TestParseAndTypeCheckSourceReconstructsTupleSetMapBinder(t *testing.T) {
+	result := ParseAndTypeCheckSource(context.Background(), "TupleSetMap.tla", `---- MODULE TupleSetMap ----
+EXTENDS Integers
+\* @type: Set(<<Int, Int>>) => Set(Int);
+Project(S) == {x + y : <<x, y>> \in S}
+====
+`, FrontendOptions{}, TypeCheckOptions{})
+	if !result.OK() {
+		t.Fatalf("ParseAndTypeCheckSource() diagnostics = %v", result.Diagnostics)
+	}
+	body, found := OperatorBody(result.Native, "Project")
+	setMap, ok := body.(*OperExpr)
+	if !found || !ok || setMap.Operator().Name() != "SET_MAP" || len(setMap.Arguments()) != 3 {
+		t.Fatalf("tuple set map body = %#v", body)
+	}
+	binder, ok := setMap.Arguments()[1].(*OperExpr)
+	if !ok || binder.Operator().Name() != "TUPLE" || len(binder.Arguments()) != 2 {
+		t.Fatalf("tuple set map binder = %#v", setMap.Arguments()[1])
+	}
+}
+
 func TestParseSourceReportsSemanticErrors(t *testing.T) {
 	result := ParseSource(context.Background(), "Bad.tla", `---- MODULE Bad ----
 Op == missing

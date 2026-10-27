@@ -14,14 +14,15 @@ var tlagoApalacheBuiltinCalls = map[string]string{
 	"Distinct":       "Apalache!Distinct",
 }
 
-type tlagoFunctionBinderGroup struct {
+type tlagoBinderGroup struct {
 	names   []string
 	isTuple bool
 }
 
-type tlagoFunctionBinders struct {
+type tlagoBinderLayout struct {
 	position tlago.Position
-	groups   []tlagoFunctionBinderGroup
+	operator string
+	groups   []tlagoBinderGroup
 }
 
 // normalizeTlagoApalacheAssignments works around tlago v0.1.9's ApalacheIR
@@ -29,132 +30,135 @@ type tlagoFunctionBinders struct {
 // standard-library definition is semantics-preserving: x := e is defined as
 // x = e, and the assignment-analysis pass subsequently recovers assignments.
 // It also retains tuple-function-binder metadata that the exporter drops.
-func normalizeTlagoApalacheAssignments(spec *tlago.Spec) []tlagoFunctionBinders {
+func normalizeTlagoApalacheAssignments(spec *tlago.Spec) []tlagoBinderLayout {
 	if spec == nil || spec.Root == nil {
 		return nil
 	}
-	var functionBinders []tlagoFunctionBinders
+	var binderLayouts []tlagoBinderLayout
 	for index := range spec.Root.Definitions {
-		normalizeTlagoAssignmentExpr(spec.Root.Definitions[index].Expr, &functionBinders)
+		normalizeTlagoAssignmentExpr(spec.Root.Definitions[index].Expr, &binderLayouts)
 	}
 	for index := range spec.Root.Assumptions {
-		normalizeTlagoAssignmentExpr(spec.Root.Assumptions[index].Expr, &functionBinders)
+		normalizeTlagoAssignmentExpr(spec.Root.Assumptions[index].Expr, &binderLayouts)
 	}
 	for index := range spec.Root.Theorems {
-		normalizeTlagoAssignmentExpr(spec.Root.Theorems[index].Expr, &functionBinders)
+		normalizeTlagoAssignmentExpr(spec.Root.Theorems[index].Expr, &binderLayouts)
 	}
-	return functionBinders
+	return binderLayouts
 }
 
-func normalizeTlagoAssignmentExpr(expression tlago.Expr, functionBinders *[]tlagoFunctionBinders) {
+func normalizeTlagoAssignmentExpr(expression tlago.Expr, binderLayouts *[]tlagoBinderLayout) {
 	if expression == nil {
 		return
 	}
 	switch typed := expression.(type) {
 	case *tlago.IdentExpr, *tlago.LiteralExpr:
 	case *tlago.UnaryExpr:
-		normalizeTlagoAssignmentExpr(typed.Expr, functionBinders)
+		normalizeTlagoAssignmentExpr(typed.Expr, binderLayouts)
 	case *tlago.BinaryExpr:
 		if typed.Op == ":=" {
 			typed.Op = "="
 		}
-		normalizeTlagoAssignmentExpr(typed.Left, functionBinders)
-		normalizeTlagoAssignmentExpr(typed.Right, functionBinders)
+		normalizeTlagoAssignmentExpr(typed.Left, binderLayouts)
+		normalizeTlagoAssignmentExpr(typed.Right, binderLayouts)
 	case *tlago.CallExpr:
-		normalizeTlagoAssignmentExpr(typed.Callee, functionBinders)
-		normalizeTlagoAssignmentExprs(typed.Args, functionBinders)
+		normalizeTlagoAssignmentExpr(typed.Callee, binderLayouts)
+		normalizeTlagoAssignmentExprs(typed.Args, binderLayouts)
 	case *tlago.IfExpr:
-		normalizeTlagoAssignmentExpr(typed.Cond, functionBinders)
-		normalizeTlagoAssignmentExpr(typed.Then, functionBinders)
-		normalizeTlagoAssignmentExpr(typed.Else, functionBinders)
+		normalizeTlagoAssignmentExpr(typed.Cond, binderLayouts)
+		normalizeTlagoAssignmentExpr(typed.Then, binderLayouts)
+		normalizeTlagoAssignmentExpr(typed.Else, binderLayouts)
 	case *tlago.LetExpr:
 		for index := range typed.Definitions {
-			normalizeTlagoAssignmentExpr(typed.Definitions[index].Expr, functionBinders)
+			normalizeTlagoAssignmentExpr(typed.Definitions[index].Expr, binderLayouts)
 		}
 		for index := range typed.Instances {
 			for _, substitution := range typed.Instances[index].SubstitutionList {
-				normalizeTlagoAssignmentExpr(substitution.Expr, functionBinders)
+				normalizeTlagoAssignmentExpr(substitution.Expr, binderLayouts)
 			}
 		}
-		normalizeTlagoAssignmentExpr(typed.Body, functionBinders)
+		normalizeTlagoAssignmentExpr(typed.Body, binderLayouts)
 	case *tlago.QuantifierExpr:
-		normalizeTlagoAssignmentExpr(typed.Set, functionBinders)
-		normalizeTlagoAssignmentExpr(typed.Body, functionBinders)
+		normalizeTlagoAssignmentExpr(typed.Set, binderLayouts)
+		normalizeTlagoAssignmentExpr(typed.Body, binderLayouts)
 	case *tlago.CaseExpr:
 		for _, arm := range typed.Arms {
-			normalizeTlagoAssignmentExpr(arm.Test, functionBinders)
-			normalizeTlagoAssignmentExpr(arm.Value, functionBinders)
+			normalizeTlagoAssignmentExpr(arm.Test, binderLayouts)
+			normalizeTlagoAssignmentExpr(arm.Value, binderLayouts)
 		}
-		normalizeTlagoAssignmentExpr(typed.Other, functionBinders)
+		normalizeTlagoAssignmentExpr(typed.Other, binderLayouts)
 	case *tlago.ChooseExpr:
-		normalizeTlagoAssignmentExpr(typed.Set, functionBinders)
-		normalizeTlagoAssignmentExpr(typed.Body, functionBinders)
+		normalizeTlagoAssignmentExpr(typed.Set, binderLayouts)
+		normalizeTlagoAssignmentExpr(typed.Body, binderLayouts)
 	case *tlago.TupleExpr:
-		normalizeTlagoAssignmentExprs(typed.Elems, functionBinders)
+		normalizeTlagoAssignmentExprs(typed.Elems, binderLayouts)
 	case *tlago.SetExpr:
-		normalizeTlagoAssignmentExprs(typed.Elems, functionBinders)
+		normalizeTlagoAssignmentExprs(typed.Elems, binderLayouts)
 	case *tlago.RecordExpr:
 		for _, field := range typed.Fields {
-			normalizeTlagoAssignmentExpr(field.Value, functionBinders)
+			normalizeTlagoAssignmentExpr(field.Value, binderLayouts)
 		}
 	case *tlago.RecordComponentExpr:
-		normalizeTlagoAssignmentExpr(typed.Record, functionBinders)
+		normalizeTlagoAssignmentExpr(typed.Record, binderLayouts)
 	case *tlago.RecordSetExpr:
 		for _, field := range typed.Fields {
-			normalizeTlagoAssignmentExpr(field.Set, functionBinders)
+			normalizeTlagoAssignmentExpr(field.Set, binderLayouts)
 		}
 	case *tlago.FunctionExpr:
-		*functionBinders = append(*functionBinders, collectTlagoFunctionBinders(typed))
+		*binderLayouts = append(*binderLayouts, collectTlagoBinderLayout(typed.Pos, typed.Bounds, "FUN_CTOR"))
 		for _, bound := range typed.Bounds {
-			normalizeTlagoAssignmentExpr(bound.Set, functionBinders)
+			normalizeTlagoAssignmentExpr(bound.Set, binderLayouts)
 		}
-		normalizeTlagoAssignmentExpr(typed.Body, functionBinders)
+		normalizeTlagoAssignmentExpr(typed.Body, binderLayouts)
 	case *tlago.FunctionAppExpr:
-		normalizeTlagoAssignmentExpr(typed.Function, functionBinders)
-		normalizeTlagoAssignmentExprs(typed.Args, functionBinders)
+		normalizeTlagoAssignmentExpr(typed.Function, binderLayouts)
+		normalizeTlagoAssignmentExprs(typed.Args, binderLayouts)
 	case *tlago.ExceptExpr:
-		normalizeTlagoAssignmentExpr(typed.Base, functionBinders)
+		normalizeTlagoAssignmentExpr(typed.Base, binderLayouts)
 		for _, spec := range typed.Specs {
 			for _, component := range spec.Components {
-				normalizeTlagoAssignmentExprs(component.Indices, functionBinders)
+				normalizeTlagoAssignmentExprs(component.Indices, binderLayouts)
 			}
-			normalizeTlagoAssignmentExpr(spec.Value, functionBinders)
+			normalizeTlagoAssignmentExpr(spec.Value, binderLayouts)
 		}
 	case *tlago.LabelExpr:
-		normalizeTlagoAssignmentExpr(typed.Body, functionBinders)
+		normalizeTlagoAssignmentExpr(typed.Body, binderLayouts)
 	case *tlago.ActionExpr:
-		normalizeTlagoAssignmentExpr(typed.Action, functionBinders)
-		normalizeTlagoAssignmentExpr(typed.Subscript, functionBinders)
+		normalizeTlagoAssignmentExpr(typed.Action, binderLayouts)
+		normalizeTlagoAssignmentExpr(typed.Subscript, binderLayouts)
 	case *tlago.FairnessExpr:
-		normalizeTlagoAssignmentExpr(typed.Subscript, functionBinders)
-		normalizeTlagoAssignmentExpr(typed.Action, functionBinders)
+		normalizeTlagoAssignmentExpr(typed.Subscript, binderLayouts)
+		normalizeTlagoAssignmentExpr(typed.Action, binderLayouts)
 	case *tlago.FunctionSetExpr:
-		normalizeTlagoAssignmentExpr(typed.Domain, functionBinders)
-		normalizeTlagoAssignmentExpr(typed.Range, functionBinders)
+		normalizeTlagoAssignmentExpr(typed.Domain, binderLayouts)
+		normalizeTlagoAssignmentExpr(typed.Range, binderLayouts)
 	case *tlago.SetComprehensionExpr:
-		normalizeTlagoAssignmentExpr(typed.Element, functionBinders)
-		for _, bound := range typed.Bounds {
-			normalizeTlagoAssignmentExpr(bound.Set, functionBinders)
+		if typed.Predicate == nil {
+			*binderLayouts = append(*binderLayouts, collectTlagoBinderLayout(typed.Pos, typed.Bounds, "SET_MAP"))
 		}
-		normalizeTlagoAssignmentExpr(typed.Predicate, functionBinders)
+		normalizeTlagoAssignmentExpr(typed.Element, binderLayouts)
+		for _, bound := range typed.Bounds {
+			normalizeTlagoAssignmentExpr(bound.Set, binderLayouts)
+		}
+		normalizeTlagoAssignmentExpr(typed.Predicate, binderLayouts)
 	}
 }
 
-func normalizeTlagoAssignmentExprs(expressions []tlago.Expr, functionBinders *[]tlagoFunctionBinders) {
+func normalizeTlagoAssignmentExprs(expressions []tlago.Expr, binderLayouts *[]tlagoBinderLayout) {
 	for _, expression := range expressions {
-		normalizeTlagoAssignmentExpr(expression, functionBinders)
+		normalizeTlagoAssignmentExpr(expression, binderLayouts)
 	}
 }
 
-func collectTlagoFunctionBinders(function *tlago.FunctionExpr) tlagoFunctionBinders {
-	result := tlagoFunctionBinders{position: function.Pos}
-	for index := 0; index < len(function.Bounds); {
-		bound := function.Bounds[index]
-		group := tlagoFunctionBinderGroup{names: []string{bound.Name}, isTuple: bound.TupleBound}
+func collectTlagoBinderLayout(position tlago.Position, bounds []tlago.BoundVar, operator string) tlagoBinderLayout {
+	result := tlagoBinderLayout{position: position, operator: operator}
+	for index := 0; index < len(bounds); {
+		bound := bounds[index]
+		group := tlagoBinderGroup{names: []string{bound.Name}, isTuple: bound.TupleBound}
 		index++
 		if bound.TupleBound {
-			for index < len(function.Bounds) && function.Bounds[index].TupleBound && function.Bounds[index].Set == bound.Set {
-				group.names = append(group.names, function.Bounds[index].Name)
+			for index < len(bounds) && bounds[index].TupleBound && bounds[index].Set == bound.Set {
+				group.names = append(group.names, bounds[index].Name)
 				index++
 			}
 		}
@@ -163,14 +167,14 @@ func collectTlagoFunctionBinders(function *tlago.FunctionExpr) tlagoFunctionBind
 	return result
 }
 
-// normalizeTlagoTupleFunctionBinders reconstructs tuple binders that tlago
-// v0.1.9 flattens while exporting FUN_CTOR. Unlike an IR-only heuristic, the
-// saved AST metadata distinguishes <<x, y>> \in S from x, y \in S.
-func normalizeTlagoTupleFunctionBinders(module *Module, sources *SourceStore, layouts []tlagoFunctionBinders) *Module {
+// normalizeTlagoTupleBinders reconstructs tuple binders that tlago v0.1.9
+// flattens while exporting FUN_CTOR and SET_MAP. Unlike an IR-only heuristic,
+// the saved AST metadata distinguishes <<x, y>> \in S from x, y \in S.
+func normalizeTlagoTupleBinders(module *Module, sources *SourceStore, layouts []tlagoBinderLayout) *Module {
 	if module == nil || sources == nil || len(layouts) == 0 {
 		return module
 	}
-	byRegion := make(map[SourceRegion][]tlagoFunctionBinders, len(layouts))
+	byRegion := make(map[SourceRegion][]tlagoBinderLayout, len(layouts))
 	for _, layout := range layouts {
 		region := NewSourceRegion(layout.position.Line, layout.position.Column, layout.position.EndLine, layout.position.EndColumn)
 		byRegion[region] = append(byRegion[region], layout)
@@ -178,7 +182,7 @@ func normalizeTlagoTupleFunctionBinders(module *Module, sources *SourceStore, la
 	tracker := NewListenerTracker(sources)
 	rewrite := RewriteExpressions(tracker, func(expression Expr) (Expr, bool) {
 		operation, ok := expression.(*OperExpr)
-		if !ok || operation.Operator().Name() != "FUN_CTOR" {
+		if !ok || (operation.Operator().Name() != "FUN_CTOR" && operation.Operator().Name() != "SET_MAP") {
 			return nil, false
 		}
 		location, found := sources.Find(operation.ID())
@@ -186,7 +190,7 @@ func normalizeTlagoTupleFunctionBinders(module *Module, sources *SourceStore, la
 			return nil, false
 		}
 		candidates := byRegion[location.Region]
-		if len(candidates) != 1 {
+		if len(candidates) != 1 || candidates[0].operator != operation.Operator().Name() {
 			return nil, false
 		}
 		layout := candidates[0]
