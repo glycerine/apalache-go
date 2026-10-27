@@ -141,10 +141,11 @@ Rules:
   avoid cycles with arena and rewriting code. The production backend adapts
   directly to `g3`'s AST/solver APIs; SMT-LIB recording is a diagnostic/test
   backend, not the production solving path.
-- `tlago` remains its own external package. During local development, use a
-  `replace github.com/glycerine/tlago => /mnt/oldrog/home/jaten/tlago` directive.
-  Before reproducible release builds, pin a reviewed commit/version and remove
-  any machine-specific absolute replace directive.
+- `tlago` remains its own external package and is pinned to the stable tag
+  `v0.1.9`. Use a temporary
+  `replace github.com/glycerine/tlago => /mnt/oldrog/home/jaten/tlago` directive
+  only when explicitly testing unreleased local changes; never commit that
+  replacement.
 - Keep dependencies small and pure-Go. The final checker must not depend on a
   user-installed solver, native Z3 library, JVM, or Scala toolchain.
 - Public types should be introduced only for CLI/library integration. Most of
@@ -429,8 +430,8 @@ preserving the CPU/parallelism cap.
 
 - `~/tlago` is presently a symlink to `/mnt/b/github.com/tlaplus/tlago`, module
   `github.com/glycerine/tlago`, and already includes a native checked AST plus
-  Apalache IR JSON support. Pinning/version strategy must be settled before a
-  reproducible release.
+  Apalache IR JSON support. The reproducible dependency is pinned at `v0.1.9`;
+  local changes require an explicit temporary replacement.
 - `~/g3` is presently a symlink to
   `/mnt/oldrog/home/jaten/go/src/github.com/glycerine/g3`, with its Go module at
   `pkg/` (`github.com/glycerine/g3/pkg`). It is the required production Z3
@@ -464,7 +465,7 @@ command log, or CI artifact; absence of a discrepancy is not evidence.
 | Standalone runtime | clean release-archive tests with Java/Scala/SBT, native Z3, external solver executables, and source checkout unavailable | **Implemented for the current command surface.** `release_integration_test.go` builds and exercises the archive in a scrubbed environment, including typed JSON input, violations, ITF, VMT, diagnostics, and cancellation. Repeat after every packaging change. |
 | Safety and deadlock correctness | unit, solver-cross, small exhaustive, and Scala differential suites | **Partial, strong vertical slice.** Bounded checker/executor tests and 38 live Scala differential cases compare verdict and available depths, including a depth-4 deadlock. Broader exhaustive and cross-solver generation remains open. |
 | Temporal/ReTLA/VMT correctness | dedicated semantic and end-to-end differential suites | **Partial.** Temporal loop/tableau unit tests and nine live lasso differential cases are green; VMT has semantic and release smoke tests. Broader ReTLA/VMT differential coverage remains open. |
-| Counterexample correctness | state-by-state normalized trace comparisons and ITF round trips | **Partial.** Decoder and ITF round-trip tests are present, and oracle comparison checks verdict/property/depth. The live oracle does not yet compare every decoded state value. |
+| Counterexample correctness | state-by-state normalized trace comparisons and ITF round trips | **Partial, strong vertical slice.** Decoder and ITF round-trip tests are present. The live oracle compares verdict/property/depth for all 38 cases and exact normalized user-state values for four deterministic action/temporal counterexamples; nondeterministic witnesses and broader data shapes still need trace-level coverage. |
 | CLI/config compatibility | command/precedence/exit-code/output-file matrix | **Partial.** Principal commands, TLC configuration, backend flags, per-query timeouts, exit codes, JSON, and ITF are tested. JSON configuration precedence, multi-error/run controls, dumps/output directories, and service commands remain open. |
 | Comprehensive tests | mapped Scala-test manifest, Go coverage report by subsystem, property/fuzz inventory | **Incomplete.** Unit coverage is broad, the annotated corpus and live oracle manifests exist, and type parsing has a fuzz smoke gate. A mapped Scala-suite manifest and subsystem coverage report remain open. |
 | Robustness | race, cancellation, resource/leak, deterministic-repeat, malformed-input results | **Partial.** Race, cancellation, malformed-input, deterministic archive, and parser fuzz checks are green. Dedicated leak/resource and broader deterministic-repeat gates remain open. |

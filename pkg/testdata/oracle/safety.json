@@ -33,6 +33,7 @@
     {
       "name": "action-invariant-violation",
       "dir": "..",
+      "compare_trace": true,
       "scala_args": ["check", "--length=2", "--no-deadlock", "--inv=KeepInv", "test/tla/ActionInv.tla"],
       "go_args": ["check", "--length=2", "--no-deadlock", "--inv=KeepInv", "test/tla/ActionInv.tla"]
     },
@@ -57,6 +58,7 @@
     {
       "name": "nested-temporal-violation",
       "dir": "..",
+      "compare_trace": true,
       "scala_args": ["check", "--length=4", "--no-deadlock", "--temporal=FalseLiveness", "test/tla/NestedTemporalInBool.tla"],
       "go_args": ["check", "--length=4", "--no-deadlock", "--temporal=FalseLiveness", "test/tla/NestedTemporalInBool.tla"]
     },
@@ -69,6 +71,7 @@
     {
       "name": "action-temporal-violation",
       "dir": "..",
+      "compare_trace": true,
       "scala_args": ["check", "--length=5", "--no-deadlock", "--temporal=FalseLiveness", "test/tla/TemporalPropsOverActions.tla"],
       "go_args": ["check", "--length=5", "--no-deadlock", "--temporal=FalseLiveness", "test/tla/TemporalPropsOverActions.tla"]
     },
@@ -81,6 +84,7 @@
     {
       "name": "global-state-temporal-violation",
       "dir": "..",
+      "compare_trace": true,
       "scala_args": ["check", "--length=2", "--no-deadlock", "--temporal=ExplicitInvariant", "test/tla/NoTemporalOperatorsInTemporalProp.tla"],
       "go_args": ["check", "--length=2", "--no-deadlock", "--temporal=ExplicitInvariant", "test/tla/NoTemporalOperatorsInTemporalProp.tla"]
     },

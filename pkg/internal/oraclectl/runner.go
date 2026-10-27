@@ -3,11 +3,14 @@ package oraclectl
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -27,6 +30,7 @@ type Outcome struct {
 	Property string
 	Depth    int
 	ExitCode int
+	Trace    []string
 	Stdout   string
 	Stderr   string
 }
@@ -39,10 +43,11 @@ type Command struct {
 }
 
 type Case struct {
-	Name      string   `json:"name"`
-	Dir       string   `json:"dir,omitempty"`
-	ScalaArgs []string `json:"scala_args"`
-	GoArgs    []string `json:"go_args"`
+	Name         string   `json:"name"`
+	Dir          string   `json:"dir,omitempty"`
+	ScalaArgs    []string `json:"scala_args"`
+	GoArgs       []string `json:"go_args"`
+	CompareTrace bool     `json:"compare_trace,omitempty"`
 }
 
 type Manifest struct {
@@ -59,19 +64,123 @@ func RunDifferential(ctx context.Context, scalaExecutable, goExecutable string, 
 	if test.Name == "" {
 		return DifferentialResult{}, fmt.Errorf("oracle case has no name")
 	}
-	scala, err := Run(ctx, Command{Executable: scalaExecutable, Args: test.ScalaArgs, Dir: test.Dir})
+	traceRoot, err := os.MkdirTemp("", "apalache-oracle-")
+	if err != nil {
+		return DifferentialResult{}, fmt.Errorf("create oracle trace directory: %w", err)
+	}
+	defer os.RemoveAll(traceRoot)
+	scalaTraceDir := filepath.Join(traceRoot, "scala")
+	if err = os.MkdirAll(scalaTraceDir, 0o700); err != nil {
+		return DifferentialResult{}, fmt.Errorf("create Scala trace directory: %w", err)
+	}
+	scalaArgs := append([]string{"--run-dir=" + scalaTraceDir}, test.ScalaArgs...)
+	scala, err := Run(ctx, Command{Executable: scalaExecutable, Args: scalaArgs, Dir: test.Dir})
 	if err != nil {
 		return DifferentialResult{}, fmt.Errorf("run Scala oracle for %s: %w", test.Name, err)
 	}
-	goResult, err := Run(ctx, Command{Executable: goExecutable, Args: test.GoArgs, Dir: test.Dir})
+	if test.CompareTrace && (scala.Verdict == VerdictViolation || scala.Verdict == VerdictDeadlock) {
+		scala.Trace, err = readScalaITFTrace(scalaTraceDir)
+		if err != nil {
+			return DifferentialResult{Case: test, Scala: scala}, fmt.Errorf("read Scala trace for %s: %w", test.Name, err)
+		}
+	}
+	goTracePath := filepath.Join(traceRoot, "go.itf.json")
+	goArgs := append([]string(nil), test.GoArgs...)
+	if test.CompareTrace && len(goArgs) > 0 && goArgs[0] == "check" {
+		goArgs = append([]string{goArgs[0], "-itf=" + goTracePath}, goArgs[1:]...)
+	}
+	goResult, err := Run(ctx, Command{Executable: goExecutable, Args: goArgs, Dir: test.Dir})
 	if err != nil {
 		return DifferentialResult{}, fmt.Errorf("run Go checker for %s: %w", test.Name, err)
+	}
+	if test.CompareTrace && (goResult.Verdict == VerdictViolation || goResult.Verdict == VerdictDeadlock) {
+		goResult.Trace, err = readITFTrace(goTracePath)
+		if err != nil {
+			return DifferentialResult{Case: test, Scala: scala, Go: goResult}, fmt.Errorf("read Go trace for %s: %w", test.Name, err)
+		}
 	}
 	result := DifferentialResult{Case: test, Scala: scala, Go: goResult}
 	if err := Compare(scala, goResult); err != nil {
 		return result, fmt.Errorf("case %s: %w", test.Name, err)
 	}
 	return result, nil
+}
+
+func readScalaITFTrace(directory string) ([]string, error) {
+	paths, err := filepath.Glob(filepath.Join(directory, "*.itf.json"))
+	if err != nil {
+		return nil, err
+	}
+	if len(paths) == 0 {
+		return nil, fmt.Errorf("no ITF trace in %s", directory)
+	}
+	sort.Strings(paths)
+	return readITFTrace(paths[0])
+}
+
+func readITFTrace(path string) ([]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var root map[string]any
+	if err = json.Unmarshal(data, &root); err != nil {
+		return nil, err
+	}
+	rawStates, ok := root["states"].([]any)
+	if !ok || len(rawStates) == 0 {
+		return nil, fmt.Errorf("ITF trace has no states")
+	}
+	states := make([]string, len(rawStates))
+	for index, raw := range rawStates {
+		state, ok := raw.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("ITF state %d is not an object", index)
+		}
+		delete(state, "#meta")
+		// Scala's temporal encoding exposes its generated bookkeeping variables
+		// in ITF. They are implementation details, not observable model state.
+		for name := range state {
+			if strings.HasPrefix(name, "__") {
+				delete(state, name)
+			}
+		}
+		normalized := normalizeITFValue(state)
+		encoded, marshalErr := json.Marshal(normalized)
+		if marshalErr != nil {
+			return nil, marshalErr
+		}
+		states[index] = string(encoded)
+	}
+	return states, nil
+}
+
+func normalizeITFValue(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		result := make(map[string]any, len(typed))
+		for key, child := range typed {
+			result[key] = normalizeITFValue(child)
+		}
+		for _, unordered := range []string{"#set", "#map"} {
+			if elements, ok := result[unordered].([]any); ok {
+				sort.Slice(elements, func(left, right int) bool {
+					leftJSON, _ := json.Marshal(elements[left])
+					rightJSON, _ := json.Marshal(elements[right])
+					return bytes.Compare(leftJSON, rightJSON) < 0
+				})
+			}
+		}
+		return result
+	case []any:
+		result := make([]any, len(typed))
+		for index, child := range typed {
+			result[index] = normalizeITFValue(child)
+		}
+		return result
+	default:
+		return value
+	}
 }
 
 var (
@@ -196,6 +305,19 @@ func Compare(left, right Outcome) error {
 	}
 	if left.Depth >= 0 && right.Depth >= 0 && left.Depth != right.Depth {
 		return fmt.Errorf("depth mismatch: %d != %d", left.Depth, right.Depth)
+	}
+	if left.Trace != nil || right.Trace != nil {
+		if (left.Trace == nil) != (right.Trace == nil) {
+			return fmt.Errorf("trace availability mismatch")
+		}
+		if len(left.Trace) != len(right.Trace) {
+			return fmt.Errorf("trace length mismatch: %d != %d", len(left.Trace), len(right.Trace))
+		}
+		for index := range left.Trace {
+			if left.Trace[index] != right.Trace[index] {
+				return fmt.Errorf("trace state %d mismatch: %s != %s", index, left.Trace[index], right.Trace[index])
+			}
+		}
 	}
 	return nil
 }

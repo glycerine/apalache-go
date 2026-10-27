@@ -1,6 +1,10 @@
 package oraclectl
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestNormalizeCheckerOutcomes(t *testing.T) {
 	tests := []struct {
@@ -42,5 +46,43 @@ func TestCompareUsesAvailablePrecision(t *testing.T) {
 	}
 	if err := Compare(goResult, Outcome{Verdict: VerdictViolation, Depth: 3}); err == nil {
 		t.Fatal("accepted mismatched violation depths")
+	}
+	goResult.Trace = []string{}
+	if err := Compare(goResult, scalaResult); err == nil {
+		t.Fatal("accepted unavailable trace")
+	}
+	goResult.Trace = []string{`{"x":{"#bigint":"0"}}`, `{"x":{"#bigint":"1"}}`}
+	scalaResult.Trace = append([]string(nil), goResult.Trace...)
+	if err := Compare(goResult, scalaResult); err != nil {
+		t.Fatal(err)
+	}
+	scalaResult.Trace[1] = `{"x":{"#bigint":"2"}}`
+	if err := Compare(goResult, scalaResult); err == nil {
+		t.Fatal("accepted mismatched trace state")
+	}
+}
+
+func TestReadITFTraceNormalizesMetadataSetsAndMaps(t *testing.T) {
+	directory := t.TempDir()
+	leftPath := filepath.Join(directory, "left.itf.json")
+	rightPath := filepath.Join(directory, "right.itf.json")
+	left := `{"states":[{"#meta":{"index":0},"__temporal_t_1":true,"s":{"#set":[{"#bigint":"2"},{"#bigint":"1"}]},"f":{"#map":[[{"#bigint":"2"},"b"],[{"#bigint":"1"},"a"]]}}]}`
+	right := `{"states":[{"#meta":{"index":99},"f":{"#map":[[{"#bigint":"1"},"a"],[{"#bigint":"2"},"b"]]},"s":{"#set":[{"#bigint":"1"},{"#bigint":"2"}]}}]}`
+	if err := os.WriteFile(leftPath, []byte(left), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(rightPath, []byte(right), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	leftTrace, err := readITFTrace(leftPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rightTrace, err := readITFTrace(rightPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(leftTrace) != 1 || leftTrace[0] != rightTrace[0] {
+		t.Fatalf("normalized traces differ: %v != %v", leftTrace, rightTrace)
 	}
 }
