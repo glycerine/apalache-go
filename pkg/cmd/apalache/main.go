@@ -65,6 +65,7 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	nextName := flags.String("next", "", "next-state operator")
 	constantInit := flags.String("cinit", "", "constant initializer operator")
 	deadlockFlag := flags.String("deadlock", "", "check deadlocks: true or false (default true)")
+	itfPath := flags.String("itf", "", "write a counterexample trace as ITF JSON")
 	useRows := flags.Bool("rows", false, "enable row types")
 	disablePolytypes := flags.Bool("no-polytypes", false, "disable let-polymorphism")
 	var invariants stringList
@@ -151,6 +152,18 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	if err != nil {
 		fmt.Fprintf(stderr, "bounded safety check failed: %v\n", err)
 		return exitTool
+	}
+	if *itfPath != "" && (result.Outcome == pal.SafetyCounterexample || result.Outcome == pal.SafetyDeadlock) {
+		data, encodeErr := pal.MarshalDecodedTraceITF(prepared.Module, result.States, pal.ITFOptions{})
+		if encodeErr != nil {
+			fmt.Fprintf(stderr, "cannot encode ITF counterexample: %v\n", encodeErr)
+			return exitTool
+		}
+		if writeErr := os.WriteFile(*itfPath, append(data, '\n'), 0o644); writeErr != nil {
+			fmt.Fprintf(stderr, "cannot write ITF counterexample: %v\n", writeErr)
+			return exitTool
+		}
+		fmt.Fprintf(stdout, "Wrote ITF trace to %s.\n", *itfPath)
 	}
 	switch result.Outcome {
 	case pal.SafetyCounterexample:

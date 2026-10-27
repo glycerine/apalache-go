@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -127,8 +128,9 @@ Inv == x < 2
 
 	stdout.Reset()
 	stderr.Reset()
-	direct[4] = "-length=2"
-	if code := run(context.Background(), direct, &stdout, &stderr); code != exitCounterexample {
+	itfPath := filepath.Join(dir, "counterexample.itf.json")
+	unsafeArgs := []string{"check", "-init=Init", "-next=Next", "-inv=Inv", "-length=2", "-itf=" + itfPath, path}
+	if code := run(context.Background(), unsafeArgs, &stdout, &stderr); code != exitCounterexample {
 		t.Fatalf("unsafe check = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
 	}
 	if !strings.Contains(stdout.String(), "Invariant Inv violated at depth 2") ||
@@ -136,6 +138,17 @@ Inv == x < 2
 		!strings.Contains(stdout.String(), "State 0: x = 0") ||
 		!strings.Contains(stdout.String(), "State 2: x = 2") {
 		t.Fatalf("counterexample output = %q", &stdout)
+	}
+	data, err := os.ReadFile(itfPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var trace map[string]any
+	if err = json.Unmarshal(data, &trace); err != nil {
+		t.Fatal(err)
+	}
+	if states, ok := trace["states"].([]any); !ok || len(states) != 3 {
+		t.Fatalf("ITF counterexample = %#v", trace)
 	}
 }
 

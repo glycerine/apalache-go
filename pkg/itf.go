@@ -28,6 +28,39 @@ type ITFOptions struct {
 	NameReplacements map[string]string
 }
 
+// MarshalDecodedTraceITF adapts executor states, which already contain both
+// constants and variables, to ITF's separate constant-initialization slot.
+func MarshalDecodedTraceITF(module *Module, states []DecodedState, options ITFOptions) ([]byte, error) {
+	if module == nil {
+		return nil, fmt.Errorf("cannot encode decoded trace for nil module")
+	}
+	if len(states) == 0 {
+		return nil, fmt.Errorf("expected at least one decoded state, found none")
+	}
+	constantNames := make(map[string]struct{}, len(module.ConstDeclarations()))
+	for _, declaration := range module.ConstDeclarations() {
+		constantNames[declaration.Name()] = struct{}{}
+	}
+	trace := make([]TraceState, 0, len(states)+1)
+	constants := make(TraceState)
+	for name, value := range states[0].Values {
+		if _, constant := constantNames[name]; constant {
+			constants[name] = value
+		}
+	}
+	trace = append(trace, constants)
+	for _, state := range states {
+		values := make(TraceState)
+		for name, value := range state.Values {
+			if _, constant := constantNames[name]; !constant {
+				values[name] = value
+			}
+		}
+		trace = append(trace, values)
+	}
+	return MarshalITFTrace(module, trace, options)
+}
+
 func MarshalITFTrace(module *Module, states []TraceState, options ITFOptions) ([]byte, error) {
 	if module == nil {
 		return nil, fmt.Errorf("cannot encode trace for nil module")

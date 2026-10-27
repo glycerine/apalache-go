@@ -30,6 +30,32 @@ func TestMarshalITFTraceMergesConstantInitialization(t *testing.T) {
 	}
 }
 
+func TestMarshalDecodedTraceITFSeparatesConstantsWithoutDroppingInitialState(t *testing.T) {
+	module := NewModule("M", []Decl{NewConstDecl("N", Typed(IntT1)), NewVarDecl("x", Typed(IntT1))})
+	states := []DecodedState{
+		{Values: map[string]Expr{"N": intLiteral(3), "x": intLiteral(0)}},
+		{Values: map[string]Expr{"N": intLiteral(3), "x": intLiteral(1)}},
+	}
+	data, err := MarshalDecodedTraceITF(module, states, ITFOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var root map[string]any
+	if err = json.Unmarshal(data, &root); err != nil {
+		t.Fatal(err)
+	}
+	encoded := root[ITFStatesField].([]any)
+	if len(encoded) != 2 {
+		t.Fatalf("ITF states = %#v", encoded)
+	}
+	first := encoded[0].(map[string]any)
+	second := encoded[1].(map[string]any)
+	if _, found := first["N"]; !found || first["x"].(map[string]any)[ITFBigIntField] != "0" ||
+		second["x"].(map[string]any)[ITFBigIntField] != "1" {
+		t.Fatalf("decoded ITF states = %#v", encoded)
+	}
+}
+
 func TestEncodeITFCollectionValues(t *testing.T) {
 	intValue := func(value int64) Expr { return NewValueExpr(Int64Value(value), Typed(IntT1)) }
 	strValue := func(value string) Expr { return NewValueExpr(StringValue(value), Typed(StrT1)) }
