@@ -46,6 +46,27 @@ func (extractor *SMTFreeSymbolicTransitionExtractor) GetStrategy(
 	return append(AssignmentStrategy(nil), final.strategy...), nil
 }
 
+// Extract finds a valid assignment strategy and slices the action into its
+// symbolic transitions. Specifications without state variables need no
+// strategy or slicing.
+func (extractor *SMTFreeSymbolicTransitionExtractor) Extract(
+	variables map[string]struct{},
+	action Expr,
+	operators map[string]*OperDecl,
+) ([]SymbolicTransition, error) {
+	if action == nil {
+		return nil, &AssignmentError{Message: "cannot extract transitions from a nil expression"}
+	}
+	if len(variables) == 0 {
+		return []SymbolicTransition{{Expression: action}}, nil
+	}
+	strategy, err := extractor.GetStrategy(variables, action, operators)
+	if err != nil {
+		return nil, err
+	}
+	return NewSymbolicTransitionGenerator(extractor.tracker).Generate(action, strategy)
+}
+
 func (extractor *SMTFreeSymbolicTransitionExtractor) strategy(
 	state assignmentPartialState,
 	operators map[string]*OperDecl,

@@ -135,3 +135,23 @@ func TestAssignmentStrategyErrorsAreTypedAndLocated(t *testing.T) {
 		t.Fatalf("located typed error = %T %v", err, err)
 	}
 }
+
+func TestSMTFreeExtractorProducesTransitionsAndHandlesStatelessSpecs(t *testing.T) {
+	extractor := NewSMTFreeSymbolicTransitionExtractor(nil, nil)
+	first, second := assignmentCandidate("x", intLiteral(1)), assignmentCandidate("x", intLiteral(2))
+	action := MustOperExpr(Op("OR"), Typed(BoolT1), first, second)
+	transitions, err := extractor.Extract(assignmentVariables("x"), action, nil)
+	if err != nil || len(transitions) != 2 {
+		t.Fatalf("extracted transitions = %v, %v", transitions, err)
+	}
+	for _, transition := range transitions {
+		if len(transition.Assignments) != 1 || transition.Expression.(*OperExpr).Operator().Name() != "Apalache!:=" {
+			t.Fatalf("extracted transition = %#v", transition)
+		}
+	}
+	stateless := NewValueExpr(BoolValue(true), Typed(BoolT1))
+	transitions, err = extractor.Extract(nil, stateless, nil)
+	if err != nil || len(transitions) != 1 || len(transitions[0].Assignments) != 0 || transitions[0].Expression != stateless {
+		t.Fatalf("stateless transitions = %#v, %v", transitions, err)
+	}
+}
