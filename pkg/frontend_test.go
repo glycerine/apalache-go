@@ -172,6 +172,32 @@ K == 4 :> 40
 	}
 }
 
+func TestParseAndTypeCheckSourceLowersBagInfixOperators(t *testing.T) {
+	result := ParseAndTypeCheckSource(context.Background(), "BagInfix.tla", `---- MODULE BagInfix ----
+EXTENDS Bags
+\* @type: Int -> Int;
+A == [x \in {1, 2} |-> x]
+\* @type: Int -> Int;
+B == [x \in {2, 3} |-> 1]
+Added == A (+) B
+Removed == A (-) B
+Contained == A \sqsubseteq B
+====
+`, FrontendOptions{}, TypeCheckOptions{})
+	if !result.OK() {
+		t.Fatalf("ParseAndTypeCheckSource() diagnostics = %v", result.Diagnostics)
+	}
+	for _, name := range []string{"Added", "Removed"} {
+		body, found := OperatorBody(result.Native, name)
+		if !found || countOperator(body, "FUN_CTOR") != 1 {
+			t.Fatalf("lowered %s = %#v", name, body)
+		}
+	}
+	if body, found := OperatorBody(result.Native, "Contained"); !found || countOperator(body, "SET_SUBSET_EQ") != 1 || countOperator(body, "FORALL3") != 1 {
+		t.Fatalf("lowered Contained = %#v", body)
+	}
+}
+
 func TestParseAndTypeCheckSourcePreservesNestedExceptAt(t *testing.T) {
 	result := ParseAndTypeCheckSource(context.Background(), "NestedExcept.tla", `---- MODULE NestedExcept ----
 EXTENDS Integers

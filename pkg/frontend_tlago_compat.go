@@ -187,6 +187,15 @@ func normalizeTlagoLambdaExpr(expression tlago.Expr, next *int) tlago.Expr {
 		if typed.Op == ":>" {
 			return lowerTlagoSingletonFunction(typed, next)
 		}
+		if typed.Op == "\\oplus" {
+			return lowerTlagoBagUnion(typed, next)
+		}
+		if typed.Op == "\\ominus" {
+			return lowerTlagoBagDifference(typed, next)
+		}
+		if typed.Op == "\\sqsubseteq" {
+			return lowerTlagoSubBag(typed, next)
+		}
 	case *tlago.CallExpr:
 		typed.Callee = normalizeTlagoLambdaExpr(typed.Callee, next)
 		transformAll(typed.Args)
@@ -347,6 +356,78 @@ func lowerTlagoSingletonFunction(expression *tlago.BinaryExpr, next *int) tlago.
 		Bounds: []tlago.BoundVar{{Name: name, Set: domain, Pos: expression.Pos}},
 		Body:   expression.Right, Pos: expression.Pos,
 	}
+}
+
+func lowerTlagoBagUnion(expression *tlago.BinaryExpr, next *int) tlago.Expr {
+	*next++
+	name := fmt.Sprintf("__tlago_bag_union_arg_%d", *next)
+	bound := func() tlago.Expr { return &tlago.IdentExpr{Name: name, Pos: expression.Pos} }
+	domain := func(function tlago.Expr) tlago.Expr {
+		return &tlago.UnaryExpr{Op: "DOMAIN", Expr: function, Pos: expression.Pos}
+	}
+	count := func(function tlago.Expr) tlago.Expr {
+		member := &tlago.BinaryExpr{Op: "\\in", Left: bound(), Right: domain(function), Pos: expression.Pos}
+		application := &tlago.FunctionAppExpr{Function: function, Args: []tlago.Expr{bound()}, Pos: expression.Pos}
+		return &tlago.IfExpr{Cond: member, Then: application,
+			Else: &tlago.LiteralExpr{Kind: "number", Value: "0", Pos: expression.Pos}, Pos: expression.Pos}
+	}
+	combinedDomain := &tlago.BinaryExpr{
+		Op: "\\union", Left: domain(expression.Left), Right: domain(expression.Right), Pos: expression.Pos,
+	}
+	body := &tlago.BinaryExpr{Op: "+", Left: count(expression.Left), Right: count(expression.Right), Pos: expression.Pos}
+	return &tlago.FunctionExpr{
+		Bounds: []tlago.BoundVar{{Name: name, Set: combinedDomain, Pos: expression.Pos}},
+		Body:   body, Pos: expression.Pos,
+	}
+}
+
+func lowerTlagoBagDifference(expression *tlago.BinaryExpr, next *int) tlago.Expr {
+	*next++
+	name := fmt.Sprintf("__tlago_bag_difference_arg_%d", *next)
+	bound := func() tlago.Expr { return &tlago.IdentExpr{Name: name, Pos: expression.Pos} }
+	domain := func(function tlago.Expr) tlago.Expr {
+		return &tlago.UnaryExpr{Op: "DOMAIN", Expr: function, Pos: expression.Pos}
+	}
+	application := func(function tlago.Expr) tlago.Expr {
+		return &tlago.FunctionAppExpr{Function: function, Args: []tlago.Expr{bound()}, Pos: expression.Pos}
+	}
+	count := func() tlago.Expr {
+		inRight := &tlago.BinaryExpr{Op: "\\in", Left: bound(), Right: domain(expression.Right), Pos: expression.Pos}
+		difference := &tlago.BinaryExpr{Op: "-", Left: application(expression.Left), Right: application(expression.Right), Pos: expression.Pos}
+		return &tlago.IfExpr{Cond: inRight, Then: difference, Else: application(expression.Left), Pos: expression.Pos}
+	}
+	positive := &tlago.BinaryExpr{
+		Op: ">", Left: count(), Right: &tlago.LiteralExpr{Kind: "number", Value: "0", Pos: expression.Pos}, Pos: expression.Pos,
+	}
+	filteredDomain := &tlago.SetComprehensionExpr{
+		Element: bound(), Bounds: []tlago.BoundVar{{Name: name, Set: domain(expression.Left), Pos: expression.Pos}},
+		Predicate: positive, Pos: expression.Pos,
+	}
+	return &tlago.FunctionExpr{
+		Bounds: []tlago.BoundVar{{Name: name, Set: filteredDomain, Pos: expression.Pos}},
+		Body:   count(), Pos: expression.Pos,
+	}
+}
+
+func lowerTlagoSubBag(expression *tlago.BinaryExpr, next *int) tlago.Expr {
+	*next++
+	name := fmt.Sprintf("__tlago_subbag_arg_%d", *next)
+	bound := func() tlago.Expr { return &tlago.IdentExpr{Name: name, Pos: expression.Pos} }
+	domain := func(function tlago.Expr) tlago.Expr {
+		return &tlago.UnaryExpr{Op: "DOMAIN", Expr: function, Pos: expression.Pos}
+	}
+	application := func(function tlago.Expr) tlago.Expr {
+		return &tlago.FunctionAppExpr{Function: function, Args: []tlago.Expr{bound()}, Pos: expression.Pos}
+	}
+	domainSubset := &tlago.BinaryExpr{
+		Op: "\\subseteq", Left: domain(expression.Left), Right: domain(expression.Right), Pos: expression.Pos,
+	}
+	countsOrdered := &tlago.QuantifierExpr{
+		Kind: "\\A", Var: name, Set: domain(expression.Left),
+		Body: &tlago.BinaryExpr{Op: "\\leq", Left: application(expression.Left), Right: application(expression.Right), Pos: expression.Pos},
+		Pos:  expression.Pos,
+	}
+	return &tlago.BinaryExpr{Op: "/\\", Left: domainSubset, Right: countsOrdered, Pos: expression.Pos}
 }
 
 func lowerTlagoTupleSetFilter(expression *tlago.SetComprehensionExpr, next *int) (tlago.Expr, bool) {
