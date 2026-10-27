@@ -38,6 +38,27 @@ func TestG3CheckHonorsSMTQueryTimeout(t *testing.T) {
 	}
 }
 
+func TestG3CheckRecoversAfterRepeatedCancellation(t *testing.T) {
+	solver := newTestG3Solver(t)
+	truth, err := solver.Bool(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = solver.Assert(truth); err != nil {
+		t.Fatal(err)
+	}
+	for index := 0; index < 64; index++ {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		if status, checkErr := solver.Check(ctx); !errors.Is(checkErr, context.Canceled) || status != SMTUnknown {
+			t.Fatalf("canceled check %d = %v, %v", index, status, checkErr)
+		}
+	}
+	if status, err := solver.Check(context.Background()); err != nil || status != SMTSatisfiable {
+		t.Fatalf("post-cancellation check = %v, %v", status, err)
+	}
+}
+
 func TestSMTQueryContextPreservesEarlierParentDeadline(t *testing.T) {
 	parent, cancelParent := context.WithTimeout(context.Background(), time.Minute)
 	defer cancelParent()
