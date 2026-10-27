@@ -244,6 +244,18 @@ func TestStratifiedStructuralConditionalsThroughG3(t *testing.T) {
 		return MustOperExpr(Op("TUPLE"), tupleTag,
 			NewValueExpr(Int64Value(integer), Typed(IntT1)), set(setValue))
 	}
+	sequenceType, err := NewSeqType(IntT1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sequenceTag := Typed(sequenceType)
+	sequence := func(values ...int64) Expr {
+		elements := make([]Expr, len(values))
+		for index, value := range values {
+			elements[index] = NewValueExpr(Int64Value(value), Typed(IntT1))
+		}
+		return MustOperExpr(Op("TUPLE"), sequenceTag, elements...)
+	}
 	tests := []struct {
 		name      string
 		tag       TypeTag
@@ -255,6 +267,8 @@ func TestStratifiedStructuralConditionalsThroughG3(t *testing.T) {
 		{name: "finite set then branch", tag: setTag, predicate: predicate, thenExpr: set(1), elseExpr: set(2), want: set(1)},
 		{name: "finite set else branch", tag: setTag, predicate: falsePredicate, thenExpr: set(1), elseExpr: set(2), want: set(2)},
 		{name: "tuple with set field", tag: tupleTag, predicate: predicate, thenExpr: tuple(1, 2), elseExpr: tuple(3, 4), want: tuple(1, 2)},
+		{name: "sequence then branch", tag: sequenceTag, predicate: predicate, thenExpr: sequence(1), elseExpr: sequence(2, 3), want: sequence(1)},
+		{name: "sequence else branch", tag: sequenceTag, predicate: falsePredicate, thenExpr: sequence(1), elseExpr: sequence(2, 3), want: sequence(2, 3)},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -561,6 +575,54 @@ func TestStratifiedSequenceConstructionLengthAndEqualityThroughG3(t *testing.T) 
 			}
 			if status, err := solver.Check(context.Background()); err != nil || status != SMTUnsatisfiable {
 				t.Fatalf("contradicted sequence equality = %v, %v", status, err)
+			}
+		})
+	}
+}
+
+func TestStratifiedSequenceAppendAndTailThroughG3(t *testing.T) {
+	sequenceType, err := NewSeqType(IntT1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tag := Typed(sequenceType)
+	sequence := func(values ...int64) Expr {
+		elements := make([]Expr, len(values))
+		for index, value := range values {
+			elements[index] = NewValueExpr(Int64Value(value), Typed(IntT1))
+		}
+		return MustOperExpr(Op("TUPLE"), tag, elements...)
+	}
+	tests := []struct {
+		name      string
+		operation Expr
+		want      Expr
+	}{
+		{
+			name: "append", operation: MustOperExpr(Op("Sequences!Append"), tag,
+				sequence(1, 2), NewValueExpr(Int64Value(3), Typed(IntT1))), want: sequence(1, 2, 3),
+		},
+		{name: "tail", operation: MustOperExpr(Op("Sequences!Tail"), tag, sequence(1, 2)), want: sequence(2)},
+		{name: "empty tail", operation: MustOperExpr(Op("Sequences!Tail"), tag, sequence()), want: sequence()},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			equal := MustOperExpr(Op("EQ"), Typed(BoolT1), test.operation, test.want)
+			rewriter := NewStratifiedRewriter()
+			scope, result, err := rewriter.Rewrite(equal, InitialRewriterScope())
+			if err != nil {
+				t.Fatal(err)
+			}
+			solver := newTestG3Solver(t)
+			encoder, err := EncodeRewriterScope(solver, scope, rewriter.Constraints())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := encoder.Assert(MustOperExpr(Op("NOT"), Typed(BoolT1), result.NameExpr())); err != nil {
+				t.Fatal(err)
+			}
+			if status, err := solver.Check(context.Background()); err != nil || status != SMTUnsatisfiable {
+				t.Fatalf("sequence operation differs from expected = %v, %v", status, err)
 			}
 		})
 	}

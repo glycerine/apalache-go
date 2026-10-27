@@ -12,20 +12,25 @@ func isSequenceCellType(cellType CellType) bool {
 }
 
 func makeSequence(arena *PureArena, sequenceType SeqType, elements []ArenaCell, integers *IntValueCache) (*PureArena, ArenaCell, error) {
+	current, length, err := integers.GetOrCreate(arena, Int64Value(int64(len(elements))).BigInt())
+	if err != nil {
+		return nil, ArenaCell{}, err
+	}
+	current, sequence := makeSequenceWithLength(current, sequenceType, elements, length)
+	return current, sequence, nil
+}
+
+func makeSequenceWithLength(arena *PureArena, sequenceType SeqType, elements []ArenaCell, length ArenaCell) (*PureArena, ArenaCell) {
 	current, proto := arena.AppendCellType(UnknownCellType{}, true)
 	pointers := make([]ElementPointer, len(elements))
 	for index, element := range elements {
 		pointers[index] = FixedElementPointer{Cell: element}
 	}
 	current = current.AppendHas(proto, pointers...)
-	current, length, err := integers.GetOrCreate(current, Int64Value(int64(len(elements))).BigInt())
-	if err != nil {
-		return nil, ArenaCell{}, err
-	}
 	current, sequence := current.AppendCellType(BasicCellType{Type: sequenceType})
 	current = current.AppendHas(sequence,
 		FixedElementPointer{Cell: length}, FixedElementPointer{Cell: proto})
-	return current, sequence, nil
+	return current, sequence
 }
 
 func unpackSequence(arena *PureArena, sequence ArenaCell) (length, proto ArenaCell, elements []ElementPointer, err error) {

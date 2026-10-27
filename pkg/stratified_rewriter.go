@@ -82,6 +82,10 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 			return rewriter.rewriteSequenceLength(typed, scope)
 		case "Sequences!Head":
 			return rewriter.rewriteSequenceHead(typed, scope)
+		case "Sequences!Tail":
+			return rewriter.rewriteSequenceTail(typed, scope)
+		case "Sequences!Append":
+			return rewriter.rewriteSequenceAppend(typed, scope)
 		case "SET_FILTER":
 			return rewriter.rewriteSetFilter(typed, scope)
 		case "SET_IN", "Apalache!SelectInSet":
@@ -95,6 +99,88 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 		}
 	}
 	return scope, ArenaCell{}, fmt.Errorf("no stratified rule is applicable to %T", expression)
+}
+
+func (rewriter *StratifiedRewriter) bindBoolean(scope RewriterScope, condition Expr) (RewriterScope, ArenaCell) {
+	newArena, result := scope.Arena.AppendCellType(BasicCellType{Type: BoolT1})
+	scope.Arena = newArena
+	rewriter.assert(MustOperExpr(Op("EQ"), Typed(BoolT1), result.NameExpr(), condition))
+	return scope, result
+}
+
+func (rewriter *StratifiedRewriter) bindInteger(scope RewriterScope, expression Expr) (RewriterScope, ArenaCell) {
+	newArena, result := scope.Arena.AppendCellType(BasicCellType{Type: IntT1})
+	scope.Arena = newArena
+	rewriter.assert(MustOperExpr(Op("EQ"), Typed(BoolT1), result.NameExpr(), expression))
+	return scope, result
+}
+
+func (rewriter *StratifiedRewriter) rewriteSequenceTail(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
+	arguments := expression.Arguments()
+	if len(arguments) != 1 {
+		return scope, ArenaCell{}, fmt.Errorf("sequence tail requires one operand")
+	}
+	scope, sequence, err := rewriter.Rewrite(arguments[0], scope)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	length, _, elements, err := unpackSequence(scope.Arena, sequence)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	if len(elements) == 0 {
+		return scope, sequence, nil
+	}
+	newLengthExpression := MustOperExpr(Op("MINUS"), Typed(IntT1), length.NameExpr(), NewValueExpr(Int64Value(1), Typed(IntT1)))
+	scope, newLength := rewriter.bindInteger(scope, newLengthExpression)
+	tail := make([]ArenaCell, len(elements)-1)
+	for index := range tail {
+		tail[index] = elements[index+1].Element()
+	}
+	sequenceType := sequence.Type.TLAType().(SeqType)
+	newArena, result := makeSequenceWithLength(scope.Arena, sequenceType, tail, newLength)
+	scope.Arena = newArena
+	return scope, result, nil
+}
+
+func (rewriter *StratifiedRewriter) rewriteSequenceAppend(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
+	arguments := expression.Arguments()
+	if len(arguments) != 2 {
+		return scope, ArenaCell{}, fmt.Errorf("sequence append requires two operands")
+	}
+	scope, sequence, err := rewriter.Rewrite(arguments[0], scope)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	length, _, oldElements, err := unpackSequence(scope.Arena, sequence)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	scope, appended, err := rewriter.Rewrite(arguments[1], scope)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	sequenceType := sequence.Type.TLAType().(SeqType)
+	if !EqualTypes(appended.Type.TLAType(), sequenceType.Element()) {
+		return scope, ArenaCell{}, fmt.Errorf("appended element has type %s, expected %s", appended.Type, sequenceType.Element())
+	}
+	newLengthExpression := MustOperExpr(Op("PLUS"), Typed(IntT1), length.NameExpr(), NewValueExpr(Int64Value(1), Typed(IntT1)))
+	scope, newLength := rewriter.bindInteger(scope, newLengthExpression)
+	elements := make([]ArenaCell, len(oldElements)+1)
+	for index, pointer := range oldElements {
+		inOldLength := MustOperExpr(Op("LE"), Typed(BoolT1),
+			NewValueExpr(Int64Value(int64(index+1)), Typed(IntT1)), length.NameExpr())
+		var predicate ArenaCell
+		scope, predicate = rewriter.bindBoolean(scope, inOldLength)
+		scope, elements[index], err = rewriter.chooseConditional(scope, predicate, pointer.Element(), appended)
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+	}
+	elements[len(oldElements)] = appended
+	newArena, result := makeSequenceWithLength(scope.Arena, sequenceType, elements, newLength)
+	scope.Arena = newArena
+	return scope, result, nil
 }
 
 func (rewriter *StratifiedRewriter) rewriteSequenceHead(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
@@ -633,6 +719,46 @@ func (rewriter *StratifiedRewriter) chooseConditional(scope RewriterScope, predi
 			pointers[index] = FixedElementPointer{Cell: field}
 		}
 		scope.Arena = newArena.AppendHas(result, pointers...)
+		return scope, result, nil
+	}
+	if isSequenceCellType(thenCell.Type) {
+		thenLength, _, thenElements, err := unpackSequence(scope.Arena, thenCell)
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+		elseLength, _, elseElements, err := unpackSequence(scope.Arena, elseCell)
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+		scope, length, err := rewriter.chooseConditional(scope, predicate, thenLength, elseLength)
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+		sequenceType := thenCell.Type.TLAType().(SeqType)
+		scope, defaultElement, err := rewriter.defaults.GetOrCreate(scope, sequenceType.Element())
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+		capacity := len(thenElements)
+		if len(elseElements) > capacity {
+			capacity = len(elseElements)
+		}
+		elements := make([]ArenaCell, capacity)
+		for index := 0; index < capacity; index++ {
+			thenElement, elseElement := defaultElement, defaultElement
+			if index < len(thenElements) {
+				thenElement = thenElements[index].Element()
+			}
+			if index < len(elseElements) {
+				elseElement = elseElements[index].Element()
+			}
+			scope, elements[index], err = rewriter.chooseConditional(scope, predicate, thenElement, elseElement)
+			if err != nil {
+				return scope, ArenaCell{}, fmt.Errorf("choose conditional sequence element %d: %w", index+1, err)
+			}
+		}
+		newArena, result := makeSequenceWithLength(scope.Arena, sequenceType, elements, length)
+		scope.Arena = newArena
 		return scope, result, nil
 	}
 	return scope, ArenaCell{}, fmt.Errorf("conditional branches have unsupported structural type %s", thenCell.Type)
