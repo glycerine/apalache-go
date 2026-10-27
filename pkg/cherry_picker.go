@@ -40,9 +40,38 @@ func (picker *CherryPicker) Pick(scope RewriterScope, oracle ChoiceOracle, cells
 		return picker.pickSet(scope, oracle, cells)
 	case isSequenceCellType(typ):
 		return picker.pickSequence(scope, oracle, cells)
+	case isFunctionCellType(typ):
+		return picker.pickFunction(scope, oracle, cells)
 	default:
 		return scope, ArenaCell{}, fmt.Errorf("cherry picking is not yet implemented for %s", typ)
 	}
+}
+
+func (picker *CherryPicker) pickFunction(scope RewriterScope, oracle ChoiceOracle, cells []ArenaCell) (RewriterScope, ArenaCell, error) {
+	domains := make([]ArenaCell, len(cells))
+	relations := make([]ArenaCell, len(cells))
+	for index, cell := range cells {
+		var err error
+		domains[index], err = scope.Arena.Domain(cell)
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+		relations[index], err = scope.Arena.Codomain(cell)
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+	}
+	scope, domain, err := picker.Pick(scope, oracle, domains)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	scope, relation, err := picker.Pick(scope, oracle, relations)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	newArena, function := scope.Arena.AppendCellType(cells[0].Type, true)
+	scope.Arena = newArena.SetDomain(function, domain).SetCodomain(function, relation)
+	return scope, function, nil
 }
 
 func (picker *CherryPicker) pickBasic(scope RewriterScope, oracle ChoiceOracle, cells []ArenaCell) (RewriterScope, ArenaCell, error) {

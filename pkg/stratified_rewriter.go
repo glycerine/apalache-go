@@ -1178,6 +1178,19 @@ func (rewriter *StratifiedRewriter) chooseConditional(scope RewriterScope, predi
 		scope.Arena = newArena
 		return scope, result, nil
 	}
+	if isFunctionCellType(thenCell.Type) {
+		scope, oracle, err := CreateIntOracle(scope, 2)
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+		elseChosen, _ := oracle.Chosen(scope, 0)
+		thenChosen, _ := oracle.Chosen(scope, 1)
+		rewriter.assert(booleanAnd(
+			booleanOr(elseChosen, thenChosen),
+			MustOperExpr(Op("EQUIV"), Typed(BoolT1), predicate.NameExpr(), thenChosen),
+		))
+		return NewCherryPicker(rewriter).Pick(scope, oracle, []ArenaCell{elseCell, thenCell})
+	}
 	return scope, ArenaCell{}, fmt.Errorf("conditional branches have unsupported structural type %s", thenCell.Type)
 }
 

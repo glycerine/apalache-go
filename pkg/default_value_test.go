@@ -8,8 +8,9 @@ func TestDefaultValueCacheBuildsAndReusesStructuralValues(t *testing.T) {
 	scope := InitialRewriterScope()
 	tuple, _ := NewTupleType(IntT1, BoolT1)
 	sequence, _ := NewSeqType(IntT1)
+	function, _ := NewFunType(IntT1, BoolT1)
 	record, _ := NewRecordType(map[string]Type{"items": mustSet(IntT1), "pair": tuple})
-	types := []Type{IntT1, BoolT1, StrT1, mustSet(IntT1), tuple, sequence, record}
+	types := []Type{IntT1, BoolT1, StrT1, mustSet(IntT1), tuple, sequence, record, function}
 	for _, typ := range types {
 		var cell ArenaCell
 		var err error
@@ -30,6 +31,15 @@ func TestDefaultValueCacheBuildsAndReusesStructuralValues(t *testing.T) {
 	lengthValue, found := rewriter.IntegerCache().FindValue(length)
 	if !found || lengthValue.Sign() != 0 {
 		t.Fatalf("default sequence length = %v, %v", lengthValue, found)
+	}
+	functionCell, _ := cache.Get(function)
+	domain, err := scope.Arena.Domain(functionCell)
+	if err != nil || len(scope.Arena.GetHas(domain)) != 0 {
+		t.Fatalf("default function domain = %v, %v", domain, err)
+	}
+	relation, err := scope.Arena.Codomain(functionCell)
+	if err != nil || len(scope.Arena.GetHas(relation)) != 0 {
+		t.Fatalf("default function relation = %v, %v", relation, err)
 	}
 }
 

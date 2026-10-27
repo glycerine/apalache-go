@@ -32,6 +32,22 @@ func (cache *DefaultValueCache) GetOrCreate(scope RewriterScope, typ Type) (Rewr
 		}
 		delete(cache.values, typ.String())
 	}
+	if functionType, ok := typ.(FunType); ok {
+		var domain, relation ArenaCell
+		var err error
+		scope, domain, err = cache.GetOrCreate(scope, mustSet(functionType.Argument()))
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+		scope, relation, err = cache.GetOrCreate(scope, functionRelationType(functionType))
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+		newArena, function := scope.Arena.AppendCellType(BasicCellType{Type: functionType})
+		scope.Arena = newArena.SetDomain(function, domain).SetCodomain(function, relation)
+		cache.values[typ.String()] = function
+		return scope, function, nil
+	}
 	expression, err := defaultValueExpression(typ)
 	if err != nil {
 		return scope, ArenaCell{}, err

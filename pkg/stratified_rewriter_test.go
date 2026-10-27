@@ -814,6 +814,13 @@ func TestStratifiedFiniteFunctionsThroughG3(t *testing.T) {
 	reorderedFunction := MustOperExpr(Op("FUN_CTOR"), functionTag, reorderedBody, x, reorderedDomain)
 	functionEquality := MustOperExpr(Op("EQ"), Typed(BoolT1), constructor(10), reorderedFunction)
 	functionInequality := MustOperExpr(Op("EQ"), Typed(BoolT1), constructor(10), constructor(20))
+	predicate := MustOperExpr(Op("LT"), Typed(BoolT1),
+		NewValueExpr(Int64Value(1), Typed(IntT1)), NewValueExpr(Int64Value(2), Typed(IntT1)))
+	conditionalFunction := MustOperExpr(Op("IF_THEN_ELSE"), functionTag, predicate, constructor(10), constructor(20))
+	conditionalApplication := MustOperExpr(Op("FUN_APP"), Typed(IntT1), conditionalFunction,
+		NewValueExpr(Int64Value(1), Typed(IntT1)))
+	conditionalEquality := MustOperExpr(Op("EQ"), Typed(BoolT1), conditionalApplication,
+		NewValueExpr(Int64Value(11), Typed(IntT1)))
 	for _, test := range []struct {
 		name       string
 		expression Expr
@@ -823,6 +830,7 @@ func TestStratifiedFiniteFunctionsThroughG3(t *testing.T) {
 		{name: "domain", expression: domainEquality, want: true},
 		{name: "equal functions", expression: functionEquality, want: true},
 		{name: "different functions", expression: functionInequality, want: false},
+		{name: "conditional function", expression: conditionalEquality, want: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			rewriter := NewStratifiedRewriter()
