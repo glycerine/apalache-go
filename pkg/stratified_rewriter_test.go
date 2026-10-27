@@ -725,6 +725,68 @@ func TestStratifiedBoundedChoiceThroughG3(t *testing.T) {
 	}
 }
 
+func TestStratifiedFiniteQuantifiersThroughG3(t *testing.T) {
+	setTag := Typed(mustSet(IntT1))
+	set := func(values ...int64) Expr {
+		elements := make([]Expr, len(values))
+		for index, value := range values {
+			elements[index] = NewValueExpr(Int64Value(value), Typed(IntT1))
+		}
+		return MustOperExpr(Op("SET_ENUM"), setTag, elements...)
+	}
+	x := NewNameExpr("x", Typed(IntT1))
+	tests := []struct {
+		name       string
+		expression Expr
+		want       bool
+	}{
+		{
+			name: "exists witness", want: true,
+			expression: MustOperExpr(Op("EXISTS3"), Typed(BoolT1), x, set(1, 2),
+				MustOperExpr(Op("EQ"), Typed(BoolT1), x, NewValueExpr(Int64Value(2), Typed(IntT1)))),
+		},
+		{
+			name: "forall positive", want: true,
+			expression: MustOperExpr(Op("FORALL3"), Typed(BoolT1), x, set(1, 2),
+				MustOperExpr(Op("GT"), Typed(BoolT1), x, NewValueExpr(Int64Value(0), Typed(IntT1)))),
+		},
+		{
+			name: "forall counterexample", want: false,
+			expression: MustOperExpr(Op("FORALL3"), Typed(BoolT1), x, set(1, 2),
+				MustOperExpr(Op("EQ"), Typed(BoolT1), x, NewValueExpr(Int64Value(1), Typed(IntT1)))),
+		},
+		{name: "exists empty", want: false, expression: MustOperExpr(Op("EXISTS3"), Typed(BoolT1), x, set(), boolExpr(true))},
+		{name: "forall empty", want: true, expression: MustOperExpr(Op("FORALL3"), Typed(BoolT1), x, set(), boolExpr(false))},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			rewriter := NewStratifiedRewriter()
+			scope, result, err := rewriter.Rewrite(test.expression, InitialRewriterScope())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if scope.Binding.Contains("x") {
+				t.Fatal("quantifier binding escaped its scope")
+			}
+			solver := newTestG3Solver(t)
+			encoder, err := EncodeRewriterScope(solver, scope, rewriter.Constraints())
+			if err != nil {
+				t.Fatal(err)
+			}
+			contradiction := Expr(result.NameExpr())
+			if test.want {
+				contradiction = MustOperExpr(Op("NOT"), Typed(BoolT1), contradiction)
+			}
+			if err := encoder.Assert(contradiction); err != nil {
+				t.Fatal(err)
+			}
+			if status, err := solver.Check(context.Background()); err != nil || status != SMTUnsatisfiable {
+				t.Fatalf("contradicted quantifier result = %v, %v", status, err)
+			}
+		})
+	}
+}
+
 func TestStratifiedFiniteSetEqualityThroughG3(t *testing.T) {
 	setType := Typed(mustSet(IntT1))
 	set := func(values ...int64) Expr {

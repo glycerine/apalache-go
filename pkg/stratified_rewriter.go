@@ -92,6 +92,8 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 			return rewriter.rewriteSubSequence(typed, scope)
 		case "Apalache!Guess", "CHOOSE3":
 			return rewriter.rewriteBoundedChoice(typed, scope)
+		case "EXISTS3", "FORALL3":
+			return rewriter.rewriteFiniteQuantifier(typed, scope)
 		case "SET_FILTER":
 			return rewriter.rewriteSetFilter(typed, scope)
 		case "SET_IN", "Apalache!SelectInSet":
@@ -105,6 +107,50 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 		}
 	}
 	return scope, ArenaCell{}, fmt.Errorf("no stratified rule is applicable to %T", expression)
+}
+
+func (rewriter *StratifiedRewriter) rewriteFiniteQuantifier(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
+	arguments := expression.Arguments()
+	if len(arguments) != 3 {
+		return scope, ArenaCell{}, fmt.Errorf("bounded quantifier requires a name, set, and predicate")
+	}
+	binder, ok := arguments[0].(*NameExpr)
+	if !ok {
+		return scope, ArenaCell{}, fmt.Errorf("bounded quantifier binder must be a name")
+	}
+	scope, setCell, err := rewriter.Rewrite(arguments[1], scope)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	if !isFiniteSetCellType(setCell.Type) {
+		return scope, ArenaCell{}, fmt.Errorf("bounded quantifier requires a finite set, found %s", setCell.Type)
+	}
+	baseBinding := scope.Binding
+	pointers := scope.Arena.GetHas(setCell)
+	terms := make([]Expr, len(pointers))
+	for index, pointer := range pointers {
+		predicateScope := RewriterScope{Arena: scope.Arena, Binding: baseBinding.With(binder.Name(), pointer.Element())}
+		predicateScope, predicate, rewriteErr := rewriter.Rewrite(arguments[2], predicateScope)
+		if rewriteErr != nil {
+			return scope, ArenaCell{}, rewriteErr
+		}
+		if !EqualTypes(predicate.Type.TLAType(), BoolT1) {
+			return scope, ArenaCell{}, fmt.Errorf("bounded quantifier predicate has type %s", predicate.Type)
+		}
+		scope.Arena = predicateScope.Arena
+		if expression.Operator().Name() == "EXISTS3" {
+			terms[index] = booleanAnd(pointer.ToSMT(), predicate.NameExpr())
+		} else {
+			terms[index] = booleanOr(MustOperExpr(Op("NOT"), Typed(BoolT1), pointer.ToSMT()), predicate.NameExpr())
+		}
+	}
+	scope.Binding = baseBinding
+	condition := booleanAnd(terms...)
+	if expression.Operator().Name() == "EXISTS3" {
+		condition = booleanOr(terms...)
+	}
+	scope, result := rewriter.bindBoolean(scope, condition)
+	return scope, result, nil
 }
 
 func (rewriter *StratifiedRewriter) rewriteBoundedChoice(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
