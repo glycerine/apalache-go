@@ -97,6 +97,21 @@ func defaultValueExpression(typ Type) (Expr, error) {
 			return nil, fmt.Errorf("cannot construct a default for open record type %s", typed)
 		}
 		return defaultRecordExpression(typed, typed.Row().Fields())
+	case VariantType:
+		if _, open := typed.Row().Other(); open {
+			return nil, fmt.Errorf("cannot construct a default for open variant type %s", typed)
+		}
+		options := typed.Row().Fields()
+		keys := sortedStringKeys(options)
+		if len(keys) == 0 {
+			return nil, fmt.Errorf("cannot construct a default for empty variant type %s", typed)
+		}
+		value, err := defaultValueExpression(options[keys[0]])
+		if err != nil {
+			return nil, err
+		}
+		return MustOperExpr(Op("Variants!Variant"), Typed(typed),
+			NewValueExpr(StringValue(keys[0]), Typed(StrT1)), value), nil
 	}
 	return nil, fmt.Errorf("default values are not yet implemented for %s", typ)
 }

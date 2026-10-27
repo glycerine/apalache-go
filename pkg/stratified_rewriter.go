@@ -17,7 +17,9 @@ type StratifiedRewriter struct {
 
 func NewStratifiedRewriter() *StratifiedRewriter {
 	result := &StratifiedRewriter{integers: NewIntValueCache(), literals: NewUninterpretedLiteralCache()}
-	result.equality = NewLazyEquality(result.assert)
+	result.equality = NewLazyEquality(result.assert, func(tag string) (ArenaCell, bool) {
+		return result.literals.Get(UninterpretedLiteral{Type: StrT1, Index: tag})
+	})
 	result.defaults = NewDefaultValueCache(result)
 	return result
 }
@@ -106,6 +108,16 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 			return rewriter.rewriteTuple(typed, scope)
 		case "RECORD":
 			return rewriter.rewriteRecord(typed, scope)
+		case "Variants!Variant":
+			return rewriter.rewriteVariant(typed, scope)
+		case "Variants!VariantTag":
+			return rewriter.rewriteVariantTag(typed, scope)
+		case "Variants!VariantGetUnsafe":
+			return rewriter.rewriteVariantGetUnsafe(typed, scope)
+		case "Variants!VariantGetOrElse":
+			return rewriter.rewriteVariantGetOrElse(typed, scope)
+		case "Variants!VariantFilter":
+			return rewriter.rewriteVariantFilter(typed, scope)
 		case "FUN_APP":
 			return rewriter.rewriteApplication(typed, scope)
 		}
@@ -1156,7 +1168,7 @@ func (rewriter *StratifiedRewriter) chooseConditional(scope RewriterScope, predi
 		rewriter.addMembershipConstraints(scope.Arena, result)
 		return scope, result, nil
 	}
-	if isTupleCellType(thenCell.Type) || isRecordCellType(thenCell.Type) {
+	if isTupleCellType(thenCell.Type) || isRecordCellType(thenCell.Type) || isVariantCellType(thenCell.Type) {
 		thenFields := scope.Arena.GetHas(thenCell)
 		elseFields := scope.Arena.GetHas(elseCell)
 		if len(thenFields) != len(elseFields) {

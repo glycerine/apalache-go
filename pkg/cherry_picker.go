@@ -34,7 +34,7 @@ func (picker *CherryPicker) Pick(scope RewriterScope, oracle ChoiceOracle, cells
 	switch {
 	case isDirectSMTCellType(typ):
 		return picker.pickBasic(scope, oracle, cells)
-	case isTupleCellType(typ) || isRecordCellType(typ):
+	case isTupleCellType(typ) || isRecordCellType(typ) || isVariantCellType(typ):
 		return picker.pickProduct(scope, oracle, cells)
 	case isFiniteSetCellType(typ):
 		return picker.pickSet(scope, oracle, cells)

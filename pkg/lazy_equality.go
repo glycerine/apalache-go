@@ -8,16 +8,21 @@ import "fmt"
 type LazyEquality struct {
 	cache     *EqualityCache
 	assert    func(Expr)
+	stringTag func(string) (ArenaCell, bool)
 	computing map[equalityPair]bool
 }
 
-func NewLazyEquality(assert func(Expr)) *LazyEquality {
+func NewLazyEquality(assert func(Expr), stringTags ...func(string) (ArenaCell, bool)) *LazyEquality {
 	if assert == nil {
 		assert = func(Expr) {}
 	}
-	return &LazyEquality{
+	result := &LazyEquality{
 		cache: NewEqualityCache(), assert: assert, computing: make(map[equalityPair]bool),
 	}
+	if len(stringTags) > 0 {
+		result.stringTag = stringTags[0]
+	}
+	return result
 }
 
 func (equality *LazyEquality) Cache() *EqualityCache { return equality.cache }
@@ -77,6 +82,8 @@ func (equality *LazyEquality) Equal(arena *PureArena, left, right ArenaCell) (Ex
 		condition, err = equality.sequenceEqualityCondition(arena, left, right)
 	case isFunctionCellType(left.Type):
 		condition, err = equality.functionEqualityCondition(arena, left, right)
+	case isVariantCellType(left.Type):
+		condition, err = equality.variantEqualityCondition(arena, left, right)
 	default:
 		err = fmt.Errorf("structural equality is not yet implemented for %s", left.Type)
 	}
@@ -90,6 +97,54 @@ func (equality *LazyEquality) Equal(arena *PureArena, left, right ArenaCell) (Ex
 		return nil, err
 	}
 	return rawEquality, nil
+}
+
+func (equality *LazyEquality) variantEqualityCondition(arena *PureArena, left, right ArenaCell) (Expr, error) {
+	options, ok := variantTypeOptions(left.Type)
+	if !ok {
+		return nil, fmt.Errorf("variant equality requires a closed variant type, found %s", left.Type)
+	}
+	leftTag, err := variantTag(arena, left)
+	if err != nil {
+		return nil, err
+	}
+	rightTag, err := variantTag(arena, right)
+	if err != nil {
+		return nil, err
+	}
+	tagsEqual, err := equality.Equal(arena, leftTag, rightTag)
+	if err != nil {
+		return nil, err
+	}
+	conditions := []Expr{tagsEqual}
+	for _, name := range sortedStringKeys(options) {
+		leftValue, fieldErr := variantField(arena, left, name)
+		if fieldErr != nil {
+			return nil, fieldErr
+		}
+		rightValue, fieldErr := variantField(arena, right, name)
+		if fieldErr != nil {
+			return nil, fieldErr
+		}
+		valuesEqual, equalErr := equality.Equal(arena, leftValue, rightValue)
+		if equalErr != nil {
+			return nil, equalErr
+		}
+		if equality.stringTag == nil {
+			return nil, fmt.Errorf("variant equality has no string-tag resolver")
+		}
+		optionTag, found := equality.stringTag(name)
+		if !found {
+			return nil, fmt.Errorf("variant option tag %q has not been materialized", name)
+		}
+		active, activeErr := equality.Equal(arena, optionTag, leftTag)
+		if activeErr != nil {
+			return nil, activeErr
+		}
+		conditions = append(conditions, booleanOr(
+			MustOperExpr(Op("NOT"), Typed(BoolT1), active), valuesEqual))
+	}
+	return booleanAnd(conditions...), nil
 }
 
 func (equality *LazyEquality) functionEqualityCondition(arena *PureArena, left, right ArenaCell) (Expr, error) {
