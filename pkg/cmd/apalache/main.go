@@ -505,6 +505,7 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	backend := addCheckerBackendFlags(flags)
 	length := flags.Int("length", 10, "maximum number of Next steps")
 	timeoutSMT := flags.Int("timeout-smt", 0, "limit each SMT query to this many seconds (0 is unlimited)")
+	configFile := flags.String("config-file", "", "Apalache JSON configuration file")
 	configPath := flags.String("config", "", "TLC configuration file")
 	initName := flags.String("init", "", "initial-state operator")
 	nextName := flags.String("next", "", "next-state operator")
@@ -523,9 +524,87 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
 	}
-	if flags.NArg() != 1 {
-		fmt.Fprintln(stderr, "check requires exactly one TLA+ file")
+	visited := make(map[string]bool)
+	flags.Visit(func(flag *flag.Flag) { visited[flag.Name] = true })
+	applicationConfig, selectedConfig, err := loadCommandConfig(*configFile)
+	if err != nil {
+		fmt.Fprintf(stderr, "cannot load Apalache configuration: %v\n", err)
 		return exitUsage
+	}
+	if selectedConfig != "" {
+		if err = applicationConfig.validateForCheck(); err != nil {
+			fmt.Fprintln(stderr, err)
+			return exitUsage
+		}
+		checker := applicationConfig.Checker
+		if !visited["algo"] && checker.Algorithm != nil {
+			backend.algorithm = *checker.Algorithm
+		}
+		if !visited["smt-encoding"] && checker.SMTEncoding != nil {
+			backend.encoding = *checker.SMTEncoding
+		}
+		if !visited["smt-solver"] && checker.SMTSolver != nil {
+			backend.solver = *checker.SMTSolver
+		}
+		if !visited["length"] && checker.Length != nil {
+			*length = *checker.Length
+		}
+		if !visited["timeout-smt"] && checker.TimeoutSMT != nil {
+			*timeoutSMT = *checker.TimeoutSMT
+		}
+		if !visited["config"] && checker.TLCConfig != nil {
+			*configPath, _, err = expandHomePath(*checker.TLCConfig)
+			if err != nil {
+				fmt.Fprintln(stderr, err)
+				return exitUsage
+			}
+		}
+		if !visited["cinit"] && checker.ConstantInit != nil {
+			*constantInit = *checker.ConstantInit
+		}
+		if !visited["init"] && checker.Init != nil {
+			*initName = *checker.Init
+		}
+		if !visited["next"] && checker.Next != nil {
+			*nextName = *checker.Next
+		}
+		if !visited["inv"] && checker.Invariants != nil {
+			invariants = append(invariants[:0], (*checker.Invariants)...)
+		}
+		if !visited["temporal"] && checker.TemporalProperties != nil {
+			temporalProperties = append(temporalProperties[:0], (*checker.TemporalProperties)...)
+		}
+		if !visited["no-polytypes"] && applicationConfig.Typechecker.InferPoly != nil {
+			*disablePolytypes = !*applicationConfig.Typechecker.InferPoly
+		}
+		if !visited["rows"] && !visited["features"] && applicationConfig.Features != nil {
+			*useRows = false
+			for _, feature := range *applicationConfig.Features {
+				*useRows = *useRows || feature == "rows"
+			}
+		}
+		if checker.MaxError != nil && *checker.MaxError != 1 {
+			fmt.Fprintln(stderr, "JSON checker.max-error currently supports only 1")
+			return exitUsage
+		}
+	}
+	if visited["init"] != visited["next"] {
+		fmt.Fprintln(stderr, "-init and -next must be provided together")
+		return exitUsage
+	}
+	if flags.NArg() > 1 || (flags.NArg() == 0 && applicationConfig.Source == nil) {
+		fmt.Fprintln(stderr, "check requires one TLA+ file from the CLI or JSON configuration")
+		return exitUsage
+	}
+	sourcePath := ""
+	if flags.NArg() == 1 {
+		sourcePath = flags.Arg(0)
+	} else {
+		sourcePath, _, err = expandHomePath(*applicationConfig.Source)
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return exitUsage
+		}
 	}
 	if *length < 0 {
 		fmt.Fprintln(stderr, "check length cannot be negative")
@@ -578,6 +657,9 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	if configuration.TLCConfig != nil && configuration.TLCConfig.CheckDeadlock != nil {
 		checkDeadlocks = *configuration.TLCConfig.CheckDeadlock
 	}
+	if !visited["deadlock"] && !visited["no-deadlock"] && applicationConfig.Checker.NoDeadlock != nil {
+		checkDeadlocks = !*applicationConfig.Checker.NoDeadlock
+	}
 	if *deadlockFlag != "" {
 		parsed, err := strconv.ParseBool(*deadlockFlag)
 		if err != nil {
@@ -594,7 +676,7 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		checkDeadlocks = false
 	}
 
-	frontend := pal.ParseAndTypeCheckFile(ctx, flags.Arg(0), pal.FrontendOptions{
+	frontend := pal.ParseAndTypeCheckFile(ctx, sourcePath, pal.FrontendOptions{
 		LibraryPaths: libraryPaths,
 	}, pal.TypeCheckOptions{UseRows: rows, DisablePolytypes: *disablePolytypes})
 	for _, diagnostic := range frontend.Diagnostics {

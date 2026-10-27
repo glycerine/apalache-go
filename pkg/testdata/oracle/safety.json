@@ -121,6 +121,12 @@
       "go_args": ["check", "-length", "0", "-deadlock=false", "-inv", "AllTests", "test/tla/TestSets.tla"]
     },
     {
+      "name": "json-configuration",
+      "dir": "..",
+      "scala_args": ["check", "--config-file=pkg/testdata/oracle/ConfiguredCheck.json", "test/tla/TestSets.tla"],
+      "go_args": ["check", "--config-file=pkg/testdata/oracle/ConfiguredCheck.json", "test/tla/TestSets.tla"]
+    },
+    {
       "name": "finite-sets-extensions",
       "dir": "..",
       "scala_args": ["check", "--length=0", "--no-deadlock", "--inv=AllTests", "test/tla/TestFiniteSetsExt.tla"],

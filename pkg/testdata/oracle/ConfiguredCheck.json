@@ -1,0 +1,7 @@
+{
+  "checker": {
+    "length": 0,
+    "inv": ["AllTests"],
+    "no-deadlock": true
+  }
+}
