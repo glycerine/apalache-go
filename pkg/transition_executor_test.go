@@ -249,6 +249,49 @@ func TestTransitionExecutorRejectsInvalidSnapshot(t *testing.T) {
 	}
 }
 
+func TestTransitionExecutorMayChangeAssertionMatchesScala(t *testing.T) {
+	executor := NewTransitionExecutor(nil, []string{"x", "y"})
+	scope := InitialRewriterScope()
+	var x, y, nextY ArenaCell
+	var err error
+	scope, x, err = executor.rewriter.Rewrite(intLiteral(1), scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope, y, err = executor.rewriter.Rewrite(intLiteral(2), scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, nextY, err = executor.rewriter.Rewrite(intLiteral(3), scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	executor.prepared[7] = EncodedTransition{Binding: BindingOf(
+		BindingEntry{Name: "x", Cell: x}, BindingEntry{Name: "x'", Cell: x},
+		BindingEntry{Name: "y", Cell: y}, BindingEntry{Name: "y'", Cell: nextY},
+	)}
+	xAssertion := MustOperExpr(Op("EQ"), Typed(BoolT1), NewNameExpr("x", Typed(IntT1)), intLiteral(1))
+	yPrimeAssertion := MustOperExpr(Op("EQ"), Typed(BoolT1),
+		MustOperExpr(Op("PRIME"), Typed(IntT1), NewNameExpr("y", Typed(IntT1))), intLiteral(3))
+
+	if changed, err := executor.MayChangeAssertion(7, StateInvariant, 0, xAssertion); err != nil || !changed {
+		t.Fatalf("initial-step assertion change = %v, %v", changed, err)
+	}
+	executor.step = 1
+	if changed, err := executor.MayChangeAssertion(7, StateInvariant, 0, xAssertion); err != nil || changed {
+		t.Fatalf("unchanged x assertion = %v, %v", changed, err)
+	}
+	if changed, err := executor.MayChangeAssertion(7, ActionInvariant, 1, yPrimeAssertion); err != nil || !changed {
+		t.Fatalf("changed y' assertion = %v, %v", changed, err)
+	}
+	if _, err := executor.MayChangeAssertion(8, StateInvariant, 0, xAssertion); err == nil {
+		t.Fatal("unprepared transition was accepted")
+	}
+	if _, err := executor.MayChangeAssertion(7, StateInvariant, 0, nil); err == nil {
+		t.Fatal("nil assertion was accepted")
+	}
+}
+
 func TestTransitionExecutorEvaluatesCurrentModel(t *testing.T) {
 	executor := NewTransitionExecutor(nil, []string{"x"})
 	prime := MustOperExpr(Op("PRIME"), Typed(IntT1), NewNameExpr("x", Typed(IntT1)))

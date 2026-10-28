@@ -125,6 +125,49 @@ func (executor *TransitionExecutor) PreparedTransitionNumbers() []int {
 	return result
 }
 
+// MayChangeAssertion implements the syntactic transition filter used by the
+// Scala executor. At the initial step every assertion is reconsidered. Later,
+// an assertion may change exactly when it mentions a variable whose primed
+// binding is absent from, or differs from, its unprimed binding.
+func (executor *TransitionExecutor) MayChangeAssertion(
+	transitionNumber int, _ InvariantKind, _ int, assertion Expr,
+) (bool, error) {
+	transition, found := executor.prepared[transitionNumber]
+	if !found {
+		return false, fmt.Errorf("transition %d has not been prepared", transitionNumber)
+	}
+	if assertion == nil {
+		return false, fmt.Errorf("assertion cannot be nil")
+	}
+	used, err := FindUsedNames(assertion)
+	if err != nil {
+		return false, fmt.Errorf("find names used by assertion: %w", err)
+	}
+	if executor.step == 0 {
+		return true, nil
+	}
+	changed := make(map[string]struct{})
+	for name, primedCell := range transition.Binding.Map() {
+		if len(name) == 0 || name[len(name)-1] != '\'' {
+			continue
+		}
+		unprimed := name[:len(name)-1]
+		currentCell, currentFound := transition.Binding.Get(unprimed)
+		if !currentFound || !currentCell.Equal(primedCell) {
+			changed[name] = struct{}{}
+		}
+	}
+	for name := range used {
+		if len(name) == 0 || name[len(name)-1] != '\'' {
+			name += "'"
+		}
+		if _, found := changed[name]; found {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (executor *TransitionExecutor) ControlState() ExecutorControlState {
 	if executor.picked {
 		return ExecutorPicked
