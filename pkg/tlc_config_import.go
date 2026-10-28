@@ -6,10 +6,10 @@ import (
 )
 
 const (
-	TLCStateConstraintPrefix  = "CONSTRAINT_$"
-	TLCActionConstraintPrefix = "ACTION_CONSTRAINT_$"
-	TLCInvariantPrefix        = "INVARIANT_$"
-	TLCTemporalPrefix         = "PROPERTY_$"
+	TLCStateConstraintPrefix  = "CONSTRAINT__si_"
+	TLCActionConstraintPrefix = "ACTION_CONSTRAINT__si_"
+	TLCInvariantPrefix        = "INVARIANT__si_"
+	TLCTemporalPrefix         = "PROPERTY__si_"
 	TLCInitDeclaration        = "INIT"
 	TLCNextDeclaration        = "NEXT"
 	TLCSpecificationDecl      = "SPECIFICATION"
@@ -26,7 +26,7 @@ func ImportTLCConfig(module *Module, config TLCConfig) (*Module, error) {
 		return nil, &TLCConfigurationError{Message: "cannot import TLC configuration into a nil module"}
 	}
 	declarations := module.Declarations()
-	assignmentNames := sortedConfigKeys(config.ConstAssignments)
+	assignmentNames := orderedConfigKeys(config.ConstAssignments, config.ConstAssignmentOrder)
 	for _, name := range assignmentNames {
 		value, err := ConfigConstToExpr(config.ConstAssignments[name])
 		if err != nil {
@@ -34,11 +34,7 @@ func ImportTLCConfig(module *Module, config TLCConfig) (*Module, error) {
 		}
 		declarations = append(declarations, ExpressionToOperatorDefinition(OverridePrefix+name, value))
 	}
-	replacementNames := make([]string, 0, len(config.ConstReplacements))
-	for name := range config.ConstReplacements {
-		replacementNames = append(replacementNames, name)
-	}
-	sort.Strings(replacementNames)
+	replacementNames := orderedConfigKeys(config.ConstReplacements, config.ConstReplacementOrder)
 	for _, name := range replacementNames {
 		target := config.ConstReplacements[name]
 		declaration, found := declarationNamed(module, target)
@@ -91,11 +87,25 @@ func ImportTLCConfig(module *Module, config TLCConfig) (*Module, error) {
 	return result, nil
 }
 
-func sortedConfigKeys(values map[string]ConfigConstExpr) []string {
+func orderedConfigKeys[V any](values map[string]V, preferred []string) []string {
 	result := make([]string, 0, len(values))
-	for name := range values {
+	seen := make(map[string]struct{}, len(values))
+	for _, name := range preferred {
+		if _, exists := values[name]; !exists {
+			continue
+		}
+		if _, duplicate := seen[name]; duplicate {
+			continue
+		}
+		seen[name] = struct{}{}
 		result = append(result, name)
 	}
-	sort.Strings(result)
-	return result
+	remainder := make([]string, 0, len(values)-len(result))
+	for name := range values {
+		if _, exists := seen[name]; !exists {
+			remainder = append(remainder, name)
+		}
+	}
+	sort.Strings(remainder)
+	return append(result, remainder...)
 }

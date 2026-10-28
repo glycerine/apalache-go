@@ -34,7 +34,7 @@ func TestImportTLCConfigAssignmentsReplacementsAndPredicates(t *testing.T) {
 	}
 	for _, name := range []string{
 		"OVERRIDE_A", "OVERRIDE_C", "OVERRIDE_K", "OVERRIDE_N",
-		"CONSTRAINT_$0", "ACTION_CONSTRAINT_$0", "INVARIANT_$0", "INVARIANT_$1", "PROPERTY_$0", "INIT", "NEXT",
+		"CONSTRAINT__si_0", "ACTION_CONSTRAINT__si_0", "INVARIANT__si_0", "INVARIANT__si_1", "PROPERTY__si_0", "INIT", "NEXT",
 	} {
 		if _, found := OperatorBody(got, name); !found {
 			t.Errorf("synthetic declaration %s is missing", name)
@@ -51,6 +51,86 @@ func TestImportTLCConfigAssignmentsReplacementsAndPredicates(t *testing.T) {
 	modelValue, _ := OperatorBody(got, "OVERRIDE_K")
 	if modelValue.(*ValueExpr).Value().(StringValue) != StringValue("ModelValue_M") {
 		t.Fatalf("model value assignment = %v", modelValue)
+	}
+}
+
+func TestParseAndImportTLCConfigScalaAllFeaturesCase(t *testing.T) {
+	intOperator := mustOperator(nil, IntT1)
+	boolOperator := mustOperator(nil, BoolT1)
+	module := NewModule("test", []Decl{
+		NewOperDecl("M", nil, intLiteral(1), Typed(intOperator)),
+		NewOperDecl("B", nil, NewValueExpr(StringValue("foo"), Typed(StrT1)), Typed(mustOperator(nil, StrT1))),
+		NewOperDecl("Init", nil, boolExpr(true), Typed(boolOperator)),
+		NewOperDecl("Next", nil, boolExpr(true), Typed(boolOperator)),
+		NewOperDecl("Prop", nil, boolExpr(true), Typed(boolOperator)),
+	})
+	config, err := ParseTLCConfig(`
+CONSTANTS
+N = M
+A <- B
+SYMMETRY ignored
+CONSTRAINT Cons1
+ACTION_CONSTRAINT Cons2
+INIT Init
+NEXT Next
+INVARIANT Inv
+PROPERTY Prop`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := ImportTLCConfig(module, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantNames := []string{
+		"M", "B", "Init", "Next", "Prop",
+		"OVERRIDE_N", "OVERRIDE_A", "CONSTRAINT__si_0", "ACTION_CONSTRAINT__si_0",
+		"INVARIANT__si_0", "PROPERTY__si_0", "INIT", "NEXT",
+	}
+	declarations := got.Declarations()
+	if len(declarations) != len(wantNames) {
+		t.Fatalf("imported declarations = %d, want %d", len(declarations), len(wantNames))
+	}
+	for index, want := range wantNames {
+		if declarations[index].Name() != want {
+			t.Fatalf("imported declaration %d = %q, want %q", index, declarations[index].Name(), want)
+		}
+	}
+	modelValue, _ := OperatorBody(got, "OVERRIDE_N")
+	if modelValue.(*ValueExpr).Value().(StringValue) != "ModelValue_M" {
+		t.Fatalf("model value override = %v", modelValue)
+	}
+	replacement, _ := OperatorBody(got, "OVERRIDE_A")
+	if replacement.(*OperExpr).Arguments()[0].(*NameExpr).Name() != "B" {
+		t.Fatalf("replacement override = %v", replacement)
+	}
+}
+
+func TestParseAndImportTLCConfigPreservesScalaBindingGroupsAndOrder(t *testing.T) {
+	module := NewModule("test", []Decl{
+		NewOperDecl("B", nil, intLiteral(1), Typed(mustOperator(nil, IntT1))),
+		NewOperDecl("D", nil, intLiteral(3), Typed(mustOperator(nil, IntT1))),
+	})
+	config, err := ParseTLCConfig(`
+CONSTANTS
+N = M
+A <- B
+K = L
+C <- D
+INIT Init
+NEXT Next`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := ImportTLCConfig(module, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"B", "D", "OVERRIDE_N", "OVERRIDE_K", "OVERRIDE_A", "OVERRIDE_C", "INIT", "NEXT"}
+	for index, declaration := range got.Declarations() {
+		if declaration.Name() != want[index] {
+			t.Fatalf("declaration %d = %q, want %q", index, declaration.Name(), want[index])
+		}
 	}
 }
 

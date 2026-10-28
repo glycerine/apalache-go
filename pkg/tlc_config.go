@@ -89,14 +89,16 @@ type TemporalSpec struct{ Name string }
 func (TemporalSpec) behaviorSpec() {}
 
 type TLCConfig struct {
-	ConstAssignments   map[string]ConfigConstExpr
-	ConstReplacements  map[string]string
-	StateConstraints   []string
-	ActionConstraints  []string
-	Invariants         []string
-	TemporalProperties []string
-	Behavior           BehaviorSpec
-	CheckDeadlock      *bool
+	ConstAssignments      map[string]ConfigConstExpr
+	ConstAssignmentOrder  []string
+	ConstReplacements     map[string]string
+	ConstReplacementOrder []string
+	StateConstraints      []string
+	ActionConstraints     []string
+	Invariants            []string
+	TemporalProperties    []string
+	Behavior              BehaviorSpec
+	CheckDeadlock         *bool
 }
 
 type TLCConfigParseError struct {
@@ -344,11 +346,17 @@ func (p *tlcConfigParser) parseConstants() error {
 			if err != nil {
 				return err
 			}
+			if _, exists := p.config.ConstReplacements[name]; !exists {
+				p.config.ConstReplacementOrder = append(p.config.ConstReplacementOrder, name)
+			}
 			p.config.ConstReplacements[name] = replacement.text
 		} else {
 			value, err := p.parseConstExpr()
 			if err != nil {
 				return err
+			}
+			if _, exists := p.config.ConstAssignments[name]; !exists {
+				p.config.ConstAssignmentOrder = append(p.config.ConstAssignmentOrder, name)
 			}
 			p.config.ConstAssignments[name] = value
 		}

@@ -358,7 +358,7 @@ tla-io/src/main/scala/at/forsyte/apalache/io/quint/QuintIR.scala	partial	quint_j
 tla-io/src/main/scala/at/forsyte/apalache/io/quint/QuintNameGen.scala	ported	quint_json.go;quint_json_test.go	deterministic source-ID-derived names replace mutable generated names
 tla-io/src/main/scala/at/forsyte/apalache/io/quint/QuintTypeConverter.scala	ported	quint_json.go;quint_json_test.go	no known type-algebra conversion gap
 tla-io/src/main/scala/at/forsyte/apalache/io/tlc/TlcConfigParser.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
-tla-io/src/main/scala/at/forsyte/apalache/io/tlc/TlcConfigParserApalache.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/tlc/TlcConfigParserApalache.scala	ported	tlc_config.go;tlc_config_test.go;tlc_config_import_test.go	INIT/NEXT and SPECIFICATION, constants and replacements, all predicate lists, ignored TLC sections, comments, deadlock settings, source positions, and binding order are ported
 tla-io/src/main/scala/at/forsyte/apalache/io/tlc/config/TlcConfig.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
 tla-io/src/main/scala/at/forsyte/apalache/io/tlc/config/TlcConfigLexer.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
 tla-io/src/main/scala/at/forsyte/apalache/io/tlc/config/TlcConfigParseError.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
@@ -400,7 +400,7 @@ tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/OperAppToLetInDef.scala	partial
 tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/ParameterNormalizer.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
 tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/SetMembershipSimplifier.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
 tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/TlaConstInliner.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
-tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/TlcConfigImporter.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
+tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/TlcConfigImporter.scala	ported	tlc_config_import.go;tlc_config_import_test.go	all typed synthetic declarations, model-value assignments, replacements, exact __si_ names, source grouping/order, behavior aliases, and property preservation are ported
 tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/TypeSubstitutor.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
 tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/UniqueNameGenerator.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
 tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/exceptions.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
