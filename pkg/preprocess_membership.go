@@ -41,18 +41,22 @@ func SimplifySetMembership(root Expr, generator *UniqueNameGenerator, tracker Tr
 	}
 	var transform func(Expr) (Expr, error)
 	transform = func(expression Expr) (Expr, error) {
-		var rebuilt Expr = expression
+		var shallow Expr = expression
 		switch typed := expression.(type) {
 		case *OperExpr:
 			arguments := typed.Arguments()
+			changed := false
 			for index, argument := range arguments {
 				var err error
 				arguments[index], err = transform(argument)
 				if err != nil {
 					return nil, err
 				}
+				changed = changed || arguments[index].ID() != argument.ID()
 			}
-			rebuilt = MustOperExpr(typed.Operator(), typed.Tag(), arguments...)
+			if changed {
+				shallow = tracker.Hold(typed, MustOperExpr(typed.Operator(), typed.Tag(), arguments...))
+			}
 		case *LetInExpr:
 			declarations := typed.Declarations()
 			for index, declaration := range declarations {
@@ -68,10 +72,11 @@ func SimplifySetMembership(root Expr, generator *UniqueNameGenerator, tracker Tr
 			if err != nil {
 				return nil, err
 			}
-			rebuilt = NewLetInExpr(body, typed.Tag(), declarations...)
+			result := NewLetInExpr(body, typed.Tag(), declarations...)
+			return tracker.TrackExpression(func(Expr) Expr { return result })(expression), nil
 		}
-		result := rebuilt
-		if membership, ok := rebuilt.(*OperExpr); ok && membership.Operator().Name() == "SET_IN" {
+		result := shallow
+		if membership, ok := shallow.(*OperExpr); ok && membership.Operator().Name() == "SET_IN" {
 			arguments := membership.Arguments()
 			var replacement Expr
 			var found bool
@@ -90,6 +95,7 @@ func SimplifySetMembership(root Expr, generator *UniqueNameGenerator, tracker Tr
 				result = replacement
 			}
 		}
+		result = tracker.TrackExpression(func(Expr) Expr { return result })(shallow)
 		return tracker.TrackExpression(func(Expr) Expr { return result })(expression), nil
 	}
 	return transform(root)
@@ -98,7 +104,7 @@ func SimplifySetMembership(root Expr, generator *UniqueNameGenerator, tracker Tr
 func isTypeDefiningSet(expression Expr) bool {
 	if value, ok := expression.(*ValueExpr); ok {
 		set, ok := value.Value().(PredefinedSet)
-		return ok && set != NatSet
+		return ok && (set == BoolSet || set == IntSet || set == RealSet || set == StringSet)
 	}
 	operation, ok := expression.(*OperExpr)
 	if !ok {
@@ -143,37 +149,6 @@ func simplifyMembership(element, set Expr, generator *UniqueNameGenerator) (Expr
 	if !ok {
 		return nil, false, nil
 	}
-	structuredArguments := structuredSet.Arguments()
-	switch structuredSet.Operator().Name() {
-	case "SET_POWERSET":
-		elementType, err := setElementType(structuredArguments[0])
-		if err != nil {
-			return nil, false, err
-		}
-		bound := NewNameExpr(generator.NewName(), Typed(elementType))
-		var predicate Expr = MustOperExpr(Op("SET_IN"), Typed(BoolT1), bound, structuredArguments[0])
-		if simplified, found, simplifyErr := simplifyMembership(bound, structuredArguments[0], generator); simplifyErr != nil {
-			return nil, false, simplifyErr
-		} else if found {
-			predicate = simplified
-		}
-		return MustOperExpr(Op("FORALL3"), Typed(BoolT1), bound, element, predicate), true, nil
-	case "Sequences!Seq":
-		sequenceType, ok := mustTagType(element.Tag()).(SeqType)
-		if !ok {
-			return nil, false, fmt.Errorf("expected a sequence in Seq membership")
-		}
-		bound := NewNameExpr(generator.NewName(), Typed(IntT1))
-		domain := MustOperExpr(Op("DOMAIN"), Typed(mustSet(IntT1)), element)
-		application := MustOperExpr(Op("FUN_APP"), Typed(sequenceType.Element()), element, bound)
-		var predicate Expr = MustOperExpr(Op("SET_IN"), Typed(BoolT1), application, structuredArguments[0])
-		if simplified, found, simplifyErr := simplifyMembership(application, structuredArguments[0], generator); simplifyErr != nil {
-			return nil, false, simplifyErr
-		} else if found {
-			predicate = simplified
-		}
-		return MustOperExpr(Op("FORALL3"), Typed(BoolT1), bound, domain, predicate), true, nil
-	}
 	functionSet := structuredSet
 	if functionSet.Operator().Name() != "FUN_SET" {
 		return nil, false, nil
@@ -186,11 +161,11 @@ func simplifyMembership(element, set Expr, generator *UniqueNameGenerator) (Expr
 	if isTypeDefiningSet(codomain) {
 		return domainEquality(element), true, nil
 	}
-	domainType, err := setElementType(domain)
+	domainType, err := membershipSetElementType(domain)
 	if err != nil {
 		return nil, false, err
 	}
-	codomainType, err := setElementType(codomain)
+	codomainType, err := membershipSetElementType(codomain)
 	if err != nil {
 		return nil, false, err
 	}
@@ -202,6 +177,18 @@ func simplifyMembership(element, set Expr, generator *UniqueNameGenerator) (Expr
 	}
 	forall := MustOperExpr(Op("FORALL3"), Typed(BoolT1), bound, domain, rangeConstraint)
 	return MustOperExpr(Op("AND"), Typed(BoolT1), domainEquality(element), forall), true, nil
+}
+
+func membershipSetElementType(expression Expr) (Type, error) {
+	typ, ok := expression.Tag().Type()
+	if !ok {
+		return nil, NewMalformedTlaError("Expected a set, found: "+expression.Tag().String(), expression)
+	}
+	set, ok := typ.(SetType)
+	if !ok {
+		return nil, NewMalformedTlaError("Expected a set, found: "+expression.Tag().String(), expression)
+	}
+	return set.Element(), nil
 }
 
 func setElementType(expression Expr) (Type, error) {
