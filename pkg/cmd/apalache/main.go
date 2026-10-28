@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -1113,6 +1114,43 @@ func traceViolationExpression(module *pal.Module, name string) pal.Expr {
 	return pal.NewValueExpr(pal.BoolValue(true), pal.Typed(pal.BoolT1))
 }
 
+func parseTuningOptions(text string) (map[string]string, error) {
+	result := make(map[string]string)
+	for _, entry := range strings.Split(text, ":") {
+		parts := strings.Split(entry, "=")
+		if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || parts[1] == "" {
+			return nil, fmt.Errorf("expected key=value in --tuning-options=%s", text)
+		}
+		result[strings.TrimSpace(parts[0])] = parts[1]
+	}
+	return result, nil
+}
+
+func loadTuningProperties(path string) (map[string]string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("cannot read tuning properties file %s: %w", path, err)
+	}
+	defer file.Close()
+	result := make(map[string]string)
+	scanner := bufio.NewScanner(file)
+	for line := 1; scanner.Scan(); line++ {
+		text := strings.TrimSpace(scanner.Text())
+		if text == "" || strings.HasPrefix(text, "#") || strings.HasPrefix(text, "!") {
+			continue
+		}
+		separator := strings.IndexAny(text, "=:")
+		if separator < 0 || strings.TrimSpace(text[:separator]) == "" || strings.TrimSpace(text[separator+1:]) == "" {
+			return nil, fmt.Errorf("invalid tuning property at %s:%d: expected key=value", path, line)
+		}
+		result[strings.TrimSpace(text[:separator])] = strings.TrimSpace(text[separator+1:])
+	}
+	if err = scanner.Err(); err != nil {
+		return nil, fmt.Errorf("cannot read tuning properties file %s: %w", path, err)
+	}
+	return result, nil
+}
+
 func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("check", flag.ContinueOnError)
 	flags.SetOutput(stderr)
@@ -1132,12 +1170,15 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	noDeadlock := flags.Bool("no-deadlock", false, "disable deadlock checking (Scala-compatible alias)")
 	itfPath := flags.String("itf", "", "write a counterexample trace as ITF JSON")
 	outputTraces := flags.Bool("output-traces", false, "save an ITF example symbolic run")
+	tuningOptions := flags.String("tuning-options", "", "checker tuning as colon-separated key=value pairs")
+	tuningOptionsFile := flags.String("tuning-options-file", "", "properties file containing checker tuning")
 	useRows := flags.Bool("rows", false, "enable row types")
 	features := flags.String("features", "", "typechecker features: rows or no-rows")
 	disablePolytypes := flags.Bool("no-polytypes", false, "disable let-polymorphism")
 	var invariants, temporalProperties csvStringList
 	var libraryPaths stringList
 	checkerTuning := pal.CheckerTuning{}
+	tuningValues := make(map[string]string)
 	flags.Var(&invariants, "inv", "state invariant operator (repeatable)")
 	flags.Var(&temporalProperties, "temporal", "temporal property operator (repeatable or comma-separated)")
 	flags.Var(&libraryPaths, "I", "add a TLA+ module search directory (repeatable)")
@@ -1166,15 +1207,38 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 			return exitUsage
 		}
 		if applicationConfig.Checker.Tuning != nil {
-			checkerTuning, err = pal.ParseCheckerTuning(*applicationConfig.Checker.Tuning)
-			if err != nil {
-				fmt.Fprintln(stderr, err)
-				return exitUsage
-			}
-			if !visited["output-traces"] && checkerTuning.HasOutputTraces() {
-				*outputTraces = checkerTuning.OutputTraces()
+			for key, value := range *applicationConfig.Checker.Tuning {
+				tuningValues[key] = value
 			}
 		}
+	}
+	if *tuningOptionsFile != "" {
+		fileValues, parseErr := loadTuningProperties(*tuningOptionsFile)
+		if parseErr != nil {
+			fmt.Fprintln(stderr, parseErr)
+			return exitUsage
+		}
+		for key, value := range fileValues {
+			tuningValues[key] = value
+		}
+	}
+	if *tuningOptions != "" {
+		inlineValues, parseErr := parseTuningOptions(*tuningOptions)
+		if parseErr != nil {
+			fmt.Fprintln(stderr, parseErr)
+			return exitUsage
+		}
+		for key, value := range inlineValues {
+			tuningValues[key] = value
+		}
+	}
+	checkerTuning, err = pal.ParseCheckerTuning(tuningValues)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return exitUsage
+	}
+	if !visited["output-traces"] && checkerTuning.HasOutputTraces() {
+		*outputTraces = checkerTuning.OutputTraces()
 	}
 	resolveOutputDirectoryOptions(applicationConfig, visited, outDir, runDir)
 	if visited["init"] != visited["next"] {

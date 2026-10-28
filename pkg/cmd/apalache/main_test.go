@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 	"sync"
@@ -1112,6 +1113,49 @@ func TestRunCheckerCommandsRejectUnsupportedBackends(t *testing.T) {
 				t.Fatalf("run() = %d, stderr = %q", code, &stderr)
 			}
 		})
+	}
+}
+
+func TestParseTuningOptionsMatchesScalaCLIFormat(t *testing.T) {
+	got, err := parseTuningOptions("search.invariant.mode=after:z3.smt.mbqi=false:value=with spaces")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"search.invariant.mode": "after",
+		"z3.smt.mbqi":           "false",
+		"value":                 "with spaces",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("tuning options = %#v, want %#v", got, want)
+	}
+	for _, invalid := range []string{"missing", "=value", "key=", "key=a=b"} {
+		if _, err = parseTuningOptions(invalid); err == nil {
+			t.Fatalf("accepted invalid tuning options %q", invalid)
+		}
+	}
+}
+
+func TestLoadTuningProperties(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "checker.properties")
+	contents := "# checker settings\nsearch.invariant.mode = before\n! ignored\nz3.smt.mbqi:false\n"
+	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := loadTuningProperties(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"search.invariant.mode": "before", "z3.smt.mbqi": "false"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("tuning properties = %#v, want %#v", got, want)
+	}
+	bad := filepath.Join(t.TempDir(), "bad.properties")
+	if err = os.WriteFile(bad, []byte("missing separator\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = loadTuningProperties(bad); err == nil {
+		t.Fatal("accepted malformed tuning properties")
 	}
 }
 
