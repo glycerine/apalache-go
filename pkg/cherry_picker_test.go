@@ -366,3 +366,49 @@ func TestCherryPickerScalaFunctionCase(t *testing.T) {
 		function("MULT", 2, 3),
 	})
 }
+
+func TestCherryPickerRejectsInvalidRequests(t *testing.T) {
+	rewriter := NewStratifiedRewriter()
+	scope := InitialRewriterScope()
+	var integer ArenaCell
+	var boolean ArenaCell
+	var err error
+	scope, integer, err = rewriter.Rewrite(cherryInt(1), scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope, boolean, err = rewriter.Rewrite(NewValueExpr(BoolValue(true), Typed(BoolT1)), scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	one, err := NewMockOracle(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	two, err := NewMockOracle(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name   string
+		picker *CherryPicker
+		oracle ChoiceOracle
+		cells  []ArenaCell
+	}{
+		{"nil rewriter", NewCherryPicker(nil), one, []ArenaCell{integer}},
+		{"nil oracle", NewCherryPicker(rewriter), nil, []ArenaCell{integer}},
+		{"empty candidates", NewCherryPicker(rewriter), one, nil},
+		{"undersized oracle", NewCherryPicker(rewriter), one, []ArenaCell{integer, integer}},
+		{"incompatible candidates", NewCherryPicker(rewriter), two, []ArenaCell{integer, boolean}},
+		{"unsupported compact cells", NewCherryPicker(rewriter), two,
+			[]ArenaCell{scope.Arena.IntSetCell(), scope.Arena.NatSetCell()}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			returned, _, err := test.picker.Pick(scope, test.oracle, test.cells)
+			if err == nil || returned.Arena != scope.Arena {
+				t.Fatalf("invalid pick returned scope=%v, err=%v", returned, err)
+			}
+		})
+	}
+}
