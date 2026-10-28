@@ -491,6 +491,30 @@ func TestPropositionalAndLegacySparseOracleScalaSolverCases(t *testing.T) {
 	}
 }
 
+func TestOracleFactoryScalaEncodings(t *testing.T) {
+	factory := NewOracleFactory(nil)
+	base := InitialRewriterScope()
+	defaultScope, defaultOracle, defaultConstraints, err := factory.NewDefault(base, 3)
+	if err != nil || defaultOracle.Size() != 3 || len(defaultConstraints) != 1 || defaultScope.Arena == base.Arena {
+		t.Fatalf("default oracle = %#v, constraints %v, error %v", defaultOracle, defaultConstraints, err)
+	}
+	if _, ok := defaultOracle.(*UninterpretedConstOracle); !ok {
+		t.Fatalf("default oracle type = %T", defaultOracle)
+	}
+	constScope, constOracle, constConstraints, err := factory.NewUninterpreted(defaultScope, 2)
+	if err != nil || constOracle.Size() != 2 || len(constConstraints) != 1 || constScope.Arena == defaultScope.Arena {
+		t.Fatalf("constant oracle = %#v, constraints %v, error %v", constOracle, constConstraints, err)
+	}
+	propScope, propOracle, propConstraints, err := factory.NewPropositional(base, 3)
+	if err != nil || propOracle.Size() != 3 || len(propOracle.Bits) != 2 || len(propConstraints) != 1 || propScope.Arena == base.Arena {
+		t.Fatalf("propositional oracle = %#v, constraints %v, error %v", propOracle, propConstraints, err)
+	}
+	intScope, intOracle, intConstraints, err := factory.NewInteger(base, 3)
+	if err != nil || intOracle.Size() != 3 || len(intConstraints) != 0 || intScope.Arena == base.Arena {
+		t.Fatalf("integer oracle = %#v, constraints %v, error %v", intOracle, intConstraints, err)
+	}
+}
+
 func TestOracleModelDecodingThroughG3(t *testing.T) {
 	scope, intOracle, err := CreateIntOracle(InitialRewriterScope(), 3)
 	if err != nil {

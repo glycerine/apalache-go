@@ -14,6 +14,44 @@ type ChoiceOracle interface {
 	Cases(scope RewriterScope, assertions []Expr, elseAssertions []Expr) (Expr, error)
 }
 
+// OracleFactory centralizes construction of the supported choice encodings.
+// The default follows Scala and uses uninterpreted constants.
+type OracleFactory struct{ literals *UninterpretedLiteralCache }
+
+func NewOracleFactory(literals *UninterpretedLiteralCache) *OracleFactory {
+	if literals == nil {
+		literals = NewUninterpretedLiteralCache()
+	}
+	return &OracleFactory{literals: literals}
+}
+
+func (factory *OracleFactory) NewDefault(scope RewriterScope, nvalues int) (RewriterScope, ChoiceOracle, []Expr, error) {
+	next, oracle, constraints, err := factory.NewUninterpreted(scope, nvalues)
+	return next, oracle, constraints, err
+}
+
+func (factory *OracleFactory) NewUninterpreted(scope RewriterScope, nvalues int) (RewriterScope, *UninterpretedConstOracle, []Expr, error) {
+	if factory == nil {
+		return scope, nil, nil, fmt.Errorf("oracle factory cannot be nil")
+	}
+	return CreateUninterpretedConstOracle(factory.literals, scope, nvalues)
+}
+
+func (factory *OracleFactory) NewPropositional(scope RewriterScope, nvalues int) (RewriterScope, *PropositionalOracle, []Expr, error) {
+	if factory == nil {
+		return scope, nil, nil, fmt.Errorf("oracle factory cannot be nil")
+	}
+	return CreatePropositionalOracle(scope, nvalues)
+}
+
+func (factory *OracleFactory) NewInteger(scope RewriterScope, nvalues int) (RewriterScope, *IntOracle, []Expr, error) {
+	if factory == nil {
+		return scope, nil, nil, fmt.Errorf("oracle factory cannot be nil")
+	}
+	next, oracle, err := CreateIntOracle(scope, nvalues)
+	return next, oracle, nil, err
+}
+
 func oracleCases(oracle ChoiceOracle, scope RewriterScope, assertions, elseAssertions []Expr) (Expr, error) {
 	if len(assertions) != oracle.Size() || (elseAssertions != nil && len(elseAssertions) != oracle.Size()) {
 		return nil, fmt.Errorf("oracle assertion sequences must have length %d", oracle.Size())
