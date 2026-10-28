@@ -58,6 +58,27 @@ func (paths commandOutputPaths) implicitFiles(name string) []string {
 	return files
 }
 
+func (paths commandOutputPaths) intermediateFiles(name string) ([]string, error) {
+	directories := make([]string, 0, 2)
+	if paths.runDir != "" {
+		directories = append(directories, filepath.Join(paths.runDir, "intermediate"))
+	}
+	if paths.customRunDir != "" && paths.customRunDir != paths.runDir {
+		directories = append(directories, filepath.Join(paths.customRunDir, "intermediate"))
+	}
+	if len(directories) == 0 {
+		directories = append(directories, "intermediate")
+	}
+	files := make([]string, len(directories))
+	for index, directory := range directories {
+		if err := os.MkdirAll(directory, 0o755); err != nil {
+			return nil, fmt.Errorf("create intermediate output directory %s: %w", directory, err)
+		}
+		files[index] = filepath.Join(directory, name)
+	}
+	return files, nil
+}
+
 func (paths commandOutputPaths) writeRunFile(command string, args []string) error {
 	directories := make([]string, 0, 2)
 	if paths.runDir != "" {

@@ -61,7 +61,7 @@ func TestConcurrentParseRunsKeepIntermediateOutputIsolated(t *testing.T) {
 		}
 	}
 	readIntermediate := func(outDir, sourceName string) string {
-		matches, err := filepath.Glob(filepath.Join(outDir, sourceName, "*", "00_OutSanyParser.tla"))
+		matches, err := filepath.Glob(filepath.Join(outDir, sourceName, "*", "intermediate", "00_OutSanyParser.tla"))
 		if err != nil || len(matches) != 1 {
 			t.Fatalf("intermediate under %s = %v, %v", outDir, matches, err)
 		}

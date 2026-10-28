@@ -32,6 +32,19 @@ func TestPrepareCommandOutputPathsMirrorsScalaLayout(t *testing.T) {
 		files[1] != filepath.Join(absoluteCustom, "example.itf.json") {
 		t.Fatalf("implicit output files = %v", files)
 	}
+	intermediates, err := paths.intermediateFiles("00_OutSanyParser.tla")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(intermediates) != 2 || intermediates[0] != filepath.Join(paths.runDir, "intermediate", "00_OutSanyParser.tla") ||
+		intermediates[1] != filepath.Join(absoluteCustom, "intermediate", "00_OutSanyParser.tla") {
+		t.Fatalf("intermediate output files = %v", intermediates)
+	}
+	for _, path := range intermediates {
+		if info, err := os.Stat(filepath.Dir(path)); err != nil || !info.IsDir() {
+			t.Fatalf("intermediate directory for %s = %v, %v", path, info, err)
+		}
+	}
 	if err := paths.writeRunFile("check", []string{"--length=3", "Model.tla"}); err != nil {
 		t.Fatal(err)
 	}

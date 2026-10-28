@@ -1610,7 +1610,12 @@ func runParse(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 			fmt.Fprintf(stderr, "cannot format parsed intermediate TLA+: %v\n", formatErr)
 			return exitTool
 		}
-		for _, path := range outputPaths.implicitFiles("00_OutSanyParser.tla") {
+		intermediateFiles, pathErr := outputPaths.intermediateFiles("00_OutSanyParser.tla")
+		if pathErr != nil {
+			fmt.Fprintf(stderr, "cannot configure parsed intermediate output: %v\n", pathErr)
+			return exitTool
+		}
+		for _, path := range intermediateFiles {
 			if err = os.WriteFile(path, []byte(formatted), 0o644); err != nil {
 				fmt.Fprintf(stderr, "cannot write parsed intermediate TLA+ to %s: %v\n", path, err)
 				return exitTool
