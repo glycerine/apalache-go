@@ -134,6 +134,64 @@ func TestTransitionExecutorCheckStateIsTemporary(t *testing.T) {
 	}
 }
 
+func TestTransitionExecutorSnapshotRecoversPickedPathAndIsReusable(t *testing.T) {
+	executor := NewTransitionExecutor(nil, []string{"x"})
+	prime := MustOperExpr(Op("PRIME"), Typed(IntT1), NewNameExpr("x", Typed(IntT1)))
+	init := MustOperExpr(Op("Apalache!:="), Typed(BoolT1), prime, intLiteral(5))
+	if enabled, err := executor.PrepareTransition(7, init); err != nil || !enabled {
+		t.Fatalf("prepare init = %v, %v", enabled, err)
+	}
+	if err := executor.AssumeTransition(7); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := executor.Snapshot()
+	if snapshot.ControlState != ExecutorPicked || executor.ControlState() != ExecutorPicked {
+		t.Fatalf("snapshot control state = %v, executor = %v", snapshot.ControlState, executor.ControlState())
+	}
+
+	contradiction := NewValueExpr(BoolValue(false), Typed(BoolT1))
+	if err := executor.AssertState(contradiction); err != nil {
+		t.Fatal(err)
+	}
+	if err := executor.NextState(); err != nil {
+		t.Fatal(err)
+	}
+	if status, err := executor.Check(context.Background()); err != nil || status != SMTUnsatisfiable {
+		t.Fatalf("mutated path = %v, %v", status, err)
+	}
+
+	for recovery := 0; recovery < 2; recovery++ {
+		executor.Recover(snapshot)
+		if executor.Step() != 0 || executor.ControlState() != ExecutorPicked ||
+			!reflect.DeepEqual(executor.PreparedTransitionNumbers(), []int{7}) ||
+			len(executor.StateBindings()) != 0 || !executor.Binding().Contains("x'") {
+			t.Fatalf("recovered executor = step %d, state %v, prepared %v, path %d, binding %v",
+				executor.Step(), executor.ControlState(), executor.PreparedTransitionNumbers(),
+				len(executor.StateBindings()), executor.Binding().Map())
+		}
+		if status, err := executor.Check(context.Background()); err != nil || status != SMTSatisfiable {
+			t.Fatalf("recovered path %d = %v, %v", recovery, status, err)
+		}
+		// Mutate after each recovery. A second recovery from the same snapshot
+		// proves the snapshot does not alias executor-owned slices or maps.
+		if err := executor.AssertState(contradiction); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestTransitionExecutorRejectsInvalidSnapshot(t *testing.T) {
+	executor := NewTransitionExecutor(nil, nil)
+	if err := executor.RecoverChecked(TransitionExecutorSnapshot{}); err == nil {
+		t.Fatal("snapshot without arena was accepted")
+	}
+	snapshot := executor.Snapshot()
+	snapshot.ControlState = ExecutorControlState(99)
+	if err := executor.RecoverChecked(snapshot); err == nil {
+		t.Fatal("snapshot with invalid control state was accepted")
+	}
+}
+
 func TestTransitionExecutorEvaluatesCurrentModel(t *testing.T) {
 	executor := NewTransitionExecutor(nil, []string{"x"})
 	prime := MustOperExpr(Op("PRIME"), Typed(IntT1), NewNameExpr("x", Typed(IntT1)))

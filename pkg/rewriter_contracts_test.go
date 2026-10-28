@@ -88,6 +88,9 @@ func TestSymbolicStateRewriterListenerPayloadsAndDispose(t *testing.T) {
 func TestExistingCachesImplementRecoverable(t *testing.T) {
 	var _ Recoverable[ExpressionCacheSnapshot] = (*ExpressionCache)(nil)
 	var _ Recoverable[EqualityCacheSnapshot] = (*EqualityCache)(nil)
+	var _ Recoverable[DefaultValueCacheSnapshot] = (*DefaultValueCache)(nil)
+	var _ Recoverable[StratifiedRewriterSnapshot] = (*StratifiedRewriter)(nil)
+	var _ Recoverable[TransitionExecutorSnapshot] = (*TransitionExecutor)(nil)
 }
 
 func TestStratifiedRewriterImplementsRewriterContract(t *testing.T) {

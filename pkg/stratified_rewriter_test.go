@@ -3,6 +3,7 @@ package apalache
 import (
 	"context"
 	"fmt"
+	"math/big"
 	"strings"
 	"testing"
 )
@@ -30,6 +31,47 @@ func TestStratifiedRewriterBuiltinsSubstitutionIntegersAndAssignment(t *testing.
 	intScope, intCell, err := rewriter.Rewrite(intExpr, scope)
 	if err != nil || intScope.Arena.CellCount() != 6 || len(rewriter.Constraints()) != 1 {
 		t.Fatalf("integer rewrite = %v, count %d, constraints %d, error %v", intCell, intScope.Arena.CellCount(), len(rewriter.Constraints()), err)
+	}
+}
+
+func TestStratifiedRewriterSnapshotRestoresAllMutableContexts(t *testing.T) {
+	rewriter := NewStratifiedRewriter()
+	scope, seven, err := rewriter.Rewrite(intLiteral(7), InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	rewriter.AddMessage(1, "before")
+	snapshot := rewriter.Snapshot()
+	constraintCount := len(rewriter.Constraints())
+
+	scope, _, err = rewriter.Rewrite(intLiteral(8), scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = rewriter.DefaultValueCache().GetOrCreate(scope, StrT1); err != nil {
+		t.Fatal(err)
+	}
+	rewriter.AddMessage(1, "after")
+	rewriter.AddMessage(2, "new")
+	rewriter.Recover(snapshot)
+
+	if cached, found := rewriter.IntegerCache().Get(big.NewInt(7)); !found || !cached.Equal(seven) {
+		t.Fatalf("snapshot lost cached seven: %v, %v", cached, found)
+	}
+	if _, found := rewriter.IntegerCache().Get(big.NewInt(8)); found {
+		t.Fatal("post-snapshot integer survived recovery")
+	}
+	if _, found := rewriter.DefaultValueCache().Get(StrT1); found {
+		t.Fatal("post-snapshot default value survived recovery")
+	}
+	if len(rewriter.Constraints()) != constraintCount {
+		t.Fatalf("constraints after recovery = %d, want %d", len(rewriter.Constraints()), constraintCount)
+	}
+	if message, err := rewriter.FindMessage(1); err != nil || message != "before" {
+		t.Fatalf("recovered message = %q, %v", message, err)
+	}
+	if _, err := rewriter.FindMessage(2); err == nil {
+		t.Fatal("post-snapshot message survived recovery")
 	}
 }
 

@@ -18,6 +18,18 @@ type StratifiedRewriter struct {
 	messages     *MapMessageStorage
 }
 
+// StratifiedRewriterSnapshot is an immutable copy of every mutable rewriting
+// context. Arena state lives in RewriterScope and is snapshotted by callers.
+type StratifiedRewriterSnapshot struct {
+	Integers    IntValueCacheSnapshot
+	Ranges      IntRangeCacheSnapshot
+	Literals    UninterpretedLiteralCacheSnapshot
+	Defaults    DefaultValueCacheSnapshot
+	Equality    EqualityCacheSnapshot
+	Constraints []Expr
+	Messages    MessageStorageSnapshot
+}
+
 func NewStratifiedRewriter() *StratifiedRewriter {
 	return NewStratifiedRewriterWithOptions(StratifiedRewriterOptions{})
 }
@@ -65,6 +77,25 @@ func (rewriter *StratifiedRewriter) ResetConstraints() {
 	rewriter.equality.Dispose()
 	rewriter.defaults.Dispose()
 	rewriter.ranges.Dispose()
+}
+
+func (rewriter *StratifiedRewriter) Snapshot() StratifiedRewriterSnapshot {
+	return StratifiedRewriterSnapshot{
+		Integers: rewriter.integers.Snapshot(), Ranges: rewriter.ranges.Snapshot(),
+		Literals: rewriter.literals.Snapshot(), Defaults: rewriter.defaults.Snapshot(),
+		Equality: rewriter.equality.Snapshot(), Constraints: append([]Expr(nil), rewriter.constraints...),
+		Messages: rewriter.messages.Snapshot(),
+	}
+}
+
+func (rewriter *StratifiedRewriter) Recover(snapshot StratifiedRewriterSnapshot) {
+	rewriter.integers.Recover(snapshot.Integers)
+	rewriter.ranges.Recover(snapshot.Ranges)
+	rewriter.literals.Recover(snapshot.Literals)
+	rewriter.defaults.Recover(snapshot.Defaults)
+	rewriter.equality.Recover(snapshot.Equality)
+	rewriter.constraints = append([]Expr(nil), snapshot.Constraints...)
+	rewriter.messages.Recover(snapshot.Messages)
 }
 
 func (rewriter *StratifiedRewriter) assert(expression Expr) {

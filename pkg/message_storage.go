@@ -16,6 +16,10 @@ type MapMessageStorage struct {
 	messages map[int]string
 }
 
+type MessageStorageSnapshot struct {
+	messages map[int]string
+}
+
 func NewMessageStorage() *MapMessageStorage {
 	return &MapMessageStorage{messages: make(map[int]string)}
 }
@@ -45,4 +49,16 @@ func (storage *MapMessageStorage) MustFindMessage(id int) string {
 		panic(err)
 	}
 	return message
+}
+
+func (storage *MapMessageStorage) Snapshot() MessageStorageSnapshot {
+	storage.mu.RLock()
+	defer storage.mu.RUnlock()
+	return MessageStorageSnapshot{messages: cloneMap(storage.messages)}
+}
+
+func (storage *MapMessageStorage) Recover(snapshot MessageStorageSnapshot) {
+	storage.mu.Lock()
+	defer storage.mu.Unlock()
+	storage.messages = cloneMap(snapshot.messages)
 }

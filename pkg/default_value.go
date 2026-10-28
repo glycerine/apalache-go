@@ -10,6 +10,10 @@ type DefaultValueCache struct {
 	values   map[string]ArenaCell
 }
 
+type DefaultValueCacheSnapshot struct {
+	values map[string]ArenaCell
+}
+
 func NewDefaultValueCache(rewriter *StratifiedRewriter) *DefaultValueCache {
 	return &DefaultValueCache{rewriter: rewriter, values: make(map[string]ArenaCell)}
 }
@@ -61,6 +65,14 @@ func (cache *DefaultValueCache) GetOrCreate(scope RewriterScope, typ Type) (Rewr
 }
 
 func (cache *DefaultValueCache) Dispose() { cache.values = make(map[string]ArenaCell) }
+
+func (cache *DefaultValueCache) Snapshot() DefaultValueCacheSnapshot {
+	return DefaultValueCacheSnapshot{values: cloneMap(cache.values)}
+}
+
+func (cache *DefaultValueCache) Recover(snapshot DefaultValueCacheSnapshot) {
+	cache.values = cloneMap(snapshot.values)
+}
 
 func defaultValueExpression(typ Type) (Expr, error) {
 	switch typed := typ.(type) {

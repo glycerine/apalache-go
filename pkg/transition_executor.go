@@ -14,6 +14,26 @@ type EncodedTransition struct {
 	Binding Binding
 }
 
+type ExecutorControlState uint8
+
+const (
+	ExecutorPreparing ExecutorControlState = iota
+	ExecutorPicked
+)
+
+// TransitionExecutorSnapshot captures a complete rollback point. PureArena
+// and Binding are immutable values; mutable slices, maps, and rewriter caches
+// are copied so later executor work cannot mutate the snapshot.
+type TransitionExecutorSnapshot struct {
+	ControlState        ExecutorControlState
+	Scope               RewriterScope
+	Assertions          []Expr
+	PreparedTransitions map[int]EncodedTransition
+	States              []Binding
+	Step                int
+	Rewriter            StratifiedRewriterSnapshot
+}
+
 // TransitionExecutor incrementally builds a bounded symbolic execution.
 // Rewriting is solver-free; Check encodes the accumulated arena, definitions,
 // and selected path constraints into a fresh g3 solver context.
@@ -73,6 +93,54 @@ func (executor *TransitionExecutor) PreparedTransitionNumbers() []int {
 	}
 	sort.Ints(result)
 	return result
+}
+
+func (executor *TransitionExecutor) ControlState() ExecutorControlState {
+	if executor.picked {
+		return ExecutorPicked
+	}
+	return ExecutorPreparing
+}
+
+func cloneEncodedTransitions(source map[int]EncodedTransition) map[int]EncodedTransition {
+	result := make(map[int]EncodedTransition, len(source))
+	for number, transition := range source {
+		result[number] = transition
+	}
+	return result
+}
+
+func (executor *TransitionExecutor) Snapshot() TransitionExecutorSnapshot {
+	return TransitionExecutorSnapshot{
+		ControlState: executor.ControlState(), Scope: executor.scope,
+		Assertions:          append([]Expr(nil), executor.asserted...),
+		PreparedTransitions: cloneEncodedTransitions(executor.prepared),
+		States:              append([]Binding(nil), executor.states...), Step: executor.step,
+		Rewriter: executor.rewriter.Snapshot(),
+	}
+}
+
+func (executor *TransitionExecutor) Recover(snapshot TransitionExecutorSnapshot) {
+	if err := executor.RecoverChecked(snapshot); err != nil {
+		panic(err)
+	}
+}
+
+func (executor *TransitionExecutor) RecoverChecked(snapshot TransitionExecutorSnapshot) error {
+	if snapshot.Scope.Arena == nil {
+		return fmt.Errorf("transition executor snapshot has no arena")
+	}
+	if snapshot.ControlState != ExecutorPreparing && snapshot.ControlState != ExecutorPicked {
+		return fmt.Errorf("transition executor snapshot has invalid control state %d", snapshot.ControlState)
+	}
+	executor.scope = snapshot.Scope
+	executor.asserted = append([]Expr(nil), snapshot.Assertions...)
+	executor.prepared = cloneEncodedTransitions(snapshot.PreparedTransitions)
+	executor.states = append([]Binding(nil), snapshot.States...)
+	executor.step = snapshot.Step
+	executor.picked = snapshot.ControlState == ExecutorPicked
+	executor.rewriter.Recover(snapshot.Rewriter)
+	return nil
 }
 
 // InitializeConstants applies a normalized constant initializer. It may only
