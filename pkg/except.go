@@ -14,9 +14,72 @@ func exceptSingleKey(expression *OperExpr) (Expr, error) {
 	return accessor.Arguments()[0], nil
 }
 
+func validateExceptExpression(expression *OperExpr, key Expr) error {
+	arguments := expression.Arguments()
+	resultType, resultTyped := expression.Tag().Type()
+	targetType, targetTyped := arguments[0].Tag().Type()
+	keyType, keyTyped := key.Tag().Type()
+	valueType, valueTyped := arguments[2].Tag().Type()
+	if !resultTyped || !targetTyped || !keyTyped || !valueTyped {
+		return fmt.Errorf("EXCEPT target, key, value, and result must be typed")
+	}
+	if !CompatibleTypes(targetType, resultType) {
+		return fmt.Errorf("EXCEPT result type %s is incompatible with target type %s", resultType, targetType)
+	}
+	switch target := targetType.(type) {
+	case FunType:
+		if !CompatibleTypes(keyType, target.Argument()) || !CompatibleTypes(valueType, target.Result()) {
+			return fmt.Errorf("EXCEPT key/value types %s/%s do not match function type %s", keyType, valueType, target)
+		}
+	case TupleType:
+		index, err := literalExceptIndex(key)
+		if err != nil {
+			return err
+		}
+		elements := target.Elements()
+		if index > len(elements) {
+			return fmt.Errorf("tuple EXCEPT index %d is out of bounds for arity %d", index, len(elements))
+		}
+		if !CompatibleTypes(valueType, elements[index-1]) {
+			return fmt.Errorf("tuple EXCEPT value has type %s, expected %s", valueType, elements[index-1])
+		}
+	case RecordType:
+		field, err := literalExceptField(key)
+		if err != nil {
+			return err
+		}
+		expected, found := target.Fields()[field]
+		if !found || !CompatibleTypes(valueType, expected) {
+			return fmt.Errorf("record EXCEPT field %q has incompatible or missing type", field)
+		}
+	case RecordRowType:
+		if _, open := target.Row().Other(); open {
+			return fmt.Errorf("EXCEPT cannot update open record type %s", target)
+		}
+		field, err := literalExceptField(key)
+		if err != nil {
+			return err
+		}
+		expected, found := target.Row().Fields()[field]
+		if !found || !CompatibleTypes(valueType, expected) {
+			return fmt.Errorf("record EXCEPT field %q has incompatible or missing type", field)
+		}
+	case SeqType:
+		if !CompatibleTypes(keyType, IntT1) || !CompatibleTypes(valueType, target.Element()) {
+			return fmt.Errorf("sequence EXCEPT key/value types %s/%s do not match %s", keyType, valueType, target)
+		}
+	default:
+		return fmt.Errorf("EXCEPT is not implemented for %s", targetType)
+	}
+	return nil
+}
+
 func (rewriter *StratifiedRewriter) rewriteExcept(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
 	keyExpression, err := exceptSingleKey(expression)
 	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	if err := validateExceptExpression(expression, keyExpression); err != nil {
 		return scope, ArenaCell{}, err
 	}
 	arguments := expression.Arguments()

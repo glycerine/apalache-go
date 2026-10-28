@@ -135,3 +135,28 @@ func TestStratifiedRecordExceptPreservesDomainAndRejectsInvalidUpdates(t *testin
 		}
 	}
 }
+
+func TestStratifiedExceptTypeErrorsDoNotMutateArena(t *testing.T) {
+	intValue := func(value int64) Expr { return NewValueExpr(Int64Value(value), Typed(IntT1)) }
+	tupleType, _ := NewTupleType(IntT1)
+	tuple := MustOperExpr(Op("TUPLE"), Typed(tupleType), intValue(1))
+	sequenceType, _ := NewSeqType(IntT1)
+	sequence := MustOperExpr(Op("TUPLE"), Typed(sequenceType), intValue(1))
+	functionType := mustFun(IntT1, IntT1)
+	binder := NewNameExpr("x", Typed(IntT1))
+	function := MustOperExpr(Op("FUN_CTOR"), Typed(functionType), binder, binder,
+		MustOperExpr(Op("SET_ENUM"), Typed(mustSet(IntT1)), intValue(1)))
+	for _, invalid := range []Expr{
+		exceptExpression(BoolT1, tuple, intValue(1), intValue(2)),
+		exceptExpression(tupleType, tuple, intValue(1), boolExpr(true)),
+		exceptExpression(sequenceType, sequence, boolExpr(true), intValue(2)),
+		exceptExpression(sequenceType, sequence, intValue(1), boolExpr(true)),
+		exceptExpression(functionType, function, boolExpr(true), intValue(2)),
+	} {
+		base := InitialRewriterScope()
+		returned, _, err := NewStratifiedRewriter().Rewrite(invalid, base)
+		if err == nil || returned.Arena != base.Arena {
+			t.Fatalf("invalid EXCEPT returned scope=%v, err=%v", returned, err)
+		}
+	}
+}
