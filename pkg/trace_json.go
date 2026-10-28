@@ -146,8 +146,8 @@ func UnmarshalApalacheJSONTrace(data []byte) ([]TraceState, error) {
 		return nil, fmt.Errorf("cannot decode Apalache JSON trace: %w", err)
 	}
 	declarations := module.Declarations()
-	if len(declarations) < 3 {
-		return nil, fmt.Errorf("Apalache JSON trace requires constant-init, state, and invariant declarations")
+	if len(declarations) < 2 {
+		return nil, fmt.Errorf("Apalache JSON trace requires constant-init and invariant declarations")
 	}
 	states := make([]TraceState, len(declarations)-2)
 	for index, declaration := range declarations[1 : len(declarations)-1] {
