@@ -384,7 +384,7 @@ func TestExplorationJSONRPCLoadRejectsInvalidParams(t *testing.T) {
 	for _, body := range []string{
 		`{"jsonrpc":"2.0","method":"loadSpec","params":{"sources":[]},"id":1}`,
 		`{"jsonrpc":"2.0","method":"loadSpec","params":{"sources":["not base64"]},"id":2}`,
-		`{"jsonrpc":"2.0","method":"loadSpec","params":{"sources":["e30="],"format":"qnt"},"id":3}`,
+		`{"jsonrpc":"2.0","method":"loadSpec","params":{"sources":["e30="],"format":"unknown"},"id":3}`,
 	} {
 		response := postJSONRPC(t, handler, body)
 		errorObject, _ := response["error"].(map[string]any)

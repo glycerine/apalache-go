@@ -1,6 +1,6 @@
 scala_path	status	go_evidence	remaining
-json-rpc/src/test/scala/com/github/apalachemc/apalache/jsonrpc/TestExplorationService.scala	partial	json_rpc_test.go	Quint cases remain open
-json-rpc/src/test/scala/com/github/apalachemc/apalache/jsonrpc/TestJsonRequests.scala	partial	json_rpc_test.go	Quint cases remain open
+json-rpc/src/test/scala/com/github/apalachemc/apalache/jsonrpc/TestExplorationService.scala	partial	json_rpc_test.go	core Quint JSON cases are ported; full operator corpus remains
+json-rpc/src/test/scala/com/github/apalachemc/apalache/jsonrpc/TestJsonRequests.scala	partial	json_rpc_test.go	core Quint JSON cases are ported; full operator corpus remains
 mod-infra/src/test/scala/at/forsyte/apalache/infra/passes/TestPassChainExecutor.scala	partial	diagnostic tests;command integration tests	pass framework and logging cases are open
 mod-tool/src/test/scala/at/forsyte/apalache/tla/TestConcurrentToolRuns.scala	partial	cmd/apalache/*_test.go;release_integration_test.go	remaining CLI matrix cases are open
 mod-tool/src/test/scala/at/forsyte/apalache/tla/tooling/opt/TestCommandConfig.scala	partial	cmd/apalache/*_test.go;release_integration_test.go	remaining CLI matrix cases are open

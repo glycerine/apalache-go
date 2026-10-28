@@ -111,7 +111,7 @@ func coverageGroup(base, path string) string {
 			return "Passes and preprocessing"
 		}
 	}
-	for _, prefix := range []string{"itf", "tla_format", "tlc_config", "trace_evaluator"} {
+	for _, prefix := range []string{"itf", "quint", "tla_format", "tlc_config", "trace_evaluator"} {
 		if strings.HasPrefix(base, prefix) {
 			return "I/O and traces"
 		}

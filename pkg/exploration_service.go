@@ -757,7 +757,7 @@ func parseLoadSpecParams(raw json.RawMessage) (loadSpecParams, error) {
 		params.Sources[index] = string(decoded)
 	}
 	params.Format = strings.ToLower(params.Format)
-	if params.Format != "tla" && params.Format != "json" {
+	if params.Format != "tla" && params.Format != "json" && params.Format != "qnt" {
 		return loadSpecParams{}, fmt.Errorf("loadSpec does not support the %s source format", params.Format)
 	}
 	if params.Format != "tla" && len(params.Sources) != 1 {
@@ -779,6 +779,23 @@ func loadExplorationSource(ctx context.Context, params loadSpecParams) (Frontend
 			return FrontendResult{}, func() {}, err
 		}
 		return ParseAndTypeCheckFile(ctx, path, FrontendOptions{}, TypeCheckOptions{}), cleanup, nil
+	}
+	if params.Format == "qnt" {
+		module, parseErr := ParseQuintJSON([]byte(params.Sources[0]))
+		if parseErr != nil {
+			return FrontendResult{Diagnostics: []Diagnostic{{
+				Code: "QUINT_JSON", Severity: SeverityError, Message: parseErr.Error(),
+			}}}, cleanup, nil
+		}
+		encoded, encodeErr := MarshalSingleModuleIRJSON(module, IRJSONOptions{})
+		if encodeErr != nil {
+			cleanup()
+			return FrontendResult{}, func() {}, encodeErr
+		}
+		return FrontendResult{
+			Module: module.Name(), IR: encoded, Native: module, Sources: NewSourceStore(),
+			Annotations: NewAnnotationStore(), Diagnostics: []Diagnostic{},
+		}, cleanup, nil
 	}
 	rootPath := ""
 	for index, source := range params.Sources {
