@@ -1,6 +1,9 @@
 package apalache
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestStratifiedPowerSetExpansionThroughG3(t *testing.T) {
 	intValue := func(value int64) Expr { return NewValueExpr(Int64Value(value), Typed(IntT1)) }
@@ -46,17 +49,14 @@ func TestStratifiedPowerSetExpansionPreservesBaseGuards(t *testing.T) {
 	checkRewrittenTruth(t, rewriter, scope, result, false)
 }
 
-func TestStratifiedFunctionSetExpansionStaysCompact(t *testing.T) {
+func TestStratifiedFunctionSetExpansionIsRejected(t *testing.T) {
 	functionType, _ := NewFunType(IntT1, BoolT1)
 	functionSet := MustOperExpr(Op("FUN_SET"), Typed(mustSet(functionType)),
 		MustOperExpr(Op("SET_ENUM"), Typed(mustSet(IntT1)), NewValueExpr(Int64Value(1), Typed(IntT1))),
 		MustOperExpr(Op("SET_ENUM"), Typed(mustSet(BoolT1)), NewValueExpr(BoolValue(true), Typed(BoolT1))))
 	expression := MustOperExpr(Op("Apalache!Expand"), Typed(mustSet(functionType)), functionSet)
-	_, result, err := NewStratifiedRewriter().Rewrite(expression, InitialRewriterScope())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, compact := result.Type.(FiniteFunctionSetCellType); !compact {
-		t.Fatalf("expanded function set type = %T", result.Type)
+	if _, _, err := NewStratifiedRewriter().Rewrite(expression, InitialRewriterScope()); err == nil ||
+		!strings.Contains(err.Error(), "blow up the solver") {
+		t.Fatalf("function-set expansion error = %v", err)
 	}
 }

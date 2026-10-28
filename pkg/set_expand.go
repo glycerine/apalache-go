@@ -14,10 +14,7 @@ func (rewriter *StratifiedRewriter) rewriteSetExpansion(expression *OperExpr, sc
 		return scope, ArenaCell{}, fmt.Errorf("Expand requires an explicit powerset or function-set constructor")
 	}
 	if constructor.Operator().Name() == "FUN_SET" {
-		// Function sets remain compact. Skolemized existential consumers can
-		// draw a symbolic function from this representation without enumerating
-		// the exponentially large collection.
-		return rewriter.Rewrite(constructor, scope)
+		return scope, ArenaCell{}, fmt.Errorf("trying to expand a set of functions would blow up the solver")
 	}
 	if constructor.Operator().Name() != "SET_POWERSET" || len(constructor.Arguments()) != 1 {
 		return scope, ArenaCell{}, fmt.Errorf("Expand requires an explicit powerset constructor")
