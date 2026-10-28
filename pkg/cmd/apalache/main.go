@@ -1170,6 +1170,8 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	noDeadlock := flags.Bool("no-deadlock", false, "disable deadlock checking (Scala-compatible alias)")
 	itfPath := flags.String("itf", "", "write a counterexample trace as ITF JSON")
 	outputTraces := flags.Bool("output-traces", false, "save an ITF example symbolic run")
+	var discardDisabledFlag optionalBoolFlag
+	flags.Var(&discardDisabledFlag, "discard-disabled", "eagerly check and discard disabled transitions")
 	tuningOptions := flags.String("tuning-options", "", "checker tuning as colon-separated key=value pairs")
 	tuningOptionsFile := flags.String("tuning-options-file", "", "properties file containing checker tuning")
 	useRows := flags.Bool("rows", false, "enable row types")
@@ -1179,6 +1181,7 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	var libraryPaths stringList
 	checkerTuning := pal.CheckerTuning{}
 	tuningValues := make(map[string]string)
+	discardDisabled := true
 	flags.Var(&invariants, "inv", "state invariant operator (repeatable)")
 	flags.Var(&temporalProperties, "temporal", "temporal property operator (repeatable or comma-separated)")
 	flags.Var(&libraryPaths, "I", "add a TLA+ module search directory (repeatable)")
@@ -1202,6 +1205,7 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 			constantInit: constantInit, init: initName, next: nextName, useRows: useRows,
 			disablePolytypes: disablePolytypes, invariants: &invariants,
 			temporalProperties: &temporalProperties, maxErrors: maxErrors, view: viewName,
+			discardDisabled: &discardDisabled,
 		}); err != nil {
 			fmt.Fprintln(stderr, err)
 			return exitUsage
@@ -1211,6 +1215,9 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 				tuningValues[key] = value
 			}
 		}
+	}
+	if discardDisabledFlag.set {
+		discardDisabled = discardDisabledFlag.value
 	}
 	if *tuningOptionsFile != "" {
 		fileValues, parseErr := loadTuningProperties(*tuningOptionsFile)
@@ -1373,6 +1380,7 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	checkerTuning = checkerTuning.WithOutputTraces(*outputTraces)
 	result, err := pal.CheckBoundedSafetyWithOptions(ctx, prepared.Module, prepared.Predicates, pal.BoundedSafetyOptions{
 		MaxSteps: *length, CheckDeadlocks: checkDeadlocks, Tuning: checkerTuning, MaxErrors: *maxErrors,
+		DiscardDisabled: &discardDisabled,
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "bounded safety check failed: %v\n", err)

@@ -310,8 +310,13 @@ func runRemoteCheck(ctx context.Context, path string, config remoteCommandConfig
 	if err != nil {
 		return unexpectedCommandResponse(err), nil
 	}
+	discardDisabled := true
+	if checker.DiscardDisabled != nil {
+		discardDisabled = *checker.DiscardDisabled
+	}
 	result, err := pal.CheckBoundedSafetyWithOptions(ctx, prepared.Module, prepared.Predicates, pal.BoundedSafetyOptions{
 		MaxSteps: length, CheckDeadlocks: checkDeadlocks, Tuning: tuning, MaxErrors: maxErrors,
+		DiscardDisabled: &discardDisabled,
 	})
 	if err != nil {
 		return passFailureCommandResponse("BoundedChecker", map[string]string{"msg": err.Error()}), nil

@@ -19,6 +19,7 @@ const (
 type BoundedSafetyOptions struct {
 	MaxSteps              int
 	CheckDeadlocks        bool
+	DiscardDisabled       *bool
 	InvariantMinimumDepth int
 	Tuning                CheckerTuning
 	MaxErrors             int
@@ -225,6 +226,7 @@ func CheckBoundedSafetyWithOptions(
 		stateInvariants: stateInvariants, actionInvariants: actionInvariants,
 		traceInvariants: traceInvariants, variableDeclarations: variableDeclarations,
 		maxSteps: options.MaxSteps, checkDeadlocks: options.CheckDeadlocks,
+		discardDisabled:       options.DiscardDisabled == nil || *options.DiscardDisabled,
 		invariantMinimumDepth: options.InvariantMinimumDepth,
 		stateConstraints:      stateConstraints, actionConstraints: actionConstraints,
 		tuning: options.Tuning,
@@ -416,6 +418,7 @@ type modulePathInputs struct {
 	actionConstraints     []namedExpression
 	maxSteps              int
 	checkDeadlocks        bool
+	discardDisabled       bool
 	invariantMinimumDepth int
 	tuning                CheckerTuning
 	view                  Expr
@@ -539,6 +542,12 @@ func searchSafetyPath(
 				continue
 			}
 			return false, childErr
+		}
+		if !inputs.discardDisabled && !inputs.checkDeadlocks && len(inputs.actionInvariants) == 0 {
+			if len(path.next) < inputs.maxSteps {
+				*children = append(*children, child)
+			}
+			continue
 		}
 		childStatus, childErr := childExecutor.Check(ctx)
 		if childErr != nil {

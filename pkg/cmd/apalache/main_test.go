@@ -755,6 +755,12 @@ Inv == x < 2
 	if !strings.Contains(stdout.String(), "No counterexample found through depth 1") {
 		t.Fatalf("safe output = %q", &stdout)
 	}
+	stdout.Reset()
+	stderr.Reset()
+	delayedPruning := append([]string{"check", "--discard-disabled=false"}, direct[1:]...)
+	if code := run(context.Background(), delayedPruning, &stdout, &stderr); code != exitOK {
+		t.Fatalf("non-eager disabled transition check = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
+	}
 	safeTracePath := filepath.Join(dir, "example.itf.json")
 	stdout.Reset()
 	stderr.Reset()

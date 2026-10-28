@@ -309,6 +309,15 @@ func TestCheckBoundedSafetyDetectsAndCanIgnoreDeadlocks(t *testing.T) {
 	if ignored.Outcome != SafetyNoCounterexample {
 		t.Fatalf("ignored deadlock result = %#v", ignored)
 	}
+	discardDisabled := false
+	delayed, err := CheckBoundedSafetyWithOptions(context.Background(), prepared.Module, prepared.Predicates,
+		BoundedSafetyOptions{MaxSteps: 1, CheckDeadlocks: false, DiscardDisabled: &discardDisabled})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if delayed.Outcome != SafetyNoCounterexample || delayed.ExploredExecutions <= ignored.ExploredExecutions {
+		t.Fatalf("delayed disabled-transition pruning = %#v, eager = %#v", delayed, ignored)
+	}
 }
 
 // Regression for apalache-mc/apalache#712. The legacy Scala checker can miss

@@ -527,6 +527,7 @@ type jsonModelConfigTargets struct {
 	temporalProperties *csvStringList
 	maxErrors          *int
 	view               *string
+	discardDisabled    *bool
 }
 
 func applyJSONModelDefaults(config jsonCommandConfig, visited map[string]bool, targets jsonModelConfigTargets) error {
@@ -573,6 +574,9 @@ func applyJSONModelDefaults(config jsonCommandConfig, visited map[string]bool, t
 	}
 	if targets.view != nil && !visited["view"] && checker.View != nil {
 		*targets.view = *checker.View
+	}
+	if targets.discardDisabled != nil && !visited["discard-disabled"] && checker.DiscardDisabled != nil {
+		*targets.discardDisabled = *checker.DiscardDisabled
 	}
 	if targets.disablePolytypes != nil && !visited["no-polytypes"] && config.Typechecker.InferPoly != nil {
 		*targets.disablePolytypes = !*config.Typechecker.InferPoly
