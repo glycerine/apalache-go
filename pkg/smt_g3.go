@@ -91,10 +91,14 @@ func NewG3SolverContext() (*G3SolverContext, error) {
 // constructor keeps array and quantified adapter paths testable without
 // silently broadening that production contract.
 func NewG3SolverContextWithLogic(logic string) (*G3SolverContext, error) {
-	return newG3SolverContextWithUIntOptions(logic, nil)
+	return newG3SolverContextWithOptions(logic, nil, nil)
 }
 
 func newG3SolverContextWithUIntOptions(logic string, options map[string]uint32) (*G3SolverContext, error) {
+	return newG3SolverContextWithOptions(logic, options, nil)
+}
+
+func newG3SolverContextWithOptions(logic string, uintOptions map[string]uint32, textOptions map[string]string) (*G3SolverContext, error) {
 	if logic == "" {
 		return nil, fmt.Errorf("SMT logic cannot be empty")
 	}
@@ -108,13 +112,23 @@ func newG3SolverContextWithUIntOptions(logic string, options map[string]uint32) 
 	if err = command.SetLogic(logic); err != nil {
 		return fail(err)
 	}
-	keys := make([]string, 0, len(options))
-	for key := range options {
+	keys := make([]string, 0, len(uintOptions))
+	for key := range uintOptions {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
 	for _, key := range keys {
-		if err = command.SetUIntOption(key, options[key]); err != nil {
+		if err = command.SetUIntOption(key, uintOptions[key]); err != nil {
+			return fail(fmt.Errorf("set g3 option %s: %w", key, err))
+		}
+	}
+	keys = keys[:0]
+	for key := range textOptions {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		if err = command.SetSymbolOption(key, textOptions[key]); err != nil {
 			return fail(fmt.Errorf("set g3 option %s: %w", key, err))
 		}
 	}

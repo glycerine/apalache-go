@@ -66,13 +66,15 @@ func TestJSONModelConfigValidatesSupportedSearchTuning(t *testing.T) {
 		"search.invariant.mode":   "after",
 		"smt.randomSeed":          "7",
 		"z3.smt.random_seed":      "9",
+		"z3.smt.mbqi":             "true",
+		"z3.sat.random_freq":      "0.25",
 	}
 	if err := (jsonCommandConfig{Checker: jsonCheckerConfig{Tuning: &supported}}).validateForCheck(); err != nil {
 		t.Fatalf("supported tuning = %v", err)
 	}
-	unsupported := map[string]string{"z3.smt.mbqi": "true"}
+	unsupported := map[string]string{"z3.not_a_parameter": "true"}
 	err := (jsonCommandConfig{Checker: jsonCheckerConfig{Tuning: &unsupported}}).validateForCheck()
-	if err == nil || !strings.Contains(err.Error(), "z3.smt.mbqi") {
+	if err == nil || !strings.Contains(err.Error(), "not_a_parameter") {
 		t.Fatalf("unsupported tuning = %v", err)
 	}
 }

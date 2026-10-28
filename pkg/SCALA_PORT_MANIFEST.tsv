@@ -56,7 +56,7 @@ passes/src/main/scala/at/forsyte/apalache/tla/passes/typecheck/EtcTypeCheckerPas
 passes/src/main/scala/at/forsyte/apalache/tla/passes/typecheck/LoggingTypeCheckerListener.scala	partial	safety_pipeline.go;configuration_pass.go;preprocess_*.go	remaining orchestration parity is open
 passes/src/main/scala/at/forsyte/apalache/tla/passes/typecheck/TypeCheckerModule.scala	partial	safety_pipeline.go;configuration_pass.go;preprocess_*.go	remaining orchestration parity is open
 passes/src/main/scala/at/forsyte/apalache/tla/typecheck/TypeCheckerTool.scala	partial	safety_pipeline.go;configuration_pass.go;preprocess_*.go	remaining orchestration parity is open
-shai/src/main/scala/at/forsyte/apalache/shai/v1/CmdExecutorService.scala	partial	shai/cmd_executor_service.go	core commands, remote path rejection, search tuning, both discard-disabled values, and typed g3 seed/limit tuning are ported; remaining solver tuning and exact error-shape parity remain
+shai/src/main/scala/at/forsyte/apalache/shai/v1/CmdExecutorService.scala	partial	shai/cmd_executor_service.go	core commands, remote path rejection, search tuning, both discard-disabled values, and the pinned g3 typed parameter catalog are ported; Scala-only solver tuning and exact error-shape parity remain
 shai/src/main/scala/at/forsyte/apalache/shai/v1/RpcServer.scala	ported	shai/server.go;cmd/apalache/main.go	no known v1 service-registration gap
 shai/src/main/scala/at/forsyte/apalache/shai/v1/TransExplorerService.scala	partial	shai/trans_explorer_service.go	model loading is ported; transition execution RPCs remain absent from the v1 protocol
 tla-assignments/src/main/scala/at/forsyte/apalache/tla/assignments/AssignmentOperatorIntroduction.scala	partial	assignments*.go	remaining assignment suite mapping is open
@@ -364,7 +364,7 @@ tla-io/src/main/scala/at/forsyte/apalache/io/tlc/config/TlcConfigLexer.scala	par
 tla-io/src/main/scala/at/forsyte/apalache/io/tlc/config/TlcConfigParseError.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
 tla-io/src/main/scala/at/forsyte/apalache/io/tlc/config/TlcConfigTokenReader.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
 tla-io/src/main/scala/at/forsyte/apalache/io/tlc/config/tokens.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
-tla-io/src/main/scala/at/forsyte/apalache/io/tuning/FineTuningParser.scala	partial	checker_tuning.go	search filters, invariant mode, random seeds, timeout, and resource limit are validated; rewriter and remaining solver-specific tuning stay open pending faithful g3 controls
+tla-io/src/main/scala/at/forsyte/apalache/io/tuning/FineTuningParser.scala	partial	checker_tuning.go	search filters, invariant mode, and integer, Boolean, floating-point, and symbolic options in the pinned g3 typed catalog are validated and propagated; rewriter and Scala-only solver parameters stay open
 tla-parser/src/main/scala/at/forsyte/apalache/tla/imp/AnnotationExtractor.scala	dependency	frontend*.go;tlago-v0.1.9	exact parser diagnostic parity remains
 tla-parser/src/main/scala/at/forsyte/apalache/tla/imp/AssumeTranslator.scala	dependency	frontend*.go;tlago-v0.1.9	exact parser diagnostic parity remains
 tla-parser/src/main/scala/at/forsyte/apalache/tla/imp/Context.scala	dependency	frontend*.go;tlago-v0.1.9	exact parser diagnostic parity remains

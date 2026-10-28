@@ -134,7 +134,12 @@ func TestCmdExecutorChecksModelsAndReturnsCounterexamples(t *testing.T) {
 	}
 	response, err = service.Run(ctx, remoteRequest(t, cmd.Cmd_CHECK, remoteCheckableSpec, map[string]any{
 		"inv": []string{"Inv"}, "length": 0, "no-deadlock": true, "discard-disabled": false,
-		"tuning": map[string]string{"search.invariantFilter": "1->state0", "smt.randomSeed": "17"},
+		"tuning": map[string]string{
+			"search.invariantFilter": "1->state0",
+			"smt.randomSeed":         "17",
+			"z3.smt.mbqi":            "true",
+			"z3.sat.random_freq":     "0.25",
+		},
 	}))
 	if err != nil || response.GetSuccess() == "" {
 		t.Fatalf("filtered remote check = %#v, %v", response, err)

@@ -28,13 +28,16 @@ type TransitionExecutor struct {
 	step              int
 	picked            bool
 	solverUIntOptions map[string]uint32
+	solverTextOptions map[string]string
 }
 
 func NewTransitionExecutor(constants, variables []string) *TransitionExecutor {
-	return newTransitionExecutorWithSolverOptions(constants, variables, nil)
+	return newTransitionExecutorWithSolverOptions(constants, variables, nil, nil)
 }
 
-func newTransitionExecutorWithSolverOptions(constants, variables []string, solverUIntOptions map[string]uint32) *TransitionExecutor {
+func newTransitionExecutorWithSolverOptions(
+	constants, variables []string, solverUIntOptions map[string]uint32, solverTextOptions map[string]string,
+) *TransitionExecutor {
 	return &TransitionExecutor{
 		constants:         stringSet(constants),
 		variables:         stringSet(variables),
@@ -42,6 +45,7 @@ func newTransitionExecutorWithSolverOptions(constants, variables []string, solve
 		scope:             InitialRewriterScope(),
 		prepared:          make(map[int]EncodedTransition),
 		solverUIntOptions: solverUIntOptions,
+		solverTextOptions: solverTextOptions,
 	}
 }
 
@@ -499,7 +503,7 @@ type DecodedState struct {
 }
 
 func (executor *TransitionExecutor) solve(ctx context.Context, temporary []Expr) (*G3SolverContext, *G3GroundEncoder, SMTStatus, error) {
-	solver, err := newG3SolverContextWithUIntOptions("QF_AUFNIA", executor.solverUIntOptions)
+	solver, err := newG3SolverContextWithOptions("QF_AUFNIA", executor.solverUIntOptions, executor.solverTextOptions)
 	if err != nil {
 		return nil, nil, SMTUnknown, err
 	}

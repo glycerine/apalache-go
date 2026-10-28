@@ -19,6 +19,7 @@ type CheckerTuning struct {
 	// Scala before/after modes have identical behavior after validation.
 	invariantMode     string
 	solverUIntOptions map[string]uint32
+	solverTextOptions map[string]string
 	simulation        bool
 	simulationRuns    int
 	hasSimulation     bool
@@ -28,7 +29,9 @@ type CheckerTuning struct {
 // Solver-specific options are accepted only when the pinned g3 API exposes a
 // compatible typed parameter rather than being silently ignored.
 func ParseCheckerTuning(values map[string]string) (CheckerTuning, error) {
-	result := CheckerTuning{invariantMode: "before", solverUIntOptions: make(map[string]uint32)}
+	result := CheckerTuning{
+		invariantMode: "before", solverUIntOptions: make(map[string]uint32), solverTextOptions: make(map[string]string),
+	}
 	keys := make([]string, 0, len(values))
 	for key := range values {
 		keys = append(keys, key)
@@ -88,7 +91,20 @@ func ParseCheckerTuning(values map[string]string) (CheckerTuning, error) {
 			}
 			result.solverUIntOptions[key[len("z3."):]] = parsed
 		default:
-			return CheckerTuning{}, fmt.Errorf("unexpected tuning field %s", key)
+			if strings.HasPrefix(key, "z3.") {
+				result.solverTextOptions[key[len("z3."):]] = value
+			} else {
+				return CheckerTuning{}, fmt.Errorf("unexpected tuning field %s", key)
+			}
+		}
+	}
+	if len(result.solverTextOptions) != 0 {
+		solver, err := newG3SolverContextWithOptions("QF_AUFNIA", result.solverUIntOptions, result.solverTextOptions)
+		if err != nil {
+			return CheckerTuning{}, fmt.Errorf("invalid g3 tuning: %w", err)
+		}
+		if err = solver.Close(); err != nil {
+			return CheckerTuning{}, err
 		}
 	}
 	return result, nil

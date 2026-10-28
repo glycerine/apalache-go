@@ -30,7 +30,8 @@ func TestParseCheckerTuningRejectsUnsupportedAndMalformedValues(t *testing.T) {
 		{"search.invariant.mode": "during"},
 		{"smt.randomSeed": "-1"},
 		{"z3.smt.random_seed": "2147483648"},
-		{"z3.smt.mbqi": "true"},
+		{"z3.smt.mbqi": "maybe"},
+		{"z3.not_a_parameter": "true"},
 	} {
 		if _, err := ParseCheckerTuning(values); err == nil {
 			t.Fatalf("ParseCheckerTuning(%v) succeeded", values)
@@ -40,6 +41,25 @@ func TestParseCheckerTuningRejectsUnsupportedAndMalformedValues(t *testing.T) {
 		"search.transitionFilter": "", "search.invariantFilter": "",
 	}); err != nil || !tuning.allowsTransition(42, 9) || !tuning.allowsInvariant(42, "state", 9) {
 		t.Fatalf("empty filters = %#v, %v", tuning, err)
+	}
+}
+
+func TestParseCheckerTuningUsesPinnedG3TypedCatalog(t *testing.T) {
+	tuning, err := ParseCheckerTuning(map[string]string{
+		"z3.smt.mbqi":        "true",
+		"z3.sat.random_freq": "0.25",
+		"z3.sat.phase":       "random",
+		"z3.pp.max_width":    "120",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key, want := range map[string]string{
+		"smt.mbqi": "true", "sat.random_freq": "0.25", "sat.phase": "random", "pp.max_width": "120",
+	} {
+		if got := tuning.solverTextOptions[key]; got != want {
+			t.Fatalf("g3 text option %s = %q, want %q", key, got, want)
+		}
 	}
 }
 
