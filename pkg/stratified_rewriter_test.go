@@ -159,6 +159,47 @@ func TestStratifiedRewriterShortCircuitsAndOrAsConditionals(t *testing.T) {
 	}
 }
 
+func TestStratifiedAndOrEmptyAndSingletonScalaOracle(t *testing.T) {
+	for _, test := range []struct {
+		operator string
+		empty    bool
+	}{
+		{"AND", true},
+		{"OR", false},
+	} {
+		t.Run(test.operator+" empty", func(t *testing.T) {
+			rewriter := NewStratifiedRewriter()
+			scope := InitialRewriterScope()
+			end, result, err := rewriter.Rewrite(MustOperExpr(Op(test.operator), Typed(BoolT1)), scope)
+			if err != nil || end.Arena != scope.Arena || len(rewriter.Constraints()) != 0 {
+				t.Fatalf("empty %s = %v, arena changed %v, constraints %d, error %v",
+					test.operator, result, end.Arena != scope.Arena, len(rewriter.Constraints()), err)
+			}
+			want := scope.Arena.FalseCell()
+			if test.empty {
+				want = scope.Arena.TrueCell()
+			}
+			if !result.Equal(want) {
+				t.Fatalf("empty %s = %v, want %v", test.operator, result, want)
+			}
+		})
+
+		t.Run(test.operator+" singleton", func(t *testing.T) {
+			rewriter := NewStratifiedRewriter()
+			scope := InitialRewriterScope()
+			arena, cells := scope.Arena.AppendCellTypes(BasicCellType{Type: BoolT1})
+			scope.Arena = arena
+			scope.Binding = scope.Binding.With("p", cells[0])
+			expression := MustOperExpr(Op(test.operator), Typed(BoolT1), NewNameExpr("p", Typed(BoolT1)))
+			end, result, err := rewriter.Rewrite(expression, scope)
+			if err != nil || !result.Equal(cells[0]) || end.Arena != scope.Arena || len(rewriter.Constraints()) != 0 {
+				t.Fatalf("singleton %s = %v, arena changed %v, constraints %d, error %v",
+					test.operator, result, end.Arena != scope.Arena, len(rewriter.Constraints()), err)
+			}
+		})
+	}
+}
+
 func TestStratifiedRewriterBooleanShallowSimplificationScalaOracle(t *testing.T) {
 	for _, test := range []struct {
 		name       string
