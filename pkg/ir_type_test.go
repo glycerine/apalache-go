@@ -1,6 +1,7 @@
 package apalache
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 )
@@ -169,6 +170,12 @@ func TestTypeFromTagAndSchemeMatchScala(t *testing.T) {
 	}
 	if _, err := TypeFromTag(Untyped()); err == nil {
 		t.Fatal("TypeFromTag accepted Untyped")
+	} else {
+		var typing *TypingException
+		if !errors.As(err, &typing) || typing.CauseExprID() != NullUID() ||
+			typing.Error() != "Expected Typed(_: TlaType1), found: Untyped" {
+			t.Fatalf("TypeFromTag error = %T %v", err, err)
+		}
 	}
 	a := mustVar(t, "a")
 	c := mustVar(t, "c")

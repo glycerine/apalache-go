@@ -21,7 +21,7 @@ type Type interface {
 func TypeFromTag(tag TypeTag) (Type, error) {
 	typ, ok := tag.Type()
 	if !ok {
-		return nil, fmt.Errorf("expected Typed(Type), found %s", tag)
+		return nil, NewTypingException("Expected Typed(_: TlaType1), found: "+tag.String(), NullUID())
 	}
 	return typ, nil
 }
