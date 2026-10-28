@@ -487,7 +487,7 @@ tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/impl/TrackerWit
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/package.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/standard/ContextualLanguagePred.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/standard/DeclarationSorter.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
-tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/standard/DeepCopy.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/standard/DeepCopy.scala	ported	transform_deepcopy.go;transform_test.go	all expression, declaration, and module constructors preserve structure, nested type tags, formal parameters, recursion/internal flags, and listener tracking while allocating fresh IDs
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/standard/FlatLanguagePred.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/standard/Flatten.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/standard/IncrementalRenaming.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains

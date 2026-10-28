@@ -1,6 +1,10 @@
 package apalache
 
-import "testing"
+import (
+	"fmt"
+	"math/rand"
+	"testing"
+)
 
 type recordingListener struct {
 	expressions  [][2]Expr
@@ -77,6 +81,9 @@ func assertFreshExpressionTree(t *testing.T, original, copied Expr) {
 	if original.ID() == copied.ID() {
 		t.Fatalf("expression %T retained ID %s", original, original.ID())
 	}
+	if !original.Tag().Equal(copied.Tag()) {
+		t.Fatalf("expression %T changed tag from %s to %s", original, original.Tag(), copied.Tag())
+	}
 	switch left := original.(type) {
 	case *OperExpr:
 		right := copied.(*OperExpr)
@@ -89,11 +96,27 @@ func assertFreshExpressionTree(t *testing.T, original, copied Expr) {
 		assertFreshExpressionTree(t, left.Body(), right.Body())
 		leftDecls, rightDecls := left.Declarations(), right.Declarations()
 		for index := range leftDecls {
-			if leftDecls[index].ID() == rightDecls[index].ID() {
-				t.Fatal("LET declaration retained ID")
-			}
-			assertFreshExpressionTree(t, leftDecls[index].Body(), rightDecls[index].Body())
+			assertFreshDeclaration(t, leftDecls[index], rightDecls[index])
 		}
+	}
+}
+
+func assertFreshDeclaration(t *testing.T, original, copied Decl) {
+	t.Helper()
+	if original.ID() == copied.ID() || !EqualTypedDecl(original, copied) {
+		t.Fatalf("declaration %T is not a fresh typed structural copy", original)
+	}
+	switch left := original.(type) {
+	case *AssumeDecl:
+		assertFreshExpressionTree(t, left.Body(), copied.(*AssumeDecl).Body())
+	case *TheoremDecl:
+		assertFreshExpressionTree(t, left.Body(), copied.(*TheoremDecl).Body())
+	case *OperDecl:
+		right := copied.(*OperDecl)
+		if left.IsRecursive() != right.IsRecursive() {
+			t.Fatal("operator declaration changed recursive flag")
+		}
+		assertFreshExpressionTree(t, left.Body(), right.Body())
 	}
 }
 
@@ -120,6 +143,66 @@ func TestDeepCopyDeclarationsAndModule(t *testing.T) {
 		if declaration.ID() == declarations[index].ID() || !EqualDecl(declaration, declarations[index]) || !declaration.Tag().Equal(declarations[index].Tag()) {
 			t.Errorf("declaration %d is not a fresh structural copy", index)
 		}
+	}
+}
+
+func TestDeepCopyGeneratedDeclarationsHaveFreshIdentifiers(t *testing.T) {
+	random := rand.New(rand.NewSource(0x5ca1a))
+	var expression func(depth int) Expr
+	expression = func(depth int) Expr {
+		if depth == 0 || random.Intn(4) == 0 {
+			if random.Intn(2) == 0 {
+				return NewNameExpr(fmt.Sprintf("x%d", random.Intn(20)), Typed(IntT1))
+			}
+			return NewValueExpr(Int64Value(random.Int63n(100)), Typed(IntT1))
+		}
+		switch random.Intn(6) {
+		case 0:
+			return MustOperExpr(Op("PLUS"), Typed(IntT1), expression(depth-1), expression(depth-1))
+		case 1:
+			return MustOperExpr(Op("EQ"), Typed(BoolT1), expression(depth-1), expression(depth-1))
+		case 2:
+			return MustOperExpr(Op("NOT"), Typed(BoolT1), expression(depth-1))
+		case 3:
+			return MustOperExpr(Op("IF_THEN_ELSE"), Typed(IntT1),
+				expression(depth-1), expression(depth-1), expression(depth-1))
+		case 4:
+			return MustOperExpr(Op("SET_ENUM"), Typed(mustSet(IntT1)),
+				expression(depth-1), expression(depth-1), expression(depth-1))
+		default:
+			body := expression(depth - 1)
+			declaration := NewOperDecl(fmt.Sprintf("Local%d", random.Intn(20)), nil,
+				expression(depth-1), Typed(mustOperatorType(t, nil, IntT1)))
+			declaration.SetRecursive(random.Intn(2) == 0)
+			return NewLetInExpr(body, body.Tag(), declaration)
+		}
+	}
+
+	for index := 0; index < 1000; index++ {
+		name := fmt.Sprintf("d%d", index)
+		body := expression(1 + random.Intn(5))
+		var original Decl
+		switch index % 5 {
+		case 0:
+			original = NewConstDecl(name, Typed(IntT1))
+		case 1:
+			original = NewVarDecl(name, Typed(IntT1))
+		case 2:
+			if index%2 == 0 {
+				original = NewNamedAssumeDecl(name, body, Typed(BoolT1))
+			} else {
+				original = NewUnnamedAssumeDecl(body, Typed(BoolT1))
+			}
+		case 3:
+			original = NewTheoremDecl(name, body, Typed(BoolT1))
+		default:
+			operator := NewOperDecl(name, []OperatorParam{ValueParam("x")}, body,
+				Typed(mustOperatorType(t, []Type{IntT1}, IntT1)))
+			operator.SetRecursive(index%2 == 0)
+			original = operator
+		}
+		copied := NewDeepCopier(IdleTracker{}).Declaration(original)
+		assertFreshDeclaration(t, original, copied)
 	}
 }
 
