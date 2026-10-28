@@ -34,6 +34,20 @@ func TestUIDsAreUniqueConcurrently(t *testing.T) {
 	}
 }
 
+func TestUIDNullOrderingAndTextMatchScala(t *testing.T) {
+	null := NullUID()
+	first, second := NewUID(), NewUID()
+	if null.Uint64() != 0 || null.String() != "0" || null.Compare(null) != 0 {
+		t.Fatalf("null UID = %v", null)
+	}
+	if first.Uint64() == 0 || first.Compare(second) >= 0 || second.Compare(first) <= 0 || first.Compare(first) != 0 {
+		t.Fatalf("UID ordering = %v, %v", first, second)
+	}
+	if first.String() != new(big.Int).SetUint64(first.Uint64()).String() {
+		t.Fatalf("UID string = %q", first.String())
+	}
+}
+
 func TestTypeTags(t *testing.T) {
 	untyped := Untyped()
 	if untyped.IsTyped() || untyped.String() != "Untyped" {
@@ -46,6 +60,9 @@ func TestTypeTags(t *testing.T) {
 	}
 	if typed.Equal(Typed(BoolT1)) || typed.Equal(untyped) {
 		t.Fatal("different tags compare equal")
+	}
+	if (TypeTag{}) != Untyped() || !(TypeTag{}).Equal(Untyped()) {
+		t.Fatal("zero TypeTag is not Scala Untyped")
 	}
 }
 
