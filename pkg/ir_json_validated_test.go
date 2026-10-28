@@ -67,18 +67,47 @@ func TestValidatedIRJSONDecoderDeclarationsModulesAndRoots(t *testing.T) {
 	if _, err = (ValidatedIRJSONDecoder{}).Declaration(badJSON); err == nil {
 		t.Fatal("accepted declaration whose body disagrees with its result type")
 	}
+	badTheorem := NewTheoremDecl("BadTheorem", boolExpr(true), Typed(IntT1))
+	badJSON, err = (IRJSONEncoder{}).Declaration(badTheorem)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = (ValidatedIRJSONDecoder{}).Declaration(badJSON); err == nil {
+		t.Fatal("accepted theorem whose body disagrees with its declaration type")
+	}
 }
 
 func TestValidatedIRJSONDecoderValueDependentOperators(t *testing.T) {
 	setInt, _ := NewSetType(IntT1)
 	row, _ := NewRowType(map[string]Type{"A": IntT1}, nil)
 	variant := NewVariantType(row)
+	variable, _ := NewVarType(0)
+	variableRow, _ := NewRowType(map[string]Type{"A": variable}, nil)
+	variableVariant := NewVariantType(variableRow)
+	variableVariantValue := MustOperExpr(Op("Variants!Variant"), Typed(variableVariant),
+		NewValueExpr(StringValue("A"), Typed(StrT1)), intLiteral(1))
+	setVariant := newSetTypeUnchecked(variant)
+	variantValue := MustOperExpr(Op("Variants!Variant"), Typed(variant),
+		NewValueExpr(StringValue("A"), Typed(StrT1)), intLiteral(1))
+	variantSet := MustOperExpr(Op("SET_ENUM"), Typed(setVariant), variantValue)
+	sparse, _ := NewSparseTupleType(map[int]Type{3: StrT1})
+	record, _ := NewRecordType(map[string]Type{"items": newSeqTypeUnchecked(IntT1)})
+	recordValue := NewNameExpr("record", Typed(record))
+	updatePath := MustOperExpr(Op("TUPLE"), Typed(newTupleTypeUnchecked(StrT1, IntT1)),
+		NewValueExpr(StringValue("items"), Typed(StrT1)), intLiteral(2))
 	valid := []Expr{
 		MustOperExpr(Op("SET_ENUM"), Typed(setInt)),
 		MustOperExpr(Op("TUPLE"), Typed(newTupleTypeUnchecked(IntT1, BoolT1)), intLiteral(1), boolExpr(true)),
-		MustOperExpr(Op("Variants!Variant"), Typed(variant), NewValueExpr(StringValue("A"), Typed(StrT1)), intLiteral(1)),
+		variantValue,
+		MustOperExpr(Op("Variants!VariantFilter"), Typed(setInt),
+			NewValueExpr(StringValue("A"), Typed(StrT1)), variantSet),
+		MustOperExpr(Op("Variants!VariantGetOrElse"), Typed(IntT1),
+			NewValueExpr(StringValue("A"), Typed(StrT1)), variantValue, intLiteral(0)),
 		MustOperExpr(Op("Variants!VariantGetUnsafe"), Typed(IntT1), NewValueExpr(StringValue("A"), Typed(StrT1)),
-			MustOperExpr(Op("Variants!Variant"), Typed(variant), NewValueExpr(StringValue("A"), Typed(StrT1)), intLiteral(1))),
+			variantValue),
+		MustOperExpr(Op("FUN_APP"), Typed(StrT1), NewNameExpr("sparse", Typed(sparse)), intLiteral(3)),
+		MustOperExpr(Op("DOMAIN"), Typed(setInt), NewNameExpr("sparseDomain", Typed(sparse))),
+		MustOperExpr(Op("EXCEPT"), Typed(record), recordValue, updatePath, intLiteral(9)),
 	}
 	decoder := ValidatedIRJSONDecoder{}
 	encoder := IRJSONEncoder{}
@@ -94,8 +123,30 @@ func TestValidatedIRJSONDecoderValueDependentOperators(t *testing.T) {
 	invalid := []Expr{
 		MustOperExpr(Op("REAL_DIV"), Typed(RealT1), intLiteral(1), intLiteral(2)),
 		MustOperExpr(Op("Variants!Variant"), Typed(variant), NewValueExpr(StringValue("A"), Typed(StrT1)), boolExpr(true)),
+		MustOperExpr(Op("Variants!VariantFilter"), Typed(setVariant),
+			NewValueExpr(StringValue("A"), Typed(StrT1)), variantSet),
+		MustOperExpr(Op("Variants!VariantFilter"), Typed(setInt),
+			NewValueExpr(StringValue("A"), Typed(StrT1)), variantValue),
+		MustOperExpr(Op("Variants!VariantGetOrElse"), Typed(variable),
+			NewValueExpr(StringValue("A"), Typed(StrT1)), variableVariantValue, intLiteral(0)),
+		MustOperExpr(Op("FUN_APP"), Typed(StrT1), NewNameExpr("dynamicSparse", Typed(sparse)),
+			NewNameExpr("index", Typed(IntT1))),
+		MustOperExpr(Op("EXCEPT"), Typed(record), recordValue, updatePath, boolExpr(false)),
+		MustOperExpr(Op("EXCEPT"), Typed(record), recordValue,
+			NewNameExpr("path", Typed(newTupleTypeUnchecked(StrT1))), intLiteral(9)),
 		MustOperExpr(Op("Apalache!MkSeq"), Typed(newSeqTypeUnchecked(IntT1)), NewNameExpr("n", Typed(IntT1)),
 			NewNameExpr("f", Typed(mustOperator([]Type{IntT1}, IntT1)))),
+	}
+	decimal, err := NewDecimalValue("1.5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	invalid = append(invalid, NewValueExpr(decimal, Typed(RealT1)))
+	for _, name := range []string{
+		"SequencesExt!ToSet", "TLC!ToString", "ApalacheInternal!__ApalacheSeqCapacity",
+		"ApalacheInternal!__CompactFunSetExpand",
+	} {
+		invalid = append(invalid, MustOperExpr(Op(name), Typed(IntT1), intLiteral(1)))
 	}
 	for _, expression := range invalid {
 		encoded, err := encoder.Expression(expression)
@@ -103,7 +154,7 @@ func TestValidatedIRJSONDecoderValueDependentOperators(t *testing.T) {
 			t.Fatal(err)
 		}
 		if _, err = decoder.Expression(encoded); err == nil {
-			t.Fatalf("accepted invalid value-dependent expression %s", expression.(*OperExpr).Operator())
+			t.Fatalf("accepted invalid value-dependent expression %T", expression)
 		}
 	}
 }

@@ -216,6 +216,9 @@ func validateTypedIRExpression(expression Expr, names map[string]Type) error {
 		names[typed.Name()] = typ
 		return nil
 	case *ValueExpr:
+		if _, unsupported := typed.Value().(DecimalValue); unsupported {
+			return fmt.Errorf("TlaDecimal is not supported by the typed JSON builder")
+		}
 		actual, valueErr := typeOfTLAValue(typed.Value())
 		if valueErr != nil {
 			return valueErr
@@ -269,8 +272,9 @@ func validateTypedIRExpression(expression Expr, names map[string]Type) error {
 func validateTypedIRLiteralRequirements(expression *OperExpr, result Type, arguments []Type) error {
 	name := expression.Operator().Name()
 	switch name {
-	case "REAL_DIV", "FUN_REC_CTOR", "FUN_REC_REF", "Apalache!<:", "TLC!TLCGet",
-		"ApalacheInternal!__NotSupportedByModelChecker":
+	case "REAL_DIV", "FUN_REC_CTOR", "FUN_REC_REF", "Apalache!<:", "TLC!TLCGet", "TLC!ToString",
+		"SequencesExt!ToSet", "ApalacheInternal!__ApalacheSeqCapacity",
+		"ApalacheInternal!__CompactFunSetExpand", "ApalacheInternal!__NotSupportedByModelChecker":
 		return fmt.Errorf("%s is not supported by the typed JSON builder", name)
 	case "LABEL":
 		for index, argument := range expression.Arguments()[1:] {
@@ -342,41 +346,19 @@ func validateValueDependentIRType(expression *OperExpr, result Type, arguments [
 		return fmt.Errorf("tuple arguments %v do not match result %s", arguments, result)
 	case "FUN_APP":
 		if len(arguments) == 2 {
-			if function, ok := arguments[0].(FunType); ok && CompatibleTypes(function.Argument(), arguments[1]) && EqualTypes(function.Result(), result) {
+			from, to, ok := ApplicativeType(arguments[0], expression.Arguments()[1])
+			if ok && EqualTypes(from, arguments[1]) && EqualTypes(to, result) {
 				return nil
-			}
-			if sequence, ok := arguments[0].(SeqType); ok && EqualTypes(arguments[1], IntT1) && EqualTypes(sequence.Element(), result) {
-				return nil
-			}
-			if tuple, ok := arguments[0].(TupleType); ok && EqualTypes(arguments[1], IntT1) {
-				if index, literal := integerIRLiteral(expression.Arguments()[1]); literal && index.BigInt().IsInt64() {
-					position := index.BigInt().Int64()
-					if position >= 1 && position <= int64(len(tuple.Elements())) && EqualTypes(tuple.Elements()[position-1], result) {
-						return nil
-					}
-				}
-			}
-			if key, literal := stringIRLiteral(expression.Arguments()[1]); literal {
-				var fields map[string]Type
-				switch record := arguments[0].(type) {
-				case RecordType:
-					fields = record.Fields()
-				case RecordRowType:
-					fields = record.Row().Fields()
-				}
-				if EqualTypes(fields[key], result) {
-					return nil
-				}
 			}
 		}
 	case "DOMAIN":
 		if len(arguments) == 1 {
-			if function, ok := arguments[0].(FunType); ok && EqualTypes(result, newSetTypeUnchecked(function.Argument())) {
+			if domain, ok := ApplicativeDomain(arguments[0]); ok && EqualTypes(result, newSetTypeUnchecked(domain)) {
 				return nil
 			}
 		}
 	case "EXCEPT":
-		if len(arguments) >= 3 && EqualTypes(result, arguments[0]) {
+		if validateExceptIRType(expression, result, arguments) == nil {
 			return nil
 		}
 	case "RECORD":
@@ -392,17 +374,18 @@ func validateValueDependentIRType(expression *OperExpr, result Type, arguments [
 			variant, ok := result.(VariantType)
 			tag, literal := stringIRLiteral(expression.Arguments()[0])
 			if ok && literal {
-				if valueType, found := variant.Row().Fields()[tag]; found && EqualTypes(valueType, arguments[1]) {
+				if valueType, found := variant.Row().Fields()[tag]; found && CompatibleTypes(arguments[1], valueType) {
 					return nil
 				}
 			}
 		}
 	case "Variants!VariantFilter":
 		if len(arguments) == 2 && EqualTypes(arguments[0], StrT1) {
-			variant, ok := arguments[1].(VariantType)
+			set, setOK := arguments[1].(SetType)
+			variant, ok := set.Element().(VariantType)
 			tag, literal := stringIRLiteral(expression.Arguments()[0])
-			if ok && literal {
-				if _, found := variant.Row().Fields()[tag]; found && EqualTypes(result, newSetTypeUnchecked(variant)) {
+			if setOK && ok && literal {
+				if valueType, found := variant.Row().Fields()[tag]; found && EqualTypes(result, newSetTypeUnchecked(valueType)) {
 					return nil
 				}
 			}
@@ -422,7 +405,7 @@ func validateValueDependentIRType(expression *OperExpr, result Type, arguments [
 			variant, ok := arguments[1].(VariantType)
 			tag, literal := stringIRLiteral(expression.Arguments()[0])
 			if ok && literal {
-				if valueType, found := variant.Row().Fields()[tag]; found && CompatibleTypes(valueType, arguments[2]) && EqualTypes(result, valueType) {
+				if valueType, found := variant.Row().Fields()[tag]; found && EqualTypes(valueType, arguments[2]) && EqualTypes(result, valueType) {
 					return nil
 				}
 			}
@@ -433,6 +416,35 @@ func validateValueDependentIRType(expression *OperExpr, result Type, arguments [
 		}
 	}
 	return fmt.Errorf("cannot validate %s(%v) with result tag %s", expression.Operator().Name(), arguments, result)
+}
+
+func validateExceptIRType(expression *OperExpr, result Type, arguments []Type) error {
+	if len(arguments) < 3 || (len(arguments)-1)%2 != 0 || !EqualTypes(result, arguments[0]) {
+		return fmt.Errorf("EXCEPT has an invalid result type or update count")
+	}
+	expressions := expression.Arguments()
+	for index := 1; index < len(expressions); index += 2 {
+		path, ok := expressions[index].(*OperExpr)
+		if !ok || path.Operator().Name() != "TUPLE" || len(path.Arguments()) == 0 {
+			return fmt.Errorf("EXCEPT update path %d is not a nonempty tuple", (index+1)/2)
+		}
+		current := arguments[0]
+		for _, component := range path.Arguments() {
+			componentType, err := ExpressionType(component)
+			if err != nil {
+				return err
+			}
+			from, to, applicable := ApplicativeType(current, component)
+			if !applicable || !EqualTypes(from, componentType) {
+				return fmt.Errorf("EXCEPT path component cannot index %s", current)
+			}
+			current = to
+		}
+		if replacement := arguments[index+1]; !EqualTypes(current, replacement) {
+			return fmt.Errorf("EXCEPT replacement has type %s, expected %s", replacement, current)
+		}
+	}
+	return nil
 }
 
 func validateRecordIRType(arguments []Expr, result Type, set bool) error {
@@ -511,7 +523,15 @@ func validateTypedIRDeclaration(declaration Decl, names map[string]Type) error {
 			return validateTypedIRExpression(assumption.Body(), names)
 		}
 		if theorem, ok := declaration.(*TheoremDecl); ok {
-			return validateTypedIRExpression(theorem.Body(), names)
+			if err := validateTypedIRExpression(theorem.Body(), names); err != nil {
+				return err
+			}
+			declarationType, typed := theorem.Tag().Type()
+			if !typed {
+				return fmt.Errorf("theorem declaration %s is untyped", theorem.Name())
+			}
+			bodyType, _ := theorem.Body().Tag().Type()
+			return requireEqualIRType(bodyType, declarationType)
 		}
 		return nil
 	}
