@@ -9,6 +9,15 @@ import (
 )
 
 func TestScalaPortManifestCoversEveryProductionSource(t *testing.T) {
+	checkScalaManifest(t, "SCALA_PORT_MANIFEST.tsv", "/src/main/scala/")
+}
+
+func TestScalaTestManifestCoversEveryScalaTestSource(t *testing.T) {
+	checkScalaManifest(t, "SCALA_TEST_MANIFEST.tsv", "/src/test/scala/")
+}
+
+func checkScalaManifest(t *testing.T, manifestName, treeSegment string) {
+	t.Helper()
 	repository := ".."
 	if _, err := os.Stat(filepath.Join(repository, "build.sbt")); os.IsNotExist(err) {
 		t.Skip("Scala source checkout is not available")
@@ -20,7 +29,7 @@ func TestScalaPortManifestCoversEveryProductionSource(t *testing.T) {
 		if walkErr != nil {
 			return walkErr
 		}
-		if entry.IsDir() || !strings.HasSuffix(path, ".scala") || !strings.Contains(filepath.ToSlash(path), "/src/main/scala/") {
+		if entry.IsDir() || !strings.HasSuffix(path, ".scala") || !strings.Contains(filepath.ToSlash(path), treeSegment) {
 			return nil
 		}
 		relative, err := filepath.Rel(repository, path)
@@ -34,7 +43,7 @@ func TestScalaPortManifestCoversEveryProductionSource(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	manifest, err := os.Open("SCALA_PORT_MANIFEST.tsv")
+	manifest, err := os.Open(manifestName)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,15 +77,15 @@ func TestScalaPortManifestCoversEveryProductionSource(t *testing.T) {
 	}
 	for path := range expected {
 		if _, found := seen[path]; !found {
-			t.Errorf("production Scala source is absent from manifest: %s", path)
+			t.Errorf("Scala source is absent from %s: %s", manifestName, path)
 		}
 	}
 	for path := range seen {
 		if _, found := expected[path]; !found {
-			t.Errorf("manifest contains stale production Scala source: %s", path)
+			t.Errorf("%s contains stale Scala source: %s", manifestName, path)
 		}
 	}
 	if len(seen) != len(expected) {
-		t.Fatalf("manifest entries = %d, production Scala files = %d", len(seen), len(expected))
+		t.Fatalf("%s entries = %d, Scala files = %d", manifestName, len(seen), len(expected))
 	}
 }
