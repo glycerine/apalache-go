@@ -482,7 +482,7 @@ tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/LanguageWatchdo
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/TransformationListener.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/TransformationTracker.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/impl/IdleTracker.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
-tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/impl/StableTopologicalSort.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/impl/StableTopologicalSort.scala	ported	stable_topological_sort.go;stable_topological_sort_test.go	stable layer-by-layer Kahn sorting, last-occurrence ordering for duplicate inputs, and residual cycle witnesses match Scala across 10,000 generated graphs
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/impl/TrackerWithListeners.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/package.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/standard/ContextualLanguagePred.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains

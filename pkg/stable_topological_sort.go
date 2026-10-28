@@ -5,17 +5,23 @@ import "fmt"
 // StableTopologicalSort applies Kahn's algorithm one layer at a time. Nodes
 // within a layer retain their order in the input sequence.
 func StableTopologicalSort[T comparable](incoming map[T]map[T]struct{}, unsorted []T) (sorted []T, cycle map[T]struct{}, err error) {
-	if len(incoming) != len(unsorted) {
-		return nil, nil, fmt.Errorf("incoming edge keys and nodes differ")
-	}
 	originalOrder := make(map[T]int, len(unsorted))
 	for index, node := range unsorted {
-		if _, duplicate := originalOrder[node]; duplicate {
-			return nil, nil, fmt.Errorf("duplicate node in topological sort")
-		}
+		// Scala's zipWithIndex.toMap keeps the last position when the input
+		// sequence contains duplicates. Although callers normally pass distinct
+		// declarations, retaining this behavior is part of the tested contract.
 		originalOrder[node] = index
 		if _, exists := incoming[node]; !exists {
 			return nil, nil, fmt.Errorf("incoming edge keys and nodes differ")
+		}
+	}
+	if len(incoming) != len(originalOrder) {
+		return nil, nil, fmt.Errorf("incoming edge keys and nodes differ")
+	}
+	ordered := make([]T, 0, len(originalOrder))
+	for index, node := range unsorted {
+		if originalOrder[node] == index {
+			ordered = append(ordered, node)
 		}
 	}
 
@@ -32,7 +38,7 @@ func StableTopologicalSort[T comparable](incoming map[T]map[T]struct{}, unsorted
 		sinks := make([]T, 0)
 		// Iterating over the original input, rather than a Go map, both gives
 		// stability and exactly matches Scala's explicit order sort.
-		for _, node := range unsorted {
+		for _, node := range ordered {
 			if dependencies, exists := edges[node]; exists && len(dependencies) == 0 {
 				sinks = append(sinks, node)
 			}

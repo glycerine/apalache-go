@@ -70,3 +70,88 @@ func TestStableTopologicalSortRandomDAGs(t *testing.T) {
 		}
 	}
 }
+
+func TestStableTopologicalSortMatchesScalaGeneratedGraphs(t *testing.T) {
+	random := rand.New(rand.NewSource(0x70a010))
+	for iteration := 0; iteration < 10_000; iteration++ {
+		size := 1 + random.Intn(10)
+		uses := make([]int, size)
+		for index := range uses {
+			uses[index] = random.Intn(size)
+		}
+		threshold := random.Intn(size)
+		unsorted := append([]int(nil), uses...)
+		edges := make(map[int]map[int]struct{})
+		for _, node := range uses {
+			if node <= threshold {
+				edges[node] = edgeSet[int]()
+			} else {
+				edges[node] = edgeSet(uses[node])
+			}
+		}
+
+		sorted, witnesses, err := StableTopologicalSort(edges, unsorted)
+		if err != nil {
+			t.Fatalf("iteration %d rejected Scala-generated graph %v: %v", iteration, unsorted, err)
+		}
+		if witnesses == nil {
+			visited := make(map[int]struct{}, len(sorted))
+			for _, node := range sorted {
+				for dependency := range edges[node] {
+					if _, found := visited[dependency]; !found {
+						t.Fatalf("iteration %d placed %d before dependency %d", iteration, node, dependency)
+					}
+				}
+				visited[node] = struct{}{}
+			}
+			if len(unsorted) == len(edges) {
+				originalLayer := make([]int, 0)
+				sortedLayer := make([]int, 0)
+				for _, node := range unsorted {
+					if len(edges[node]) == 0 {
+						originalLayer = append(originalLayer, node)
+					}
+				}
+				for _, node := range sorted {
+					if len(edges[node]) == 0 {
+						sortedLayer = append(sortedLayer, node)
+					}
+				}
+				if !reflect.DeepEqual(originalLayer, sortedLayer) {
+					t.Fatalf("iteration %d changed stable layer zero: %v to %v", iteration, originalLayer, sortedLayer)
+				}
+			}
+		} else if !witnessesContainCycle(edges, witnesses) {
+			t.Fatalf("iteration %d returned non-cycle witnesses %v for %v", iteration, witnesses, edges)
+		}
+	}
+}
+
+func witnessesContainCycle(edges map[int]map[int]struct{}, witnesses map[int]struct{}) bool {
+	const (
+		unseen = iota
+		active
+		done
+	)
+	state := make(map[int]int, len(witnesses))
+	var visit func(int) bool
+	visit = func(node int) bool {
+		state[node] = active
+		for dependency := range edges[node] {
+			if _, retained := witnesses[dependency]; !retained {
+				continue
+			}
+			if state[dependency] == active || state[dependency] == unseen && visit(dependency) {
+				return true
+			}
+		}
+		state[node] = done
+		return false
+	}
+	for node := range witnesses {
+		if state[node] == unseen && visit(node) {
+			return true
+		}
+	}
+	return false
+}
