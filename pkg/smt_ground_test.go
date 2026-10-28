@@ -140,3 +140,30 @@ func TestG3GroundEncoderUsesOOPSLAEdgesForFunctionMembership(t *testing.T) {
 		t.Fatalf("function edge contradiction = %v, %v", status, checkErr)
 	}
 }
+
+func TestG3GroundEncoderArraySetDeclarationsAndSelection(t *testing.T) {
+	solver := newTestG3Solver(t)
+	encoder, err := NewG3GroundEncoderWithEncoding(solver, SMTEncodingArrays)
+	if err != nil {
+		t.Fatal(err)
+	}
+	element := NewArenaCell(0, BasicCellType{Type: IntT1})
+	emptySet := NewArenaCell(1, BasicCellType{Type: mustSet(IntT1)})
+	fullSet := NewArenaCell(2, InfiniteSetCellType{Element: BasicCellType{Type: IntT1}})
+	for _, cell := range []ArenaCell{element, emptySet, fullSet} {
+		if err = encoder.DeclareCell(cell); err != nil {
+			t.Fatal(err)
+		}
+	}
+	selectFrom := func(set ArenaCell) Expr {
+		return MustOperExpr(Op("Apalache!SelectInSet"), Typed(BoolT1), element.NameExpr(), set.NameExpr())
+	}
+	contradiction := MustOperExpr(Op("OR"), Typed(BoolT1),
+		selectFrom(emptySet), MustOperExpr(Op("NOT"), Typed(BoolT1), selectFrom(fullSet)))
+	if err = encoder.Assert(contradiction); err != nil {
+		t.Fatal(err)
+	}
+	if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTUnsatisfiable {
+		t.Fatalf("constant set arrays = %v, %v", status, checkErr)
+	}
+}
