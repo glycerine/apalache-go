@@ -119,6 +119,26 @@ func TestVMTRewriterFunctionConstructionApplicationAndEquality(t *testing.T) {
 	functionType := mustFun(tupleType, typ)
 	x := NewNameExpr("x", Typed(typ))
 	y := NewNameExpr("y", Typed(IntT1))
+	p := NewNameExpr("p", Typed(BoolT1))
+	q := NewNameExpr("q", Typed(BoolT1))
+	directCases := []struct {
+		name       string
+		expression Expr
+		want       string
+	}{
+		{"assignment", MustOperExpr(Op("Apalache!:="), Typed(BoolT1),
+			MustOperExpr(Op("PRIME"), Typed(typ), x), x), "(= x^ x)"},
+		{"equality", MustOperExpr(Op("EQ"), Typed(BoolT1), x, x), "(= x x)"},
+		{"ite", MustOperExpr(Op("IF_THEN_ELSE"), Typed(BoolT1), p, p, q), "(ite p p q)"},
+	}
+	for _, test := range directCases {
+		t.Run(test.name, func(t *testing.T) {
+			if got := rewriteVMTText(t, rewriter, test.expression); got != test.want {
+				t.Fatalf("EUF rewrite = %q, want %q", got, test.want)
+			}
+		})
+	}
+
 	constructor := MustOperExpr(Op("FUN_CTOR"), Typed(functionType), x,
 		x, NewNameExpr("S", Typed(mustSet(typ))),
 		y, NewValueExpr(IntSet, Typed(mustSet(IntT1))))
