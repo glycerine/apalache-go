@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -52,6 +53,64 @@ func TestParseFileAcceptsEmptyModuleAndRejectsBlankFile(t *testing.T) {
 	}
 	if result := ParseFile(context.Background(), blank, FrontendOptions{}); result.OK() || len(result.Diagnostics) == 0 {
 		t.Fatalf("ParseFile(blank) = %#v", result)
+	}
+}
+
+func TestParseSourceDoesNotSearchProcessDirectory(t *testing.T) {
+	const helperEnvironment = "APALACHE_TEST_CWD_IMPORT_HELPER"
+	if os.Getenv(helperEnvironment) == "1" {
+		result := ParseSource(context.Background(), "Root.tla", `---- MODULE Root ----
+EXTENDS HostOnly
+====
+`, FrontendOptions{})
+		if result.OK() {
+			t.Fatalf("in-memory source unexpectedly loaded HostOnly from process directory: %v", declarationNames(result.Native))
+		}
+		return
+	}
+	directory := t.TempDir()
+	host := `---- MODULE HostOnly ----
+HostValue == TRUE
+====
+`
+	if err := os.WriteFile(filepath.Join(directory, "HostOnly.tla"), []byte(host), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command(os.Args[0], "-test.run=^TestParseSourceDoesNotSearchProcessDirectory$")
+	command.Dir = directory
+	command.Env = append(os.Environ(), helperEnvironment+"=1")
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("isolated parser check failed: %v\n%s", err, output)
+	}
+}
+
+func TestParseFileResolvesAdjacentModuleExplicitly(t *testing.T) {
+	directory := t.TempDir()
+	rootPath := filepath.Join(directory, "Root.tla")
+	root := `---- MODULE Root ----
+EXTENDS Supplied
+Use == SuppliedValue
+====
+`
+	supplied := `---- MODULE Supplied ----
+SuppliedValue == TRUE
+====
+`
+	if err := os.WriteFile(rootPath, []byte(root), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "Supplied.tla"), []byte(supplied), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result := ParseFile(context.Background(), rootPath, FrontendOptions{})
+	if !result.OK() {
+		t.Fatalf("ParseFile() diagnostics = %v", result.Diagnostics)
+	}
+	if body, found := OperatorBody(result.Native, "Use"); !found || countNamed(body, "SuppliedValue") != 1 {
+		t.Fatalf("Use body = %#v; declarations = %v", body, declarationNames(result.Native))
+	}
+	if _, found := declarationNamed(result.Native, "SuppliedValue"); !found {
+		t.Fatalf("adjacent module declarations = %v", declarationNames(result.Native))
 	}
 }
 
@@ -253,6 +312,124 @@ Next == f' = [f EXCEPT !["a"] = [@ EXCEPT !.cnt = @ + 1]]
 	body, found := OperatorBody(result.Native, "Next")
 	if !found || countOperator(body, "EXCEPT") != 2 {
 		t.Fatalf("nested EXCEPT body = %#v", body)
+	}
+}
+
+func TestParseSourcePreservesComplexExpressionShapes(t *testing.T) {
+	result := ParseSource(context.Background(), "ComplexShapes.tla", `---- MODULE ComplexShapes ----
+VARIABLE f, X, Z, S
+E1 == [f EXCEPT ![0] = 1, ![2] = 3]
+E2 == [f EXCEPT ![0][1][2] = 3]
+E3 == [f EXCEPT ![0, 1, 2] = 3]
+E4 == [f EXCEPT ![0] = [@ EXCEPT !.state = 4]]
+S1 == f.a.b
+S2 == f.a.b.c
+C1 == [x \in X, y \in X |-> TRUE]
+C2 == [x, y \in X |-> TRUE]
+C3 == [x, y \in X, z \in Z |-> TRUE]
+C4 == [x, y \in X, <<a, b>> \in Z, z \in Z |-> TRUE]
+Filtered == {x \in S: x \in S}
+====
+`, FrontendOptions{IncludeSource: true})
+	if !result.OK() {
+		t.Fatalf("ParseSource() diagnostics = %v", result.Diagnostics)
+	}
+	for name, wantArguments := range map[string]int{"E1": 5, "E2": 3, "E3": 3} {
+		body, found := OperatorBody(result.Native, name)
+		except, ok := body.(*OperExpr)
+		if !found || !ok || except.Operator().Name() != "EXCEPT" || len(except.Arguments()) != wantArguments {
+			t.Fatalf("%s body = %#v, want EXCEPT/%d", name, body, wantArguments)
+		}
+		path, ok := except.Arguments()[1].(*OperExpr)
+		if !ok || path.Operator().Name() != "TUPLE" {
+			t.Fatalf("%s path = %#v, want tuple", name, except.Arguments()[1])
+		}
+		if name == "E2" && len(path.Arguments()) != 3 {
+			t.Fatalf("E2 path = %#v, want flat three-element path", path)
+		}
+		if name == "E3" {
+			inner, nested := path.Arguments()[0].(*OperExpr)
+			if len(path.Arguments()) != 1 || !nested || inner.Operator().Name() != "TUPLE" || len(inner.Arguments()) != 3 {
+				t.Fatalf("E3 path = %#v, want one tuple-valued index", path)
+			}
+		}
+	}
+	if body, found := OperatorBody(result.Native, "E4"); !found || countOperator(body, "EXCEPT") != 2 || countNamed(body, "@") != 0 {
+		t.Fatalf("E4 body = %#v", body)
+	}
+	for name, applications := range map[string]int{"S1": 2, "S2": 3} {
+		body, found := OperatorBody(result.Native, name)
+		if !found || countOperator(body, "FUN_APP") != applications {
+			t.Errorf("%s body = %#v, want %d nested selections", name, body, applications)
+		}
+	}
+	for name, binders := range map[string]int{"C1": 2, "C2": 2, "C3": 3, "C4": 4} {
+		body, found := OperatorBody(result.Native, name)
+		constructor, ok := body.(*OperExpr)
+		if !found || !ok || constructor.Operator().Name() != "FUN_CTOR" || len(constructor.Arguments()) != 1+2*binders {
+			t.Errorf("%s body = %#v, want %d function binders", name, body, binders)
+		}
+	}
+	c4, _ := OperatorBody(result.Native, "C4")
+	if countOperator(c4, "TUPLE") != 1 || countNamed(c4, "a") != 1 || countNamed(c4, "b") != 1 {
+		t.Fatalf("C4 tuple binder = %#v", c4)
+	}
+	filtered, found := OperatorBody(result.Native, "Filtered")
+	if !found || countOperator(filtered, "SET_FILTER") != 1 || countNamed(filtered, "x") != 2 || countNamed(filtered, "S") != 2 {
+		t.Fatalf("Filtered body = %#v", filtered)
+	}
+	if _, found := result.Sources.Find(filtered.ID()); !found {
+		t.Fatal("Filtered body has no source location")
+	}
+}
+
+func TestParseSourceNormalizesUnicodeBuiltinsLikeASCII(t *testing.T) {
+	ascii := `---- MODULE ASCIIBuiltins ----
+EXTENDS Naturals, Integers, Sequences
+VARIABLES x, y, S, T
+Exists == \E z \in S: z \notin T
+Forall == \A z \in S: z \in S
+NeqAndOrNot == (~(x = y)) \/ ((x /= y) /\ (x \in S))
+SubsetCapCupTimes == (S \subseteq T) /\ ((S \cap T) = (S \cup T)) /\ ((S \X T) = {})
+ImpliesEquivIff == (x => y) /\ (x \equiv y) /\ (x <=> y)
+LeGeDiv == (x \leq y) /\ (x \geq y) /\ (x \div y = 1)
+SeqConcat == <<x, y>> \o <<y>>
+Temporal == [](x = y) /\ <>(x /= y)
+LeadsGuarantees == ((x = y) ~> (x /= y)) /\ ((x = y) -+-> (x /= y))
+CaseOther == CASE x = y -> 1 [] OTHER -> 2
+Label == lab :: x = y
+====
+`
+	unicode := `---- MODULE UnicodeBuiltins ----
+EXTENDS Naturals, Integers, Sequences
+VARIABLES x, y, S, T
+Exists == ∃ z ∈ S: z ∉ T
+Forall == ∀ z ∈ S: z ∈ S
+NeqAndOrNot == (¬(x = y)) ∨ ((x ≠ y) ∧ (x ∈ S))
+SubsetCapCupTimes == (S ⊆ T) ∧ ((S ∩ T) = (S ∪ T)) ∧ ((S × T) = {})
+ImpliesEquivIff == (x ⇒ y) ∧ (x ≡ y) ∧ (x ⇔ y)
+LeGeDiv == (x ≤ y) ∧ (x ≥ y) ∧ (x ÷ y = 1)
+SeqConcat == ⟨x, y⟩ ∘ ⟨y⟩
+Temporal == □(x = y) ∧ ◇(x ≠ y)
+LeadsGuarantees == ((x = y) ↝ (x ≠ y)) ∧ ((x = y) ⇸ (x ≠ y))
+CaseOther == CASE x = y → 1 □ OTHER → 2
+Label == lab ∷ x = y
+====
+`
+	asciiResult := ParseSource(context.Background(), "ASCIIBuiltins.tla", ascii, FrontendOptions{})
+	unicodeResult := ParseSource(context.Background(), "UnicodeBuiltins.tla", unicode, FrontendOptions{})
+	if !asciiResult.OK() || !unicodeResult.OK() {
+		t.Fatalf("builtin diagnostics: ASCII=%v Unicode=%v", asciiResult.Diagnostics, unicodeResult.Diagnostics)
+	}
+	for _, name := range []string{
+		"Exists", "Forall", "NeqAndOrNot", "SubsetCapCupTimes", "ImpliesEquivIff", "LeGeDiv",
+		"SeqConcat", "Temporal", "LeadsGuarantees", "CaseOther", "Label",
+	} {
+		asciiBody, asciiFound := OperatorBody(asciiResult.Native, name)
+		unicodeBody, unicodeFound := OperatorBody(unicodeResult.Native, name)
+		if !asciiFound || !unicodeFound || !EqualExpr(asciiBody, unicodeBody) {
+			t.Errorf("%s differs: ASCII=%#v Unicode=%#v", name, asciiBody, unicodeBody)
+		}
 	}
 }
 

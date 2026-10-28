@@ -91,13 +91,17 @@ func ParseSource(ctx context.Context, filename, source string, opts FrontendOpti
 		}}}
 	}
 	defer cleanupLibraries()
-	sanyFilename := filename
+	// tlago always searches the root filename's directory before explicit
+	// library paths. Give in-memory source a deliberately nonexistent root
+	// directory inside our temporary mount so it cannot discover modules from
+	// the process working directory. Adjacent source modules are added below as
+	// an explicit library path when the caller supplied a directory.
+	sanyFilename := filepath.Join(libraryPaths[len(libraryPaths)-1], "__source__", filepath.Base(filename))
 	if directory := filepath.Dir(filename); directory != "." && directory != "" {
 		// The source itself is already supplied in memory. Decouple its logical
 		// filename from its directory so PreferLibraryModules can select bundled
 		// Apalache rewrites before an adjacent module with the same name.
 		libraryPaths = append(libraryPaths, directory)
-		sanyFilename = filepath.Base(filename)
 	}
 	spec, tlagoDiags := tlago.CheckSanySourceWithOptions(sanyFilename, source, tlago.LoadOptions{
 		LibraryPaths: libraryPaths, PreferLibraryModules: true,
