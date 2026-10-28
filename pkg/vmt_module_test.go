@@ -146,6 +146,16 @@ func TestFormatVMTModuleRejectsUnsupportedVariableType(t *testing.T) {
 	}
 }
 
+func TestFormatVMTModuleChecksReTLALanguageBeforeLowering(t *testing.T) {
+	bad := MustOperExpr(Op("PLUS"), Typed(IntT1),
+		NewValueExpr(Int64Value(1), Typed(IntT1)), NewValueExpr(Int64Value(2), Typed(IntT1)))
+	module := NewModule("Bad", []Decl{vmtBoolDefinition("Init$0000", bad)})
+	_, err := FormatVMTModule(module)
+	if err == nil || !strings.Contains(err.Error(), "checking reTLA language of Init$0000") {
+		t.Fatalf("unsupported reTLA expression error = %v", err)
+	}
+}
+
 func TestVMTDeclarationsKeepEqualLiteralIndicesAcrossSorts(t *testing.T) {
 	a, _ := NewConstType("A")
 	b, _ := NewConstType("B")

@@ -105,6 +105,9 @@ func FormatVMTModuleWithInvariants(module *Module, configuredInvariants []string
 		formatted := make([]string, len(expressions))
 		for index, expression := range expressions {
 			body := expression.body
+			if languageErr := WatchExpression(ReTLALanguagePredicate{}, body); languageErr != nil {
+				return nil, fmt.Errorf("checking reTLA language of %s: %w", expression.name, languageErr)
+			}
 			if kind == VMTInit {
 				body = vmtDeprime(body)
 			}

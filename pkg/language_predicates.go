@@ -102,6 +102,124 @@ func checkFlatInContext(context map[string]struct{}, expression Expr) PredicateR
 	}
 }
 
+// ReTLALanguagePredicate accepts the restricted expression language consumed
+// by the transition disassembler and VMT backend. User operators must already
+// be inlined, except for nullary operators introduced by a surrounding LET-IN.
+type ReTLALanguagePredicate struct{}
+
+var reTLAOperators = map[string]struct{}{
+	"Apalache!:=":     {},
+	"Apalache!Skolem": {},
+	"AND":             {},
+	"EQUIV":           {},
+	"EXISTS3":         {},
+	"FORALL3":         {},
+	"IMPLIES":         {},
+	"NOT":             {},
+	"OR":              {},
+	"IF_THEN_ELSE":    {},
+	"FUN_CTOR":        {},
+	"EQ":              {},
+	"NE":              {},
+}
+
+func (ReTLALanguagePredicate) CheckExpression(expression Expr) PredicateResult {
+	return checkReTLAInContext(make(map[string]struct{}), expression)
+}
+
+func (predicate ReTLALanguagePredicate) CheckModule(module *Module) PredicateResult {
+	result := PredicateOK()
+	for _, declaration := range module.OperDeclarations() {
+		result = result.And(predicate.CheckExpression(declaration.Body()))
+	}
+	return result
+}
+
+func checkReTLAArguments(context map[string]struct{}, arguments []Expr) PredicateResult {
+	result := PredicateOK()
+	for _, argument := range arguments {
+		result = result.And(checkReTLAInContext(context, argument))
+	}
+	return result
+}
+
+func checkReTLAInContext(context map[string]struct{}, expression Expr) PredicateResult {
+	switch typed := expression.(type) {
+	case *ValueExpr:
+		switch value := typed.Value().(type) {
+		case BoolValue, IntValue, StringValue:
+			return PredicateOK()
+		case PredefinedSet:
+			if value == BoolSet || value == IntSet || value == NatSet {
+				return PredicateOK()
+			}
+		}
+		return PredicateFail(typed.ID(), fmt.Sprint(typed.Value()))
+	case *NameExpr:
+		return PredicateOK()
+	case *LetInExpr:
+		definitionsResult := PredicateOK()
+		definitionContext := cloneMap(context)
+		for _, declaration := range typed.Declarations() {
+			definitionsResult = definitionsResult.And(checkReTLAInContext(definitionContext, declaration.Body()))
+			definitionContext[declaration.Name()] = struct{}{}
+		}
+		bodyContext := cloneMap(context)
+		for _, declaration := range typed.Declarations() {
+			bodyContext[declaration.Name()] = struct{}{}
+		}
+		return definitionsResult.And(checkReTLAInContext(bodyContext, typed.Body()))
+	case *OperExpr:
+		name := typed.Operator().Name()
+		arguments := typed.Arguments()
+		if name == "PRIME" && len(arguments) == 1 {
+			if _, ok := arguments[0].(*NameExpr); ok {
+				return PredicateOK()
+			}
+			return PredicateFail(typed.ID(), name)
+		}
+		if _, allowed := reTLAOperators[name]; allowed {
+			return checkReTLAArguments(context, arguments)
+		}
+		if name == "FUN_APP" && len(arguments) == 2 {
+			result := checkReTLAInContext(context, arguments[0])
+			if tuple, ok := arguments[1].(*OperExpr); ok && tuple.Operator().Name() == "TUPLE" {
+				return result.And(checkReTLAArguments(context, tuple.Arguments()))
+			}
+			return result.And(checkReTLAInContext(context, arguments[1]))
+		}
+		if name == "EXCEPT" && len(arguments) == 3 {
+			result := checkReTLAInContext(context, arguments[0]).And(checkReTLAInContext(context, arguments[2]))
+			key, ok := arguments[1].(*OperExpr)
+			if !ok || key.Operator().Name() != "TUPLE" {
+				return result.And(PredicateFail(arguments[1].ID(), "invalid EXCEPT key"))
+			}
+			keyArguments := key.Arguments()
+			if len(keyArguments) != 1 {
+				return result.And(PredicateFail(key.ID(), "invalid EXCEPT key"))
+			}
+			if nested, ok := keyArguments[0].(*OperExpr); ok && nested.Operator().Name() == "TUPLE" {
+				return result.And(checkReTLAArguments(context, nested.Arguments()))
+			}
+			return result.And(checkReTLAInContext(context, keyArguments[0]))
+		}
+		if name == "OPER_APP" && len(arguments) > 0 {
+			if operator, ok := arguments[0].(*NameExpr); ok {
+				if _, declared := context[operator.Name()]; !declared {
+					return PredicateFail(typed.ID(), fmt.Sprintf("undeclared operator %s [ReTLALanguagePred]", operator.Name()))
+				}
+				if len(arguments) > 1 {
+					return PredicateFail(typed.ID(), fmt.Sprintf("non-nullary operator %s [ReTLALanguagePred]", operator.Name()))
+				}
+				return PredicateOK()
+			}
+		}
+		return PredicateFail(typed.ID(), name)
+	default:
+		return PredicateFail(expression.ID(), fmt.Sprintf("%T", expression))
+	}
+}
+
 type MonotypeLanguagePredicate struct{}
 
 // TypedLanguagePredicate accepts polymorphic tags but rejects every untyped
