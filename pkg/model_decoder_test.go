@@ -157,3 +157,100 @@ func TestSymbolicDecoderBindingUsesLiteralCache(t *testing.T) {
 		t.Fatalf("decoded literal binding = %s", formatted)
 	}
 }
+
+func TestSymbolicDecoderScalaCollectionOracleCases(t *testing.T) {
+	intSetType := mustSet(IntT1)
+	functionType := mustFun(IntT1, IntT1)
+	pairType := mustTuple(IntT1, IntT1)
+	tests := []struct {
+		name       string
+		expression Expr
+		want       string
+	}{
+		{"Int set", NewValueExpr(IntSet, Typed(intSetType)), "Int"},
+		{"Nat set", NewValueExpr(NatSet, Typed(intSetType)), "Nat"},
+		{"deduplicated sorted set", MustOperExpr(Op("SET_ENUM"), Typed(intSetType),
+			intLiteral(2), intLiteral(1), intLiteral(2)), "{ 1, 2 }"},
+		{"function set", MustOperExpr(Op("FUN_SET"), Typed(mustSet(functionType)),
+			MustOperExpr(Op("SET_ENUM"), Typed(intSetType), intLiteral(1), intLiteral(2)),
+			MustOperExpr(Op("SET_ENUM"), Typed(intSetType), intLiteral(3), intLiteral(4))),
+			"[{ 1, 2 } -> { 3, 4 }]"},
+		{"powerset", MustOperExpr(Op("SET_POWERSET"), Typed(mustSet(intSetType)),
+			MustOperExpr(Op("SET_ENUM"), Typed(intSetType), intLiteral(1), intLiteral(2))),
+			"SUBSET { 1, 2 }"},
+		{"empty function", MustOperExpr(Op("FUN_CTOR"), Typed(functionType),
+			MustOperExpr(Op("PLUS"), Typed(IntT1), NewNameExpr("i", Typed(IntT1)), intLiteral(1)),
+			NewNameExpr("i", Typed(IntT1)), MustOperExpr(Op("SET_ENUM"), Typed(intSetType))),
+			"SetAsFun({})"},
+		{"duplicate function indices", MustOperExpr(Op("FUN_CTOR"), Typed(functionType),
+			MustOperExpr(Op("PLUS"), Typed(IntT1), NewNameExpr("i", Typed(IntT1)), intLiteral(1)),
+			NewNameExpr("i", Typed(IntT1)), MustOperExpr(Op("SET_ENUM"), Typed(intSetType), intLiteral(1), intLiteral(1))),
+			"SetAsFun({<<1, 2>>})"},
+		{"statically empty function relation type", MustOperExpr(Op("Apalache!SetAsFun"), Typed(functionType),
+			MustOperExpr(Op("SET_ENUM"), Typed(mustSet(pairType)))), "SetAsFun({})"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			decoder, scope, cell, closeSolver := decoderForExpression(t, test.expression)
+			defer closeSolver()
+			decoded, err := decoder.DecodeCell(scope.Arena, cell)
+			if err != nil {
+				t.Fatal(err)
+			}
+			formatted, err := FormatTLAExpression(decoded)
+			if err != nil || formatted != test.want {
+				t.Fatalf("decoded = %q, %v; want %q", formatted, err, test.want)
+			}
+		})
+	}
+}
+
+func TestSymbolicDecoderSubsequenceOracle(t *testing.T) {
+	sequenceType := newSeqTypeUnchecked(IntT1)
+	sequence := MustOperExpr(Op("TUPLE"), Typed(sequenceType),
+		intLiteral(1), intLiteral(2), intLiteral(3), intLiteral(4))
+	expression := MustOperExpr(Op("Sequences!SubSeq"), Typed(sequenceType), sequence, intLiteral(2), intLiteral(3))
+	decoder, scope, cell, closeSolver := decoderForExpression(t, expression)
+	defer closeSolver()
+	decoded, err := decoder.DecodeCell(scope.Arena, cell)
+	if err != nil {
+		t.Fatal(err)
+	}
+	formatted, err := FormatTLAExpression(decoded)
+	if err != nil || formatted != "<<2, 3>>" {
+		t.Fatalf("decoded subsequence = %q, %v", formatted, err)
+	}
+}
+
+func TestSymbolicDecoderDynamicallyEmptyFunctionOracle(t *testing.T) {
+	intSetType := mustSet(IntT1)
+	functionType := mustFun(IntT1, IntT1)
+	binder := NewNameExpr("t", Typed(IntT1))
+	domain := MustOperExpr(Op("SET_FILTER"), Typed(intSetType), binder,
+		MustOperExpr(Op("SET_ENUM"), Typed(intSetType), intLiteral(1)), boolExpr(false))
+	expression := MustOperExpr(Op("FUN_CTOR"), Typed(functionType),
+		MustOperExpr(Op("PLUS"), Typed(IntT1), NewNameExpr("x", Typed(IntT1)), intLiteral(1)),
+		NewNameExpr("x", Typed(IntT1)), domain)
+	decoder, scope, cell, closeSolver := decoderForExpression(t, expression)
+	defer closeSolver()
+	decoded, err := decoder.DecodeCell(scope.Arena, cell)
+	if err != nil {
+		t.Fatal(err)
+	}
+	formatted, err := FormatTLAExpression(decoded)
+	if err != nil || formatted != "SetAsFun({})" {
+		t.Fatalf("decoded dynamically empty function = %q, %v", formatted, err)
+	}
+}
+
+func TestReverseMapVariableMatchesScalaRecursiveContract(t *testing.T) {
+	cell := NewArenaCell(17, BasicCellType{Type: IntT1})
+	other := NewArenaCell(18, BasicCellType{Type: IntT1})
+	expression := MustOperExpr(Op("PLUS"), Typed(IntT1), cell.NameExpr(),
+		MustOperExpr(Op("PLUS"), Typed(IntT1), other.NameExpr(), cell.NameExpr()))
+	mapped := ReverseMapVariable(expression, "x", cell)
+	formatted, err := FormatTLAExpression(mapped)
+	if err != nil || formatted != "x + (_si_C_si_18 + x)" {
+		t.Fatalf("reverse-mapped expression = %q, %v", formatted, err)
+	}
+}

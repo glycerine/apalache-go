@@ -32,9 +32,21 @@ func (decoder *SymbolicDecoder) DecodeBinding(arena *PureArena, binding Binding)
 		if err != nil {
 			return nil, fmt.Errorf("decode %s from %s: %w", name, cell, err)
 		}
-		result[name] = value
+		result[name] = ReverseMapVariable(value, name, cell)
 	}
 	return result, nil
+}
+
+// ReverseMapVariable restores a bound variable name when a decoded symbolic
+// expression still refers to its arena cell.
+func ReverseMapVariable(expression Expr, variableName string, cell ArenaCell) Expr {
+	return RewriteExpressions(nil, func(current Expr) (Expr, bool) {
+		name, ok := current.(*NameExpr)
+		if !ok || name.Name() != cell.String() {
+			return nil, false
+		}
+		return NewNameExpr(variableName, name.Tag()), true
+	})(expression)
 }
 
 func (decoder *SymbolicDecoder) DecodeCell(arena *PureArena, cell ArenaCell) (Expr, error) {
