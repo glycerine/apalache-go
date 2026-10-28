@@ -162,7 +162,7 @@ func TestSMTFreeExtractorSplitsFiniteExistentialAssignments(t *testing.T) {
 	domain := MustOperExpr(Op("SET_ENUM"), Typed(mustSet(IntT1)), intLiteral(1), intLiteral(2), intLiteral(3))
 	action := MustOperExpr(Op("EXISTS3"), Typed(BoolT1), binder, domain, assignmentCandidate("x", binder))
 
-	transitions, err := extractor.Extract(assignmentVariables("x"), expandFiniteQuantifiers(action, nil), nil)
+	transitions, err := extractor.Extract(assignmentVariables("x"), expandFiniteQuantifiers(action, assignmentVariables("x"), nil), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,27 +192,24 @@ func TestSMTFreeExtractorSplitsFiniteExistentialAssignments(t *testing.T) {
 	}
 }
 
-func TestExpandFiniteQuantifiersHandlesUniversalsEmptyDomainsAndShadowing(t *testing.T) {
+func TestExpandFiniteQuantifiersScopesAssignmentsAndPreservesShadowing(t *testing.T) {
 	binder := NewNameExpr("i", Typed(IntT1))
 	domain := MustOperExpr(Op("SET_ENUM"), Typed(mustSet(IntT1)), intLiteral(1), intLiteral(2))
 	predicate := MustOperExpr(Op("GT"), Typed(BoolT1), binder, intLiteral(0))
 	forall := MustOperExpr(Op("FORALL3"), Typed(BoolT1), binder, domain, predicate)
-	expanded := expandFiniteQuantifiers(forall, nil)
-	conjunction, ok := expanded.(*OperExpr)
-	if !ok || conjunction.Operator().Name() != "AND" || len(conjunction.Arguments()) != 2 || countOperator(expanded, "FORALL3") != 0 {
-		t.Fatalf("expanded universal = %v", expanded)
+	if expanded := expandFiniteQuantifiers(forall, assignmentVariables("x"), nil); countOperator(expanded, "FORALL3") != 1 {
+		t.Fatalf("universal guard was unexpectedly expanded: %v", expanded)
 	}
 
 	empty := MustOperExpr(Op("SET_ENUM"), Typed(mustSet(IntT1)))
-	for _, test := range []struct {
-		operator string
-		want     bool
-	}{{"EXISTS3", false}, {"FORALL3", true}} {
-		quantifier := MustOperExpr(Op(test.operator), Typed(BoolT1), binder, empty, predicate)
-		value, ok := expandFiniteQuantifiers(quantifier, nil).(*ValueExpr)
-		if !ok || value.Value() != BoolValue(test.want) {
-			t.Fatalf("%s over empty set = %v, want %v", test.operator, value, test.want)
-		}
+	emptyChoice := MustOperExpr(Op("EXISTS3"), Typed(BoolT1), binder, empty, assignmentCandidate("x", binder))
+	value, ok := expandFiniteQuantifiers(emptyChoice, assignmentVariables("x"), nil).(*ValueExpr)
+	if !ok || value.Value() != BoolValue(false) {
+		t.Fatalf("existential assignment over empty set = %v", value)
+	}
+	ineligible := MustOperExpr(Op("EXISTS3"), Typed(BoolT1), binder, domain, assignmentCandidate("y", binder))
+	if expanded := expandFiniteQuantifiers(ineligible, assignmentVariables("x"), nil); countOperator(expanded, "EXISTS3") != 1 {
+		t.Fatalf("ineligible assignment was unexpectedly expanded: %v", expanded)
 	}
 
 	innerDomain := MustOperExpr(Op("SET_ENUM"), Typed(mustSet(IntT1)), NewNameExpr("i", Typed(IntT1)))

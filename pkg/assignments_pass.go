@@ -90,8 +90,12 @@ func FindTransitions(module *Module, options TransitionPassOptions) (*Module, er
 	operators := OperatorBodyMap(module.OperDeclarations()...)
 	extractor := NewSMTFreeSymbolicTransitionExtractor(tracker, options.Sources)
 	stateVariables := make(map[string]struct{}, len(module.VarDeclarations()))
+	userStateVariables := make(map[string]struct{}, len(module.VarDeclarations()))
 	for _, declaration := range module.VarDeclarations() {
 		stateVariables[declaration.Name()] = struct{}{}
+		if !declaration.IsInternal() {
+			userStateVariables[declaration.Name()] = struct{}{}
+		}
 	}
 	extract := func(variables map[string]struct{}, inputName, outputPrefix string, expandChoices bool) ([]*OperDecl, error) {
 		declaration, found := operators[inputName]
@@ -100,7 +104,7 @@ func FindTransitions(module *Module, options TransitionPassOptions) (*Module, er
 		}
 		action := declaration.Body()
 		if expandChoices {
-			action = expandFiniteQuantifiers(action, tracker)
+			action = expandFiniteQuantifiers(action, userStateVariables, tracker)
 		}
 		transitions, err := extractor.Extract(variables, action, operators)
 		if err != nil {

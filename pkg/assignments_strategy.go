@@ -72,7 +72,7 @@ func (extractor *SMTFreeSymbolicTransitionExtractor) Extract(
 // primed variable must produce one symbolic transition per possible value;
 // otherwise deadlock checking can mistake "some target is enabled" for
 // "every target is enabled" on a symbolic path.
-func expandFiniteQuantifiers(expression Expr, tracker TransformationTracker) Expr {
+func expandFiniteQuantifiers(expression Expr, assignmentVariables map[string]struct{}, tracker TransformationTracker) Expr {
 	if tracker == nil {
 		tracker = IdleTracker{}
 	}
@@ -82,12 +82,15 @@ func expandFiniteQuantifiers(expression Expr, tracker TransformationTracker) Exp
 			return nil, false
 		}
 		name := quantifier.Operator().Name()
-		if name != "EXISTS3" && name != "FORALL3" {
+		if name != "EXISTS3" {
 			return nil, false
 		}
 		arguments := quantifier.Arguments()
 		binder, ok := arguments[0].(*NameExpr)
 		if !ok {
+			return nil, false
+		}
+		if !quantifierAssignsFromBinder(arguments[2], binder.Name(), assignmentVariables) {
 			return nil, false
 		}
 		set, ok := arguments[1].(*OperExpr)
@@ -96,21 +99,71 @@ func expandFiniteQuantifiers(expression Expr, tracker TransformationTracker) Exp
 		}
 		members := set.Arguments()
 		if len(members) == 0 {
-			return NewValueExpr(BoolValue(name == "FORALL3"), quantifier.Tag()), true
+			return NewValueExpr(BoolValue(false), quantifier.Tag()), true
 		}
 		branches := make([]Expr, len(members))
 		for index, member := range members {
 			branches[index] = substituteBoundName(arguments[2], binder.Name(), member, tracker)
 		}
-		operator := "OR"
-		if name == "FORALL3" {
-			operator = "AND"
-		}
 		if len(branches) == 1 {
 			return branches[0], true
 		}
-		return MustOperExpr(Op(operator), quantifier.Tag(), branches...), true
+		return MustOperExpr(Op("OR"), quantifier.Tag(), branches...), true
 	})(expression)
+}
+
+func quantifierAssignsFromBinder(expression Expr, binder string, variables map[string]struct{}) bool {
+	operation, ok := expression.(*OperExpr)
+	if ok {
+		arguments := operation.Arguments()
+		if len(arguments) == 2 && (operation.Operator().Name() == "EQ" || operation.Operator().Name() == "Apalache!:=") &&
+			isPrimedName(arguments[0]) {
+			name := arguments[0].(*OperExpr).Arguments()[0].(*NameExpr).Name()
+			if _, eligible := variables[name]; eligible && expressionContainsName(arguments[1], binder) {
+				return true
+			}
+		}
+		for _, argument := range arguments {
+			if quantifierAssignsFromBinder(argument, binder, variables) {
+				return true
+			}
+		}
+	}
+	if let, ok := expression.(*LetInExpr); ok {
+		if quantifierAssignsFromBinder(let.Body(), binder, variables) {
+			return true
+		}
+		for _, declaration := range let.Declarations() {
+			if quantifierAssignsFromBinder(declaration.Body(), binder, variables) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func expressionContainsName(expression Expr, wanted string) bool {
+	if name, ok := expression.(*NameExpr); ok {
+		return name.Name() == wanted
+	}
+	switch typed := expression.(type) {
+	case *OperExpr:
+		for _, argument := range typed.Arguments() {
+			if expressionContainsName(argument, wanted) {
+				return true
+			}
+		}
+	case *LetInExpr:
+		if expressionContainsName(typed.Body(), wanted) {
+			return true
+		}
+		for _, declaration := range typed.Declarations() {
+			if expressionContainsName(declaration.Body(), wanted) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func substituteBoundName(expression Expr, name string, replacement Expr, tracker TransformationTracker) Expr {
