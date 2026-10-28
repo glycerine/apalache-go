@@ -147,6 +147,50 @@ func integerTransitionPredicate(edges uint64) string {
 	return strings.Join(transitions, " \\/ ")
 }
 
+func tupleStatePredicate(state int, primed bool) string {
+	suffix := ""
+	if primed {
+		suffix = "'"
+	}
+	left, right := "FALSE", "FALSE"
+	if state&2 != 0 {
+		left = "TRUE"
+	}
+	if state&1 != 0 {
+		right = "TRUE"
+	}
+	return fmt.Sprintf("p%s = <<%s, %s>>", suffix, left, right)
+}
+
+func tupleMaskPredicate(mask uint64, primed bool) string {
+	states := make([]string, 0, 4)
+	for state := 0; state < 4; state++ {
+		if mask&(1<<state) != 0 {
+			states = append(states, tupleStatePredicate(state, primed))
+		}
+	}
+	if len(states) == 0 {
+		return "FALSE"
+	}
+	return strings.Join(states, " \\/ ")
+}
+
+func tupleTransitionPredicate(edges uint64) string {
+	transitions := make([]string, 0, 16)
+	for from := 0; from < 4; from++ {
+		for to := 0; to < 4; to++ {
+			if edges&(1<<(from*4+to)) != 0 {
+				transitions = append(transitions,
+					"("+tupleStatePredicate(from, false)+" /\\ "+tupleStatePredicate(to, true)+")")
+			}
+		}
+	}
+	if len(transitions) == 0 {
+		return "FALSE"
+	}
+	return strings.Join(transitions, " \\/ ")
+}
+
 func TestBoundedSafetyMatchesExhaustiveBooleanMachines(t *testing.T) {
 	random := rand.New(rand.NewSource(0x5eed))
 	for number := 0; number < 24; number++ {
@@ -255,6 +299,67 @@ Inv == %s
 		}
 
 		wantDeadlock := exhaustiveGraphDeadlockDepth(init, edges, stateCount, bound)
+		deadlockPredicates := prepared.Predicates
+		deadlockPredicates.Invariants = nil
+		deadlockResult, err := CheckBoundedSafetyWithOptions(context.Background(), prepared.Module, deadlockPredicates,
+			BoundedSafetyOptions{MaxSteps: bound, CheckDeadlocks: true})
+		if err != nil {
+			t.Fatalf("case %d deadlock check: %v\n%s", number, err, source)
+		}
+		if wantDeadlock < 0 {
+			if deadlockResult.Outcome != SafetyNoCounterexample {
+				t.Fatalf("case %d deadlock = %#v, want none through depth %d\n%s",
+					number, deadlockResult, bound, source)
+			}
+		} else if deadlockResult.Outcome != SafetyDeadlock || deadlockResult.Depth != wantDeadlock {
+			t.Fatalf("case %d deadlock = %#v, want depth %d\n%s", number, deadlockResult, wantDeadlock, source)
+		}
+	}
+}
+
+func TestBoundedSafetyMatchesExhaustiveTupleMachines(t *testing.T) {
+	random := rand.New(rand.NewSource(0x7a91e))
+	for number := 0; number < 24; number++ {
+		init := uint64(random.Intn(15) + 1)
+		edges := uint64(random.Intn(1 << 16))
+		invariant := uint64(random.Intn(16))
+		bound := random.Intn(4)
+		wantDepth := exhaustiveGraphViolationDepth(init, edges, invariant, 4, bound)
+		source := fmt.Sprintf(`---- MODULE ExhaustiveTuple%d ----
+\* @type: <<Bool, Bool>>;
+VARIABLE p
+Init == %s
+Next == %s
+Inv == %s
+====`, number, tupleMaskPredicate(init, false), tupleTransitionPredicate(edges),
+			tupleMaskPredicate(invariant, false))
+		frontend := ParseAndTypeCheckSource(context.Background(), fmt.Sprintf("ExhaustiveTuple%d.tla", number), source,
+			FrontendOptions{}, TypeCheckOptions{})
+		if !frontend.OK() {
+			t.Fatalf("case %d frontend diagnostics: %v\n%s", number, frontend.Diagnostics, source)
+		}
+		prepared, err := PrepareSafetyTransitions(frontend.Native, SafetyPipelineOptions{
+			Specification: SpecificationConfiguration{
+				Behavior: InitNextSpec{Init: "Init", Next: "Next"}, Invariants: []string{"Inv"},
+			}, Sources: frontend.Sources,
+		})
+		if err != nil {
+			t.Fatalf("case %d prepare: %v\n%s", number, err, source)
+		}
+		result, err := CheckBoundedSafetyWithOptions(context.Background(), prepared.Module, prepared.Predicates,
+			BoundedSafetyOptions{MaxSteps: bound, CheckDeadlocks: false})
+		if err != nil {
+			t.Fatalf("case %d check: %v\n%s", number, err, source)
+		}
+		if wantDepth < 0 {
+			if result.Outcome != SafetyNoCounterexample {
+				t.Fatalf("case %d = %#v, want safe through depth %d\n%s", number, result, bound, source)
+			}
+		} else if result.Outcome != SafetyCounterexample || result.Depth != wantDepth {
+			t.Fatalf("case %d = %#v, want violation at depth %d\n%s", number, result, wantDepth, source)
+		}
+
+		wantDeadlock := exhaustiveGraphDeadlockDepth(init, edges, 4, bound)
 		deadlockPredicates := prepared.Predicates
 		deadlockPredicates.Invariants = nil
 		deadlockResult, err := CheckBoundedSafetyWithOptions(context.Background(), prepared.Module, deadlockPredicates,
