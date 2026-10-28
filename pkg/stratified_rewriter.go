@@ -566,6 +566,25 @@ func (rewriter *StratifiedRewriter) rewriteBoundedChoice(expression *OperExpr, s
 		}
 		setExpression = MustOperExpr(Op("SET_FILTER"), arguments[1].Tag(), arguments[0], arguments[1], arguments[2])
 	}
+	resultType, resultTyped := expression.Tag().Type()
+	if !resultTyped {
+		return scope, ArenaCell{}, fmt.Errorf("bounded choice must be typed")
+	}
+	argumentTypes := make([]Type, len(arguments))
+	for index, argument := range arguments {
+		argumentType, argumentTyped := argument.Tag().Type()
+		if !argumentTyped {
+			return scope, ArenaCell{}, fmt.Errorf("bounded choice argument %d must be typed", index+1)
+		}
+		argumentTypes[index] = argumentType
+	}
+	inferred, err := InferOperatorType(expression.Operator(), argumentTypes)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	if !EqualTypes(inferred, resultType) {
+		return scope, ArenaCell{}, fmt.Errorf("bounded choice has result type %s, expected %s", resultType, inferred)
+	}
 	scope, setCell, err := rewriter.Rewrite(setExpression, scope)
 	if err != nil {
 		return scope, ArenaCell{}, err

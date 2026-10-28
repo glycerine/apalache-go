@@ -1744,6 +1744,18 @@ func TestStratifiedBoundedChoiceThroughG3(t *testing.T) {
 	if !found || value.Sign() != 0 {
 		t.Fatalf("empty Guess default = %v, %v", value, found)
 	}
+
+	emptyChoose := MustOperExpr(Op("CHOOSE3"), Typed(IntT1), binder, set(),
+		MustOperExpr(Op("GT"), Typed(BoolT1), binder, intLiteral(1)))
+	rewriter = NewStratifiedRewriter()
+	_, picked, err = rewriter.Rewrite(emptyChoose, InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, found = rewriter.IntegerCache().FindValue(picked)
+	if !found || value.Sign() != 0 {
+		t.Fatalf("empty CHOOSE default = %v, %v", value, found)
+	}
 }
 
 func TestStratifiedChoiceOracleHonorsGuardedMembershipAndDefault(t *testing.T) {
@@ -1785,6 +1797,43 @@ func TestStratifiedChoiceOracleHonorsGuardedMembershipAndDefault(t *testing.T) {
 				t.Fatalf("guarded choice = %v, want %v, %v", status, test.want, err)
 			}
 		})
+	}
+}
+
+func TestStratifiedChoiceDynamicEmptyAndTypeErrors(t *testing.T) {
+	setTag := Typed(mustSet(IntT1))
+	x := NewNameExpr("x", Typed(IntT1))
+	set := MustOperExpr(Op("SET_ENUM"), setTag, intLiteral(1))
+	dynamicEmpty := MustOperExpr(Op("CHOOSE3"), Typed(IntT1), x, set,
+		MustOperExpr(Op("GT"), Typed(BoolT1), x, intLiteral(1)))
+	rewriter := NewStratifiedRewriter()
+	scope, picked, err := rewriter.Rewrite(dynamicEmpty, InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	solver := newTestG3Solver(t)
+	encoder, err := EncodeRewriterScope(solver, scope, rewriter.Constraints())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := encoder.Assert(MustOperExpr(Op("EQ"), Typed(BoolT1), picked.NameExpr(), intLiteral(99))); err != nil {
+		t.Fatal(err)
+	}
+	if status, err := solver.Check(context.Background()); err != nil || status != SMTSatisfiable {
+		t.Fatalf("dynamically empty CHOOSE default branch = %v, %v", status, err)
+	}
+
+	for _, invalid := range []Expr{
+		MustOperExpr(Op("Apalache!Guess"), Untyped(), set),
+		MustOperExpr(Op("Apalache!Guess"), Typed(IntT1), intLiteral(1)),
+		MustOperExpr(Op("CHOOSE3"), Typed(IntT1), x, set, intLiteral(1)),
+		MustOperExpr(Op("CHOOSE3"), Typed(BoolT1), x, set, boolExpr(true)),
+	} {
+		base := InitialRewriterScope()
+		returned, _, err := NewStratifiedRewriter().Rewrite(invalid, base)
+		if err == nil || returned.Arena != base.Arena {
+			t.Fatalf("invalid bounded choice returned scope=%v, err=%v", returned, err)
+		}
 	}
 }
 
