@@ -32,6 +32,15 @@ func TestPrepareCommandOutputPathsMirrorsScalaLayout(t *testing.T) {
 		files[1] != filepath.Join(absoluteCustom, "example.itf.json") {
 		t.Fatalf("implicit output files = %v", files)
 	}
+	if err := paths.writeRunFile("check", []string{"--length=3", "Model.tla"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, directory := range []string{paths.runDir, absoluteCustom} {
+		data, err := os.ReadFile(filepath.Join(directory, "run.txt"))
+		if err != nil || string(data) != "check --length=3 Model.tla\n" {
+			t.Fatalf("run metadata in %s = %q, %v", directory, data, err)
+		}
+	}
 }
 
 func TestResolveOutputDirectoryOptionsPrecedence(t *testing.T) {

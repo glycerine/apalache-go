@@ -634,6 +634,10 @@ Inv == x < 2
 	if _, err := os.Stat(filepath.Join(runDir, "example.itf.json")); err != nil {
 		t.Fatalf("custom run trace: %v", err)
 	}
+	if data, err := os.ReadFile(filepath.Join(runDir, "run.txt")); err != nil ||
+		!strings.Contains(string(data), "check --output-traces") || !strings.Contains(string(data), path) {
+		t.Fatalf("custom run metadata = %q, %v", data, err)
+	}
 	generated, err := filepath.Glob(filepath.Join(outDir, filepath.Base(path), "*", "example.itf.json"))
 	if err != nil || len(generated) != 1 {
 		t.Fatalf("generated run traces = %v, %v", generated, err)

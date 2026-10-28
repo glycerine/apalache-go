@@ -324,6 +324,10 @@ func runTranspile(ctx context.Context, args []string, stdout, stderr io.Writer) 
 		fmt.Fprintf(stderr, "cannot configure transpile output: %v\n", err)
 		return exitUsage
 	}
+	if err = outputPaths.writeRunFile("transpile", args); err != nil {
+		fmt.Fprintf(stderr, "cannot write transpile run metadata: %v\n", err)
+		return exitTool
+	}
 	frontend := pal.ParseAndTypeCheckFile(ctx, sourcePath, pal.FrontendOptions{
 		LibraryPaths: libraryPaths,
 	}, pal.TypeCheckOptions{UseRows: rows, DisablePolytypes: *disablePolytypes})
@@ -826,6 +830,10 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 		fmt.Fprintf(stderr, "cannot configure simulation output: %v\n", err)
 		return exitUsage
 	}
+	if err = outputPaths.writeRunFile("simulate", args); err != nil {
+		fmt.Fprintf(stderr, "cannot write simulation run metadata: %v\n", err)
+		return exitTool
+	}
 
 	frontend := pal.ParseAndTypeCheckFile(ctx, sourcePath, pal.FrontendOptions{
 		LibraryPaths: libraryPaths,
@@ -1117,6 +1125,10 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	if err != nil {
 		fmt.Fprintf(stderr, "cannot configure check output: %v\n", err)
 		return exitUsage
+	}
+	if err = outputPaths.writeRunFile("check", args); err != nil {
+		fmt.Fprintf(stderr, "cannot write check run metadata: %v\n", err)
+		return exitTool
 	}
 
 	frontend := pal.ParseAndTypeCheckFile(ctx, sourcePath, pal.FrontendOptions{

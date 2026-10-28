@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -55,6 +56,23 @@ func (paths commandOutputPaths) implicitFiles(name string) []string {
 		files = append(files, name)
 	}
 	return files
+}
+
+func (paths commandOutputPaths) writeRunFile(command string, args []string) error {
+	directories := make([]string, 0, 2)
+	if paths.runDir != "" {
+		directories = append(directories, paths.runDir)
+	}
+	if paths.customRunDir != "" && paths.customRunDir != paths.runDir {
+		directories = append(directories, paths.customRunDir)
+	}
+	line := strings.Join(append([]string{command}, args...), " ") + "\n"
+	for _, directory := range directories {
+		if err := os.WriteFile(filepath.Join(directory, "run.txt"), []byte(line), 0o644); err != nil {
+			return fmt.Errorf("write run metadata in %s: %w", directory, err)
+		}
+	}
+	return nil
 }
 
 func resolveOutputDirectoryOptions(
