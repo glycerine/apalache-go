@@ -110,11 +110,11 @@ func TestDecodedAndITFTracesOmitMarkedInternalVariables(t *testing.T) {
 	aux := NewVarDecl("aux", Typed(BoolT1))
 	aux.MarkInternal()
 	module := NewModule("M", []Decl{x, aux})
-	states := []DecodedState{{Values: map[string]Expr{
+	states := []DecodedState{{TransitionNumber: 9, Values: map[string]Expr{
 		"x": intLiteral(1), "aux": temporalBool(true),
 	}}}
 	user := UserDecodedStates(module, states)
-	if _, found := user[0].Values["aux"]; found || len(user[0].Values) != 1 {
+	if _, found := user[0].Values["aux"]; found || len(user[0].Values) != 1 || user[0].TransitionNumber != 9 {
 		t.Fatalf("user states = %#v", user)
 	}
 	if _, found := states[0].Values["aux"]; !found {

@@ -27,6 +27,9 @@ func TestTransitionExecutorBuildsMultiStepPath(t *testing.T) {
 	if err = executor.NextState(); err != nil {
 		t.Fatal(err)
 	}
+	if !reflect.DeepEqual(executor.StateTransitionNumbers(), []int{0}) {
+		t.Fatalf("initial transition path = %v", executor.StateTransitionNumbers())
+	}
 	if executor.Step() != 1 || !executor.Binding().Contains("x") || executor.Binding().Contains("x'") {
 		t.Fatalf("shifted state: step=%d binding=%v", executor.Step(), executor.Binding().Map())
 	}
@@ -42,6 +45,11 @@ func TestTransitionExecutorBuildsMultiStepPath(t *testing.T) {
 	if err = executor.NextState(); err != nil {
 		t.Fatal(err)
 	}
+	encoded := executor.EncodedExecution()
+	if encoded.Arena != executor.scope.Arena || len(encoded.Path) != 2 ||
+		encoded.Path[0].TransitionNumber != 0 || encoded.Path[1].TransitionNumber != 3 {
+		t.Fatalf("encoded execution = %#v", encoded)
+	}
 	equalsOne := MustOperExpr(Op("EQ"), Typed(BoolT1), NewNameExpr("x", Typed(IntT1)), intLiteral(1))
 	if err = executor.AssertState(equalsOne); err != nil {
 		t.Fatal(err)
@@ -54,6 +62,50 @@ func TestTransitionExecutorBuildsMultiStepPath(t *testing.T) {
 	}
 	if status, checkErr := executor.Check(context.Background()); checkErr != nil || status != SMTUnsatisfiable {
 		t.Fatalf("contradictory path = %v, %v", status, checkErr)
+	}
+}
+
+func TestTransitionExecutorDecodedExecutionRetainsTransitionNumbers(t *testing.T) {
+	executor := NewTransitionExecutor(nil, []string{"x"})
+	prime := MustOperExpr(Op("PRIME"), Typed(IntT1), NewNameExpr("x", Typed(IntT1)))
+	assign := func(value int64) Expr {
+		return MustOperExpr(Op("Apalache!:="), Typed(BoolT1), prime, intLiteral(value))
+	}
+	if enabled, err := executor.PrepareTransition(11, assign(1)); err != nil || !enabled {
+		t.Fatalf("prepare initial = %v, %v", enabled, err)
+	}
+	if err := executor.AssumeTransition(11); err != nil {
+		t.Fatal(err)
+	}
+	if err := executor.NextState(); err != nil {
+		t.Fatal(err)
+	}
+	firstStateSnapshot := executor.Snapshot()
+	if enabled, err := executor.PrepareTransition(22, assign(2)); err != nil || !enabled {
+		t.Fatalf("prepare pending = %v, %v", enabled, err)
+	}
+	if err := executor.AssumeTransition(22); err != nil {
+		t.Fatal(err)
+	}
+	truth := NewValueExpr(BoolValue(true), Typed(BoolT1))
+	status, pending, err := executor.CheckPendingAndDecode(context.Background(), truth)
+	if err != nil || status != SMTSatisfiable || len(pending) != 2 ||
+		pending[0].TransitionNumber != 11 || pending[1].TransitionNumber != 22 {
+		t.Fatalf("pending decoded execution = %v, %#v, %v", status, pending, err)
+	}
+	if err := executor.NextState(); err != nil {
+		t.Fatal(err)
+	}
+	status, execution, err := executor.CheckDecodedExecution(context.Background(), truth)
+	if err != nil || status != SMTSatisfiable || len(execution.Path) != 2 ||
+		execution.Path[0].TransitionNumber != 11 || execution.Path[1].TransitionNumber != 22 {
+		t.Fatalf("decoded execution = %v, %#v, %v", status, execution, err)
+	}
+	executor.Recover(firstStateSnapshot)
+	if executor.Step() != 1 || !reflect.DeepEqual(executor.StateTransitionNumbers(), []int{11}) ||
+		len(executor.EncodedExecution().Path) != 1 {
+		t.Fatalf("recovered encoded execution = step %d, transitions %v, path %#v",
+			executor.Step(), executor.StateTransitionNumbers(), executor.EncodedExecution().Path)
 	}
 }
 
@@ -189,6 +241,11 @@ func TestTransitionExecutorRejectsInvalidSnapshot(t *testing.T) {
 	snapshot.ControlState = ExecutorControlState(99)
 	if err := executor.RecoverChecked(snapshot); err == nil {
 		t.Fatal("snapshot with invalid control state was accepted")
+	}
+	snapshot = executor.Snapshot()
+	snapshot.States = append(snapshot.States, EmptyBinding())
+	if err := executor.RecoverChecked(snapshot); err == nil {
+		t.Fatal("snapshot with mismatched transition history was accepted")
 	}
 }
 

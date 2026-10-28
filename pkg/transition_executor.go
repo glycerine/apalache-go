@@ -14,6 +14,20 @@ type EncodedTransition struct {
 	Binding Binding
 }
 
+type EncodedState struct {
+	Binding          Binding
+	TransitionNumber int
+}
+
+type EncodedExecution struct {
+	Arena *PureArena
+	Path  []EncodedState
+}
+
+type DecodedExecution struct {
+	Path []DecodedState
+}
+
 type ExecutorControlState uint8
 
 const (
@@ -30,6 +44,8 @@ type TransitionExecutorSnapshot struct {
 	Assertions          []Expr
 	PreparedTransitions map[int]EncodedTransition
 	States              []Binding
+	TransitionNumbers   []int
+	SelectedTransition  int
 	Step                int
 	Rewriter            StratifiedRewriterSnapshot
 }
@@ -38,17 +54,19 @@ type TransitionExecutorSnapshot struct {
 // Rewriting is solver-free; Check encodes the accumulated arena, definitions,
 // and selected path constraints into a fresh g3 solver context.
 type TransitionExecutor struct {
-	constants         map[string]struct{}
-	variables         map[string]struct{}
-	rewriter          *StratifiedRewriter
-	scope             RewriterScope
-	asserted          []Expr
-	prepared          map[int]EncodedTransition
-	states            []Binding
-	step              int
-	picked            bool
-	solverUIntOptions map[string]uint32
-	solverTextOptions map[string]string
+	constants          map[string]struct{}
+	variables          map[string]struct{}
+	rewriter           *StratifiedRewriter
+	scope              RewriterScope
+	asserted           []Expr
+	prepared           map[int]EncodedTransition
+	states             []Binding
+	transitionNumbers  []int
+	selectedTransition int
+	step               int
+	picked             bool
+	solverUIntOptions  map[string]uint32
+	solverTextOptions  map[string]string
 }
 
 func NewTransitionExecutor(constants, variables []string) *TransitionExecutor {
@@ -86,6 +104,18 @@ func (executor *TransitionExecutor) StateBindings() []Binding {
 	return append([]Binding(nil), executor.states...)
 }
 
+func (executor *TransitionExecutor) StateTransitionNumbers() []int {
+	return append([]int(nil), executor.transitionNumbers...)
+}
+
+func (executor *TransitionExecutor) EncodedExecution() EncodedExecution {
+	path := make([]EncodedState, len(executor.states))
+	for index, binding := range executor.states {
+		path[index] = EncodedState{Binding: binding, TransitionNumber: executor.transitionNumbers[index]}
+	}
+	return EncodedExecution{Arena: executor.scope.Arena, Path: path}
+}
+
 func (executor *TransitionExecutor) PreparedTransitionNumbers() []int {
 	result := make([]int, 0, len(executor.prepared))
 	for number := range executor.prepared {
@@ -115,7 +145,9 @@ func (executor *TransitionExecutor) Snapshot() TransitionExecutorSnapshot {
 		ControlState: executor.ControlState(), Scope: executor.scope,
 		Assertions:          append([]Expr(nil), executor.asserted...),
 		PreparedTransitions: cloneEncodedTransitions(executor.prepared),
-		States:              append([]Binding(nil), executor.states...), Step: executor.step,
+		States:              append([]Binding(nil), executor.states...),
+		TransitionNumbers:   append([]int(nil), executor.transitionNumbers...),
+		SelectedTransition:  executor.selectedTransition, Step: executor.step,
 		Rewriter: executor.rewriter.Snapshot(),
 	}
 }
@@ -133,10 +165,16 @@ func (executor *TransitionExecutor) RecoverChecked(snapshot TransitionExecutorSn
 	if snapshot.ControlState != ExecutorPreparing && snapshot.ControlState != ExecutorPicked {
 		return fmt.Errorf("transition executor snapshot has invalid control state %d", snapshot.ControlState)
 	}
+	if len(snapshot.TransitionNumbers) != len(snapshot.States) {
+		return fmt.Errorf("transition executor snapshot has %d states but %d transition numbers",
+			len(snapshot.States), len(snapshot.TransitionNumbers))
+	}
 	executor.scope = snapshot.Scope
 	executor.asserted = append([]Expr(nil), snapshot.Assertions...)
 	executor.prepared = cloneEncodedTransitions(snapshot.PreparedTransitions)
 	executor.states = append([]Binding(nil), snapshot.States...)
+	executor.transitionNumbers = append([]int(nil), snapshot.TransitionNumbers...)
+	executor.selectedTransition = snapshot.SelectedTransition
 	executor.step = snapshot.Step
 	executor.picked = snapshot.ControlState == ExecutorPicked
 	executor.rewriter.Recover(snapshot.Rewriter)
@@ -255,6 +293,7 @@ func (executor *TransitionExecutor) AssumeTransition(number int) error {
 	}
 	executor.asserted = append(executor.asserted, transition.Trigger.NameExpr())
 	executor.scope.Binding = transition.Binding
+	executor.selectedTransition = number
 	executor.picked = true
 	return nil
 }
@@ -310,8 +349,10 @@ func (executor *TransitionExecutor) NextState() error {
 	}
 	executor.scope.Binding = executor.scope.Binding.Shift(executor.constants)
 	executor.states = append(executor.states, executor.scope.Binding)
+	executor.transitionNumbers = append(executor.transitionNumbers, executor.selectedTransition)
 	executor.prepared = make(map[int]EncodedTransition)
 	executor.picked = false
+	executor.selectedTransition = 0
 	executor.step++
 	return nil
 }
@@ -377,6 +418,13 @@ func (executor *TransitionExecutor) check(ctx context.Context, temporary []Expr)
 // committed state using the same constrained model.
 func (executor *TransitionExecutor) CheckAndDecode(ctx context.Context, expression Expr) (SMTStatus, []DecodedState, error) {
 	return executor.checkAndDecode(ctx, expression, executor.states)
+}
+
+func (executor *TransitionExecutor) CheckDecodedExecution(
+	ctx context.Context, expression Expr,
+) (SMTStatus, DecodedExecution, error) {
+	status, states, err := executor.CheckAndDecode(ctx, expression)
+	return status, DecodedExecution{Path: states}, err
 }
 
 func (executor *TransitionExecutor) checkAndDecodeDistinctState(
@@ -489,7 +537,9 @@ func (executor *TransitionExecutor) checkAndDecode(
 		if decodeErr != nil {
 			return SMTUnknown, nil, fmt.Errorf("decode state %d: %w", index, decodeErr)
 		}
-		states[index] = DecodedState{Values: values}
+		states[index] = DecodedState{
+			Values: values, TransitionNumber: executor.decodedTransitionNumber(index, len(bindings)),
+		}
 	}
 	return status, states, nil
 }
@@ -558,7 +608,9 @@ func (executor *TransitionExecutor) checkAndDecodeDistinctView(
 		if decodeErr != nil {
 			return SMTUnknown, nil, nil, fmt.Errorf("decode state %d: %w", index, decodeErr)
 		}
-		states[index] = DecodedState{Values: values}
+		states[index] = DecodedState{
+			Values: values, TransitionNumber: executor.decodedTransitionNumber(index, len(bindings)),
+		}
 		views[index], decodeErr = decoder.DecodeCell(executor.scope.Arena, viewCells[index])
 		if decodeErr != nil {
 			return SMTUnknown, nil, nil, fmt.Errorf("decode state view %d: %w", index, decodeErr)
@@ -568,7 +620,18 @@ func (executor *TransitionExecutor) checkAndDecodeDistinctView(
 }
 
 type DecodedState struct {
-	Values map[string]Expr
+	Values           map[string]Expr
+	TransitionNumber int
+}
+
+func (executor *TransitionExecutor) decodedTransitionNumber(index, stateCount int) int {
+	if index < len(executor.transitionNumbers) {
+		return executor.transitionNumbers[index]
+	}
+	if executor.picked && stateCount == len(executor.transitionNumbers)+1 && index == len(executor.transitionNumbers) {
+		return executor.selectedTransition
+	}
+	return 0
 }
 
 func (executor *TransitionExecutor) solve(ctx context.Context, temporary []Expr) (*G3SolverContext, *G3GroundEncoder, SMTStatus, error) {

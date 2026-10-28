@@ -151,7 +151,7 @@ func UserDecodedStates(module *Module, states []DecodedState) []DecodedState {
 				values[name] = value
 			}
 		}
-		result[index] = DecodedState{Values: values}
+		result[index] = DecodedState{Values: values, TransitionNumber: state.TransitionNumber}
 	}
 	return result
 }
