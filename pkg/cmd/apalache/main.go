@@ -1531,6 +1531,7 @@ func runParse(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	configFile := flags.String("config-file", "", "Apalache JSON configuration file")
 	outDir := flags.String("out-dir", "", "root directory for source-namespaced run output")
 	runDir := flags.String("run-dir", "", "additional directory receiving run output directly")
+	writeIntermediate := flags.Bool("write-intermediate", false, "write parsed intermediate TLA+ into the run directory")
 	includeSource := flags.Bool("source", false, "include source positions in JSON IR")
 	features := flags.String("features", "", "typechecker features: rows or no-rows")
 	var libraryPaths stringList
@@ -1553,6 +1554,9 @@ func runParse(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		if err = applyJSONFrontendDefaults(applicationConfig, visited, output, features, nil, nil); err != nil {
 			fmt.Fprintln(stderr, err)
 			return exitUsage
+		}
+		if !visited["write-intermediate"] && applicationConfig.WriteIntermediate != nil {
+			*writeIntermediate = *applicationConfig.WriteIntermediate
 		}
 	}
 	resolveOutputDirectoryOptions(applicationConfig, visited, outDir, runDir)
@@ -1599,6 +1603,19 @@ func runParse(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	}
 	if !result.OK() {
 		return exitFrontend
+	}
+	if *writeIntermediate {
+		formatted, formatErr := pal.FormatTLAModule(result.Native, pal.TLAFormatOptions{ExtendedModules: result.Extends})
+		if formatErr != nil {
+			fmt.Fprintf(stderr, "cannot format parsed intermediate TLA+: %v\n", formatErr)
+			return exitTool
+		}
+		for _, path := range outputPaths.implicitFiles("00_OutSanyParser.tla") {
+			if err = os.WriteFile(path, []byte(formatted), 0o644); err != nil {
+				fmt.Fprintf(stderr, "cannot write parsed intermediate TLA+ to %s: %v\n", path, err)
+				return exitTool
+			}
+		}
 	}
 
 	if *output == "json" || strings.EqualFold(filepath.Ext(*output), ".json") {

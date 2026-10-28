@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -19,6 +20,64 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
 )
+
+func TestConcurrentParseRunsKeepIntermediateOutputIsolated(t *testing.T) {
+	root := t.TempDir()
+	writeSpec := func(module, declaration string) string {
+		path := filepath.Join(root, module+".tla")
+		if err := os.WriteFile(path, []byte("---- MODULE "+module+" ----\n"+declaration+"\n====\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	firstSource := writeSpec("First", "FirstValue == 1")
+	secondSource := writeSpec("Second", "SecondValue == 2")
+	type result struct {
+		code   int
+		stderr string
+	}
+	start := make(chan struct{})
+	results := make(chan result, 2)
+	var group sync.WaitGroup
+	runConcurrent := func(source, outDir string) {
+		defer group.Done()
+		<-start
+		var stdout, stderr bytes.Buffer
+		code := run(context.Background(), []string{
+			"parse", "--out-dir=" + outDir, "--write-intermediate=true", source,
+		}, &stdout, &stderr)
+		results <- result{code: code, stderr: stderr.String()}
+	}
+	firstOut, secondOut := filepath.Join(root, "first-out"), filepath.Join(root, "second-out")
+	group.Add(2)
+	go runConcurrent(firstSource, firstOut)
+	go runConcurrent(secondSource, secondOut)
+	close(start)
+	group.Wait()
+	close(results)
+	for result := range results {
+		if result.code != exitOK {
+			t.Fatalf("concurrent parse = %d, stderr = %q", result.code, result.stderr)
+		}
+	}
+	readIntermediate := func(outDir, sourceName string) string {
+		matches, err := filepath.Glob(filepath.Join(outDir, sourceName, "*", "00_OutSanyParser.tla"))
+		if err != nil || len(matches) != 1 {
+			t.Fatalf("intermediate under %s = %v, %v", outDir, matches, err)
+		}
+		contents, err := os.ReadFile(matches[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(contents)
+	}
+	firstText := readIntermediate(firstOut, "First.tla")
+	secondText := readIntermediate(secondOut, "Second.tla")
+	if !strings.Contains(firstText, "FirstValue") || strings.Contains(firstText, "SecondValue") ||
+		!strings.Contains(secondText, "SecondValue") || strings.Contains(secondText, "FirstValue") {
+		t.Fatalf("cross-contaminated intermediates:\nfirst=%s\nsecond=%s", firstText, secondText)
+	}
+}
 
 func TestRunConfigControlsSharedTLAStatisticsMarker(t *testing.T) {
 	home := t.TempDir()

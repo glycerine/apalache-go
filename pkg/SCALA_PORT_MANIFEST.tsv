@@ -288,7 +288,7 @@ tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/tracee/pass/TraceePass.scala	pa
 tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/tracee/pass/TraceePassImpl.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
 tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/tracee/tracee.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
 tla-io/src/main/scala/at/forsyte/apalache/io/InputSource.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
-tla-io/src/main/scala/at/forsyte/apalache/io/OutputManager.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/OutputManager.scala	partial	cmd/apalache/output_paths.go;cmd/apalache/main.go;cmd/apalache/main_test.go;ir_json.go;itf.go	per-source timestamped run directories, explicit run directories, metadata, concurrent isolation, and parsed intermediate output are ported; remaining writer formats and configuration cases are open
 tla-io/src/main/scala/at/forsyte/apalache/io/ReportGenerator.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
 tla-io/src/main/scala/at/forsyte/apalache/io/annotations/Annotation.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
 tla-io/src/main/scala/at/forsyte/apalache/io/annotations/AnnotationArg.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open

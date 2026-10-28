@@ -440,7 +440,7 @@ func (config jsonCommandConfig) validateForFrontend(command string) error {
 		{config.RunDir != nil && command != "transpile" && command != "tracee" && command != "parse" && command != "typecheck", "run-dir"},
 		{config.Debug != nil, "debug"},
 		{config.SMTProfile != nil, "smtprof"},
-		{config.WriteIntermediate != nil, "write-intermediate"},
+		{config.WriteIntermediate != nil && command != "parse", "write-intermediate"},
 		{config.Profiling != nil, "profiling"},
 	}
 	for _, field := range unsupported {

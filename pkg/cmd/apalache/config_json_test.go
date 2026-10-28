@@ -93,6 +93,20 @@ func TestJSONServerConfigAcceptsOnlyServerSettings(t *testing.T) {
 	}
 }
 
+func TestJSONWriteIntermediateIsAcceptedOnlyForParse(t *testing.T) {
+	enabled := true
+	config := jsonCommandConfig{WriteIntermediate: &enabled}
+	if err := config.validateForFrontend("parse"); err != nil {
+		t.Fatalf("parse write-intermediate configuration = %v", err)
+	}
+	if err := config.validateForFrontend("typecheck"); err == nil {
+		t.Fatal("typecheck accepted write-intermediate configuration")
+	}
+	if err := config.validateForCheck(); err == nil {
+		t.Fatal("check accepted write-intermediate configuration")
+	}
+}
+
 func TestRunCheckLoadsInMemoryJSONSourceWithAuxiliaryModule(t *testing.T) {
 	directory := t.TempDir()
 	t.Setenv("HOME", filepath.Join(directory, "home"))
