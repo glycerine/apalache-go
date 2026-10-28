@@ -1,6 +1,9 @@
 package apalache
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 func requireExprType(t *testing.T, expr Expr, want Type) {
 	t.Helper()
@@ -108,6 +111,61 @@ func TestTypedBuilderRecordsAndRecordSets(t *testing.T) {
 		t.Fatal(err)
 	}
 	requireExprType(t, recordSet, mustSetType(t, wantRecord))
+}
+
+func TestTypedBuilderRowRecordScalaOracleCases(t *testing.T) {
+	builder := NewTypedBuilder()
+	for index := range 1_000 {
+		fieldCount := index%4 + 1
+		fields := make([]RecordField, fieldCount)
+		for fieldIndex := range fields {
+			value := Expr(builder.Int64(int64(fieldIndex)))
+			if fieldIndex%2 == 1 {
+				value = builder.Bool(fieldIndex%4 == 1)
+			}
+			fields[fieldIndex] = RecordField{Name: fmt.Sprintf("f%d", fieldIndex), Value: value}
+		}
+		var tail *VarType
+		if index%2 == 1 {
+			value := mustNumberedVar(t, index%26)
+			tail = &value
+		}
+		record, err := builder.RowRecord(tail, fields...)
+		if err != nil || record.Operator().Name() != "RECORD" {
+			t.Fatalf("row record %d = %v, %v", index, record, err)
+		}
+	}
+
+	a, err := builder.RowRecord(nil, RecordField{Name: "f1", Value: builder.Int64(1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stringValue, err := builder.String("s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := builder.RowRecord(nil,
+		RecordField{Name: "f1", Value: builder.Int64(2)}, RecordField{Name: "f2", Value: stringValue})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tail := mustNumberedVar(t, 1)
+	openRow := NewRecordRowType(mustRowType(t, map[string]Type{"f1": IntT1}, &tail))
+	operatorType := mustOperatorType(t, []Type{openRow}, IntT1)
+	operator := builder.Name("op", operatorType)
+	first, err := builder.Apply(Op("OPER_APP"), operator, a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := builder.Apply(Op("OPER_APP"), operator, b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	applications, err := builder.Sequence(first, second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireExprType(t, applications, mustSeqType(t, IntT1))
 }
 
 func TestTypedBuilderApplicatives(t *testing.T) {
