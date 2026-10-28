@@ -1,6 +1,9 @@
 package apalache
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 func TestStratifiedPowerSetMembershipThroughG3(t *testing.T) {
 	intValue := func(value int64) Expr { return NewValueExpr(Int64Value(value), Typed(IntT1)) }
@@ -54,5 +57,60 @@ func TestStratifiedPowerSetStoresItsDomain(t *testing.T) {
 	domain, err := scope.Arena.Domain(powerSet)
 	if err != nil || len(scope.Arena.GetHas(domain)) != 1 {
 		t.Fatalf("powerset domain = %v, %v", domain, err)
+	}
+}
+
+func TestStratifiedPowerSetRejectsInfiniteSubsetComparisons(t *testing.T) {
+	intValue := func(value int64) Expr { return NewValueExpr(Int64Value(value), Typed(IntT1)) }
+	intSetType := mustSet(IntT1)
+	powerSetType := mustSet(intSetType)
+	finite := MustOperExpr(Op("SET_ENUM"), Typed(intSetType), intValue(1), intValue(2), intValue(3), intValue(4))
+	nat := NewValueExpr(NatSet, Typed(intSetType))
+	integers := NewValueExpr(IntSet, Typed(intSetType))
+	for _, test := range []struct {
+		name, left string
+		element    Expr
+		base       Expr
+	}{
+		{"finite in subset Nat", "finite", finite, nat},
+		{"Nat in subset finite", "Nat", nat, finite},
+		{"Nat in subset Nat", "Nat", nat, nat},
+		{"Nat in subset Int", "Nat", nat, integers},
+		{"Int in subset Nat", "Int", integers, nat},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			powerSet := MustOperExpr(Op("SET_POWERSET"), Typed(powerSetType), test.base)
+			membership := MustOperExpr(Op("SET_IN"), Typed(BoolT1), test.element, powerSet)
+			if _, _, err := NewStratifiedRewriter().Rewrite(membership, InitialRewriterScope()); err == nil {
+				t.Fatalf("accepted unsupported %s subset comparison", test.left)
+			}
+		})
+	}
+}
+
+func TestStratifiedPowerSetExistentialAndSkolemOracleCases(t *testing.T) {
+	intSetType := mustSet(IntT1)
+	powerSetType := mustSet(intSetType)
+	base := MustOperExpr(Op("SET_ENUM"), Typed(intSetType),
+		NewValueExpr(Int64Value(1), Typed(IntT1)), NewValueExpr(Int64Value(2), Typed(IntT1)))
+	powerSet := MustOperExpr(Op("SET_POWERSET"), Typed(powerSetType), base)
+	binder := NewNameExpr("X", Typed(intSetType))
+	exists := func(predicate bool) Expr {
+		return MustOperExpr(Op("EXISTS3"), Typed(BoolT1), binder, powerSet,
+			NewValueExpr(BoolValue(predicate), Typed(BoolT1)))
+	}
+	if _, _, err := NewStratifiedRewriter().Rewrite(exists(true), InitialRewriterScope()); err == nil {
+		t.Fatal("non-Skolemized existential over a compact powerset was accepted")
+	}
+	for _, want := range []bool{true, false} {
+		t.Run(fmt.Sprintf("Skolem predicate %v", want), func(t *testing.T) {
+			skolem := MustOperExpr(Op("Apalache!Skolem"), Typed(BoolT1), exists(want))
+			rewriter := NewStratifiedRewriter()
+			scope, result, err := rewriter.Rewrite(skolem, InitialRewriterScope())
+			if err != nil {
+				t.Fatal(err)
+			}
+			checkRewrittenTruth(t, rewriter, scope, result, want)
+		})
 	}
 }
