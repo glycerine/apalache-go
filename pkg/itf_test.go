@@ -3,6 +3,8 @@ package apalache
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"reflect"
 	"testing"
 )
 
@@ -337,6 +339,43 @@ func TestDecodeITFRejectsShapeAndTypeMismatches(t *testing.T) {
 		if _, err := DecodeITFValue(test.raw, test.typ); err == nil {
 			t.Errorf("accepted %#v as %s", test.raw, test.typ)
 		}
+	}
+}
+
+func TestITFPackageErrorsAndFieldCatalog(t *testing.T) {
+	fields := []string{
+		ITFMetaField, ITFVarTypesField, ITFVarsField, ITFParamsField, ITFStatesField,
+		ITFDescriptionField, ITFFormatField, ITFFormatDescriptionField,
+		ITFVariablesToExpressionsField, ITFIndexField, ITFTagField, ITFValueField,
+		ITFBigIntField, ITFTupleField, ITFSetField, ITFMapField, ITFUnserializableField,
+	}
+	want := []string{
+		"#meta", "varTypes", "vars", "params", "states", "description", "format", "format-description",
+		"variables-to-expressions", "index", "tag", "value", "#bigint", "#tup", "#set", "#map", "#unserializable",
+	}
+	if !reflect.DeepEqual(fields, want) {
+		t.Fatalf("ITF fields = %#v", fields)
+	}
+	formatErr := itfFormat("bad %s", "shape")
+	contentErr := itfContent("bad %s", "value")
+	var formatTarget *ITFFormatError
+	var contentTarget *ITFContentError
+	var baseTarget *ITFError
+	if !errors.As(formatErr, &formatTarget) || errors.As(formatErr, &contentTarget) || !errors.As(formatErr, &baseTarget) {
+		t.Fatalf("format classification = %T", formatErr)
+	}
+	if !errors.As(contentErr, &contentTarget) || errors.As(contentErr, &formatTarget) || !errors.As(contentErr, &baseTarget) {
+		t.Fatalf("content classification = %T", contentErr)
+	}
+	multiple := NewITFMultipleErrors([]error{formatErr, contentErr})
+	if multiple.Error() != "Multiple errors: ITF format error: bad shape\nITF content error: bad value" ||
+		!errors.Is(multiple, formatErr) || !errors.Is(multiple, contentErr) {
+		t.Fatalf("multiple errors = %q", multiple)
+	}
+	copyOfErrors := multiple.Unwrap()
+	copyOfErrors[0] = nil
+	if multiple.Errors[0] == nil {
+		t.Fatal("multiple error unwrapping exposed internal slice")
 	}
 }
 

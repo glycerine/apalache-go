@@ -7,20 +7,27 @@ import (
 	"math/big"
 	"regexp"
 	"sort"
+	"strings"
 )
 
 const (
-	ITFMetaField           = "#meta"
-	ITFVarTypesField       = "varTypes"
-	ITFVarsField           = "vars"
-	ITFParamsField         = "params"
-	ITFStatesField         = "states"
-	ITFIndexField          = "index"
-	ITFBigIntField         = "#bigint"
-	ITFTupleField          = "#tup"
-	ITFSetField            = "#set"
-	ITFMapField            = "#map"
-	ITFUnserializableField = "#unserializable"
+	ITFMetaField                   = "#meta"
+	ITFVarTypesField               = "varTypes"
+	ITFVarsField                   = "vars"
+	ITFParamsField                 = "params"
+	ITFStatesField                 = "states"
+	ITFDescriptionField            = "description"
+	ITFFormatField                 = "format"
+	ITFFormatDescriptionField      = "format-description"
+	ITFVariablesToExpressionsField = "variables-to-expressions"
+	ITFIndexField                  = "index"
+	ITFTagField                    = "tag"
+	ITFValueField                  = "value"
+	ITFBigIntField                 = "#bigint"
+	ITFTupleField                  = "#tup"
+	ITFSetField                    = "#set"
+	ITFMapField                    = "#map"
+	ITFUnserializableField         = "#unserializable"
 )
 
 type TraceState map[string]Expr
@@ -103,17 +110,17 @@ func MarshalITFTrace(module *Module, states []TraceState, options ITFOptions) ([
 			parameters = append(parameters, typed.Name())
 		}
 	}
-	meta := map[string]any{"format": "ITF", "format-description": "https://apalache-mc.org/docs/adr/015adr-trace.html", "varTypes": varTypes}
+	meta := map[string]any{ITFFormatField: "ITF", ITFFormatDescriptionField: "https://apalache-mc.org/docs/adr/015adr-trace.html", ITFVarTypesField: varTypes}
 	if options.Description == "" {
 		options.Description = "Created by Apalache Go"
 	}
-	meta["description"] = options.Description
+	meta[ITFDescriptionField] = options.Description
 	replacements := module.NameReplacements()
 	for name, expression := range options.NameReplacements {
 		replacements[name] = expression
 	}
 	if len(replacements) > 0 {
-		meta["variables-to-expressions"] = replacements
+		meta[ITFVariablesToExpressionsField] = replacements
 	}
 	root := map[string]any{ITFMetaField: meta, ITFVarsField: variables}
 	if len(parameters) > 0 {
@@ -259,7 +266,7 @@ func EncodeITFValue(expression Expr) (any, error) {
 					if err != nil {
 						return nil, err
 					}
-					return map[string]any{"tag": tag.Value(), "value": value}, nil
+					return map[string]any{ITFTagField: tag.Value(), ITFValueField: value}, nil
 				}
 			}
 		}
@@ -322,11 +329,44 @@ func joinStrings(values []string, separator string) string {
 type ITFError struct{ Kind, Message string }
 
 func (err *ITFError) Error() string { return err.Kind + ": " + err.Message }
+
+type ITFFormatError struct{ *ITFError }
+
+func (err *ITFFormatError) Unwrap() error { return err.ITFError }
+
+type ITFContentError struct{ *ITFError }
+
+func (err *ITFContentError) Unwrap() error { return err.ITFError }
+
+type ITFMultipleErrors struct{ Errors []error }
+
+func NewITFMultipleErrors(errors []error) *ITFMultipleErrors {
+	return &ITFMultipleErrors{Errors: append([]error(nil), errors...)}
+}
+
+func (err *ITFMultipleErrors) Error() string {
+	if err == nil {
+		return "Multiple errors:"
+	}
+	messages := make([]string, len(err.Errors))
+	for index, item := range err.Errors {
+		messages[index] = item.Error()
+	}
+	return "Multiple errors: " + strings.Join(messages, "\n")
+}
+
+func (err *ITFMultipleErrors) Unwrap() []error {
+	if err == nil {
+		return nil
+	}
+	return append([]error(nil), err.Errors...)
+}
+
 func itfFormat(format string, args ...any) error {
-	return &ITFError{Kind: "ITF format error", Message: fmt.Sprintf(format, args...)}
+	return &ITFFormatError{ITFError: &ITFError{Kind: "ITF format error", Message: fmt.Sprintf(format, args...)}}
 }
 func itfContent(format string, args ...any) error {
-	return &ITFError{Kind: "ITF content error", Message: fmt.Sprintf(format, args...)}
+	return &ITFContentError{ITFError: &ITFError{Kind: "ITF content error", Message: fmt.Sprintf(format, args...)}}
 }
 
 func UnmarshalITFTrace(data []byte) ([]TraceState, error) {
@@ -696,8 +736,8 @@ func decodeITFVariant(raw any, typ VariantType) (Expr, error) {
 	if !ok {
 		return nil, itfFormat("variant must be an object")
 	}
-	rawTag, tagFound := object["tag"]
-	rawValue, valueFound := object["value"]
+	rawTag, tagFound := object[ITFTagField]
+	rawValue, valueFound := object[ITFValueField]
 	if !tagFound || !valueFound {
 		return nil, itfFormat("variant must declare tag and value")
 	}
