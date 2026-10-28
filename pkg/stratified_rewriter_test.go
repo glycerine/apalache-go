@@ -437,6 +437,14 @@ func TestStratifiedPrimeRejectsArenaCells(t *testing.T) {
 	if _, _, err := rewriter.Rewrite(prime, scope); err == nil || !strings.Contains(err.Error(), "only implemented for variables") {
 		t.Fatalf("prime of arena cell error = %v", err)
 	}
+	for _, expression := range []Expr{
+		MustOperExpr(Op("PRIME"), Typed(IntT1), intLiteral(1)),
+		MustOperExpr(Op("PRIME"), Typed(IntT1), NewNameExpr("unbound", Typed(IntT1))),
+	} {
+		if _, _, err := rewriter.Rewrite(expression, scope); err == nil {
+			t.Fatalf("invalid prime operand was accepted: %v", expression)
+		}
+	}
 }
 
 func TestStratifiedRewriterSetConstructionUnionAndFilter(t *testing.T) {
