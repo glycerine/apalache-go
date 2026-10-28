@@ -245,19 +245,58 @@ func TestDecorateWithPrimeIsIdempotent(t *testing.T) {
 func TestTransformModuleExpressions(t *testing.T) {
 	x := NewNameExpr("x", Untyped())
 	operator := NewOperDecl("Op", nil, x, Untyped())
+	operator.SetRecursive(true)
 	assumption := NewUnnamedAssumeDecl(x, Untyped())
-	module := NewModule("M", []Decl{operator, assumption})
+	namedAssumption := NewNamedAssumeDecl("Named", x, Typed(BoolT1))
+	theorem := NewTheoremDecl("T", x, Untyped())
+	constant := NewConstDecl("C", Untyped())
+	module := NewModule("M", []Decl{operator, assumption, namedAssumption, theorem, constant})
 	module.AddProperty(PropertyConfigured)
 	transform := ReplaceEqual(IdleTracker{}, x, func() Expr { return NewNameExpr("y", Untyped()) })
 	got := TransformModuleExpressions(module, transform, func(declaration Decl) bool {
-		_, isOperator := declaration.(*OperDecl)
-		return isOperator
+		_, excluded := declaration.(*AssumeDecl)
+		return !excluded
 	})
 	if !EqualExpr(got.OperDeclarations()[0].Body(), NewNameExpr("y", Untyped())) {
 		t.Fatal("operator body was not transformed")
 	}
-	if got.AssumeDeclarations()[0].ID() != assumption.ID() || !got.HasProperty(PropertyConfigured) {
-		t.Fatal("excluded declaration or module property was not preserved")
+	if !got.OperDeclarations()[0].IsRecursive() || got.OperDeclarations()[0].ID() == operator.ID() {
+		t.Fatal("changed operator was not copied with its recursive flag")
+	}
+	if got.AssumeDeclarations()[0].ID() != assumption.ID() || got.AssumeDeclarations()[1].ID() != namedAssumption.ID() {
+		t.Fatal("excluded assumptions were not retained by identity")
+	}
+	if got.Declarations()[3].ID() != theorem.ID() || got.Declarations()[4].ID() != constant.ID() {
+		t.Fatal("unsupported declarations were not retained by identity")
+	}
+	if got.HasProperty(PropertyConfigured) {
+		t.Fatal("fresh Scala module unexpectedly retained mixin properties")
+	}
+	if got == module || got.Name() != module.Name() {
+		t.Fatal("transformer did not produce a fresh same-name module")
+	}
+}
+
+func TestTransformModuleExpressionsAssumptionNamesAndIdentity(t *testing.T) {
+	body := NewNameExpr("p", Typed(BoolT1))
+	named := NewNamedAssumeDecl("Safety", body, Typed(BoolT1))
+	unnamed := NewUnnamedAssumeDecl(body, Typed(BoolT1))
+	module := NewModule("M", []Decl{named, unnamed})
+
+	identity := TransformModuleExpressions(module, func(expression Expr) Expr { return expression }, nil)
+	if identity.Declarations()[0].ID() != named.ID() || identity.Declarations()[1].ID() != unnamed.ID() {
+		t.Fatal("identity transformation copied declarations")
+	}
+
+	changed := TransformModuleExpressions(module, func(Expr) Expr {
+		return NewValueExpr(BoolValue(true), Typed(BoolT1))
+	}, nil)
+	changedNamed := changed.AssumeDeclarations()[0]
+	if name, ok := changedNamed.DefinedName(); !ok || name != "Safety" || !changedNamed.Tag().Equal(Typed(BoolT1)) {
+		t.Fatal("changed named assumption lost its name or tag")
+	}
+	if _, ok := changed.AssumeDeclarations()[1].DefinedName(); ok {
+		t.Fatal("changed unnamed assumption acquired a name")
 	}
 }
 
@@ -282,5 +321,44 @@ func TestUnrollSimpleUnchanged(t *testing.T) {
 		if eq.Arguments()[0].(*OperExpr).Arguments()[0].ID() == eq.Arguments()[1].ID() {
 			t.Fatal("UNCHANGED expansion reused expression identity")
 		}
+	}
+}
+
+func TestUnrollSimpleUnchangedScalarRecursionShallowCopiesAndLetBarrier(t *testing.T) {
+	leaf := NewNameExpr("x", Typed(IntT1))
+	nested := MustOperExpr(Op("PLUS"), Typed(IntT1), leaf, NewValueExpr(Int64Value(1), Typed(IntT1)))
+	unchanged := MustOperExpr(Op("UNCHANGED"), Typed(BoolT1), nested)
+	listener := &recordingListener{}
+	got := UnrollSimpleUnchanged(NewListenerTracker(listener))(unchanged).(*OperExpr)
+	if got.Operator().Name() != "EQ" || len(listener.expressions) != 1 || listener.expressions[0][0] != unchanged || listener.expressions[0][1] != got {
+		t.Fatal("scalar UNCHANGED was not expanded and tracked")
+	}
+	leftCopy := got.Arguments()[0].(*OperExpr).Arguments()[0].(*OperExpr)
+	rightCopy := got.Arguments()[1].(*OperExpr)
+	if leftCopy.ID() == nested.ID() || rightCopy.ID() == nested.ID() || leftCopy.ID() == rightCopy.ID() {
+		t.Fatal("Scala copy did not allocate two fresh roots")
+	}
+	if leftCopy.Arguments()[0] != leaf || rightCopy.Arguments()[0] != leaf {
+		t.Fatal("Scala copy was deep instead of retaining nested children")
+	}
+
+	decl := NewOperDecl("Local", nil, unchanged, Typed(mustOperatorType(t, nil, BoolT1)))
+	let := NewLetInExpr(unchanged, Typed(BoolT1), decl)
+	if transformed := UnrollSimpleUnchanged(IdleTracker{})(let); transformed != let {
+		t.Fatal("post-inlining unroller descended into LET-IN")
+	}
+}
+
+func TestUnrollSimpleUnchangedRecursesThroughOrdinaryOperators(t *testing.T) {
+	x := NewNameExpr("x", Typed(IntT1))
+	unchanged := MustOperExpr(Op("UNCHANGED"), Typed(BoolT1), x)
+	parent := MustOperExpr(Op("NOT"), Typed(BoolT1), unchanged)
+	got := UnrollSimpleUnchanged(IdleTracker{})(parent).(*OperExpr)
+	if got == parent || got.Operator().Name() != "NOT" || got.Arguments()[0].(*OperExpr).Operator().Name() != "EQ" {
+		t.Fatalf("ordinary recursion produced %#v", got)
+	}
+	plain := MustOperExpr(Op("EQ"), Typed(BoolT1), x, x)
+	if transformed := UnrollSimpleUnchanged(IdleTracker{})(plain); transformed != plain {
+		t.Fatal("unchanged ordinary tree was copied")
 	}
 }

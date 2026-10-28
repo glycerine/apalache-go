@@ -201,7 +201,6 @@ func TransformModuleExpressions(module *Module, transform ExprTransform, include
 		}
 	}
 	result := NewModule(module.Name(), declarations)
-	result.properties = cloneMap(module.properties)
 	return result
 }
 
@@ -212,10 +211,12 @@ func UnrollSimpleUnchanged(tracker TransformationTracker) ExprTransform {
 	if tracker == nil {
 		tracker = IdleTracker{}
 	}
-	copier := NewDeepCopier(IdleTracker{})
 	primeEquality := func(expression Expr) Expr {
-		leftValue := copier.Expression(expression)
-		rightValue := copier.Expression(expression)
+		// Scala case-class copy creates a fresh root while retaining the
+		// original children. WithTag with the existing tag has that exact
+		// shallow-copy behavior for every non-null expression variant.
+		leftValue := expression.WithTag(expression.Tag())
+		rightValue := expression.WithTag(expression.Tag())
 		left := MustOperExpr(Op("PRIME"), expression.Tag(), leftValue)
 		return MustOperExpr(Op("EQ"), Typed(BoolT1), left, rightValue)
 	}
