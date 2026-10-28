@@ -195,3 +195,55 @@ func TestInternalVariableMarkerSurvivesTypeAndDeepCopies(t *testing.T) {
 			variable.IsInternal(), withTag.IsInternal(), deep.IsInternal())
 	}
 }
+
+func TestEveryDeclarationKindAndModuleViewMatchesScala(t *testing.T) {
+	one := NewValueExpr(Int64Value(1), Typed(IntT1))
+	two := NewValueExpr(Int64Value(2), Typed(IntT1))
+	constant := NewConstDecl("C", Typed(IntT1))
+	variable := NewVarDecl("x", Typed(IntT1))
+	assumption := NewNamedAssumeDecl("Assumption", one, Typed(BoolT1))
+	theorem := NewTheoremDecl("Theorem", one, Typed(BoolT1))
+	operator := NewOperDecl("Op", []OperatorParam{ValueParam("p")}, one, Typed(IntT1))
+	operator.SetRecursive(true)
+
+	for _, declaration := range []Decl{constant, variable, assumption, theorem, operator} {
+		copy := declaration.WithTag(Untyped())
+		if copy.ID() == declaration.ID() || !EqualDecl(copy, declaration) || EqualTypedDecl(copy, declaration) {
+			t.Errorf("%T retagging differs from Scala", declaration)
+		}
+	}
+	operatorCopy := operator.WithTag(Untyped()).(*OperDecl)
+	if !operatorCopy.IsRecursive() || operatorCopy.Body() != one || operatorCopy.FormalParams()[0] != ValueParam("p") {
+		t.Fatal("operator copy lost recursion, body, or parameters")
+	}
+	operator.SetBody(two)
+	if operator.Body() != two || operatorCopy.Body() != one {
+		t.Fatal("mutable operator body aliased its copy")
+	}
+
+	constant2 := NewConstDecl("D", Untyped())
+	variable2 := NewVarDecl("y", Untyped())
+	operator2 := NewOperDecl("Other", nil, two, Untyped())
+	assumption2 := NewUnnamedAssumeDecl(two, Untyped())
+	module := NewModule("Ordered", []Decl{
+		variable, constant, operator, assumption, theorem,
+		constant2, variable2, operator2, assumption2,
+	})
+	if got := module.ConstDeclarations(); len(got) != 2 || got[0] != constant || got[1] != constant2 {
+		t.Fatalf("constant view order = %#v", got)
+	}
+	if got := module.VarDeclarations(); len(got) != 2 || got[0] != variable || got[1] != variable2 {
+		t.Fatalf("variable view order = %#v", got)
+	}
+	if got := module.OperDeclarations(); len(got) != 2 || got[0] != operator || got[1] != operator2 {
+		t.Fatalf("operator view order = %#v", got)
+	}
+	if got := module.AssumeDeclarations(); len(got) != 2 || got[0] != assumption || got[1] != assumption2 {
+		t.Fatalf("assumption view order = %#v", got)
+	}
+	declarations := module.Declarations()
+	declarations[0] = constant
+	if module.Declarations()[0] != variable {
+		t.Fatal("module exposed its declaration slice")
+	}
+}
