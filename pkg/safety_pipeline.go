@@ -7,6 +7,9 @@ func DesugarModule(module *Module, names *UniqueNameGenerator, tracker Transform
 	if module == nil {
 		return nil, fmt.Errorf("cannot desugar a nil module")
 	}
+	if !module.HasProperty(PropertyTypeChecked) {
+		return nil, fmt.Errorf("desugaring requires a typechecked module")
+	}
 	stateVariables := make([]string, len(module.VarDeclarations()))
 	for index, declaration := range module.VarDeclarations() {
 		stateVariables[index] = declaration.Name()

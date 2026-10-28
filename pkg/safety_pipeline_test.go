@@ -28,6 +28,13 @@ func TestDesugarModuleUsesNullaryDefinitionsForUnchanged(t *testing.T) {
 	}
 }
 
+func TestDesugarModuleChecksTypeCheckedDependency(t *testing.T) {
+	module := NewModule("M", nil)
+	if _, err := DesugarModule(module, nil, nil); err == nil {
+		t.Fatal("desugaring accepted a module without the TypeChecked property")
+	}
+}
+
 func TestPrepareSafetyTransitionsEndToEnd(t *testing.T) {
 	truth := NewValueExpr(BoolValue(true), Typed(BoolT1))
 	x := NewNameExpr("x", Typed(IntT1))
