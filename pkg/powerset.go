@@ -11,8 +11,8 @@ func (rewriter *StratifiedRewriter) rewritePowerSet(expression *OperExpr, scope 
 	if err != nil {
 		return scope, ArenaCell{}, err
 	}
-	if !isFiniteSetCellType(domain.Type) {
-		return scope, ArenaCell{}, fmt.Errorf("powerset currently requires a finite set, found %s", domain.Type)
+	if _, setTyped := domain.Type.TLAType().(SetType); !setTyped {
+		return scope, ArenaCell{}, fmt.Errorf("powerset requires a set operand, found %s", domain.Type)
 	}
 	powerType, err := NewPowerSetCellType(domain.Type.TLAType())
 	if err != nil {

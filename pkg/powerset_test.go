@@ -92,6 +92,40 @@ func TestStratifiedPowerSetStoresItsDomain(t *testing.T) {
 	}
 }
 
+func TestStratifiedPowerSetConstructionAllowsInfiniteDomainButMembershipRejectsIt(t *testing.T) {
+	intSetType := mustSet(IntT1)
+	powerSetType := mustSet(intSetType)
+	expression := MustOperExpr(Op("SET_POWERSET"), Typed(powerSetType), NewValueExpr(NatSet, Typed(intSetType)))
+	rewriter := NewStratifiedRewriter()
+	scope, power, err := rewriter.Rewrite(expression, InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	domain, err := scope.Arena.Domain(power)
+	if err != nil || !domain.Equal(scope.Arena.NatSetCell()) {
+		t.Fatalf("SUBSET Nat domain = %v, %v", domain, err)
+	}
+	empty := MustOperExpr(Op("SET_ENUM"), Typed(intSetType))
+	membership := MustOperExpr(Op("SET_IN"), Typed(BoolT1), empty, expression)
+	if _, _, err := NewStratifiedRewriter().Rewrite(membership, InitialRewriterScope()); err == nil {
+		t.Fatal("membership in SUBSET Nat was accepted")
+	}
+}
+
+func TestStratifiedPowerSetRejectsNonSetOperandAndWrongResultType(t *testing.T) {
+	intSetType := mustSet(IntT1)
+	invalid := []Expr{
+		MustOperExpr(Op("SET_POWERSET"), Typed(mustSet(IntT1)), NewValueExpr(Int64Value(1), Typed(IntT1))),
+		MustOperExpr(Op("SET_POWERSET"), Typed(intSetType),
+			MustOperExpr(Op("SET_ENUM"), Typed(intSetType), NewValueExpr(Int64Value(1), Typed(IntT1)))),
+	}
+	for _, expression := range invalid {
+		if _, _, err := NewStratifiedRewriter().Rewrite(expression, InitialRewriterScope()); err == nil {
+			t.Fatalf("invalid powerset was accepted: %v", expression)
+		}
+	}
+}
+
 func TestStratifiedPowerSetRejectsInfiniteSubsetComparisons(t *testing.T) {
 	intValue := func(value int64) Expr { return NewValueExpr(Int64Value(value), Typed(IntT1)) }
 	intSetType := mustSet(IntT1)

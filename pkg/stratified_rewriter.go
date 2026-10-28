@@ -2255,6 +2255,9 @@ func (rewriter *StratifiedRewriter) rewriteMembership(expression *OperExpr, scop
 		if domainErr != nil {
 			return scope, ArenaCell{}, domainErr
 		}
+		if !isFiniteSetCellType(domain.Type) {
+			return scope, ArenaCell{}, fmt.Errorf("powerset membership over non-finite domain %s is not supported", domain.Type)
+		}
 		scope, element, err = rewriter.coerceCell(scope, element, domain.Type.TLAType())
 		if err != nil {
 			return scope, ArenaCell{}, fmt.Errorf("powerset membership element cannot be widened to %s: %w", domain.Type, err)
