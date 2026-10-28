@@ -264,7 +264,7 @@ View == x = 0
 		t.Fatalf("nextStep = %#v", next)
 	}
 	violated := postJSONRPC(t, handler, fmt.Sprintf(
-		`{"jsonrpc":"2.0","method":"checkInvariant","params":{"sessionId":%q,"invariantId":1,"kind":"STATE"},"id":4}`,
+		`{"jsonrpc":"2.0","method":"checkInvariant","params":{"sessionId":%q,"invariantId":1},"id":4}`,
 		sessionID,
 	))
 	violatedResult, _ := violated["result"].(map[string]any)

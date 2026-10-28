@@ -1,6 +1,6 @@
 scala_path	status	go_evidence	remaining
 json-rpc/src/test/scala/com/github/apalachemc/apalache/jsonrpc/TestExplorationService.scala	partial	json_rpc_test.go	core Quint JSON cases are ported; full operator corpus remains
-json-rpc/src/test/scala/com/github/apalachemc/apalache/jsonrpc/TestJsonRequests.scala	partial	json_rpc_test.go	core Quint JSON cases are ported; full operator corpus remains
+json-rpc/src/test/scala/com/github/apalachemc/apalache/jsonrpc/TestJsonRequests.scala	ported	json_rpc_params_test.go;json_rpc_test.go	minimal/full load parameters, every request shape and default, base64 decoding, exact invalid-field diagnostics, query combinations, and ordered-call parsing are covered
 mod-infra/src/test/scala/at/forsyte/apalache/infra/passes/TestPassChainExecutor.scala	ported	pass_chain_test.go	ordered success, unmet dependency rejection, and failure short-circuiting are mapped; the production executor's single-use invariant is covered additionally
 mod-tool/src/test/scala/at/forsyte/apalache/tla/TestConcurrentToolRuns.scala	ported	cmd/apalache/main_test.go;cmd/apalache/output_paths.go	two synchronized parse commands write 00_OutSanyParser.tla beneath separate source-namespaced run directories, with exact content isolation; the test also passes under Go's race detector
 mod-tool/src/test/scala/at/forsyte/apalache/tla/tooling/opt/TestCommandConfig.scala	partial	cmd/apalache/*_test.go;release_integration_test.go	remaining CLI matrix cases are open

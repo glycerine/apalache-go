@@ -3,7 +3,6 @@ package apalache
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -249,12 +248,12 @@ func (service *ExplorationService) loadSpec(ctx context.Context, raw json.RawMes
 }
 
 func (service *ExplorationService) assumeTransition(ctx context.Context, raw json.RawMessage) (any, *jsonRPCError) {
-	var params assumeTransitionParams
-	if err := decodeJSONRPCParams(raw, &params); err != nil {
-		return nil, invalidParams(fmt.Errorf("Parse error in assumeTransition: %w", err))
-	}
-	if params.SessionID == "" || params.TransitionID < 0 || params.TimeoutSec < 0 {
-		return nil, invalidParams(fmt.Errorf("assumeTransition requires a non-empty sessionId, non-negative transitionId, and non-negative timeoutSec"))
+	params, err := parseAssumeTransitionParams(raw)
+	if err != nil || params.TimeoutSec < 0 {
+		if err == nil {
+			err = fmt.Errorf("assumeTransition requires a non-negative timeoutSec")
+		}
+		return nil, invalidParams(err)
 	}
 	return service.withSession(ctx, params.SessionID, func(session *explorationSession) (any, *jsonRPCError) {
 		beforeID := session.takeSnapshot()
@@ -305,9 +304,9 @@ func (service *ExplorationService) assumeTransition(ctx context.Context, raw jso
 }
 
 func (service *ExplorationService) nextStep(ctx context.Context, raw json.RawMessage) (any, *jsonRPCError) {
-	var params nextStepParams
-	if err := decodeJSONRPCParams(raw, &params); err != nil || params.SessionID == "" {
-		return nil, invalidParams(fmt.Errorf("nextStep parameters must contain a non-empty sessionId"))
+	params, err := parseNextStepParams(raw)
+	if err != nil {
+		return nil, invalidParams(err)
 	}
 	return service.withSession(ctx, params.SessionID, func(session *explorationSession) (any, *jsonRPCError) {
 		if err := session.executor.NextState(); err != nil {
@@ -320,9 +319,12 @@ func (service *ExplorationService) nextStep(ctx context.Context, raw json.RawMes
 }
 
 func (service *ExplorationService) assumeState(ctx context.Context, raw json.RawMessage) (any, *jsonRPCError) {
-	var params assumeStateParams
-	if err := decodeJSONRPCParams(raw, &params); err != nil || params.SessionID == "" || params.TimeoutSec < 0 {
-		return nil, invalidParams(fmt.Errorf("assumeState requires a non-empty sessionId, equalities, and non-negative timeoutSec"))
+	params, err := parseAssumeStateParams(raw)
+	if err != nil || params.TimeoutSec < 0 {
+		if err == nil {
+			err = fmt.Errorf("assumeState requires a non-negative timeoutSec")
+		}
+		return nil, invalidParams(err)
 	}
 	var equalities map[string]any
 	decoder := json.NewDecoder(bytes.NewReader(params.Equalities))
@@ -388,9 +390,9 @@ func (service *ExplorationService) assumeState(ctx context.Context, raw json.Raw
 }
 
 func (service *ExplorationService) rollback(ctx context.Context, raw json.RawMessage) (any, *jsonRPCError) {
-	var params rollbackParams
-	if err := decodeJSONRPCParams(raw, &params); err != nil || params.SessionID == "" || params.SnapshotID < 0 {
-		return nil, invalidParams(fmt.Errorf("rollback requires a non-empty sessionId and non-negative snapshotId"))
+	params, err := parseRollbackParams(raw)
+	if err != nil {
+		return nil, invalidParams(err)
 	}
 	return service.withSession(ctx, params.SessionID, func(session *explorationSession) (any, *jsonRPCError) {
 		if _, found := session.snapshots[params.SnapshotID]; !found {
@@ -404,10 +406,12 @@ func (service *ExplorationService) rollback(ctx context.Context, raw json.RawMes
 }
 
 func (service *ExplorationService) checkInvariant(ctx context.Context, raw json.RawMessage) (any, *jsonRPCError) {
-	var params checkInvariantParams
-	if err := decodeJSONRPCParams(raw, &params); err != nil || params.SessionID == "" || params.InvariantID < 0 ||
-		(params.Kind != "STATE" && params.Kind != "ACTION") || params.TimeoutSec < 0 {
-		return nil, invalidParams(fmt.Errorf("checkInvariant requires sessionId, a non-negative invariantId, kind STATE or ACTION, and non-negative timeoutSec"))
+	params, err := parseCheckInvariantParams(raw)
+	if err != nil || params.TimeoutSec < 0 {
+		if err == nil {
+			err = fmt.Errorf("checkInvariant requires a non-negative timeoutSec")
+		}
+		return nil, invalidParams(err)
 	}
 	return service.withSession(ctx, params.SessionID, func(session *explorationSession) (any, *jsonRPCError) {
 		state, action, err := explorationInvariantViolations(session.prepared)
@@ -459,9 +463,12 @@ func (service *ExplorationService) checkInvariant(ctx context.Context, raw json.
 }
 
 func (service *ExplorationService) query(ctx context.Context, raw json.RawMessage) (any, *jsonRPCError) {
-	var params queryParams
-	if err := decodeJSONRPCParams(raw, &params); err != nil || params.SessionID == "" || len(params.Kinds) == 0 || params.TimeoutSec < 0 {
-		return nil, invalidParams(fmt.Errorf("query requires a non-empty sessionId and kinds, and non-negative timeoutSec"))
+	params, err := parseQueryParams(raw)
+	if err != nil || params.TimeoutSec < 0 {
+		if err == nil {
+			err = fmt.Errorf("query requires a non-negative timeoutSec")
+		}
+		return nil, invalidParams(err)
 	}
 	wantTrace, wantState, wantOperator := false, false, false
 	for _, kind := range params.Kinds {
@@ -544,9 +551,12 @@ func (service *ExplorationService) query(ctx context.Context, raw json.RawMessag
 }
 
 func (service *ExplorationService) nextModel(ctx context.Context, raw json.RawMessage) (any, *jsonRPCError) {
-	var params nextModelParams
-	if err := decodeJSONRPCParams(raw, &params); err != nil || params.SessionID == "" || params.Operator == "" || params.TimeoutSec < 0 {
-		return nil, invalidParams(fmt.Errorf("nextModel requires sessionId, operator, and non-negative timeoutSec"))
+	params, err := parseNextModelParams(raw)
+	if err != nil || params.TimeoutSec < 0 {
+		if err == nil {
+			err = fmt.Errorf("nextModel requires a non-negative timeoutSec")
+		}
+		return nil, invalidParams(err)
 	}
 	return service.withSession(ctx, params.SessionID, func(session *explorationSession) (any, *jsonRPCError) {
 		if _, exported := session.exports[params.Operator]; !exported {
@@ -592,9 +602,12 @@ func (service *ExplorationService) nextModel(ctx context.Context, raw json.RawMe
 }
 
 func (service *ExplorationService) compact(ctx context.Context, raw json.RawMessage) (any, *jsonRPCError) {
-	var params compactParams
-	if err := decodeJSONRPCParams(raw, &params); err != nil || params.SessionID == "" || params.SnapshotID < 0 || params.TimeoutSec < 0 {
-		return nil, invalidParams(fmt.Errorf("compact requires sessionId, non-negative snapshotId, and non-negative timeoutSec"))
+	params, err := parseCompactParams(raw)
+	if err != nil || params.TimeoutSec < 0 {
+		if err == nil {
+			err = fmt.Errorf("compact requires a non-negative timeoutSec")
+		}
+		return nil, invalidParams(err)
 	}
 	return service.withSession(ctx, params.SessionID, func(session *explorationSession) (any, *jsonRPCError) {
 		if _, found := session.snapshots[params.SnapshotID]; !found {
@@ -652,23 +665,14 @@ func (service *ExplorationService) compact(ctx context.Context, raw json.RawMess
 }
 
 func (service *ExplorationService) applyInOrder(ctx context.Context, raw json.RawMessage) (any, *jsonRPCError) {
-	var params applyInOrderParams
-	if err := decodeJSONRPCParams(raw, &params); err != nil || params.SessionID == "" || len(params.Calls) == 0 {
-		return nil, invalidParams(fmt.Errorf("applyInOrder requires a non-empty sessionId and calls array"))
-	}
-	allowed := map[string]struct{}{
-		"assumeTransition": {}, "assumeState": {}, "nextStep": {}, "query": {},
-		"checkInvariant": {}, "nextModel": {}, "rollback": {}, "compact": {},
+	params, err := parseApplyInOrderParams(raw)
+	if err != nil {
+		return nil, invalidParams(err)
 	}
 	prepared := make([]applyInOrderCall, len(params.Calls))
 	for index, call := range params.Calls {
-		if _, found := allowed[call.Method]; !found {
-			return nil, invalidParams(fmt.Errorf("Unsupported applyInOrder method: %s", call.Method))
-		}
 		var object map[string]json.RawMessage
-		if len(call.Params) == 0 || json.Unmarshal(call.Params, &object) != nil || object == nil {
-			return nil, invalidParams(fmt.Errorf("Parameters for applyInOrder step %q must be a JSON object", call.Method))
-		}
+		_ = json.Unmarshal(call.Params, &object)
 		sessionJSON, _ := json.Marshal(params.SessionID)
 		object["sessionId"] = sessionJSON
 		encoded, err := json.Marshal(object)
@@ -718,12 +722,9 @@ func (service *ExplorationService) dispatchApplyInOrder(ctx context.Context, cal
 }
 
 func (service *ExplorationService) disposeSpec(raw json.RawMessage) (any, *jsonRPCError) {
-	var params disposeSpecParams
-	if err := decodeJSONRPCParams(raw, &params); err != nil {
-		return nil, invalidParams(fmt.Errorf("Parse error in disposeSpec: %w", err))
-	}
-	if params.SessionID == "" {
-		return nil, invalidParams(fmt.Errorf("disposeSpec parameters must contain a non-empty sessionId"))
+	params, err := parseDisposeSpecParams(raw)
+	if err != nil {
+		return nil, invalidParams(err)
 	}
 	service.mu.Lock()
 	serviceSession, found := service.sessions[params.SessionID]
@@ -739,31 +740,6 @@ func (service *ExplorationService) disposeSpec(raw json.RawMessage) (any, *jsonR
 	serviceSession.mu.Lock()
 	serviceSession.mu.Unlock()
 	return disposeSpecResult{SessionID: params.SessionID}, nil
-}
-
-func parseLoadSpecParams(raw json.RawMessage) (loadSpecParams, error) {
-	params := loadSpecParams{Init: "Init", Next: "Next", Format: "tla"}
-	if err := decodeJSONRPCParams(raw, &params); err != nil {
-		return loadSpecParams{}, fmt.Errorf("Parse error in loadSpec: %w", err)
-	}
-	if len(params.Sources) == 0 {
-		return loadSpecParams{}, fmt.Errorf("loadSpec parameters must be non-empty")
-	}
-	for index, encoded := range params.Sources {
-		decoded, err := base64.StdEncoding.DecodeString(encoded)
-		if err != nil {
-			return loadSpecParams{}, fmt.Errorf("Parse error in loadSpec source %d: %w", index, err)
-		}
-		params.Sources[index] = string(decoded)
-	}
-	params.Format = strings.ToLower(params.Format)
-	if params.Format != "tla" && params.Format != "json" && params.Format != "qnt" {
-		return loadSpecParams{}, fmt.Errorf("loadSpec does not support the %s source format", params.Format)
-	}
-	if params.Format != "tla" && len(params.Sources) != 1 {
-		return loadSpecParams{}, fmt.Errorf("loadSpec requires exactly one source for %s input", params.Format)
-	}
-	return params, nil
 }
 
 func loadExplorationSource(ctx context.Context, params loadSpecParams) (FrontendResult, func(), error) {
