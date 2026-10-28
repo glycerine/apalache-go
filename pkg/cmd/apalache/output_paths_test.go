@@ -45,6 +45,9 @@ func TestResolveOutputDirectoryOptionsPrecedence(t *testing.T) {
 	if err := config.validateForSimulate(); err != nil {
 		t.Fatalf("simulate JSON output directories = %v", err)
 	}
+	if err := config.validateForModelCommand("test", false); err == nil {
+		t.Fatal("test JSON output directories should remain unsupported until the command writes run output")
+	}
 	outDir, runDir := "cli-out", "cli-run"
 	resolveOutputDirectoryOptions(config, map[string]bool{"out-dir": true, "run-dir": true}, &outDir, &runDir)
 	if outDir != "cli-out" || runDir != "cli-run" {

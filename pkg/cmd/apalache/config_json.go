@@ -386,6 +386,8 @@ func (config jsonCommandConfig) validateForModelCommand(command string, checkSpe
 	}{
 		{config.Command != nil, "command"},
 		{config.ConfigFile != nil, "config-file"},
+		{config.OutDir != nil && command != "check" && command != "simulate", "out-dir"},
+		{config.RunDir != nil && command != "check" && command != "simulate", "run-dir"},
 		{config.Debug != nil, "debug"},
 		{config.SMTProfile != nil, "smtprof"},
 		{config.WriteIntermediate != nil, "write-intermediate"},
