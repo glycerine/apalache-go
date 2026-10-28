@@ -72,6 +72,17 @@ func TestMarkSetExpansionsPropagatesConsumerRequirements(t *testing.T) {
 	if markedExists.Arguments()[1].(*OperExpr).Operator().Name() != "SET_POWERSET" {
 		t.Fatal("Skolemized existential unnecessarily expanded its powerset")
 	}
+	functionType := mustFun(IntT1, BoolT1)
+	functionSet := MustOperExpr(Op("FUN_SET"), Typed(mustSet(functionType)),
+		MustOperExpr(Op("SET_ENUM"), Typed(intSet), intLiteral(1)),
+		MustOperExpr(Op("SET_ENUM"), Typed(mustSet(BoolT1)), NewValueExpr(BoolValue(true), Typed(BoolT1))))
+	functionBinder := NewNameExpr("f", Typed(functionType))
+	forall := MustOperExpr(Op("FORALL3"), Typed(BoolT1), functionBinder, functionSet,
+		NewValueExpr(BoolValue(true), Typed(BoolT1)))
+	markedForall := MarkSetExpansionsExpression(forall, nil).(*OperExpr)
+	if markedForall.Arguments()[1].(*OperExpr).Operator().Name() != "ApalacheInternal!__CompactFunSetExpand" {
+		t.Fatal("function quantifier did not use the internal compact expansion marker")
+	}
 }
 
 func TestMarkedPowersetExpansionFeedsUnaryUnion(t *testing.T) {

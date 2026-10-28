@@ -159,7 +159,7 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 			return rewriter.rewriteExcept(typed, scope)
 		case "Apalache!SetAsFun":
 			return rewriter.rewriteSetAsFunction(typed, scope)
-		case "Apalache!Expand":
+		case "Apalache!Expand", "ApalacheInternal!__CompactFunSetExpand":
 			return rewriter.rewriteSetExpansion(typed, scope)
 		case "Apalache!Gen":
 			return rewriter.rewriteGenerate(typed, scope)

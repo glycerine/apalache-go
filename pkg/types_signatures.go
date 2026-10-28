@@ -309,7 +309,7 @@ func InferOperatorType(operator Operator, arguments []Type) (Type, error) {
 				return setType.element, nil
 			}
 		}
-	case "Apalache!Expand":
+	case "Apalache!Expand", "ApalacheInternal!__CompactFunSetExpand":
 		if len(arguments) == 1 {
 			if setType, ok := arguments[0].(SetType); ok {
 				switch setType.element.(type) {

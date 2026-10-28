@@ -14,7 +14,13 @@ func (rewriter *StratifiedRewriter) rewriteSetExpansion(expression *OperExpr, sc
 		return scope, ArenaCell{}, fmt.Errorf("Expand requires an explicit powerset or function-set constructor")
 	}
 	if constructor.Operator().Name() == "FUN_SET" {
+		if expression.Operator().Name() == "ApalacheInternal!__CompactFunSetExpand" {
+			return rewriter.Rewrite(constructor, scope)
+		}
 		return scope, ArenaCell{}, fmt.Errorf("trying to expand a set of functions would blow up the solver")
+	}
+	if expression.Operator().Name() == "ApalacheInternal!__CompactFunSetExpand" {
+		return scope, ArenaCell{}, fmt.Errorf("compact function-set expansion requires a function-set constructor")
 	}
 	if constructor.Operator().Name() != "SET_POWERSET" || len(constructor.Arguments()) != 1 {
 		return scope, ArenaCell{}, fmt.Errorf("Expand requires an explicit powerset constructor")

@@ -126,7 +126,7 @@ func MarkSetExpansionsExpression(expression Expr, tracker TransformationTracker)
 					}
 					constructor := rebuild([]Expr{transform(arguments[0], true), transform(arguments[1], false)})
 					if expand {
-						return MustOperExpr(Op("Apalache!Expand"), typed.Tag(), constructor)
+						return MustOperExpr(Op("ApalacheInternal!__CompactFunSetExpand"), typed.Tag(), constructor)
 					}
 					return constructor
 				case "Apalache!Skolem":
