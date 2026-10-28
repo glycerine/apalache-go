@@ -2,11 +2,13 @@ package apalache
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 )
 
 const (
@@ -19,6 +21,7 @@ const (
 )
 
 const maxJSONRPCRequestBytes = 16 << 20
+const minJSONRPCCompressBytes = 512
 
 type jsonRPCRequest struct {
 	Version string          `json:"jsonrpc"`
@@ -45,7 +48,83 @@ type jsonRPCResponse struct {
 type ExplorationJSONRPCHandler struct{ service *ExplorationService }
 
 func NewExplorationJSONRPCHandler() http.Handler {
-	return &ExplorationJSONRPCHandler{service: NewExplorationService()}
+	service := &ExplorationJSONRPCHandler{service: NewExplorationService()}
+	return explorationCompressionHandler{next: service}
+}
+
+type explorationCompressionHandler struct{ next http.Handler }
+
+func (handler explorationCompressionHandler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
+	if strings.EqualFold(strings.TrimSpace(request.Header.Get("Content-Encoding")), "gzip") {
+		reader, err := gzip.NewReader(request.Body)
+		if err != nil {
+			response.Header().Set("Content-Type", "application/json")
+			writeJSONRPCResponse(response, jsonRPCFailure(nil, JSONRPCParseError, "Parse error"))
+			return
+		}
+		defer reader.Close()
+		request.Body = reader
+	}
+	if !acceptsGzip(request.Header.Get("Accept-Encoding")) {
+		handler.next.ServeHTTP(response, request)
+		return
+	}
+	buffered := newBufferedJSONRPCResponse()
+	handler.next.ServeHTTP(buffered, request)
+	copyHTTPHeaders(response.Header(), buffered.header)
+	if buffered.body.Len() < minJSONRPCCompressBytes {
+		response.WriteHeader(buffered.status)
+		_, _ = response.Write(buffered.body.Bytes())
+		return
+	}
+	response.Header().Set("Content-Encoding", "gzip")
+	response.Header().Add("Vary", "Accept-Encoding")
+	response.Header().Del("Content-Length")
+	response.WriteHeader(buffered.status)
+	writer := gzip.NewWriter(response)
+	_, _ = writer.Write(buffered.body.Bytes())
+	_ = writer.Close()
+}
+
+type bufferedJSONRPCResponse struct {
+	header http.Header
+	body   bytes.Buffer
+	status int
+}
+
+func newBufferedJSONRPCResponse() *bufferedJSONRPCResponse {
+	return &bufferedJSONRPCResponse{header: make(http.Header), status: http.StatusOK}
+}
+
+func (response *bufferedJSONRPCResponse) Header() http.Header { return response.header }
+func (response *bufferedJSONRPCResponse) WriteHeader(status int) {
+	response.status = status
+}
+func (response *bufferedJSONRPCResponse) Write(data []byte) (int, error) {
+	return response.body.Write(data)
+}
+
+func acceptsGzip(header string) bool {
+	for _, value := range strings.Split(header, ",") {
+		parts := strings.Split(value, ";")
+		encoding := strings.TrimSpace(parts[0])
+		if strings.EqualFold(encoding, "gzip") {
+			for _, parameter := range parts[1:] {
+				quality := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(parameter), " ", ""))
+				if quality == "q=0" || quality == "q=0.0" || quality == "q=0.00" || quality == "q=0.000" {
+					return false
+				}
+			}
+			return true
+		}
+	}
+	return false
+}
+
+func copyHTTPHeaders(destination, source http.Header) {
+	for name, values := range source {
+		destination[name] = append([]string(nil), values...)
+	}
 }
 
 func (handler *ExplorationJSONRPCHandler) ServeHTTP(response http.ResponseWriter, request *http.Request) {

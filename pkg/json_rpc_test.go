@@ -1,9 +1,12 @@
 package apalache
 
 import (
+	"bytes"
+	"compress/gzip"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -56,6 +59,51 @@ func TestExplorationJSONRPCHealthAndErrors(t *testing.T) {
 				t.Fatalf("health response = %#v", document)
 			}
 		})
+	}
+}
+
+func TestExplorationJSONRPCGzipRequestAndResponse(t *testing.T) {
+	handler := NewExplorationJSONRPCHandler()
+	var compressedRequest bytes.Buffer
+	requestWriter := gzip.NewWriter(&compressedRequest)
+	_, _ = requestWriter.Write([]byte(`{"jsonrpc":"2.0","method":"health","id":1}`))
+	if err := requestWriter.Close(); err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/rpc", &compressedRequest)
+	request.Header.Set("Content-Encoding", "gzip")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if !strings.Contains(response.Body.String(), `"status":"OK"`) {
+		t.Fatalf("gzip request response = %q", response.Body.String())
+	}
+
+	largeMethod := strings.Repeat("missing", 100)
+	request = httptest.NewRequest(http.MethodPost, "/rpc", strings.NewReader(fmt.Sprintf(
+		`{"jsonrpc":"2.0","method":%q,"id":2}`, largeMethod,
+	)))
+	request.Header.Set("Accept-Encoding", "gzip")
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Header().Get("Content-Encoding") != "gzip" {
+		t.Fatalf("large response encoding = %q, size=%d", response.Header().Get("Content-Encoding"), response.Body.Len())
+	}
+	responseReader, err := gzip.NewReader(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := io.ReadAll(responseReader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = responseReader.Close()
+	var document map[string]any
+	if err = json.Unmarshal(decoded, &document); err != nil {
+		t.Fatal(err)
+	}
+	errorObject, _ := document["error"].(map[string]any)
+	if errorObject["code"] != float64(JSONRPCMethodNotFound) {
+		t.Fatalf("gzip response = %#v", document)
 	}
 }
 
