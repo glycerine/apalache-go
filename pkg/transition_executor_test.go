@@ -194,6 +194,29 @@ func TestTransitionExecutorSolvesSetMembershipWithNativeArrays(t *testing.T) {
 	if err := executor.AssertState(membership); err != nil {
 		t.Fatal(err)
 	}
+	var containsNativeSelect func(Expr) bool
+	containsNativeSelect = func(expression Expr) bool {
+		oper, ok := expression.(*OperExpr)
+		if !ok {
+			return false
+		}
+		if oper.Operator().Name() == "Apalache!SelectInSet" {
+			return true
+		}
+		for _, argument := range oper.Arguments() {
+			if containsNativeSelect(argument) {
+				return true
+			}
+		}
+		return false
+	}
+	foundNativeSelect := false
+	for _, constraint := range executor.rewriter.Constraints() {
+		foundNativeSelect = foundNativeSelect || containsNativeSelect(constraint)
+	}
+	if !foundNativeSelect {
+		t.Fatalf("array membership constraints do not select from the native set: %v", executor.rewriter.Constraints())
+	}
 	solver, encoder, status, err := executor.solve(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)

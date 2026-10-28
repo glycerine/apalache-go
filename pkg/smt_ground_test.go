@@ -244,6 +244,43 @@ func TestEncodeRewriterScopePopulatesNativeSetArray(t *testing.T) {
 	}
 }
 
+func TestEncodeRewriterScopeStoresDynamicSetMembership(t *testing.T) {
+	rewriter := NewStratifiedRewriterWithOptions(StratifiedRewriterOptions{SMTEncoding: SMTEncodingArrays})
+	setType := mustSet(IntT1)
+	binder := NewNameExpr("x", Typed(IntT1))
+	domain := MustOperExpr(Op("SET_ENUM"), Typed(setType), intLiteral(1), intLiteral(2))
+	predicate := MustOperExpr(Op("EQ"), Typed(BoolT1), binder, intLiteral(1))
+	filter := MustOperExpr(Op("SET_FILTER"), Typed(setType), binder, domain, predicate)
+	scope, result, err := rewriter.Rewrite(filter, InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	pointers := scope.Arena.GetHas(result)
+	if len(pointers) != 2 {
+		t.Fatalf("filtered set pointers = %v", pointers)
+	}
+	solver := newTestG3Solver(t)
+	encoder, err := EncodeRewriterScopeWithEncoding(solver, scope, rewriter.Constraints(), SMTEncodingArrays)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTSatisfiable {
+		t.Fatalf("dynamic native set array = %v, %v", status, checkErr)
+	}
+	selectAt := func(index int) Expr {
+		return MustOperExpr(Op("Apalache!SelectInSet"), Typed(BoolT1),
+			pointers[index].Element().NameExpr(), result.NameExpr())
+	}
+	badMembership := MustOperExpr(Op("OR"), Typed(BoolT1),
+		MustOperExpr(Op("NOT"), Typed(BoolT1), selectAt(0)), selectAt(1))
+	if err = encoder.Assert(badMembership); err != nil {
+		t.Fatal(err)
+	}
+	if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTUnsatisfiable {
+		t.Fatalf("dynamic stored memberships = %v, %v", status, checkErr)
+	}
+}
+
 func TestG3GroundEncoderArraySSAStoresAndUnconstraining(t *testing.T) {
 	t.Run("set store", func(t *testing.T) {
 		solver := newTestG3Solver(t)

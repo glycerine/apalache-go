@@ -2249,13 +2249,7 @@ func (rewriter *StratifiedRewriter) rewriteSetConstructor(expression *OperExpr, 
 		pointers[index] = FixedElementPointer{Cell: cell}
 	}
 	scope.Arena = newArena.AppendHas(setCell, pointers...)
-	if rewriter.smtEncoding == SMTEncodingArrays {
-		for _, cell := range unique {
-			rewriter.assert(MustOperExpr(Op("Apalache!StoreInSet"), Typed(BoolT1), cell.NameExpr(), setCell.NameExpr()))
-		}
-	} else {
-		rewriter.addMembershipConstraints(scope.Arena, setCell)
-	}
+	rewriter.addMembershipConstraints(scope.Arena, setCell)
 	return scope, setCell, nil
 }
 
@@ -2493,6 +2487,11 @@ func (rewriter *StratifiedRewriter) rewriteMembership(expression *OperExpr, scop
 	if err != nil {
 		return scope, ArenaCell{}, fmt.Errorf("membership element has type %s, expected %s: %w", element.Type, tlaSetType.Element(), err)
 	}
+	if rewriter.smtEncoding == SMTEncodingArrays && len(scope.Arena.GetHas(setCell)) != 0 && isDirectSMTCellType(element.Type) {
+		selection := MustOperExpr(Op("Apalache!SelectInSet"), Typed(BoolT1), element.NameExpr(), setCell.NameExpr())
+		scope, result := rewriter.bindBoolean(scope, selection)
+		return scope, result, nil
+	}
 	membership, err := rewriter.finiteMembershipCondition(scope.Arena, element, setCell)
 	if err != nil {
 		return scope, ArenaCell{}, err
@@ -2521,6 +2520,11 @@ func (rewriter *StratifiedRewriter) finiteMembershipCondition(arena *PureArena, 
 
 func (rewriter *StratifiedRewriter) addMembershipConstraints(arena *PureArena, setCell ArenaCell) {
 	for _, pointer := range arena.GetHas(setCell) {
+		if rewriter.smtEncoding == SMTEncodingArrays {
+			rewriter.assert(MustOperExpr(Op("Apalache!StoreInSet"), Typed(BoolT1),
+				pointer.ToSMT(), setCell.NameExpr(), pointer.Element().NameExpr()))
+			continue
+		}
 		membership := MustOperExpr(Op("SET_IN"), Typed(BoolT1), pointer.Element().NameExpr(), setCell.NameExpr())
 		rewriter.assert(MustOperExpr(Op("EQ"), Typed(BoolT1), membership, pointer.ToSMT()))
 	}
