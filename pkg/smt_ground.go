@@ -11,12 +11,15 @@ import (
 // the OOPSLA-style encoding in which each potential set-membership edge is an
 // independent Boolean constant.
 type G3GroundEncoder struct {
-	solver      *G3SolverContext
-	encoding    SMTEncoding
-	cells       map[string]SMTTerm
-	memberships map[[2]int]SMTTerm
-	cellStack   []map[string]SMTTerm
-	inStack     []map[[2]int]SMTTerm
+	solver        *G3SolverContext
+	encoding      SMTEncoding
+	cells         map[string]SMTTerm
+	memberships   map[[2]int]SMTTerm
+	arrayVersions map[string]int
+	defaultValues map[string]SMTTerm
+	cellStack     []map[string]SMTTerm
+	inStack       []map[[2]int]SMTTerm
+	versionStack  []map[string]int
 }
 
 func NewG3GroundEncoder(solver *G3SolverContext) (*G3GroundEncoder, error) {
@@ -39,6 +42,7 @@ func NewG3GroundEncoderWithEncoding(
 	return &G3GroundEncoder{
 		solver: solver, encoding: encoding,
 		cells: make(map[string]SMTTerm), memberships: make(map[[2]int]SMTTerm),
+		arrayVersions: make(map[string]int), defaultValues: make(map[string]SMTTerm),
 	}, nil
 }
 
@@ -54,6 +58,16 @@ func (encoder *G3GroundEncoder) DeclareCell(cell ArenaCell) error {
 			term, err = encoder.declareSetArray(cell, setType.Element())
 			if err != nil {
 				return fmt.Errorf("declare arena set array %s: %w", cell, err)
+			}
+			encoder.cells[name] = term
+			return nil
+		}
+	}
+	if encoder.encoding == SMTEncodingArrays || encoder.encoding == SMTEncodingFunArrays {
+		if functionType, function := cell.Type.TLAType().(FunType); function {
+			term, err = encoder.declareFunctionArray(cell, functionType)
+			if err != nil {
+				return fmt.Errorf("declare arena function array %s: %w", cell, err)
 			}
 			encoder.cells[name] = term
 			return nil
@@ -77,6 +91,56 @@ func (encoder *G3GroundEncoder) DeclareCell(cell ArenaCell) error {
 	}
 	encoder.cells[name] = term
 	return nil
+}
+
+func (encoder *G3GroundEncoder) declareFunctionArray(cell ArenaCell, functionType FunType) (SMTTerm, error) {
+	argumentSort, argumentSortID, err := smtScalarSortForType(functionType.Argument())
+	if err != nil {
+		return SMTTerm{}, err
+	}
+	resultSort, resultSortID, err := smtScalarSortForType(functionType.Result())
+	if err != nil {
+		return SMTTerm{}, err
+	}
+	array, err := encoder.solver.DeclareArrayWithSortIDs(
+		cell.String(), argumentSort, argumentSortID, resultSort, resultSortID)
+	if err != nil || cell.Unconstrained {
+		return array, err
+	}
+	defaultValue, err := encoder.defaultValue(functionType.Result(), resultSortID)
+	if err != nil {
+		return SMTTerm{}, err
+	}
+	constant, err := encoder.solver.ConstantArray(argumentSort, argumentSortID, defaultValue)
+	if err != nil {
+		return SMTTerm{}, err
+	}
+	equal, err := encoder.solver.Equal(array, constant)
+	if err != nil {
+		return SMTTerm{}, err
+	}
+	if err = encoder.solver.Assert(equal); err != nil {
+		return SMTTerm{}, err
+	}
+	return array, nil
+}
+
+func (encoder *G3GroundEncoder) defaultValue(typ Type, sortID string) (SMTTerm, error) {
+	if EqualTypes(typ, BoolT1) {
+		return encoder.solver.Bool(false)
+	}
+	if EqualTypes(typ, IntT1) {
+		return encoder.solver.Int(0)
+	}
+	if value, found := encoder.defaultValues[sortID]; found {
+		return value, nil
+	}
+	value, err := encoder.solver.DeclareUninterpreted("$Default$"+sortID, sortID)
+	if err != nil {
+		return SMTTerm{}, err
+	}
+	encoder.defaultValues[sortID] = value
+	return value, nil
 }
 
 func (encoder *G3GroundEncoder) declareSetArray(cell ArenaCell, elementType Type) (SMTTerm, error) {
@@ -157,6 +221,7 @@ func cloneSMTTerms[K comparable](terms map[K]SMTTerm) map[K]SMTTerm {
 func (encoder *G3GroundEncoder) Push() {
 	encoder.cellStack = append(encoder.cellStack, cloneSMTTerms(encoder.cells))
 	encoder.inStack = append(encoder.inStack, cloneSMTTerms(encoder.memberships))
+	encoder.versionStack = append(encoder.versionStack, cloneMap(encoder.arrayVersions))
 }
 
 func (encoder *G3GroundEncoder) Pop(count int) error {
@@ -168,8 +233,10 @@ func (encoder *G3GroundEncoder) Pop(count int) error {
 	}
 	encoder.cells = encoder.cellStack[len(encoder.cellStack)-count]
 	encoder.memberships = encoder.inStack[len(encoder.inStack)-count]
+	encoder.arrayVersions = encoder.versionStack[len(encoder.versionStack)-count]
 	encoder.cellStack = encoder.cellStack[:len(encoder.cellStack)-count]
 	encoder.inStack = encoder.inStack[:len(encoder.inStack)-count]
+	encoder.versionStack = encoder.versionStack[:len(encoder.versionStack)-count]
 	return nil
 }
 
@@ -213,6 +280,33 @@ func (encoder *G3GroundEncoder) encodeOperator(expression *OperExpr) (SMTTerm, e
 	arguments := expression.Arguments()
 	if expression.Operator().Name() == "Apalache!SelectInSet" && encoder.encoding == SMTEncodingArrays {
 		return encoder.encodeArraySelect(arguments)
+	}
+	if expression.Operator().Name() == "Apalache!SelectInFun" &&
+		(encoder.encoding == SMTEncodingArrays || encoder.encoding == SMTEncodingFunArrays) {
+		return encoder.encodeArraySelect(arguments)
+	}
+	if expression.Operator().Name() == "Apalache!StoreInSet" {
+		if len(arguments) == 2 && encoder.encoding == SMTEncodingArrays {
+			return encoder.encodeArrayStore(arguments[1], arguments[0])
+		}
+		if len(arguments) == 3 && (encoder.encoding == SMTEncodingArrays || encoder.encoding == SMTEncodingFunArrays) {
+			return encoder.encodeArrayStore(arguments[1], arguments[2], arguments[0])
+		}
+	}
+	if (expression.Operator().Name() == "Apalache!storeNotInSet" && encoder.encoding == SMTEncodingArrays) ||
+		(expression.Operator().Name() == "Apalache!storeNotInFun" &&
+			(encoder.encoding == SMTEncodingArrays || encoder.encoding == SMTEncodingFunArrays)) {
+		return encoder.encodeUnchangedArray(arguments)
+	}
+	if expression.Operator().Name() == "Apalache!UnconstrainArray" &&
+		(encoder.encoding == SMTEncodingArrays || encoder.encoding == SMTEncodingFunArrays) {
+		if len(arguments) != 1 {
+			return SMTTerm{}, fmt.Errorf("unconstrain array requires one argument")
+		}
+		if _, err := encoder.freshArrayVersion(arguments[0]); err != nil {
+			return SMTTerm{}, err
+		}
+		return encoder.solver.Bool(true)
 	}
 	if isMembershipOperator(expression.Operator().Name()) {
 		return encoder.encodeMembership(arguments)
@@ -293,6 +387,76 @@ func (encoder *G3GroundEncoder) encodeOperator(expression *OperExpr) (SMTTerm, e
 	default:
 		return SMTTerm{}, fmt.Errorf("unsupported ground SMT operator %s", expression.Operator().Name())
 	}
+}
+
+func (encoder *G3GroundEncoder) freshArrayVersion(expression Expr) (SMTTerm, error) {
+	name, ok := expression.(*NameExpr)
+	if !ok {
+		return SMTTerm{}, fmt.Errorf("array update requires an arena-cell name")
+	}
+	current, found := encoder.cells[name.Name()]
+	if !found || current.sort != SMTArray {
+		return SMTTerm{}, fmt.Errorf("SMT name %s is not a declared array cell", name.Name())
+	}
+	encoder.arrayVersions[name.Name()]++
+	versionedName := fmt.Sprintf("%s_ssa%d", name.Name(), encoder.arrayVersions[name.Name()])
+	updated, err := encoder.solver.DeclareArrayWithSortIDs(
+		versionedName,
+		current.arrayIndexSort, current.arrayIndexSortID,
+		current.arrayValueSort, current.arrayValueSortID,
+	)
+	if err != nil {
+		return SMTTerm{}, err
+	}
+	encoder.cells[name.Name()] = updated
+	return updated, nil
+}
+
+func (encoder *G3GroundEncoder) encodeArrayStore(arrayExpression Expr, operands ...Expr) (SMTTerm, error) {
+	if len(operands) != 1 && len(operands) != 2 {
+		return SMTTerm{}, fmt.Errorf("array store requires an index and optional value")
+	}
+	oldArray, err := encoder.Encode(arrayExpression)
+	if err != nil {
+		return SMTTerm{}, err
+	}
+	index, err := encoder.Encode(operands[0])
+	if err != nil {
+		return SMTTerm{}, err
+	}
+	var value SMTTerm
+	if len(operands) == 1 {
+		value, err = encoder.solver.Bool(true)
+	} else {
+		value, err = encoder.Encode(operands[1])
+	}
+	if err != nil {
+		return SMTTerm{}, err
+	}
+	stored, err := encoder.solver.Store(oldArray, index, value)
+	if err != nil {
+		return SMTTerm{}, err
+	}
+	updated, err := encoder.freshArrayVersion(arrayExpression)
+	if err != nil {
+		return SMTTerm{}, err
+	}
+	return encoder.solver.Equal(updated, stored)
+}
+
+func (encoder *G3GroundEncoder) encodeUnchangedArray(arguments []Expr) (SMTTerm, error) {
+	if len(arguments) != 2 {
+		return SMTTerm{}, fmt.Errorf("unchanged array requires two arguments")
+	}
+	oldArray, err := encoder.Encode(arguments[1])
+	if err != nil {
+		return SMTTerm{}, err
+	}
+	updated, err := encoder.freshArrayVersion(arguments[1])
+	if err != nil {
+		return SMTTerm{}, err
+	}
+	return encoder.solver.Equal(updated, oldArray)
 }
 
 func (encoder *G3GroundEncoder) encodeArraySelect(arguments []Expr) (SMTTerm, error) {

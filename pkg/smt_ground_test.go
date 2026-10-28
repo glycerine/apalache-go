@@ -167,3 +167,82 @@ func TestG3GroundEncoderArraySetDeclarationsAndSelection(t *testing.T) {
 		t.Fatalf("constant set arrays = %v, %v", status, checkErr)
 	}
 }
+
+func TestG3GroundEncoderArraySSAStoresAndUnconstraining(t *testing.T) {
+	t.Run("set store", func(t *testing.T) {
+		solver := newTestG3Solver(t)
+		encoder, err := NewG3GroundEncoderWithEncoding(solver, SMTEncodingArrays)
+		if err != nil {
+			t.Fatal(err)
+		}
+		element := NewArenaCell(0, BasicCellType{Type: IntT1})
+		set := NewArenaCell(1, BasicCellType{Type: mustSet(IntT1)})
+		for _, cell := range []ArenaCell{element, set} {
+			if err = encoder.DeclareCell(cell); err != nil {
+				t.Fatal(err)
+			}
+		}
+		store := MustOperExpr(Op("Apalache!StoreInSet"), Typed(BoolT1), element.NameExpr(), set.NameExpr())
+		selectElement := MustOperExpr(Op("Apalache!SelectInSet"), Typed(BoolT1), element.NameExpr(), set.NameExpr())
+		if err = encoder.Assert(store); err != nil {
+			t.Fatal(err)
+		}
+		if err = encoder.Assert(MustOperExpr(Op("NOT"), Typed(BoolT1), selectElement)); err != nil {
+			t.Fatal(err)
+		}
+		if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTUnsatisfiable {
+			t.Fatalf("stored set member = %v, %v", status, checkErr)
+		}
+	})
+
+	t.Run("function store", func(t *testing.T) {
+		solver := newTestG3Solver(t)
+		encoder, err := NewG3GroundEncoderWithEncoding(solver, SMTEncodingFunArrays)
+		if err != nil {
+			t.Fatal(err)
+		}
+		argument := NewArenaCell(0, BasicCellType{Type: IntT1})
+		function := NewArenaCell(1, BasicCellType{Type: mustFunType(t, IntT1, BoolT1)})
+		for _, cell := range []ArenaCell{argument, function} {
+			if err = encoder.DeclareCell(cell); err != nil {
+				t.Fatal(err)
+			}
+		}
+		store := MustOperExpr(Op("Apalache!StoreInSet"), Typed(BoolT1),
+			boolExpr(true), function.NameExpr(), argument.NameExpr())
+		application := MustOperExpr(Op("Apalache!SelectInFun"), Typed(BoolT1),
+			argument.NameExpr(), function.NameExpr())
+		if err = encoder.Assert(store); err != nil {
+			t.Fatal(err)
+		}
+		if err = encoder.Assert(MustOperExpr(Op("NOT"), Typed(BoolT1), application)); err != nil {
+			t.Fatal(err)
+		}
+		if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTUnsatisfiable {
+			t.Fatalf("stored function result = %v, %v", status, checkErr)
+		}
+	})
+
+	t.Run("unconstrained set version", func(t *testing.T) {
+		solver := newTestG3Solver(t)
+		encoder, err := NewG3GroundEncoderWithEncoding(solver, SMTEncodingArrays)
+		if err != nil {
+			t.Fatal(err)
+		}
+		element := NewArenaCell(0, BasicCellType{Type: IntT1})
+		set := NewArenaCell(1, BasicCellType{Type: mustSet(IntT1)})
+		for _, cell := range []ArenaCell{element, set} {
+			if err = encoder.DeclareCell(cell); err != nil {
+				t.Fatal(err)
+			}
+		}
+		unconstrain := MustOperExpr(Op("Apalache!UnconstrainArray"), Typed(BoolT1), set.NameExpr())
+		selectElement := MustOperExpr(Op("Apalache!SelectInSet"), Typed(BoolT1), element.NameExpr(), set.NameExpr())
+		if err = encoder.Assert(MustOperExpr(Op("AND"), Typed(BoolT1), unconstrain, selectElement)); err != nil {
+			t.Fatal(err)
+		}
+		if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTSatisfiable {
+			t.Fatalf("unconstrained set array = %v, %v", status, checkErr)
+		}
+	})
+}
