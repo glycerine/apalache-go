@@ -131,6 +131,58 @@ func TestRunConfigRejectsInvalidStatisticsChoice(t *testing.T) {
 	}
 }
 
+func TestRunConfigAcceptsScalaOptionalBooleanForms(t *testing.T) {
+	for _, test := range []struct {
+		argument string
+		enabled  bool
+	}{
+		{"--enable-stats", true},
+		{"--enable-stats=yes", true},
+		{"--enable-stats=1", true},
+		{"--enable-stats=no", false},
+		{"--enable-stats=0", false},
+	} {
+		t.Run(test.argument, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			var stdout, stderr bytes.Buffer
+			if code := run(context.Background(), []string{"config", test.argument}, &stdout, &stderr); code != exitOK {
+				t.Fatalf("config = %d, stderr = %q", code, &stderr)
+			}
+			contents, err := os.ReadFile(filepath.Join(home, ".tlaplus", "esc.txt"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if test.enabled {
+				if !regexp.MustCompile(`^[0-9a-f]{32}\n$`).Match(contents) {
+					t.Fatalf("enabled marker = %q", contents)
+				}
+			} else if string(contents) != "NO_STATISTICS\n" {
+				t.Fatalf("disabled marker = %q", contents)
+			}
+		})
+	}
+}
+
+func TestRunConfigRejectsArgumentsAndConfigurationDirectoryFailure(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	var stdout, stderr bytes.Buffer
+	if code := run(context.Background(), []string{"config", "unexpected"}, &stdout, &stderr); code != exitUsage ||
+		!strings.Contains(stderr.String(), "does not accept positional arguments") {
+		t.Fatalf("positional config = %d, stderr = %q", code, &stderr)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".tlaplus"), []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := run(context.Background(), []string{"config", "--enable-stats"}, &stdout, &stderr); code != exitTool ||
+		!strings.Contains(stderr.String(), "cannot create TLA+ configuration directory") {
+		t.Fatalf("directory failure = %d, stderr = %q", code, &stderr)
+	}
+}
+
 func TestRunServerStartsExplorerAndStopsWithContext(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("PORT", "not-used-because-cli-wins")

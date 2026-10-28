@@ -538,16 +538,13 @@ func runTracee(ctx context.Context, args []string, stdout, stderr io.Writer) int
 func runConfig(args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("config", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	enableStats := flags.String("enable-stats", "", "enable shared TLA+ usage statistics: true or false (default unchanged)")
+	var enableStats optionalBoolFlag
+	flags.Var(&enableStats, "enable-stats", "enable shared TLA+ usage statistics: true or false (default unchanged)")
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
 	}
 	if flags.NArg() != 0 {
 		fmt.Fprintln(stderr, "config does not accept positional arguments")
-		return exitUsage
-	}
-	if *enableStats != "" && *enableStats != "true" && *enableStats != "false" {
-		fmt.Fprintln(stderr, "-enable-stats must be true or false")
 		return exitUsage
 	}
 	home, err := os.UserHomeDir()
@@ -560,9 +557,9 @@ func runConfig(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "cannot create TLA+ configuration directory: %v\n", err)
 		return exitTool
 	}
-	if *enableStats != "" {
+	if enableStats.set {
 		contents := "NO_STATISTICS"
-		if *enableStats == "true" {
+		if enableStats.value {
 			identifier := make([]byte, 16)
 			if _, err = rand.Read(identifier); err != nil {
 				fmt.Fprintf(stderr, "cannot generate statistics identifier: %v\n", err)
@@ -578,6 +575,32 @@ func runConfig(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintln(stdout, "Configuration complete")
 	return exitOK
 }
+
+type optionalBoolFlag struct {
+	set   bool
+	value bool
+}
+
+func (value *optionalBoolFlag) String() string {
+	if !value.set {
+		return ""
+	}
+	return strconv.FormatBool(value.value)
+}
+
+func (value *optionalBoolFlag) Set(text string) error {
+	switch strings.ToLower(text) {
+	case "", "true", "yes", "1":
+		value.set, value.value = true, true
+	case "false", "no", "0":
+		value.set, value.value = true, false
+	default:
+		return fmt.Errorf("must be true or false")
+	}
+	return nil
+}
+
+func (*optionalBoolFlag) IsBoolFlag() bool { return true }
 
 func runTest(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("test", flag.ContinueOnError)

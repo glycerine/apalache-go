@@ -18,7 +18,7 @@ mod-tool/src/main/scala/at/forsyte/apalache/tla/Tool.scala	partial	cmd/apalache;
 mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/AbstractCheckerCmd.scala	partial	cmd/apalache;config_json.go	remaining CLI controls are open
 mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/ApalacheCommand.scala	partial	cmd/apalache;config_json.go	remaining CLI controls are open
 mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/CheckCmd.scala	partial	cmd/apalache;config_json.go	max-error/view, search tuning, and principal checker controls are ported; remaining output/debug controls are open
-mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/ConfigCmd.scala	partial	cmd/apalache;config_json.go	remaining CLI controls are open
+mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/ConfigCmd.scala	ported	cmd/apalache/main.go;cmd/apalache/main_test.go	unchanged, enabled, and disabled statistics selection; bare and true/yes/1/false/no/0 Boolean forms; user-home .tlaplus creation; shared opt-in identifier and NO_STATISTICS marker writes; invalid input, positional arguments, and filesystem failures are covered
 mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/ParseCmd.scala	partial	cmd/apalache;config_json.go	remaining CLI controls are open
 mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/ServerCmd.scala	partial	cmd/apalache;config_json.go	remaining CLI controls are open
 mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/SimulateCmd.scala	partial	cmd/apalache;config_json.go;simulator.go	max-run, randomized selection, invariant error budgets, and numbered ITF runs are ported; output-trace tuning remains
