@@ -103,6 +103,23 @@ func TestUnifierRecordFieldApplication(t *testing.T) {
 	}
 }
 
+func TestUnifierCrossRecordFamiliesPreserveConcreteValueRepresentation(t *testing.T) {
+	full, _ := NewRecordType(map[string]Type{"ack": IntT1, "rdy": IntT1})
+	field := mustNumberedVar(t, 11)
+	tail := mustNumberedVar(t, 12)
+	row, _ := NewRowType(map[string]Type{"rdy": field}, &tail)
+	selection := NewRecordRowType(row)
+	for _, pair := range [][2]Type{{full, selection}, {selection, full}} {
+		_, unified, ok, err := NewTypeUnifier(NewTypeVarPool(100)).Unify(EmptySubstitution(), pair[0], pair[1])
+		if err != nil || !ok {
+			t.Fatalf("Unify(%s, %s) = %v, %v, %v", pair[0], pair[1], unified, ok, err)
+		}
+		if _, legacy := unified.(RecordType); !legacy {
+			t.Fatalf("Unify(%s, %s) returned %T, want RecordType", pair[0], pair[1], unified)
+		}
+	}
+}
+
 func TestUnifierVariablesAndOccursCheck(t *testing.T) {
 	unifier := NewTypeUnifier(NewTypeVarPool(100))
 	a := mustNumberedVar(t, 0)

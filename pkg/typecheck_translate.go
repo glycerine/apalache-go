@@ -718,6 +718,9 @@ func (translator *ToEtcExpr) functionLikeOptions(argument Expr) ([]functionLike,
 			if model, _, ok := ParseModelValue(text); ok {
 				return []functionLike{{mustFun(model, a), model, a}}, nil
 			}
+			// Field selection is an open-row constraint even when record
+			// constructors use legacy closed records. Cross-family unification
+			// preserves the concrete representation of the selected value.
 			tail := translator.pool.Fresh()
 			row, _ := NewRowType(map[string]Type{text: a}, &tail)
 			record := NewRecordRowType(row)

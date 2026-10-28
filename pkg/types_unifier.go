@@ -199,7 +199,11 @@ func (unifier *TypeUnifier) compute(left, right Type) (Type, bool) {
 		return result, true
 	case RecordType:
 		if rightRow, ok := right.(RecordRowType); ok {
-			return unifier.compute(rightRow, leftTyped)
+			_, unifies := unifier.compute(rightRow, leftTyped)
+			if !unifies {
+				return nil, false
+			}
+			return leftTyped, true
 		}
 		rightTyped, ok := right.(RecordType)
 		if !ok {
@@ -228,7 +232,11 @@ func (unifier *TypeUnifier) compute(left, right Type) (Type, bool) {
 			return NewRecordRowType(row), true
 		case RecordType:
 			closedRow, _ := NewRowType(rightTyped.fields, nil)
-			return unifier.compute(leftTyped, NewRecordRowType(closedRow))
+			_, unifies := unifier.compute(leftTyped, NewRecordRowType(closedRow))
+			if !unifies {
+				return nil, false
+			}
+			return rightTyped, true
 		default:
 			return nil, false
 		}

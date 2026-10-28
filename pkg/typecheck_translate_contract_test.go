@@ -99,3 +99,248 @@ func TestToEtcExprConditionalAndApalacheContracts(t *testing.T) {
 		})
 	}
 }
+
+func TestToEtcExprBinderContracts(t *testing.T) {
+	intSet := func() Expr { return tlaOper("SET_ENUM", tlaInt(1), tlaInt(2)) }
+	pairSet := func() Expr {
+		return tlaOper("SET_ENUM",
+			tlaOper("TUPLE", tlaInt(1), tlaBool(true)),
+			tlaOper("TUPLE", tlaInt(2), tlaBool(false)))
+	}
+	tests := []struct {
+		name       string
+		expression func() Expr
+		want       Type
+	}{
+		{
+			"bounded choose", func() Expr {
+				return tlaOper("CHOOSE3", tlaName("x"), intSet(), tlaOper("EQ", tlaName("x"), tlaInt(1)))
+			}, IntT1,
+		},
+		{
+			"unbounded choose", func() Expr {
+				return tlaOper("CHOOSE2", tlaName("x"), tlaOper("EQ", tlaName("x"), tlaInt(1)))
+			}, IntT1,
+		},
+		{
+			"bounded exists", func() Expr {
+				return tlaOper("EXISTS3", tlaName("x"), intSet(), tlaOper("GT", tlaName("x"), tlaInt(0)))
+			}, BoolT1,
+		},
+		{
+			"bounded forall", func() Expr {
+				return tlaOper("FORALL3", tlaName("x"), intSet(), tlaOper("GT", tlaName("x"), tlaInt(0)))
+			}, BoolT1,
+		},
+		{
+			"unbounded exists", func() Expr {
+				return tlaOper("EXISTS2", tlaName("x"), tlaOper("EQ", tlaName("x"), tlaInt(1)))
+			}, BoolT1,
+		},
+		{
+			"unbounded forall", func() Expr {
+				return tlaOper("FORALL2", tlaName("x"), tlaOper("EQ", tlaName("x"), tlaInt(1)))
+			}, BoolT1,
+		},
+		{
+			"tuple exists", func() Expr {
+				target := tlaOper("TUPLE", tlaName("x"), tlaName("y"))
+				predicate := tlaOper("AND", tlaOper("EQ", tlaName("x"), tlaInt(1)), tlaOper("EQ", tlaName("y"), tlaBool(true)))
+				return tlaOper("EXISTS3", target, pairSet(), predicate)
+			}, BoolT1,
+		},
+		{
+			"scalar filter", func() Expr {
+				return tlaOper("SET_FILTER", tlaName("x"), intSet(), tlaOper("GT", tlaName("x"), tlaInt(0)))
+			}, mustSet(IntT1),
+		},
+		{
+			"tuple filter", func() Expr {
+				target := tlaOper("TUPLE", tlaName("x"), tlaName("y"))
+				predicate := tlaOper("AND", tlaOper("EQ", tlaName("x"), tlaInt(1)), tlaOper("EQ", tlaName("y"), tlaBool(true)))
+				return tlaOper("SET_FILTER", target, pairSet(), predicate)
+			}, mustSet(mustTuple(IntT1, BoolT1)),
+		},
+		{
+			"scalar map", func() Expr {
+				return tlaOper("SET_MAP", tlaOper("PLUS", tlaName("x"), tlaInt(1)), tlaName("x"), intSet())
+			}, mustSet(IntT1),
+		},
+		{
+			"tuple map", func() Expr {
+				target := tlaOper("TUPLE", tlaName("x"), tlaName("y"))
+				return tlaOper("SET_MAP", tlaName("x"), target, pairSet())
+			}, mustSet(IntT1),
+		},
+		{
+			"multi-domain map", func() Expr {
+				return tlaOper("SET_MAP", tlaName("x"), tlaName("x"), intSet(), tlaName("y"), tlaOper("SET_ENUM", tlaBool(true)))
+			}, mustSet(IntT1),
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, listener, ok := inferIRExpression(t, test.expression())
+			if !ok || !EqualTypes(got, test.want) {
+				t.Fatalf("inferred %v, want %v; events %+v", got, test.want, listener.events)
+			}
+		})
+	}
+}
+
+func TestToEtcExprFunctionConstructorContracts(t *testing.T) {
+	intSet := func() Expr { return tlaOper("SET_ENUM", tlaInt(1), tlaInt(2)) }
+	boolSet := func() Expr { return tlaOper("SET_ENUM", tlaBool(true), tlaBool(false)) }
+	pairSet := func() Expr {
+		return tlaOper("SET_ENUM",
+			tlaOper("TUPLE", tlaInt(1), tlaBool(true)),
+			tlaOper("TUPLE", tlaInt(2), tlaBool(false)))
+	}
+	tests := []struct {
+		name       string
+		expression func() Expr
+		want       Type
+	}{
+		{
+			"unary", func() Expr { return tlaOper("FUN_CTOR", tlaName("x"), tlaName("x"), intSet()) },
+			mustFun(IntT1, IntT1),
+		},
+		{
+			"binary", func() Expr {
+				return tlaOper("FUN_CTOR", tlaName("x"), tlaName("x"), intSet(), tlaName("y"), boolSet())
+			}, mustFun(mustTuple(IntT1, BoolT1), IntT1),
+		},
+		{
+			"tuple binder", func() Expr {
+				return tlaOper("FUN_CTOR", tlaName("x"), tlaOper("TUPLE", tlaName("x"), tlaName("y")), pairSet())
+			}, mustFun(mustTuple(IntT1, BoolT1), IntT1),
+		},
+		{
+			"recursive unary", func() Expr { return tlaOper("FUN_REC_CTOR", tlaName("x"), tlaName("x"), intSet()) },
+			mustFun(IntT1, IntT1),
+		},
+		{
+			"recursive binary", func() Expr {
+				return tlaOper("FUN_REC_CTOR", tlaName("x"), tlaName("x"), intSet(), tlaName("y"), boolSet())
+			}, mustFun(mustTuple(IntT1, BoolT1), IntT1),
+		},
+		{
+			"recursive tuple binder", func() Expr {
+				return tlaOper("FUN_REC_CTOR", tlaName("x"), tlaOper("TUPLE", tlaName("x"), tlaName("y")), pairSet())
+			}, mustFun(mustTuple(IntT1, BoolT1), IntT1),
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, listener, ok := inferIRExpression(t, test.expression())
+			if !ok || !EqualTypes(got, test.want) {
+				t.Fatalf("inferred %v, want %v; events %+v", got, test.want, listener.events)
+			}
+		})
+	}
+}
+
+func TestToEtcExprFunctionApplicationDomainAndExceptContracts(t *testing.T) {
+	intSet := func() Expr { return tlaOper("SET_ENUM", tlaInt(1), tlaInt(2)) }
+	function := func() Expr { return tlaOper("FUN_CTOR", tlaName("x"), tlaName("x"), intSet()) }
+	sequence := func() Expr { return tlaOper("TUPLE", tlaInt(1), tlaInt(2)).WithTag(Typed(mustSeq(IntT1))) }
+	record := func() Expr { return tlaOper("RECORD", tlaString("foo"), tlaInt(1), tlaString("bar"), tlaBool(true)) }
+	tests := []struct {
+		name       string
+		expression func() Expr
+		want       Type
+	}{
+		{"function application", func() Expr { return tlaOper("FUN_APP", function(), tlaInt(2)) }, IntT1},
+		{"sequence application", func() Expr { return tlaOper("FUN_APP", sequence(), tlaInt(2)) }, IntT1},
+		{"record application", func() Expr { return tlaOper("FUN_APP", record(), tlaString("foo")) }, IntT1},
+		{"function domain", func() Expr { return tlaOper("DOMAIN", function()) }, mustSet(IntT1)},
+		{"sequence domain", func() Expr { return tlaOper("DOMAIN", sequence()) }, mustSet(IntT1)},
+		{"record domain", func() Expr { return tlaOper("DOMAIN", record()) }, mustSet(StrT1)},
+		{
+			"function except", func() Expr {
+				return tlaOper("EXCEPT", function(), tlaOper("TUPLE", tlaInt(1)), tlaInt(3))
+			}, mustFun(IntT1, IntT1),
+		},
+		{
+			"record except", func() Expr {
+				return tlaOper("EXCEPT", record(), tlaOper("TUPLE", tlaString("foo")), tlaInt(3))
+			}, parsedType(t, "[bar: Bool, foo: Int]"),
+		},
+		{
+			"two function updates", func() Expr {
+				return tlaOper("EXCEPT", function(),
+					tlaOper("TUPLE", tlaInt(1)), tlaInt(3),
+					tlaOper("TUPLE", tlaInt(2)), tlaInt(4))
+			}, mustFun(IntT1, IntT1),
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, listener, ok := inferIRExpression(t, test.expression())
+			if !ok || !EqualTypes(got, test.want) {
+				t.Fatalf("inferred %v, want %v; events %+v", got, test.want, listener.events)
+			}
+		})
+	}
+
+	bad := tlaOper("EXCEPT", function(), tlaName("not-a-path"), tlaInt(3))
+	if _, err := newTranslator().TranslateExpression(bad); err == nil || err.Error() != "EXCEPT accessor must be tuple" {
+		t.Fatalf("malformed EXCEPT error = %v", err)
+	}
+}
+
+func TestToEtcExprRecordAndVariantContracts(t *testing.T) {
+	recordSet := tlaOper("RECORD_SET",
+		tlaString("x"), tlaOper("SET_ENUM", tlaInt(1), tlaInt(2)),
+		tlaString("y"), tlaOper("SET_ENUM", tlaBool(true), tlaBool(false)))
+	got, listener, ok := inferIRExpression(t, recordSet)
+	if !ok || !EqualTypes(got, mustSet(parsedType(t, "[x: Int, y: Bool]"))) {
+		t.Fatalf("record set inferred %v; events %+v", got, listener.events)
+	}
+
+	variant := func() Expr { return tlaOper("Variants!Variant", tlaString("A"), tlaInt(1)) }
+	variantTests := []struct {
+		name       string
+		expression func() Expr
+		want       Type
+	}{
+		{"tag", func() Expr { return tlaOper("Variants!VariantTag", variant()) }, StrT1},
+		{"unsafe get", func() Expr { return tlaOper("Variants!VariantGetUnsafe", tlaString("A"), variant()) }, IntT1},
+		{"get or else", func() Expr { return tlaOper("Variants!VariantGetOrElse", tlaString("A"), variant(), tlaInt(2)) }, IntT1},
+		{"filter", func() Expr {
+			return tlaOper("Variants!VariantFilter", tlaString("A"), tlaOper("SET_ENUM", variant(), variant()))
+		}, mustSet(IntT1)},
+	}
+	for _, test := range variantTests {
+		t.Run(test.name, func(t *testing.T) {
+			got, listener, ok := inferIRExpression(t, test.expression())
+			if !ok || !EqualTypes(got, test.want) {
+				t.Fatalf("inferred %v, want %v; events %+v", got, test.want, listener.events)
+			}
+		})
+	}
+
+	invalidRecord := tlaOper("RECORD", tlaName("not-a-string"), tlaInt(1))
+	if _, err := newTranslator().TranslateExpression(invalidRecord); err == nil || err.Error() != "record key is *apalache.NameExpr" {
+		t.Fatalf("invalid record error = %v", err)
+	}
+	invalidVariant := tlaOper("Variants!Variant", tlaName("not-a-string"), tlaInt(1))
+	if _, err := newTranslator().TranslateExpression(invalidVariant); err == nil || err.Error() != "the first argument of a variant operation must be a string" {
+		t.Fatalf("invalid variant error = %v", err)
+	}
+}
+
+func TestToEtcExprStringIndexRespectsRowsMode(t *testing.T) {
+	record := tlaOper("RECORD", tlaString("foo"), tlaInt(1), tlaString("bar"), tlaBool(true))
+	updated := tlaOper("EXCEPT", record, tlaOper("TUPLE", tlaString("foo")), tlaInt(3))
+	translator := NewToEtcExpr(nil, nil, NewTypeVarPool(1000), true)
+	translated, err := translator.TranslateExpression(updated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener := &collectingTypeListener{}
+	got, ok, err := NewEtcTypeChecker(translator.pool, true).Compute(listener, EmptyTypeContext(), translated)
+	if err != nil || !ok || !EqualTypes(got, parsedType(t, "{ bar: Bool, foo: Int }")) {
+		t.Fatalf("Compute() = %v, %v, %v; events = %+v", got, ok, err, listener.events)
+	}
+}
