@@ -145,6 +145,154 @@ func checkFlatInContext(context map[string]struct{}, expression Expr) PredicateR
 	}
 }
 
+const keraSequenceManualLink = "https://apalache-mc.org/docs/apalache/known-issues.html#using-seqs"
+
+type KeraLanguagePredicate struct{}
+
+func (KeraLanguagePredicate) LanguagePredicateName() string { return "KeraLanguagePred" }
+
+var keraUnaryOperators = nameSet(
+	"PRIME", "NOT", "UNARY_MINUS", "SET_UNARY_UNION", "SET_POWERSET", "DOMAIN",
+	"FiniteSets!IsFiniteSet", "FiniteSets!Cardinality", "Sequences!Head", "Sequences!Tail",
+	"Sequences!Len", "Variants!VariantTag", "Apalache!Skolem", "Apalache!Gen",
+	"Apalache!Expand", "Apalache!ConstCardinality", "Apalache!SetAsFun", "Apalache!Guess",
+	"ApalacheInternal!__ApalacheSeqCapacity",
+)
+
+var keraBinaryOperators = nameSet(
+	"EQ", "FUN_APP", "FUN_SET", "Sequences!Append", "PLUS", "MINUS", "MULT", "DIV", "MOD",
+	"POW", "INT_RANGE", "LT", "GT", "LE", "GE", "SET_IN", "SET_UNION2", "Sequences!Concat",
+	"Apalache!:=", "Variants!Variant", "Variants!VariantGetUnsafe", "Variants!VariantFilter",
+)
+
+var keraNaryOperators = nameSet(
+	"AND", "OR", "SET_ENUM", "EXCEPT", "TUPLE", "RECORD", "Sequences!SubSeq", "LABEL",
+	"Variants!VariantGetOrElse",
+)
+
+var keraBindingOperators = nameSet("EXISTS3", "FORALL3", "CHOOSE3", "SET_FILTER")
+
+func nameSet(names ...string) map[string]struct{} {
+	result := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		result[name] = struct{}{}
+	}
+	return result
+}
+
+func (KeraLanguagePredicate) CheckExpression(expression Expr) PredicateResult {
+	return checkKeraInContext(make(map[string]struct{}), expression)
+}
+
+func (predicate KeraLanguagePredicate) CheckModule(module *Module) PredicateResult {
+	result := PredicateOK()
+	for _, declaration := range module.OperDeclarations() {
+		result = result.And(predicate.CheckExpression(declaration.Body()))
+	}
+	return result
+}
+
+func checkKeraArguments(context map[string]struct{}, arguments []Expr) PredicateResult {
+	result := PredicateOK()
+	for _, argument := range arguments {
+		result = result.And(checkKeraInContext(context, argument))
+	}
+	return result
+}
+
+func checkKeraInContext(context map[string]struct{}, expression Expr) PredicateResult {
+	switch typed := expression.(type) {
+	case *ValueExpr:
+		switch value := typed.Value().(type) {
+		case BoolValue, IntValue, StringValue:
+			return PredicateOK()
+		case PredefinedSet:
+			if value == BoolSet || value == IntSet || value == NatSet {
+				return PredicateOK()
+			}
+		}
+	case *NameExpr:
+		return PredicateOK()
+	case *LetInExpr:
+		definitionsResult := PredicateOK()
+		definitionContext := cloneMap(context)
+		for _, declaration := range typed.Declarations() {
+			definitionsResult = definitionsResult.And(checkKeraInContext(definitionContext, declaration.Body()))
+			definitionContext[declaration.Name()] = struct{}{}
+		}
+		bodyContext := cloneMap(context)
+		for _, declaration := range typed.Declarations() {
+			bodyContext[declaration.Name()] = struct{}{}
+		}
+		return definitionsResult.And(checkKeraInContext(bodyContext, typed.Body()))
+	case *OperExpr:
+		name := typed.Operator().Name()
+		arguments := typed.Arguments()
+		if _, ok := keraUnaryOperators[name]; ok && len(arguments) == 1 {
+			return checkKeraInContext(context, arguments[0])
+		}
+		if _, ok := keraBinaryOperators[name]; ok && len(arguments) == 2 {
+			return checkKeraArguments(context, arguments)
+		}
+		if _, ok := keraNaryOperators[name]; ok {
+			return checkKeraArguments(context, arguments)
+		}
+		if _, ok := keraBindingOperators[name]; ok && len(arguments) == 3 {
+			if _, isName := arguments[0].(*NameExpr); isName {
+				return checkKeraArguments(context, arguments[1:])
+			}
+		}
+		if name == "IF_THEN_ELSE" && len(arguments) == 3 {
+			return checkKeraArguments(context, arguments)
+		}
+		if (name == "Apalache!ApaFoldSet" || name == "Apalache!ApaFoldSeqLeft") && len(arguments) == 3 {
+			return checkKeraArguments(context, arguments)
+		}
+		if name == "Apalache!MkSeq" && len(arguments) == 2 {
+			return checkKeraInContext(context, arguments[1]).And(checkKeraInContext(context, arguments[0]))
+		}
+		if name == "Apalache!Repeat" && len(arguments) == 3 {
+			return checkKeraArguments(context, arguments)
+		}
+		if name == "SET_MAP" || name == "FUN_CTOR" || name == "FUN_REC_CTOR" {
+			result := PredicateOK()
+			for index := 0; index < len(arguments); index += 2 {
+				result = result.And(checkKeraInContext(context, arguments[index]))
+			}
+			return result
+		}
+		if name == "FUN_REC_REF" {
+			return PredicateOK()
+		}
+		if name == "Sequences!Seq" {
+			return PredicateFail(typed.ID(), "Seq(_) produces an infinite set of unbounded sequences. See: "+keraSequenceManualLink)
+		}
+		if name == "OPER_APP" && len(arguments) > 0 {
+			if operator, ok := arguments[0].(*NameExpr); ok {
+				if _, declared := context[operator.Name()]; !declared {
+					return PredicateFail(typed.ID(), fmt.Sprintf("undeclared operator %s [KeraLanguagePred]", operator.Name()))
+				}
+				if len(arguments) > 1 {
+					return PredicateFail(typed.ID(), fmt.Sprintf("non-nullary operator %s [KeraLanguagePred]", operator.Name()))
+				}
+				return PredicateOK()
+			}
+		}
+		if name == "ApalacheInternal!__NotSupportedByModelChecker" && len(arguments) == 1 {
+			if message, ok := arguments[0].(*ValueExpr); ok {
+				if value, ok := message.Value().(StringValue); ok {
+					return PredicateFail(typed.ID(), "Not supported: "+string(value))
+				}
+			}
+		}
+	}
+	formatted, err := FormatUTFExpression(expression)
+	if err != nil {
+		formatted = fmt.Sprintf("%T", expression)
+	}
+	return PredicateFail(expression.ID(), formatted)
+}
+
 // ReTLALanguagePredicate accepts the restricted expression language consumed
 // by the transition disassembler and VMT backend. User operators must already
 // be inlined, except for nullary operators introduced by a surrounding LET-IN.
