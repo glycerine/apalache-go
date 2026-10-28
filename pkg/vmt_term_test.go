@@ -61,6 +61,84 @@ func TestVMTTermConstructorsEnforceSorts(t *testing.T) {
 	}
 }
 
+func TestVMTTermConstructionScalaOracleCases(t *testing.T) {
+	a, _ := UninterpretedVMTSort("A")
+	b, _ := UninterpretedVMTSort("B")
+	one, _ := VMTInt(big.NewInt(1))
+	two, _ := VMTInt(big.NewInt(2))
+	intA, _ := VMTVar("a", IntVMTSort())
+	intB, _ := VMTVar("b", IntVMTSort())
+	uvalA, _ := VMTLiteral("x", a)
+	uvalB, _ := VMTLiteral("y", b)
+	uvarA, _ := VMTVar("c", a)
+	uvarB, _ := VMTVar("d", b)
+
+	accept := func(name string, err error) {
+		t.Helper()
+		if err != nil {
+			t.Errorf("%s rejected: %v", name, err)
+		}
+	}
+	reject := func(name string, err error) {
+		t.Helper()
+		if err == nil {
+			t.Errorf("%s was accepted", name)
+		}
+	}
+
+	_, err := VMTEqualTerm(one, two)
+	accept("equal integer literals", err)
+	_, err = VMTEqualTerm(uvalA, uvalA)
+	accept("equal same-sort literals", err)
+	_, err = VMTEqualTerm(one, intA)
+	accept("equal integer literal and variable", err)
+	_, err = VMTEqualTerm(uvarA, uvalA)
+	accept("equal uninterpreted variable and literal", err)
+	_, err = VMTEqualTerm(one, uvalA)
+	reject("equal integer and uninterpreted", err)
+	_, err = VMTEqualTerm(uvalA, uvalB)
+	reject("equal different uninterpreted sorts", err)
+
+	_, err = VMTIfThenElseTerm(VMTBool(true), one, intB)
+	accept("ITE integers", err)
+	_, err = VMTIfThenElseTerm(VMTBool(false), uvalB, uvalB)
+	accept("ITE same literal", err)
+	condition, _ := VMTEqualTerm(one, two)
+	_, err = VMTIfThenElseTerm(condition, uvalA, uvarA)
+	accept("ITE same uninterpreted sort", err)
+	boolVar, _ := VMTVar("x", BoolVMTSort())
+	boolCondition, _ := VMTAndTerm(VMTBool(true), VMTBool(false), boolVar)
+	_, err = VMTIfThenElseTerm(boolCondition, VMTBool(true), VMTBool(false))
+	accept("ITE Booleans", err)
+	_, err = VMTIfThenElseTerm(VMTBool(true), one, uvalA)
+	reject("ITE integer and uninterpreted", err)
+	_, err = VMTIfThenElseTerm(VMTBool(true), uvalA, uvarB)
+	reject("ITE different uninterpreted sorts", err)
+
+	nullary, _ := VMTVar("f", FunctionVMTSort(IntVMTSort()))
+	unaryBool, _ := VMTVar("f", FunctionVMTSort(IntVMTSort(), BoolVMTSort()))
+	unaryB, _ := VMTVar("f", FunctionVMTSort(a, b))
+	nary, _ := VMTVar("f", FunctionVMTSort(b, IntVMTSort(), IntVMTSort(), BoolVMTSort()))
+	_, err = VMTApplyTerm(nullary)
+	accept("nullary application", err)
+	_, err = VMTApplyTerm(unaryBool, VMTBool(true))
+	accept("unary Boolean literal application", err)
+	_, err = VMTApplyTerm(unaryBool, boolVar)
+	accept("unary Boolean variable application", err)
+	application, err := VMTApplyTerm(unaryB, uvalB)
+	accept("unary uninterpreted application", err)
+	_, err = VMTEqualTerm(application, uvarA)
+	accept("unary application range", err)
+	_, err = VMTApplyTerm(nary, one, intB, VMTBool(false))
+	accept("n-ary application", err)
+	_, err = VMTApplyTerm(unaryBool, intA)
+	reject("unary wrong primitive sort", err)
+	_, err = VMTApplyTerm(unaryB, uvarA)
+	reject("unary wrong uninterpreted sort", err)
+	_, err = VMTApplyTerm(nary, VMTBool(false), uvalA, intA)
+	reject("n-ary wrong argument sorts", err)
+}
+
 func TestFormatVMTTermsAndAnnotations(t *testing.T) {
 	x, _ := VMTVar("x", IntVMTSort())
 	y, _ := VMTVar("y", IntVMTSort())
