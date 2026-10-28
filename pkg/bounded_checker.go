@@ -19,6 +19,7 @@ type BoundedSafetyOptions struct {
 	MaxSteps              int
 	CheckDeadlocks        bool
 	InvariantMinimumDepth int
+	Tuning                CheckerTuning
 }
 
 // BoundedSafetyResult describes either a completed bounded search or the
@@ -145,10 +146,13 @@ func CheckBoundedSafetyWithOptions(
 		maxSteps: options.MaxSteps, checkDeadlocks: options.CheckDeadlocks,
 		invariantMinimumDepth: options.InvariantMinimumDepth,
 		stateConstraints:      stateConstraints, actionConstraints: actionConstraints,
+		tuning: options.Tuning,
 	}
-	queue := make([]boundedPath, len(initTransitions))
+	queue := make([]boundedPath, 0, len(initTransitions))
 	for initNumber := range initTransitions {
-		queue[initNumber] = boundedPath{init: initNumber}
+		if options.Tuning.allowsTransition(0, initNumber) {
+			queue = append(queue, boundedPath{init: initNumber})
+		}
 	}
 	for len(queue) > 0 {
 		path := queue[0]
@@ -264,6 +268,7 @@ type modulePathInputs struct {
 	maxSteps              int
 	checkDeadlocks        bool
 	invariantMinimumDepth int
+	tuning                CheckerTuning
 }
 
 func searchSafetyPath(
@@ -293,7 +298,10 @@ func searchSafetyPath(
 		return false, nil
 	}
 	if len(path.next) >= inputs.invariantMinimumDepth {
-		for _, invariant := range inputs.stateInvariants {
+		for invariantNumber, invariant := range inputs.stateInvariants {
+			if !inputs.tuning.allowsInvariant(len(path.next), "state", invariantNumber) {
+				continue
+			}
 			var states []DecodedState
 			status, states, err = executor.CheckAndDecode(ctx, invariant.expression)
 			if err != nil {
@@ -313,7 +321,10 @@ func searchSafetyPath(
 				return true, nil
 			}
 		}
-		for _, invariant := range inputs.traceInvariants {
+		for invariantNumber, invariant := range inputs.traceInvariants {
+			if !inputs.tuning.allowsInvariant(len(path.next), "state", len(inputs.stateInvariants)+invariantNumber) {
+				continue
+			}
 			var states []DecodedState
 			status, states, err = executor.CheckTraceAndDecode(ctx, invariant.parameter, invariant.expression,
 				invariant.historyType, inputs.variableDeclarations)
@@ -341,6 +352,9 @@ func searchSafetyPath(
 	}
 	enabledNext := false
 	for nextNumber := range inputs.nextTransitions {
+		if !inputs.tuning.allowsTransition(len(path.next)+1, nextNumber) {
+			continue
+		}
 		child := boundedPath{init: path.init, next: append(append([]int(nil), path.next...), nextNumber)}
 		childExecutor, childErr := replayPendingNext(inputs, path, nextNumber)
 		if childErr != nil {
@@ -361,7 +375,10 @@ func searchSafetyPath(
 			continue
 		}
 		enabledNext = true
-		for _, invariant := range inputs.actionInvariants {
+		for invariantNumber, invariant := range inputs.actionInvariants {
+			if !inputs.tuning.allowsInvariant(len(child.next), "action", invariantNumber) {
+				continue
+			}
 			status, states, invariantErr := childExecutor.CheckPendingAndDecode(ctx, invariant.expression)
 			if invariantErr != nil {
 				return false, fmt.Errorf("check action invariant %s at depth %d: %w", invariant.name, len(child.next), invariantErr)

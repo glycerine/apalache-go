@@ -32,6 +32,23 @@ func SimulateBehavior(
 	predicates DerivedPredicates,
 	maxSteps int,
 ) (SimulationResult, error) {
+	return SimulateBehaviorWithOptions(ctx, module, predicates, SimulationOptions{MaxSteps: maxSteps})
+}
+
+type SimulationOptions struct {
+	MaxSteps int
+	Tuning   CheckerTuning
+}
+
+// SimulateBehaviorWithOptions finds one behavior while honoring the same
+// transition filter syntax as the Scala checker.
+func SimulateBehaviorWithOptions(
+	ctx context.Context,
+	module *Module,
+	predicates DerivedPredicates,
+	options SimulationOptions,
+) (SimulationResult, error) {
+	maxSteps := options.MaxSteps
 	if module == nil {
 		return SimulationResult{}, fmt.Errorf("cannot simulate a nil module")
 	}
@@ -68,6 +85,9 @@ func SimulateBehavior(
 
 	path := boundedPath{init: -1}
 	for number := range inputs.initTransitions {
+		if !options.Tuning.allowsTransition(0, number) {
+			continue
+		}
 		candidate := boundedPath{init: number}
 		executor, replayErr := replaySafetyPath(inputs, candidate)
 		if replayErr != nil {
@@ -96,6 +116,9 @@ func SimulateBehavior(
 	for len(path.next) < maxSteps {
 		selected := -1
 		for number := range inputs.nextTransitions {
+			if !options.Tuning.allowsTransition(len(path.next)+1, number) {
+				continue
+			}
 			executor, replayErr := replayPendingNext(inputs, path, number)
 			if replayErr != nil {
 				if errors.Is(replayErr, errDisabledTransition) {

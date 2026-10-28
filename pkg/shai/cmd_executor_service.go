@@ -125,8 +125,8 @@ func (*CmdExecutorService) Run(ctx context.Context, request *cmd.CmdRequest) (*c
 }
 
 func validateRemoteCheckerConfig(checker remoteCheckerConfig) error {
-	if len(checker.Tuning) != 0 {
-		return fmt.Errorf("checker tuning options are not yet supported by the Go command executor")
+	if _, err := pal.ParseCheckerTuning(checker.Tuning); err != nil {
+		return fmt.Errorf("invalid checker tuning: %w", err)
 	}
 	if checker.Algorithm != nil && !strings.EqualFold(*checker.Algorithm, "incremental") {
 		return fmt.Errorf("unsupported checker algorithm %q (Go port currently supports incremental)", *checker.Algorithm)
@@ -136,9 +136,6 @@ func validateRemoteCheckerConfig(checker remoteCheckerConfig) error {
 	}
 	if checker.SMTSolver != nil && !strings.EqualFold(*checker.SMTSolver, "z3") {
 		return fmt.Errorf("unsupported SMT solver %q (Go port uses g3 v0.0.5 as its Z3 backend)", *checker.SMTSolver)
-	}
-	if checker.DiscardDisabled != nil && !*checker.DiscardDisabled {
-		return fmt.Errorf("checker.discard-disabled currently supports only true")
 	}
 	if checker.MaxError != nil && *checker.MaxError != 1 {
 		return fmt.Errorf("checker.max-error currently supports only 1")
@@ -301,8 +298,12 @@ func runRemoteCheck(ctx context.Context, path string, config remoteCommandConfig
 		length = *checker.Length
 	}
 	checkDeadlocks := checker.NoDeadlock == nil || !*checker.NoDeadlock
+	tuning, err := pal.ParseCheckerTuning(checker.Tuning)
+	if err != nil {
+		return unexpectedCommandResponse(err), nil
+	}
 	result, err := pal.CheckBoundedSafetyWithOptions(ctx, prepared.Module, prepared.Predicates, pal.BoundedSafetyOptions{
-		MaxSteps: length, CheckDeadlocks: checkDeadlocks,
+		MaxSteps: length, CheckDeadlocks: checkDeadlocks, Tuning: tuning,
 	})
 	if err != nil {
 		return passFailureCommandResponse("BoundedChecker", map[string]string{"msg": err.Error()}), nil

@@ -552,6 +552,7 @@ func runTest(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	features := flags.String("features", "", "typechecker features: rows or no-rows")
 	disablePolytypes := flags.Bool("no-polytypes", false, "disable let-polymorphism")
 	var libraryPaths stringList
+	checkerTuning := pal.CheckerTuning{}
 	flags.Var(&libraryPaths, "I", "add a TLA+ module search directory (repeatable)")
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
@@ -573,6 +574,13 @@ func runTest(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		}); err != nil {
 			fmt.Fprintln(stderr, err)
 			return exitUsage
+		}
+		if applicationConfig.Checker.Tuning != nil {
+			checkerTuning, err = pal.ParseCheckerTuning(*applicationConfig.Checker.Tuning)
+			if err != nil {
+				fmt.Fprintln(stderr, err)
+				return exitUsage
+			}
 		}
 	}
 	var path, before, action, assertion string
@@ -618,7 +626,7 @@ func runTest(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return exitTool
 	}
 	result, err := pal.CheckBoundedSafetyWithOptions(ctx, prepared.Module, prepared.Predicates,
-		pal.BoundedSafetyOptions{MaxSteps: 1, CheckDeadlocks: true, InvariantMinimumDepth: 1})
+		pal.BoundedSafetyOptions{MaxSteps: 1, CheckDeadlocks: true, InvariantMinimumDepth: 1, Tuning: checkerTuning})
 	if err != nil {
 		fmt.Fprintf(stderr, "test failed: %v\n", err)
 		return exitTool
@@ -663,6 +671,7 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	features := flags.String("features", "", "typechecker features: rows or no-rows")
 	disablePolytypes := flags.Bool("no-polytypes", false, "disable let-polymorphism")
 	var libraryPaths stringList
+	checkerTuning := pal.CheckerTuning{}
 	flags.Var(&libraryPaths, "I", "add a TLA+ module search directory (repeatable)")
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
@@ -686,6 +695,13 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 		}); err != nil {
 			fmt.Fprintln(stderr, err)
 			return exitUsage
+		}
+		if applicationConfig.Checker.Tuning != nil {
+			checkerTuning, err = pal.ParseCheckerTuning(*applicationConfig.Checker.Tuning)
+			if err != nil {
+				fmt.Fprintln(stderr, err)
+				return exitUsage
+			}
 		}
 	}
 	if visited["init"] != visited["next"] {
@@ -767,7 +783,8 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 		fmt.Fprintf(stderr, "cannot prepare simulation: %v\n", err)
 		return exitTool
 	}
-	result, err := pal.SimulateBehavior(ctx, prepared.Module, prepared.Predicates, *length)
+	result, err := pal.SimulateBehaviorWithOptions(ctx, prepared.Module, prepared.Predicates,
+		pal.SimulationOptions{MaxSteps: *length, Tuning: checkerTuning})
 	if err != nil {
 		fmt.Fprintf(stderr, "simulation failed: %v\n", err)
 		return exitTool
@@ -819,6 +836,7 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	disablePolytypes := flags.Bool("no-polytypes", false, "disable let-polymorphism")
 	var invariants, temporalProperties csvStringList
 	var libraryPaths stringList
+	checkerTuning := pal.CheckerTuning{}
 	flags.Var(&invariants, "inv", "state invariant operator (repeatable)")
 	flags.Var(&temporalProperties, "temporal", "temporal property operator (repeatable or comma-separated)")
 	flags.Var(&libraryPaths, "I", "add a TLA+ module search directory (repeatable)")
@@ -845,6 +863,13 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		}); err != nil {
 			fmt.Fprintln(stderr, err)
 			return exitUsage
+		}
+		if applicationConfig.Checker.Tuning != nil {
+			checkerTuning, err = pal.ParseCheckerTuning(*applicationConfig.Checker.Tuning)
+			if err != nil {
+				fmt.Fprintln(stderr, err)
+				return exitUsage
+			}
 		}
 	}
 	if visited["init"] != visited["next"] {
@@ -959,7 +984,7 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		return exitUsage
 	}
 	result, err := pal.CheckBoundedSafetyWithOptions(ctx, prepared.Module, prepared.Predicates, pal.BoundedSafetyOptions{
-		MaxSteps: *length, CheckDeadlocks: checkDeadlocks,
+		MaxSteps: *length, CheckDeadlocks: checkDeadlocks, Tuning: checkerTuning,
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "bounded safety check failed: %v\n", err)

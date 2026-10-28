@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	pal "github.com/glycerine/apalache-go"
 )
 
 type jsonInputSource struct {
@@ -403,11 +405,10 @@ func (config jsonCommandConfig) validateForModelCommand(command string, checkSpe
 			return fmt.Errorf("JSON configuration field %s is not supported by the Go %s command", field.name, command)
 		}
 	}
-	if config.Checker.Tuning != nil && len(*config.Checker.Tuning) != 0 {
-		return fmt.Errorf("JSON checker.tuning is not supported by the g3 backend")
-	}
-	if config.Checker.DiscardDisabled != nil && !*config.Checker.DiscardDisabled {
-		return fmt.Errorf("JSON checker.discard-disabled currently supports only true")
+	if config.Checker.Tuning != nil {
+		if _, err := pal.ParseCheckerTuning(*config.Checker.Tuning); err != nil {
+			return fmt.Errorf("invalid JSON checker.tuning: %w", err)
+		}
 	}
 	if config.Features != nil {
 		for _, feature := range *config.Features {

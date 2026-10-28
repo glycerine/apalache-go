@@ -35,22 +35,43 @@ func TestLoadCommandConfigIsStrict(t *testing.T) {
 	}
 }
 
-func TestJSONModelConfigRejectsKeepingDisabledTransitions(t *testing.T) {
-	keepDisabled := false
-	config := jsonCommandConfig{Checker: jsonCheckerConfig{DiscardDisabled: &keepDisabled}}
-	for _, command := range []struct {
-		name     string
-		validate func() error
-	}{
-		{"check", config.validateForCheck},
-		{"simulate", config.validateForSimulate},
-		{"test", func() error { return config.validateForModelCommand("test", false) }},
+func TestJSONModelConfigAcceptsBothDisabledTransitionStrategies(t *testing.T) {
+	for _, command := range []struct{ name string }{
+		{"check"}, {"simulate"}, {"test"},
 	} {
 		t.Run(command.name, func(t *testing.T) {
-			if err := command.validate(); err == nil || !strings.Contains(err.Error(), "supports only true") {
-				t.Fatalf("discard-disabled=false validation = %v", err)
+			for _, discardDisabled := range []bool{false, true} {
+				config := jsonCommandConfig{Checker: jsonCheckerConfig{DiscardDisabled: &discardDisabled}}
+				var err error
+				switch command.name {
+				case "check":
+					err = config.validateForCheck()
+				case "simulate":
+					err = config.validateForSimulate()
+				default:
+					err = config.validateForModelCommand("test", false)
+				}
+				if err != nil {
+					t.Fatalf("discard-disabled=%v validation = %v", discardDisabled, err)
+				}
 			}
 		})
+	}
+}
+
+func TestJSONModelConfigValidatesSupportedSearchTuning(t *testing.T) {
+	supported := map[string]string{
+		"search.transitionFilter": "(0->0|[1-9]->.*)",
+		"search.invariantFilter":  "[1-9]->state0",
+		"search.invariant.mode":   "after",
+	}
+	if err := (jsonCommandConfig{Checker: jsonCheckerConfig{Tuning: &supported}}).validateForCheck(); err != nil {
+		t.Fatalf("supported tuning = %v", err)
+	}
+	unsupported := map[string]string{"z3.smt.random_seed": "7"}
+	err := (jsonCommandConfig{Checker: jsonCheckerConfig{Tuning: &unsupported}}).validateForCheck()
+	if err == nil || !strings.Contains(err.Error(), "z3.smt.random_seed") {
+		t.Fatalf("unsupported tuning = %v", err)
 	}
 }
 

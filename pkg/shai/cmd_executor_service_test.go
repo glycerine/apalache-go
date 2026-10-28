@@ -122,6 +122,13 @@ func TestCmdExecutorChecksModelsAndReturnsCounterexamples(t *testing.T) {
 		failure.PassName != "BoundedChecker" || failure.ErrorData.CheckingResult != "violation" || len(failure.ErrorData.Counterexamples) == 0 {
 		t.Fatalf("violation data = %+v, %v", failure, err)
 	}
+	response, err = service.Run(ctx, remoteRequest(t, cmd.Cmd_CHECK, remoteCheckableSpec, map[string]any{
+		"inv": []string{"Inv"}, "length": 0, "no-deadlock": true, "discard-disabled": false,
+		"tuning": map[string]string{"search.invariantFilter": "1->state0"},
+	}))
+	if err != nil || response.GetSuccess() == "" {
+		t.Fatalf("filtered remote check = %#v, %v", response, err)
+	}
 }
 
 func TestCmdExecutorRejectsUnsafeAndMalformedRequests(t *testing.T) {
