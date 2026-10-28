@@ -321,8 +321,17 @@ func EncodeTemporalProperties(
 	renamer *IncrementalRenamer,
 	tracker TransformationTracker,
 ) (*Module, DerivedPredicates, error) {
+	if module == nil {
+		return nil, predicates, fmt.Errorf("cannot encode temporal properties in a nil module")
+	}
+	if !module.HasProperty(PropertyTypeChecked) {
+		return nil, predicates, fmt.Errorf("temporal encoding requires a typechecked module")
+	}
 	if len(predicates.TemporalProperties) == 0 {
-		return module, predicates, nil
+		result := NewModule(module.Name(), module.Declarations())
+		result.copyMetadataFrom(module)
+		result.AddProperty(PropertyTemporalEncoded)
+		return result, predicates, nil
 	}
 	if tracker == nil {
 		tracker = IdleTracker{}
@@ -363,5 +372,6 @@ func EncodeTemporalProperties(
 	}
 	predicates.Invariants = append(predicates.Invariants, predicates.TemporalProperties...)
 	predicates.TemporalProperties = nil
+	encoded.AddProperty(PropertyTemporalEncoded)
 	return encoded, predicates, nil
 }

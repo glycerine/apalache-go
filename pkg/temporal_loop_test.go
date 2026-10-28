@@ -70,6 +70,24 @@ func TestTemporalLoopEncoderRejectsMissingAndUntypedInputs(t *testing.T) {
 	}
 }
 
+func TestEncodeTemporalPropertiesChecksDependencyAndMarksNoOp(t *testing.T) {
+	module := NewModule("M", nil)
+	if _, _, err := EncodeTemporalProperties(module, DerivedPredicates{}, nil, nil, nil); err == nil {
+		t.Fatal("temporal encoding accepted a module without the TypeChecked property")
+	}
+	module.AddProperty(PropertyTypeChecked)
+	encoded, predicates, err := EncodeTemporalProperties(module, DerivedPredicates{}, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !encoded.HasProperty(PropertyTemporalEncoded) || !encoded.HasProperty(PropertyTypeChecked) {
+		t.Fatal("no-op temporal pass did not preserve and add properties")
+	}
+	if module.HasProperty(PropertyTemporalEncoded) || encoded == module || len(predicates.TemporalProperties) != 0 {
+		t.Fatal("no-op temporal pass mutated or reused its input")
+	}
+}
+
 func TestTemporalLoopEncodingFeedsProductionPreprocessor(t *testing.T) {
 	result, err := NewTemporalLoopEncoder(nil).AddLoopLogic(temporalTestModule(), "Init", "Next")
 	if err != nil {
