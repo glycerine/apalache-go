@@ -25,6 +25,7 @@ type BoundedSafetyOptions struct {
 }
 
 type BoundedCounterexample struct {
+	Module          *Module
 	Depth           int
 	Invariant       string
 	Deadlock        bool
@@ -171,6 +172,7 @@ func CheckBoundedSafetyWithOptions(
 
 	result := BoundedSafetyResult{Outcome: SafetyNoCounterexample, Depth: -1, InitTransition: -1}
 	inputs := modulePathInputs{
+		module:    module,
 		constants: constants, variables: variables, constantInit: constantInit,
 		hasConstantInit: hasConstantInit, assumptions: assumptions,
 		initTransitions: initTransitions, nextTransitions: nextTransitions,
@@ -287,6 +289,7 @@ type boundedPath struct {
 }
 
 type modulePathInputs struct {
+	module                *Module
 	constants             []string
 	variables             []string
 	constantInit          Expr
@@ -352,7 +355,8 @@ func searchSafetyPath(
 					break
 				}
 				if err = recordSafetyCounterexample(result, BoundedCounterexample{
-					Depth: len(path.next), Invariant: invariant.name, InitTransition: path.init,
+					Module: inputs.module,
+					Depth:  len(path.next), Invariant: invariant.name, InitTransition: path.init,
 					NextTransitions: append([]int(nil), path.next...), States: states, View: views,
 				}, inputs.listeners); err != nil {
 					return false, err
@@ -380,7 +384,8 @@ func searchSafetyPath(
 					break
 				}
 				if err = recordSafetyCounterexample(result, BoundedCounterexample{
-					Depth: len(path.next), Invariant: invariant.name, TraceInvariant: true,
+					Module: inputs.module,
+					Depth:  len(path.next), Invariant: invariant.name, TraceInvariant: true,
 					InitTransition: path.init, NextTransitions: append([]int(nil), path.next...),
 					States: states, View: views,
 				}, inputs.listeners); err != nil {
@@ -452,7 +457,8 @@ func searchSafetyPath(
 					break
 				}
 				if err = recordSafetyCounterexample(result, BoundedCounterexample{
-					Depth: len(child.next), Invariant: invariant.name, ActionInvariant: true,
+					Module: inputs.module,
+					Depth:  len(child.next), Invariant: invariant.name, ActionInvariant: true,
 					InitTransition: child.init, NextTransitions: append([]int(nil), child.next...),
 					States: states, View: views,
 				}, inputs.listeners); err != nil {
@@ -486,7 +492,8 @@ func searchSafetyPath(
 		result.NextTransitions = append([]int(nil), path.next...)
 		result.States = states
 		deadlock := BoundedCounterexample{
-			Depth: len(path.next), Deadlock: true, InitTransition: path.init,
+			Module: inputs.module,
+			Depth:  len(path.next), Deadlock: true, InitTransition: path.init,
 			NextTransitions: append([]int(nil), path.next...), States: states,
 		}
 		if err = notifyCounterexampleListeners(inputs.listeners, deadlock, 0); err != nil {
