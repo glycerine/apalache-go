@@ -1,6 +1,9 @@
 package apalache
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 func mustNumberedVar(t *testing.T, number int) VarType {
 	t.Helper()
@@ -43,6 +46,33 @@ func TestEquivalenceClassIdentityAndStructure(t *testing.T) {
 	class.SetVariables(7, 3)
 	if class.Representative() != 3 || class.DeepEqual(copy) {
 		t.Fatal("equivalence-class mutation did not recompute structure")
+	}
+}
+
+func TestEquivalenceClassRequiresContentAndCopiesIndependently(t *testing.T) {
+	assertPanics := func(name string, body func()) {
+		t.Helper()
+		defer func() {
+			if recover() == nil {
+				t.Errorf("%s did not panic", name)
+			}
+		}()
+		body()
+	}
+	assertPanics("empty constructor", func() { NewEqClass() })
+	class := NewEqClass(5, 1, 5, 3)
+	copy := class.Copy()
+	if class == copy || class.ID() == copy.ID() || !class.DeepEqual(copy) ||
+		!reflect.DeepEqual(class.Variables(), []int{1, 3, 5}) || class.Representative() != 1 {
+		t.Fatalf("class/copy = %#v / %#v", class, copy)
+	}
+	class.SetVariables(8, 2)
+	if class.Representative() != 2 || !reflect.DeepEqual(copy.Variables(), []int{1, 3, 5}) || class.DeepEqual(copy) {
+		t.Fatalf("mutated class/copy = %#v / %#v", class, copy)
+	}
+	assertPanics("empty setter", func() { class.SetVariables() })
+	if class.DeepEqual(nil) || (*EqClass)(nil).DeepEqual(class) || !(*EqClass)(nil).DeepEqual(nil) {
+		t.Fatal("nil structural equality is inconsistent")
 	}
 }
 
