@@ -64,3 +64,35 @@ func TestPassChainExecutorLeavesUnrecognizedErrorsAlone(t *testing.T) {
 		t.Fatalf("unrecognized pass error = %v", err)
 	}
 }
+
+func TestEtcTypeCheckerAdapterMatchesScalaClassification(t *testing.T) {
+	store := NewSourceStore()
+	expression := NewNameExpr("old", Untyped())
+	location := SourceLocation{Filename: "Types", Region: NewSourceRegion(2, 3, 2, 9)}
+	if err := store.Add(expression.ID(), location); err != nil {
+		t.Fatal(err)
+	}
+	adapter := EtcTypeCheckerAdapter{Sources: store}
+	tests := []struct {
+		name       string
+		err        error
+		want       string
+		stackTrace bool
+	}{
+		{"input", NewTypingInputException("bad annotation", expression.ID()), "Typing input error: bad annotation", false},
+		{"outdated", NewOutdatedAnnotationsError("old syntax", expression), "Types.tla:2:3-2:9: rewriter error: old syntax", false},
+		{"typing", NewTypingException("contradiction", expression.ID()), "Type checker error: contradiction", true},
+		{"unknown source", NewOutdatedAnnotationsError("old syntax", NewNameExpr("missing", Untyped())), "<unknown>: rewriter error: old syntax", false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			message, matched := adapter.Adapt(test.err)
+			if !matched || message.Message() != test.want || message.RequiresStackTrace() != test.stackTrace {
+				t.Fatalf("Adapt(%T) = %#v, %v", test.err, message, matched)
+			}
+		})
+	}
+	if message, matched := adapter.Adapt(errors.New("other")); matched || message != nil {
+		t.Fatalf("unrecognized error = %#v, %v", message, matched)
+	}
+}

@@ -1,5 +1,7 @@
 package apalache
 
+import "errors"
+
 // PassExecError reports an error while executing a pass sequence.
 type PassExecError struct{ Text string }
 
@@ -53,6 +55,32 @@ func (adapt ExceptionAdapterFunc) Adapt(err error) (ErrorMessage, bool) {
 type DefaultExceptionAdapter struct{}
 
 func (DefaultExceptionAdapter) Adapt(error) (ErrorMessage, bool) { return nil, false }
+
+// EtcTypeCheckerAdapter classifies the user and internal failures emitted by
+// ETC translation, inference, and type rewriting.
+type EtcTypeCheckerAdapter struct{ Sources *SourceStore }
+
+func (adapter EtcTypeCheckerAdapter) Adapt(err error) (ErrorMessage, bool) {
+	var input *TypingInputException
+	if errors.As(err, &input) {
+		return NormalErrorMessage{Text: "Typing input error: " + input.Error()}, true
+	}
+	var outdated *OutdatedAnnotationsError
+	if errors.As(err, &outdated) {
+		location := "<unknown>"
+		if adapter.Sources != nil {
+			if found, ok := adapter.Sources.Find(outdated.CauseExpr().ID()); ok {
+				location = found.String()
+			}
+		}
+		return NormalErrorMessage{Text: location + ": rewriter error: " + outdated.Error()}, true
+	}
+	var typing *TypingException
+	if errors.As(err, &typing) {
+		return FailureMessage{Text: "Type checker error: " + typing.Error()}, true
+	}
+	return nil, false
+}
 
 // AdaptedError retains the message classification produced by an adapter.
 type AdaptedError struct{ Message ErrorMessage }
