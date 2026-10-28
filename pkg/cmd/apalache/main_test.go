@@ -13,6 +13,10 @@ import (
 	"time"
 
 	pal "github.com/glycerine/apalache-go"
+	cmd "github.com/glycerine/apalache-go/shai/cmdexecutor"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/test/bufconn"
 )
 
 func TestRunConfigControlsSharedTLAStatisticsMarker(t *testing.T) {
@@ -157,6 +161,53 @@ func TestRunServerStartsCheckerAndRejectsUnknownService(t *testing.T) {
 		t.Fatalf("unknown server = %d, stderr = %q", code, &stderr)
 	}
 }
+
+func TestRunCheckerServerServesGRPCAndStops(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	buffered := bufconn.Listen(1 << 20)
+	listener := &addressedListener{Listener: buffered, address: &net.TCPAddr{Port: 43213}}
+	originalListen := listenTCP
+	listenTCP = func(network, address string) (net.Listener, error) { return listener, nil }
+	t.Cleanup(func() { listenTCP = originalListen })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan int, 1)
+	var stdout, stderr bytes.Buffer
+	go func() {
+		done <- run(ctx, []string{"server", "--port=0", "--server-type=checker"}, &stdout, &stderr)
+	}()
+	connection, err := grpc.NewClient("passthrough:///checker",
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return buffered.Dial() }),
+	)
+	if err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	defer connection.Close()
+	rpcContext, stopRPC := context.WithTimeout(context.Background(), 5*time.Second)
+	defer stopRPC()
+	if _, err = cmd.NewCmdExecutorClient(connection).Ping(rpcContext, &cmd.PingRequest{}); err != nil {
+		cancel()
+		t.Fatalf("checker Ping = %v", err)
+	}
+	cancel()
+	select {
+	case code := <-done:
+		if code != exitOK {
+			t.Fatalf("checker server = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("checker server did not stop after cancellation")
+	}
+}
+
+type addressedListener struct {
+	net.Listener
+	address net.Addr
+}
+
+func (listener *addressedListener) Addr() net.Addr { return listener.address }
 
 func TestRunTraceeEvaluatesExpressionsToITF(t *testing.T) {
 	dir := t.TempDir()
