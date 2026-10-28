@@ -16,6 +16,11 @@ func TestPredicateResultAccumulatesFailures(t *testing.T) {
 
 func TestFlatLanguagePredicate(t *testing.T) {
 	predicate := FlatLanguagePredicate{}
+	flat := MustOperExpr(Op("SET_ENUM"), Untyped(), NewValueExpr(Int64Value(1), Untyped()),
+		NewValueExpr(StringValue("abc"), Untyped()), NewValueExpr(BoolValue(false), Untyped()))
+	if result := predicate.CheckExpression(flat); !result.OK() {
+		t.Fatalf("rejected flat expression: %+v", result)
+	}
 	undeclared := untypedApp("TopLevel")
 	if result := predicate.CheckExpression(undeclared); result.OK() || result.Failures[0].ID != undeclared.ID() {
 		t.Fatalf("accepted undeclared application: %+v", result)
@@ -25,9 +30,26 @@ func TestFlatLanguagePredicate(t *testing.T) {
 	if result := predicate.CheckExpression(valid); !result.OK() {
 		t.Fatalf("rejected nullary local call: %+v", result)
 	}
-	invalid := NewLetInExpr(untypedApp("Local", NewValueExpr(Int64Value(1), Untyped())), Untyped(), local)
+	parameterized := NewOperDecl("Parameterized", []OperatorParam{ValueParam("x")},
+		MustOperExpr(Op("PLUS"), Untyped(), NewValueExpr(Int64Value(1), Untyped()), NewNameExpr("x", Untyped())), Untyped())
+	invalid := NewLetInExpr(untypedApp("Parameterized", NewValueExpr(Int64Value(1), Untyped())), Untyped(), parameterized)
 	if result := predicate.CheckExpression(invalid); result.OK() {
 		t.Fatal("accepted non-nullary local call")
+	}
+	a := NewOperDecl("A", nil, MustOperExpr(Op("PLUS"), Untyped(), NewValueExpr(Int64Value(1), Untyped()), NewValueExpr(Int64Value(2), Untyped())), Untyped())
+	b := NewOperDecl("B", nil, NewValueExpr(Int64Value(3), Untyped()), Untyped())
+	nested := NewLetInExpr(NewLetInExpr(MustOperExpr(Op("PLUS"), Untyped(), untypedApp("A"), untypedApp("B")), Untyped(), a), Untyped(), b)
+	if result := predicate.CheckExpression(nested); !result.OK() {
+		t.Fatalf("rejected nested nullary LET-IN: %+v", result)
+	}
+	badModule := NewModule("Bad", []Decl{NewOperDecl("A", nil,
+		untypedApp("B", NewValueExpr(Int64Value(1), Untyped())), Untyped())})
+	if predicate.CheckModule(badModule).OK() {
+		t.Fatal("accepted module with a user-operator call")
+	}
+	goodModule := NewModule("Good", []Decl{NewOperDecl("A", nil, NewValueExpr(Int64Value(1), Untyped()), Untyped())})
+	if result := predicate.CheckModule(goodModule); !result.OK() {
+		t.Fatalf("rejected module without calls: %+v", result)
 	}
 }
 
