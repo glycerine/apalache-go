@@ -22,6 +22,17 @@ type ModulePassFunc struct {
 	Transform func(*Module) (*Module, error)
 }
 
+// PassLogger receives the lifecycle messages emitted around pass execution.
+type PassLogger interface {
+	Info(message string)
+	Debug(message string)
+}
+
+type PassLoggerFunc func(level, message string)
+
+func (logger PassLoggerFunc) Info(message string)  { logger("info", message) }
+func (logger PassLoggerFunc) Debug(message string) { logger("debug", message) }
+
 func (pass ModulePassFunc) Name() string { return pass.PassName }
 func (pass ModulePassFunc) Dependencies() []ModuleProperty {
 	return append([]ModuleProperty(nil), pass.Requires...)
@@ -41,6 +52,7 @@ func (pass ModulePassFunc) Execute(module *Module) (*Module, error) {
 type PassChainExecutor struct {
 	passes   []ModulePass
 	adapter  ExceptionAdapter
+	logger   PassLogger
 	executed bool
 }
 
@@ -50,6 +62,10 @@ func NewPassChainExecutor(passes ...ModulePass) *PassChainExecutor {
 
 func NewPassChainExecutorWithAdapter(adapter ExceptionAdapter, passes ...ModulePass) *PassChainExecutor {
 	return &PassChainExecutor{passes: append([]ModulePass(nil), passes...), adapter: adapter}
+}
+
+func NewPassChainExecutorWithRuntime(adapter ExceptionAdapter, logger PassLogger, passes ...ModulePass) *PassChainExecutor {
+	return &PassChainExecutor{passes: append([]ModulePass(nil), passes...), adapter: adapter, logger: logger}
 }
 
 func (executor *PassChainExecutor) Run() (*Module, error) {
@@ -74,7 +90,7 @@ func (executor *PassChainExecutor) Run() (*Module, error) {
 
 func (executor *PassChainExecutor) run() (*Module, error) {
 	module := NewModule("empty", nil)
-	for _, pass := range executor.passes {
+	for index, pass := range executor.passes {
 		if pass == nil {
 			return nil, fmt.Errorf("pass chain contains a nil pass")
 		}
@@ -82,7 +98,17 @@ func (executor *PassChainExecutor) run() (*Module, error) {
 		if len(missing) != 0 {
 			return nil, fmt.Errorf("%s cannot run for a module without the properties: %s", pass.Name(), strings.Join(missing, ", "))
 		}
+		if executor.logger != nil {
+			executor.logger.Info(fmt.Sprintf("PASS #%d: %s", index, pass.Name()))
+		}
 		transformed, err := pass.Execute(module)
+		if executor.logger != nil {
+			outcome := "[OK]"
+			if err != nil {
+				outcome = "[FAIL]"
+			}
+			executor.logger.Debug(fmt.Sprintf("PASS #%d: %s %s", index, pass.Name(), outcome))
+		}
 		if err != nil {
 			return nil, err
 		}

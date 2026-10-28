@@ -62,3 +62,32 @@ func TestPassChainExecutorRunsOnlyOnce(t *testing.T) {
 		t.Fatal("pass-chain executor ran twice")
 	}
 }
+
+func TestPassChainExecutorLogsPassLifecycle(t *testing.T) {
+	events := make([]string, 0)
+	logger := PassLoggerFunc(func(level, message string) {
+		events = append(events, level+":"+message)
+	})
+	wantFailure := errors.New("failed")
+	first := testModulePass("First", nil, []ModuleProperty{PropertyInlined}, successfulTestPass)
+	second := testModulePass("Second", []ModuleProperty{PropertyInlined}, nil,
+		func(*Module) (*Module, error) { return nil, wantFailure })
+	_, err := NewPassChainExecutorWithRuntime(nil, logger, first, second).Run()
+	if !errors.Is(err, wantFailure) {
+		t.Fatal(err)
+	}
+	want := []string{
+		"info:PASS #0: First",
+		"debug:PASS #0: First [OK]",
+		"info:PASS #1: Second",
+		"debug:PASS #1: Second [FAIL]",
+	}
+	if len(events) != len(want) {
+		t.Fatalf("pass lifecycle events = %#v", events)
+	}
+	for index := range want {
+		if events[index] != want[index] {
+			t.Fatalf("pass lifecycle event %d = %q, want %q", index, events[index], want[index])
+		}
+	}
+}
