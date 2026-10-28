@@ -64,13 +64,15 @@ func TestJSONModelConfigValidatesSupportedSearchTuning(t *testing.T) {
 		"search.transitionFilter": "(0->0|[1-9]->.*)",
 		"search.invariantFilter":  "[1-9]->state0",
 		"search.invariant.mode":   "after",
+		"smt.randomSeed":          "7",
+		"z3.smt.random_seed":      "9",
 	}
 	if err := (jsonCommandConfig{Checker: jsonCheckerConfig{Tuning: &supported}}).validateForCheck(); err != nil {
 		t.Fatalf("supported tuning = %v", err)
 	}
-	unsupported := map[string]string{"z3.smt.random_seed": "7"}
+	unsupported := map[string]string{"z3.smt.mbqi": "true"}
 	err := (jsonCommandConfig{Checker: jsonCheckerConfig{Tuning: &unsupported}}).validateForCheck()
-	if err == nil || !strings.Contains(err.Error(), "z3.smt.random_seed") {
+	if err == nil || !strings.Contains(err.Error(), "z3.smt.mbqi") {
 		t.Fatalf("unsupported tuning = %v", err)
 	}
 }

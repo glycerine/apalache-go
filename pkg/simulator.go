@@ -78,6 +78,7 @@ func SimulateBehaviorWithOptions(
 		initTransitions:  TransitionsFromModule(module, NormalizedInitPrefix),
 		nextTransitions:  TransitionsFromModule(module, NormalizedNextPrefix),
 		stateConstraints: stateConstraints, actionConstraints: actionConstraints,
+		tuning: options.Tuning,
 	}
 	if len(inputs.initTransitions) == 0 {
 		return SimulationResult{}, fmt.Errorf("module has no normalized initial transitions")

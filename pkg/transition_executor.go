@@ -18,24 +18,30 @@ type EncodedTransition struct {
 // Rewriting is solver-free; Check encodes the accumulated arena, definitions,
 // and selected path constraints into a fresh g3 solver context.
 type TransitionExecutor struct {
-	constants map[string]struct{}
-	variables map[string]struct{}
-	rewriter  *StratifiedRewriter
-	scope     RewriterScope
-	asserted  []Expr
-	prepared  map[int]EncodedTransition
-	states    []Binding
-	step      int
-	picked    bool
+	constants         map[string]struct{}
+	variables         map[string]struct{}
+	rewriter          *StratifiedRewriter
+	scope             RewriterScope
+	asserted          []Expr
+	prepared          map[int]EncodedTransition
+	states            []Binding
+	step              int
+	picked            bool
+	solverUIntOptions map[string]uint32
 }
 
 func NewTransitionExecutor(constants, variables []string) *TransitionExecutor {
+	return newTransitionExecutorWithSolverOptions(constants, variables, nil)
+}
+
+func newTransitionExecutorWithSolverOptions(constants, variables []string, solverUIntOptions map[string]uint32) *TransitionExecutor {
 	return &TransitionExecutor{
-		constants: stringSet(constants),
-		variables: stringSet(variables),
-		rewriter:  NewStratifiedRewriter(),
-		scope:     InitialRewriterScope(),
-		prepared:  make(map[int]EncodedTransition),
+		constants:         stringSet(constants),
+		variables:         stringSet(variables),
+		rewriter:          NewStratifiedRewriter(),
+		scope:             InitialRewriterScope(),
+		prepared:          make(map[int]EncodedTransition),
+		solverUIntOptions: solverUIntOptions,
 	}
 }
 
@@ -383,7 +389,7 @@ type DecodedState struct {
 }
 
 func (executor *TransitionExecutor) solve(ctx context.Context, temporary []Expr) (*G3SolverContext, *G3GroundEncoder, SMTStatus, error) {
-	solver, err := NewG3SolverContext()
+	solver, err := newG3SolverContextWithUIntOptions("QF_AUFNIA", executor.solverUIntOptions)
 	if err != nil {
 		return nil, nil, SMTUnknown, err
 	}

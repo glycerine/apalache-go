@@ -443,7 +443,7 @@ func replayPendingNext(inputs modulePathInputs, path boundedPath, nextNumber int
 }
 
 func replaySafetyPath(inputs modulePathInputs, path boundedPath) (*TransitionExecutor, error) {
-	executor := NewTransitionExecutor(inputs.constants, inputs.variables)
+	executor := newTransitionExecutorWithSolverOptions(inputs.constants, inputs.variables, inputs.tuning.solverUIntOptions)
 	if inputs.hasConstantInit {
 		if err := executor.InitializeConstants(inputs.constantInit); err != nil {
 			return nil, err

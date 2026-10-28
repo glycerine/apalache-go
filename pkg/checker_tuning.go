@@ -2,8 +2,10 @@ package apalache
 
 import (
 	"fmt"
+	"math"
 	"regexp"
 	"sort"
+	"strconv"
 )
 
 // CheckerTuning is the validated subset of Scala search tuning whose
@@ -14,14 +16,15 @@ type CheckerTuning struct {
 	invariantFilter  *regexp.Regexp
 	// Explicit path enumeration has no joined transition relation, so the
 	// Scala before/after modes have identical behavior after validation.
-	invariantMode string
+	invariantMode     string
+	solverUIntOptions map[string]uint32
 }
 
 // ParseCheckerTuning validates checker tuning accepted by the Go backend.
-// Solver-specific Z3 options are deliberately rejected until g3 exposes a
-// compatible parameter API rather than being silently ignored.
+// Solver-specific options are accepted only when the pinned g3 API exposes a
+// compatible typed parameter rather than being silently ignored.
 func ParseCheckerTuning(values map[string]string) (CheckerTuning, error) {
-	result := CheckerTuning{invariantMode: "before"}
+	result := CheckerTuning{invariantMode: "before", solverUIntOptions: make(map[string]uint32)}
 	keys := make([]string, 0, len(values))
 	for key := range values {
 		keys = append(keys, key)
@@ -53,11 +56,32 @@ func ParseCheckerTuning(values map[string]string) (CheckerTuning, error) {
 				return CheckerTuning{}, fmt.Errorf("invalid value %s for %s, expected one of before, after", value, key)
 			}
 			result.invariantMode = value
+		case "smt.randomSeed":
+			parsed, err := parseTuningUInt(key, value)
+			if err != nil {
+				return CheckerTuning{}, err
+			}
+			result.solverUIntOptions["sat.random_seed"] = parsed
+			result.solverUIntOptions["smt.random_seed"] = parsed
+		case "z3.smt.random_seed", "z3.sat.random_seed", "z3.timeout", "z3.rlimit":
+			parsed, err := parseTuningUInt(key, value)
+			if err != nil {
+				return CheckerTuning{}, err
+			}
+			result.solverUIntOptions[key[len("z3."):]] = parsed
 		default:
 			return CheckerTuning{}, fmt.Errorf("unexpected tuning field %s", key)
 		}
 	}
 	return result, nil
+}
+
+func parseTuningUInt(key, value string) (uint32, error) {
+	parsed, err := strconv.ParseUint(value, 10, 32)
+	if err != nil || parsed > math.MaxInt32 {
+		return 0, fmt.Errorf("expected an unsigned integer for %s, but got %s", key, value)
+	}
+	return uint32(parsed), nil
 }
 
 func (tuning CheckerTuning) allowsTransition(step, number int) bool {

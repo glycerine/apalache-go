@@ -28,8 +28,9 @@ func TestParseCheckerTuningRejectsUnsupportedAndMalformedValues(t *testing.T) {
 	for _, values := range []map[string]string{
 		{"search.transitionFilter": "("},
 		{"search.invariant.mode": "during"},
-		{"smt.randomSeed": "1"},
-		{"z3.smt.random_seed": "1"},
+		{"smt.randomSeed": "-1"},
+		{"z3.smt.random_seed": "2147483648"},
+		{"z3.smt.mbqi": "true"},
 	} {
 		if _, err := ParseCheckerTuning(values); err == nil {
 			t.Fatalf("ParseCheckerTuning(%v) succeeded", values)
@@ -39,6 +40,32 @@ func TestParseCheckerTuningRejectsUnsupportedAndMalformedValues(t *testing.T) {
 		"search.transitionFilter": "", "search.invariantFilter": "",
 	}); err != nil || !tuning.allowsTransition(42, 9) || !tuning.allowsInvariant(42, "state", 9) {
 		t.Fatalf("empty filters = %#v, %v", tuning, err)
+	}
+}
+
+func TestParseCheckerTuningMapsIntegerSolverOptionsToG3(t *testing.T) {
+	tuning, err := ParseCheckerTuning(map[string]string{
+		"smt.randomSeed":     "17",
+		"z3.smt.random_seed": "19",
+		"z3.sat.random_seed": "23",
+		"z3.timeout":         "1000",
+		"z3.rlimit":          "500",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key, want := range map[string]uint32{
+		"smt.random_seed": 19, "sat.random_seed": 23,
+		"timeout": 1000, "rlimit": 500,
+	} {
+		if got := tuning.solverUIntOptions[key]; got != want {
+			t.Fatalf("solver option %s = %d, want %d", key, got, want)
+		}
+	}
+	if solver, err := newG3SolverContextWithUIntOptions("QF_AUFNIA", tuning.solverUIntOptions); err != nil {
+		t.Fatalf("g3 rejected validated tuning: %v", err)
+	} else if err = solver.Close(); err != nil {
+		t.Fatal(err)
 	}
 }
 

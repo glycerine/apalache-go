@@ -129,7 +129,7 @@ tla-io/src/test/scala/at/forsyte/apalache/io/quint/TestQuintEx.scala	partial	qui
 tla-io/src/test/scala/at/forsyte/apalache/io/quint/TestQuintIR.scala	partial	quint_json_test.go	Quint source-schema serialization assertions remain
 tla-io/src/test/scala/at/forsyte/apalache/io/quint/TestQuintTypes.scala	ported	quint_json_test.go	all type cases plus both Scala oracle type tables are covered
 tla-io/src/test/scala/at/forsyte/apalache/io/tlc/TestTlcConfigParserApalache.scala	partial	ir_json_test.go;itf_test.go;tlc_config*_test.go;type_annotations_test.go	remaining writer and configuration cases are open
-tla-io/src/test/scala/at/forsyte/apalache/io/tuning/TestFineTuningParser.scala	partial	checker_tuning_test.go;cmd/apalache/config_json_test.go	search regex and invariant-mode cases are mapped; rewriter and solver parameter corpus remains open
+tla-io/src/test/scala/at/forsyte/apalache/io/tuning/TestFineTuningParser.scala	partial	checker_tuning_test.go;cmd/apalache/config_json_test.go	search regex, invariant mode, and typed g3 integer solver options are mapped; rewriter and remaining solver parameter corpus remains open
 tla-parser/src/test/scala/at/forsyte/apalache/tla/imp/SanyImporterTestBase.scala	partial	frontend*_test.go;frontend_corpus_integration_test.go	parser resource and diagnostic mapping remains
 tla-parser/src/test/scala/at/forsyte/apalache/tla/imp/TestPrettyWriterPrecedence.scala	partial	frontend*_test.go;frontend_corpus_integration_test.go	parser resource and diagnostic mapping remains
 tla-parser/src/test/scala/at/forsyte/apalache/tla/imp/TestSanyImporter.scala	partial	frontend*_test.go;frontend_corpus_integration_test.go	parser resource and diagnostic mapping remains
