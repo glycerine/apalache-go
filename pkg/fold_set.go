@@ -11,13 +11,13 @@ func (rewriter *StratifiedRewriter) rewriteFoldSet(expression *OperExpr, scope R
 	if !ok || !isPassByNameLet(operator) || len(operator.Declarations()[0].FormalParams()) != 2 {
 		return scope, ArenaCell{}, fmt.Errorf("FoldSet requires an embedded binary operator")
 	}
-	scope, accumulator, err := rewriter.Rewrite(arguments[1], scope)
+	resultType, err := validateFoldExpression(expression)
 	if err != nil {
 		return scope, ArenaCell{}, err
 	}
-	resultType, typed := expression.Tag().Type()
-	if !typed {
-		return scope, ArenaCell{}, fmt.Errorf("FoldSet must be typed")
+	scope, accumulator, err := rewriter.Rewrite(arguments[1], scope)
+	if err != nil {
+		return scope, ArenaCell{}, err
 	}
 	scope, accumulator, err = rewriter.coerceCell(scope, accumulator, resultType)
 	if err != nil {

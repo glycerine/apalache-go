@@ -93,3 +93,22 @@ func TestStratifiedFoldSequenceHonorsSymbolicLength(t *testing.T) {
 	}
 	checkRewrittenTruth(t, rewriter, scope, result, true)
 }
+
+func TestStratifiedFoldSequenceRejectsMalformedTypesWithoutMutation(t *testing.T) {
+	intValue := func(value int64) Expr { return NewValueExpr(Int64Value(value), Typed(IntT1)) }
+	sequenceType, _ := NewSeqType(IntT1)
+	add := makeBinaryIntegerLambda(MustOperExpr(Op("PLUS"), Typed(IntT1),
+		NewNameExpr("acc", Typed(IntT1)), NewNameExpr("elem", Typed(IntT1))))
+	sequence := MustOperExpr(Op("TUPLE"), Typed(sequenceType), intValue(1))
+	for _, expression := range []Expr{
+		MustOperExpr(Op("Apalache!ApaFoldSeqLeft"), Untyped(), add, intValue(0), sequence),
+		MustOperExpr(Op("Apalache!ApaFoldSeqLeft"), Typed(IntT1), add, intValue(0), intValue(1)),
+		MustOperExpr(Op("Apalache!ApaFoldSeqLeft"), Typed(BoolT1), add, intValue(0), sequence),
+	} {
+		base := InitialRewriterScope()
+		returned, _, err := NewStratifiedRewriter().Rewrite(expression, base)
+		if err == nil || returned.Arena != base.Arena {
+			t.Fatalf("invalid FoldSeq returned scope=%v, err=%v", returned, err)
+		}
+	}
+}

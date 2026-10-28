@@ -2,6 +2,30 @@ package apalache
 
 import "fmt"
 
+func validateFoldExpression(expression *OperExpr) (Type, error) {
+	resultType, typed := expression.Tag().Type()
+	if !typed {
+		return nil, fmt.Errorf("%s must be typed", expression.Operator().Name())
+	}
+	arguments := expression.Arguments()
+	argumentTypes := make([]Type, len(arguments))
+	for index, argument := range arguments {
+		argumentType, argumentTyped := argument.Tag().Type()
+		if !argumentTyped {
+			return nil, fmt.Errorf("%s argument %d must be typed", expression.Operator().Name(), index+1)
+		}
+		argumentTypes[index] = argumentType
+	}
+	inferred, err := InferOperatorType(expression.Operator(), argumentTypes)
+	if err != nil {
+		return nil, err
+	}
+	if !EqualTypes(inferred, resultType) {
+		return nil, fmt.Errorf("%s has result type %s, expected %s", expression.Operator().Name(), resultType, inferred)
+	}
+	return resultType, nil
+}
+
 func (rewriter *StratifiedRewriter) rewriteFoldSequence(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
 	arguments := expression.Arguments()
 	if len(arguments) != 3 {
@@ -11,13 +35,13 @@ func (rewriter *StratifiedRewriter) rewriteFoldSequence(expression *OperExpr, sc
 	if !ok || !isPassByNameLet(operator) || len(operator.Declarations()[0].FormalParams()) != 2 {
 		return scope, ArenaCell{}, fmt.Errorf("FoldSeqLeft requires an embedded binary operator")
 	}
-	scope, accumulator, err := rewriter.Rewrite(arguments[1], scope)
+	resultType, err := validateFoldExpression(expression)
 	if err != nil {
 		return scope, ArenaCell{}, err
 	}
-	resultType, typed := expression.Tag().Type()
-	if !typed {
-		return scope, ArenaCell{}, fmt.Errorf("FoldSeqLeft must be typed")
+	scope, accumulator, err := rewriter.Rewrite(arguments[1], scope)
+	if err != nil {
+		return scope, ArenaCell{}, err
 	}
 	scope, accumulator, err = rewriter.coerceCell(scope, accumulator, resultType)
 	if err != nil {

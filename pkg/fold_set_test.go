@@ -93,3 +93,22 @@ func TestStratifiedFoldSetRejectsInfiniteSet(t *testing.T) {
 		}
 	}
 }
+
+func TestStratifiedFoldSetRejectsMalformedTypesWithoutMutation(t *testing.T) {
+	intValue := func(value int64) Expr { return NewValueExpr(Int64Value(value), Typed(IntT1)) }
+	setType := mustSet(IntT1)
+	add := makeBinaryIntegerLambda(MustOperExpr(Op("PLUS"), Typed(IntT1),
+		NewNameExpr("acc", Typed(IntT1)), NewNameExpr("elem", Typed(IntT1))))
+	set := MustOperExpr(Op("SET_ENUM"), Typed(setType), intValue(1))
+	for _, expression := range []Expr{
+		MustOperExpr(Op("Apalache!ApaFoldSet"), Untyped(), add, intValue(0), set),
+		MustOperExpr(Op("Apalache!ApaFoldSet"), Typed(IntT1), add, intValue(0), intValue(1)),
+		MustOperExpr(Op("Apalache!ApaFoldSet"), Typed(BoolT1), add, intValue(0), set),
+	} {
+		base := InitialRewriterScope()
+		returned, _, err := NewStratifiedRewriter().Rewrite(expression, base)
+		if err == nil || returned.Arena != base.Arena {
+			t.Fatalf("invalid FoldSet returned scope=%v, err=%v", returned, err)
+		}
+	}
+}
