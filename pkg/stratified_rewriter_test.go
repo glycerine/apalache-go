@@ -1429,6 +1429,21 @@ func TestStratifiedSequenceConstructionLengthAndEqualityThroughG3(t *testing.T) 
 	}
 }
 
+func TestStratifiedTupleAndSequenceConstructorsRejectInvalidTypes(t *testing.T) {
+	twoTuple := mustTuple(IntT1, BoolT1)
+	invalid := []Expr{
+		MustOperExpr(Op("TUPLE"), Typed(IntT1), intLiteral(1)),
+		MustOperExpr(Op("TUPLE"), Typed(twoTuple), intLiteral(1)),
+		MustOperExpr(Op("TUPLE"), Typed(twoTuple), intLiteral(1), intLiteral(2)),
+		MustOperExpr(Op("TUPLE"), Typed(mustSeq(IntT1)), boolExpr(true)),
+	}
+	for _, expression := range invalid {
+		if _, _, err := NewStratifiedRewriter().Rewrite(expression, InitialRewriterScope()); err == nil {
+			t.Fatalf("invalid tuple/sequence constructor was accepted: %v", expression)
+		}
+	}
+}
+
 func TestStratifiedSequenceAppendAndTailThroughG3(t *testing.T) {
 	sequenceType, err := NewSeqType(IntT1)
 	if err != nil {
