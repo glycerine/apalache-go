@@ -6,17 +6,28 @@ func TestDefaultValueCacheBuildsAndReusesStructuralValues(t *testing.T) {
 	rewriter := NewStratifiedRewriter()
 	cache := rewriter.DefaultValueCache()
 	scope := InitialRewriterScope()
+	if _, found := cache.Get(IntT1); found {
+		t.Fatal("empty default-value cache contained Int")
+	}
 	tuple, _ := NewTupleType(IntT1, BoolT1)
 	sequence, _ := NewSeqType(IntT1)
 	function, _ := NewFunType(IntT1, BoolT1)
 	record, _ := NewRecordType(map[string]Type{"items": mustSet(IntT1), "pair": tuple})
 	types := []Type{IntT1, BoolT1, StrT1, mustSet(IntT1), tuple, sequence, record, function}
+	seen := make(map[int]Type)
 	for _, typ := range types {
 		var cell ArenaCell
 		var err error
 		scope, cell, err = cache.GetOrCreate(scope, typ)
 		if err != nil || !EqualTypes(cell.Type.TLAType(), typ) {
 			t.Fatalf("default %s = %v, %v", typ, cell, err)
+		}
+		if previous, duplicate := seen[cell.ID]; duplicate {
+			t.Fatalf("distinct types %s and %s reused cell %s", previous, typ, cell)
+		}
+		seen[cell.ID] = typ
+		if cached, found := cache.Get(typ); !found || !cached.Equal(cell) {
+			t.Fatalf("Get(%s) = %v, %v after creation", typ, cached, found)
 		}
 		sameScope, same, err := cache.GetOrCreate(scope, typ)
 		if err != nil || sameScope.Arena != scope.Arena || !same.Equal(cell) {
