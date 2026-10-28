@@ -356,3 +356,35 @@ func TestFormatVMTDeclarations(t *testing.T) {
 		t.Fatalf("function definition = %q, %v", definition, err)
 	}
 }
+
+func TestVMTDeclarationStateAndNamingMatchScalaPackageHelpers(t *testing.T) {
+	if VMTPrimeName("x") != "x^" || VMTNextName("x") != ".x" {
+		t.Fatalf("VMT names = %q, %q", VMTPrimeName("x"), VMTNextName("x"))
+	}
+
+	a, _ := UninterpretedVMTSort("A")
+	literal, _ := VMTLiteral("one", a)
+	body, _ := VMTVar("x", a)
+	state := NewVMTDeclarations()
+	state.UninterpretedSorts["A"] = a
+	state.UninterpretedLiterals["one_A"] = literal
+	state.DefinedFunctions["f"] = VMTFunctionDefinition{
+		Name: "f", Arguments: []VMTBinding{{Name: "x", Sort: a}}, Body: body,
+	}
+	state.DefinitionOrder = []string{"f"}
+
+	snapshot := state.Clone()
+	delete(snapshot.UninterpretedSorts, "A")
+	delete(snapshot.UninterpretedLiterals, "one_A")
+	delete(snapshot.DefinedFunctions, "f")
+	snapshot.DefinitionOrder[0] = "changed"
+	if _, ok := state.UninterpretedSorts["A"]; !ok {
+		t.Fatal("declaration snapshot mutated the source sort state")
+	}
+	if _, ok := state.UninterpretedLiterals["one_A"]; !ok {
+		t.Fatal("declaration snapshot mutated the source literal state")
+	}
+	if _, ok := state.DefinedFunctions["f"]; !ok || state.DefinitionOrder[0] != "f" {
+		t.Fatal("declaration snapshot mutated the source definition state")
+	}
+}
