@@ -2,6 +2,7 @@ package apalache
 
 import (
 	"context"
+	"math/big"
 	"testing"
 )
 
@@ -106,4 +107,45 @@ func TestCherryPickerSelectsSetsAndSequencesWithOneOracle(t *testing.T) {
 		t.Fatalf("fixed structural picks differ from second candidates = %v, %v", status, err)
 	}
 	_ = encoder
+}
+
+func TestCherryPickerBasicScalaOracleCase(t *testing.T) {
+	for selected, want := range []int64{1, 2, 2} {
+		rewriter := NewStratifiedRewriter()
+		scope := InitialRewriterScope()
+		cells := make([]ArenaCell, 3)
+		for index, value := range []int64{1, 2, 2} {
+			var err error
+			scope, cells[index], err = rewriter.Rewrite(NewValueExpr(Int64Value(value), Typed(IntT1)), scope)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		scope, oracle, err := CreateIntOracle(scope, len(cells))
+		if err != nil {
+			t.Fatal(err)
+		}
+		scope, picked, err := NewCherryPicker(rewriter).Pick(scope, oracle, cells)
+		if err != nil {
+			t.Fatal(err)
+		}
+		choice, _ := oracle.Chosen(scope, selected)
+		wantCell, found := rewriter.IntegerCache().Get(big.NewInt(want))
+		if !found {
+			t.Fatalf("selected integer %d was not cached", want)
+		}
+		equal, err := rewriter.equality.Equal(scope.Arena, picked, wantCell)
+		if err != nil {
+			t.Fatal(err)
+		}
+		constraints := append(rewriter.Constraints(), choice,
+			MustOperExpr(Op("NOT"), Typed(BoolT1), equal))
+		solver := newTestG3Solver(t)
+		if _, err := EncodeRewriterScope(solver, scope, constraints); err != nil {
+			t.Fatal(err)
+		}
+		if status, err := solver.Check(context.Background()); err != nil || status != SMTUnsatisfiable {
+			t.Fatalf("basic cherry-pick position %d != %d: %v, %v", selected, want, status, err)
+		}
+	}
 }
