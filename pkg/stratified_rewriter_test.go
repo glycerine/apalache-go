@@ -300,6 +300,19 @@ func TestStratifiedLabelsAndFiniteSetPredicate(t *testing.T) {
 	if !found || value.Int64() != 7 {
 		t.Fatalf("labelled value = %v, found %v", value, found)
 	}
+	extraMetadata := MustOperExpr(Op("LABEL"), Typed(IntT1),
+		NewValueExpr(Int64Value(8), Typed(IntT1)),
+		NewValueExpr(StringValue("metadata-one"), Typed(StrT1)),
+		NewValueExpr(StringValue("metadata-two"), Typed(StrT1)))
+	if _, labelled, err = rewriter.Rewrite(extraMetadata, scope); err != nil {
+		t.Fatalf("label metadata was evaluated: %v", err)
+	}
+	if value, found = rewriter.IntegerCache().FindValue(labelled); !found || value.Int64() != 8 {
+		t.Fatalf("multi-argument labelled value = %v, found %v", value, found)
+	}
+	if _, err = NewOperExpr(Op("LABEL"), Typed(IntT1)); err == nil {
+		t.Fatal("empty label was constructed")
+	}
 	finite := MustOperExpr(Op("FiniteSets!IsFiniteSet"), Typed(BoolT1),
 		NewNameExpr("deliberately_unbound", Typed(mustSet(IntT1))))
 	unchangedArena := scope.Arena
