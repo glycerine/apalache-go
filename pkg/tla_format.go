@@ -25,6 +25,16 @@ func ParseableTLAName(name string) string {
 }
 
 func FormatTLAModule(module *Module, options TLAFormatOptions) (string, error) {
+	return formatTLAModuleWith(module, options, func(declaration Decl) (string, error) {
+		return FormatTLADeclaration(declaration, options.Annotations)
+	})
+}
+
+func formatTLAModuleWith(
+	module *Module,
+	options TLAFormatOptions,
+	formatDeclaration func(Decl) (string, error),
+) (string, error) {
 	if module == nil {
 		return "", fmt.Errorf("cannot format nil module")
 	}
@@ -43,7 +53,7 @@ func FormatTLAModule(module *Module, options TLAFormatOptions) (string, error) {
 		output.WriteString("\nEXTENDS " + strings.Join(names, ", ") + "\n")
 	}
 	for _, declaration := range module.Declarations() {
-		formatted, err := FormatTLADeclaration(declaration, options.Annotations)
+		formatted, err := formatDeclaration(declaration)
 		if err != nil {
 			return "", err
 		}

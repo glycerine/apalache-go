@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 )
 
 // TLAWriter is the Go spelling of the Scala writer contract. Implementations
@@ -66,6 +67,105 @@ type JSONTLAWriter struct {
 	store  *SourceStore
 }
 
+// PrettyTLAWriterWithAnnotations reproduces Scala's declaration annotator: a
+// typed declaration receives a synthesized @type before its stored annotations.
+type PrettyTLAWriterWithAnnotations struct {
+	output io.Writer
+	store  *AnnotationStore
+}
+
+func NewPrettyTLAWriterWithAnnotations(output io.Writer, store *AnnotationStore) *PrettyTLAWriterWithAnnotations {
+	return &PrettyTLAWriterWithAnnotations{output: output, store: store}
+}
+
+func (writer *PrettyTLAWriterWithAnnotations) annotations(declaration Decl) []Annotation {
+	annotations := make([]Annotation, 0, 1)
+	if declaration != nil && declaration.Tag().IsTyped() {
+		annotations = append(annotations, NewTypeAnnotation((TLAType1TagPrinter{}).PrintTypeTag(declaration.Tag())))
+	}
+	if writer != nil && writer.store != nil && declaration != nil {
+		annotations = append(annotations, writer.store.Get(declaration.ID())...)
+	}
+	return annotations
+}
+
+func formatAnnotationBlock(annotations []Annotation, outerIndent, annotationIndent string) string {
+	var output strings.Builder
+	output.WriteString(outerIndent + "(*\n")
+	for _, annotation := range annotations {
+		output.WriteString(annotationIndent + annotation.PrettyString() + "\n")
+	}
+	output.WriteString(outerIndent + "*)")
+	return output.String()
+}
+
+func (writer *PrettyTLAWriterWithAnnotations) formatDeclaration(declaration Decl) (string, error) {
+	base, err := FormatTLADeclaration(declaration, nil)
+	if err != nil {
+		return "", err
+	}
+	annotations := writer.annotations(declaration)
+	if len(annotations) == 0 {
+		return base, nil
+	}
+	switch typed := declaration.(type) {
+	case *VarDecl:
+		return "VARIABLE\n" + formatAnnotationBlock(annotations, "  ", "    ") + "\n  " + ParseableTLAName(typed.Name()), nil
+	case *ConstDecl:
+		return "CONSTANT\n" + formatAnnotationBlock(annotations, "  ", "    ") + "\n  " + ParseableTLAName(typed.Name()), nil
+	case *AssumeDecl:
+		if _, named := typed.DefinedName(); !named {
+			base = strings.Replace(base, "ASSUME (", "ASSUME(", 1)
+		}
+	}
+	block := formatAnnotationBlock(annotations, "", "  ")
+	if recursive, ok := declaration.(*OperDecl); ok && recursive.IsRecursive() {
+		parts := strings.SplitN(base, "\n", 2)
+		if len(parts) == 2 {
+			return parts[0] + "\n" + block + "\n" + parts[1], nil
+		}
+	}
+	return block + "\n" + base, nil
+}
+
+func (writer *PrettyTLAWriterWithAnnotations) WriteModule(module *Module, extendedModules []string) error {
+	if writer == nil || writer.output == nil {
+		return fmt.Errorf("annotated TLA+ writer has no output")
+	}
+	formatted, err := formatTLAModuleWith(module, TLAFormatOptions{
+		ExtendedModules: append([]string(nil), extendedModules...),
+	}, writer.formatDeclaration)
+	if err != nil {
+		return err
+	}
+	_, err = io.WriteString(writer.output, formatted)
+	return err
+}
+
+func (writer *PrettyTLAWriterWithAnnotations) WriteDeclaration(declaration Decl) error {
+	if writer == nil || writer.output == nil {
+		return fmt.Errorf("annotated TLA+ writer has no output")
+	}
+	formatted, err := writer.formatDeclaration(declaration)
+	if err != nil {
+		return err
+	}
+	_, err = io.WriteString(writer.output, formatted+"\n\n")
+	return err
+}
+
+func (writer *PrettyTLAWriterWithAnnotations) WriteExpression(expression Expr) error {
+	if writer == nil || writer.output == nil {
+		return fmt.Errorf("annotated TLA+ writer has no output")
+	}
+	formatted, err := FormatTLAExpression(expression)
+	if err != nil {
+		return err
+	}
+	_, err = io.WriteString(writer.output, formatted)
+	return err
+}
+
 func NewJSONTLAWriter(output io.Writer, store *SourceStore) *JSONTLAWriter {
 	return &JSONTLAWriter{output: output, store: store}
 }
@@ -112,7 +212,7 @@ type TLAWriterFactory struct {
 }
 
 func (factory TLAWriterFactory) NewPrettyWriter(output io.Writer) TLAWriter {
-	return NewPrettyTLAWriter(output, factory.Annotations)
+	return NewPrettyTLAWriterWithAnnotations(output, factory.Annotations)
 }
 
 func (factory TLAWriterFactory) NewJSONWriter(output io.Writer) TLAWriter {
@@ -161,4 +261,5 @@ func (factory TLAWriterFactory) WriteModuleJSONFile(path string, module *Module)
 }
 
 var _ TLAWriter = (*PrettyTLAWriter)(nil)
+var _ TLAWriter = (*PrettyTLAWriterWithAnnotations)(nil)
 var _ TLAWriter = (*JSONTLAWriter)(nil)

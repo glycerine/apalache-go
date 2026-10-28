@@ -42,6 +42,64 @@ func TestPrettyTLAWriterWritesEveryNodeShape(t *testing.T) {
 	}
 }
 
+func TestPrettyTLAWriterWithAnnotationsMatchesScalaDeclarationLayouts(t *testing.T) {
+	functionType, err := NewFunType(IntT1, BoolT1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	typedVariable := NewVarDecl("myFun", Typed(functionType))
+	untypedVariable := NewVarDecl("plain", Untyped())
+	constant := NewConstDecl("N", Untyped())
+	operator := NewOperDecl("RecOper", []OperatorParam{ValueParam("x"), ValueParam("y")},
+		NewValueExpr(BoolValue(true), Typed(BoolT1)), Typed(mustOperator([]Type{IntT1, StrT1}, BoolT1)))
+	operator.SetRecursive(true)
+	assumption := NewAssumeDecl(nil,
+		MustOperExpr(Op("EQ"), Typed(BoolT1), NewNameExpr("x", Untyped()), NewValueExpr(BoolValue(true), Typed(BoolT1))),
+		Typed(BoolT1))
+	store := NewAnnotationStore()
+	store.Set(constant.ID(), []Annotation{
+		NewTypeAnnotation("Int"), {Name: "sweet", Arguments: []AnnotationArg{AnnotationBoolean{Value: true}}},
+	})
+	store.Set(operator.ID(), []Annotation{{Name: "stored"}})
+
+	tests := []struct {
+		name        string
+		declaration Decl
+		want        string
+	}{
+		{"typed variable", typedVariable, "VARIABLE\n  (*\n    @type: (Int -> Bool);\n  *)\n  myFun\n\n"},
+		{"untyped variable", untypedVariable, "VARIABLE plain\n\n"},
+		{"stored constant", constant, "CONSTANT\n  (*\n    @type: Int;\n    @sweet(true)\n  *)\n  N\n\n"},
+		{"recursive operator", operator, "RECURSIVE RecOper(_, _)\n(*\n  @type: ((Int, Str) => Bool);\n  @stored\n*)\nRecOper(x, y) == TRUE\n\n"},
+		{"unnamed assumption", assumption, "(*\n  @type: Bool;\n*)\nASSUME(x = TRUE)\n\n"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var output bytes.Buffer
+			if err := NewPrettyTLAWriterWithAnnotations(&output, store).WriteDeclaration(test.declaration); err != nil {
+				t.Fatal(err)
+			}
+			if output.String() != test.want {
+				t.Fatalf("annotated declaration:\n%s\nwant:\n%s", output.String(), test.want)
+			}
+		})
+	}
+}
+
+func TestPrettyTLAWriterWithAnnotationsWritesTypedModule(t *testing.T) {
+	constant := NewConstDecl("N", Typed(IntT1))
+	module := NewModule("M", []Decl{constant})
+	var output bytes.Buffer
+	if err := NewPrettyTLAWriterWithAnnotations(&output, NewAnnotationStore()).WriteModule(module, []string{"Integers"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, fragment := range []string{"MODULE M", "EXTENDS Integers", "@type: Int;", "CONSTANT\n  (*"} {
+		if !strings.Contains(output.String(), fragment) {
+			t.Fatalf("typed module is missing %q:\n%s", fragment, output.String())
+		}
+	}
+}
+
 func TestJSONTLAWriterWritesEveryNodeShapeWithSources(t *testing.T) {
 	expression := NewValueExpr(Int64Value(1), Typed(IntT1))
 	declaration := NewOperDecl("N", nil, expression, Typed(mustOperator(nil, IntT1)))
