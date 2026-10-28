@@ -319,39 +319,12 @@ func (renamer *IncrementalRenamer) ShiftCounters(expression Expr, offsets map[st
 }
 
 func (renamer *IncrementalRenamer) Normalize(expression Expr) (Expr, error) {
-	offsets := NameCountersInExpression(expression, false)
-	for name, minimum := range offsets {
-		if minimum > 1 {
-			offsets[name] = minimum - 1
-		} else {
-			delete(offsets, name)
-		}
-	}
+	offsets := normalizationOffsets(NameCountersInExpression(expression, false))
 	return renamer.ShiftCounters(expression, offsets)
 }
 
-func (renamer *IncrementalRenamer) SyncAndNormalize(expression Expr) (Expr, error) {
-	renamer.SyncFrom(expression)
-	return renamer.Normalize(renamer.Rename(expression))
-}
-
-func (renamer *IncrementalRenamer) RenameModule(module *Module) (*Module, error) {
-	declarations := module.Declarations()
-	for _, declaration := range declarations {
-		if operator, ok := declaration.(*OperDecl); ok {
-			renamer.SyncFrom(operator.Body())
-		}
-	}
-	for index, declaration := range declarations {
-		operator, ok := declaration.(*OperDecl)
-		if !ok {
-			continue
-		}
-		copy := operator.copyWithTag(operator.Tag())
-		copy.SetBody(renamer.Rename(operator.Body()))
-		declarations[index] = copy
-	}
-	offsets := NameCountersInDeclarations(declarations, false)
+func normalizationOffsets(counters map[string]int) map[string]int {
+	offsets := cloneMap(counters)
 	for name, minimum := range offsets {
 		if minimum > 1 {
 			offsets[name] = minimum - 1
@@ -359,6 +332,37 @@ func (renamer *IncrementalRenamer) RenameModule(module *Module) (*Module, error)
 			delete(offsets, name)
 		}
 	}
+	return offsets
+}
+
+func (renamer *IncrementalRenamer) NormalizeExpressions(expressions []Expr) ([]Expr, error) {
+	counters := make(map[string]int)
+	for _, expression := range expressions {
+		counters = MergeNameCounters(counters, NameCountersInExpression(expression, false), false)
+	}
+	offsets := normalizationOffsets(counters)
+	result := make([]Expr, len(expressions))
+	for index, expression := range expressions {
+		var err error
+		result[index], err = renamer.ShiftCounters(expression, offsets)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return result, nil
+}
+
+func (renamer *IncrementalRenamer) NormalizeDeclaration(declaration Decl) (Decl, error) {
+	result, err := renamer.NormalizeDeclarations([]Decl{declaration})
+	if err != nil {
+		return nil, err
+	}
+	return result[0], nil
+}
+
+func (renamer *IncrementalRenamer) NormalizeDeclarations(declarations []Decl) ([]Decl, error) {
+	offsets := normalizationOffsets(NameCountersInDeclarations(declarations, false))
+	result := append([]Decl(nil), declarations...)
 	for index, declaration := range declarations {
 		operator, ok := declaration.(*OperDecl)
 		if !ok {
@@ -370,7 +374,58 @@ func (renamer *IncrementalRenamer) RenameModule(module *Module) (*Module, error)
 		}
 		copy := operator.copyWithTag(operator.Tag())
 		copy.SetBody(body)
-		declarations[index] = copy
+		result[index] = renamer.tracker.TrackDeclaration(func(Decl) Decl { return copy })(operator)
+	}
+	return result, nil
+}
+
+func (renamer *IncrementalRenamer) SyncAndNormalize(expression Expr) (Expr, error) {
+	renamer.SyncFrom(expression)
+	return renamer.Normalize(renamer.Rename(expression))
+}
+
+func (renamer *IncrementalRenamer) SyncAndNormalizeExpressions(expressions []Expr) ([]Expr, error) {
+	for _, expression := range expressions {
+		renamer.SyncFrom(expression)
+	}
+	renamed := make([]Expr, len(expressions))
+	for index, expression := range expressions {
+		renamed[index] = renamer.Rename(expression)
+	}
+	return renamer.NormalizeExpressions(renamed)
+}
+
+func (renamer *IncrementalRenamer) SyncAndNormalizeDeclaration(declaration Decl) (Decl, error) {
+	result, err := renamer.SyncAndNormalizeDeclarations([]Decl{declaration})
+	if err != nil {
+		return nil, err
+	}
+	return result[0], nil
+}
+
+func (renamer *IncrementalRenamer) SyncAndNormalizeDeclarations(declarations []Decl) ([]Decl, error) {
+	for _, declaration := range declarations {
+		if operator, ok := declaration.(*OperDecl); ok {
+			renamer.SyncFrom(operator.Body())
+		}
+	}
+	renamed := append([]Decl(nil), declarations...)
+	for index, declaration := range declarations {
+		operator, ok := declaration.(*OperDecl)
+		if !ok {
+			continue
+		}
+		copy := operator.copyWithTag(operator.Tag())
+		copy.SetBody(renamer.Rename(operator.Body()))
+		renamed[index] = renamer.tracker.TrackDeclaration(func(Decl) Decl { return copy })(operator)
+	}
+	return renamer.NormalizeDeclarations(renamed)
+}
+
+func (renamer *IncrementalRenamer) RenameModule(module *Module) (*Module, error) {
+	declarations, err := renamer.SyncAndNormalizeDeclarations(module.Declarations())
+	if err != nil {
+		return nil, err
 	}
 	result := NewModule(module.Name(), declarations)
 	result.properties = cloneMap(module.properties)

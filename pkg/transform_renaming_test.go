@@ -26,6 +26,68 @@ func TestRenamedNameUtilities(t *testing.T) {
 	if shifted, err := OffsetRenamedName(map[string]int{"x": 4}, "x$5"); err != nil || shifted != "x$1" {
 		t.Fatalf("shift got %q, %v", shifted, err)
 	}
+	if _, err := OffsetRenamedName(map[string]int{"x": 1}, "x$1"); err == nil {
+		t.Fatal("accepted a non-positive shifted counter")
+	}
+	if shifted, err := OffsetRenamedName(map[string]int{"x": 4}, "y$2"); err != nil || shifted != "y$2" {
+		t.Fatalf("unmentioned base shifted to %q, %v", shifted, err)
+	}
+}
+
+func TestIncrementalRenamingEveryScalaBinderOperator(t *testing.T) {
+	for _, operator := range []string{"SET_FILTER", "EXISTS3", "FORALL3", "CHOOSE3", "CHOOSE2"} {
+		x := NewNameExpr("x", Untyped())
+		arity := 3
+		if operator == "CHOOSE2" {
+			arity = 2
+		}
+		arguments := make([]Expr, arity)
+		for index := range arguments {
+			arguments[index] = x
+		}
+		got := NewIncrementalRenamer(IdleTracker{}).Rename(MustOperExpr(Op(operator), Untyped(), arguments...)).(*OperExpr)
+		for index, argument := range got.Arguments() {
+			if name := argument.(*NameExpr).Name(); name != "x$1" {
+				t.Errorf("%s argument %d = %s, want x$1", operator, index, name)
+			}
+		}
+	}
+	for _, operator := range []string{"SET_MAP", "FUN_CTOR", "FUN_REC_CTOR"} {
+		x := NewNameExpr("x", Untyped())
+		set := NewNameExpr("S", Untyped())
+		got := NewIncrementalRenamer(IdleTracker{}).Rename(
+			MustOperExpr(Op(operator), Untyped(), x, x, set),
+		).(*OperExpr).Arguments()
+		if got[0].(*NameExpr).Name() != "x$1" || got[1].(*NameExpr).Name() != "x$1" {
+			t.Errorf("%s did not rename result and binder together", operator)
+		}
+	}
+}
+
+func TestNameCounterMapsMatchScalaOracle(t *testing.T) {
+	plain := MustOperExpr(Op("AND"), Untyped(), NewNameExpr("x", Untyped()), NewNameExpr("y", Untyped()))
+	if got := NameCountersInExpression(plain, true); len(got) != 0 {
+		t.Fatalf("plain counters = %v", got)
+	}
+	expression := MustOperExpr(Op("AND"), Untyped(),
+		NewNameExpr("x$2", Untyped()), NewNameExpr("y$8", Untyped()),
+		MustOperExpr(Op("EQ"), Untyped(),
+			MustOperExpr(Op("PLUS"), Untyped(), NewNameExpr("x$1", Untyped()),
+				MustOperExpr(Op("PRIME"), Untyped(), NewNameExpr("z$3", Untyped()))),
+			NewValueExpr(Int64Value(2), Untyped())))
+	if got, want := NameCountersInExpression(expression, true), map[string]int{"x": 2, "y": 8, "z": 3}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("maximum counters = %v, want %v", got, want)
+	}
+	if got, want := NameCountersInExpression(expression, false), map[string]int{"x": 1, "y": 8, "z": 3}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("minimum counters = %v, want %v", got, want)
+	}
+
+	local := NewOperDecl("Y$6", []OperatorParam{{Name: "p$3"}, {Name: "t$99", Arity: 2}},
+		MustOperExpr(Op("PLUS"), Untyped(), NewNameExpr("p$3", Untyped()), NewNameExpr("s$5", Untyped())), Untyped())
+	let := NewLetInExpr(NewNameExpr("Y$6", Untyped()), Untyped(), local)
+	if got, want := NameCountersInExpression(let, true), map[string]int{"Y": 6, "p": 3, "t": 99, "s": 5}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("LET counters = %v, want %v", got, want)
+	}
 }
 
 func TestIncrementalRenamingQuantifiers(t *testing.T) {
@@ -155,6 +217,45 @@ func TestIncrementalRenamingModuleNormalizesAsOneBatch(t *testing.T) {
 	}
 }
 
+func TestIncrementalRenamingBatchAPIsMatchScala(t *testing.T) {
+	s := NewNameExpr("S", Untyped())
+	p := NewNameExpr("p", Untyped())
+	quantifier := func(name string) Expr {
+		return MustOperExpr(Op("EXISTS3"), Untyped(), NewNameExpr(name, Untyped()), s, p)
+	}
+	renamer := NewIncrementalRenamer(IdleTracker{})
+	expressions, err := renamer.NormalizeExpressions([]Expr{quantifier("x$3"), quantifier("x$105")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first := expressions[0].(*OperExpr).Arguments()[0].(*NameExpr).Name(); first != "x$1" {
+		t.Fatalf("first normalized expression binder = %s", first)
+	}
+	if second := expressions[1].(*OperExpr).Arguments()[0].(*NameExpr).Name(); second != "x$103" {
+		t.Fatalf("second normalized expression binder = %s", second)
+	}
+
+	renamer.SyncFrom(quantifier("x$99"))
+	declarations := []Decl{
+		NewOperDecl("X", nil, quantifier("x$3"), Untyped()),
+		NewOperDecl("Y", nil, quantifier("x$105"), Untyped()),
+		NewVarDecl("untouched", Untyped()),
+	}
+	result, err := renamer.SyncAndNormalizeDeclarations(declarations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first := result[0].(*OperDecl).Body().(*OperExpr).Arguments()[0].(*NameExpr).Name(); first != "x$1" {
+		t.Fatalf("first declaration binder = %s", first)
+	}
+	if second := result[1].(*OperDecl).Body().(*OperExpr).Arguments()[0].(*NameExpr).Name(); second != "x$2" {
+		t.Fatalf("second declaration binder = %s", second)
+	}
+	if result[2] != declarations[2] {
+		t.Fatal("non-operator declaration was not preserved")
+	}
+}
+
 func TestIncrementalRenamingNormalizationPreservesSource(t *testing.T) {
 	store := NewSourceStore()
 	original := NewNameExpr("x$3", Untyped())
@@ -172,5 +273,70 @@ func TestIncrementalRenamingNormalizationPreservesSource(t *testing.T) {
 	}
 	if gotLocation, found := store.Find(got.ID()); !found || gotLocation != location {
 		t.Fatalf("normalized source = %v, %v", gotLocation, found)
+	}
+}
+
+func TestIncrementalRenamingNoDuplicateDefinitionsScalaProperty(t *testing.T) {
+	for caseNo := 0; caseNo < 2500; caseNo++ {
+		x := NewNameExpr("x", Untyped())
+		y := NewNameExpr("y", Untyped())
+		set := NewNameExpr("S", Untyped())
+		truth := NewValueExpr(BoolValue(true), Untyped())
+		left := MustOperExpr(Op("EXISTS3"), Untyped(), x, set,
+			MustOperExpr(Op("FORALL3"), Untyped(), x, set, truth))
+		right := MustOperExpr(Op("SET_FILTER"), Untyped(), x, set, truth)
+		mapped := MustOperExpr(Op("SET_MAP"), Untyped(), x, x, set, y, set)
+		local := NewOperDecl("Local", []OperatorParam{ValueParam("x")},
+			MustOperExpr(Op("CHOOSE2"), Untyped(), x, x), Untyped())
+		let := NewLetInExpr(untypedApp("Local", x), Untyped(), local)
+		parts := []Expr{left, right, mapped, let}
+		body := parts[caseNo%len(parts)]
+		for depth := 0; depth < caseNo%5; depth++ {
+			body = MustOperExpr(Op("AND"), Untyped(), body, parts[(caseNo+depth+1)%len(parts)])
+		}
+		module := NewModule("Generated", []Decl{
+			NewOperDecl("A", nil, body, Untyped()),
+			NewOperDecl("B", nil, parts[(caseNo+2)%len(parts)], Untyped()),
+		})
+		renamed, err := NewIncrementalRenamer(IdleTracker{}).RenameModule(module)
+		if err != nil {
+			t.Fatalf("case %d: %v", caseNo, err)
+		}
+		counts := make(map[string]int)
+		for _, declaration := range renamed.OperDeclarations() {
+			collectRenamedDefinitions(declaration.Body(), counts)
+		}
+		for name, count := range counts {
+			if count > 1 {
+				t.Fatalf("case %d: name %s defined %d times", caseNo, name, count)
+			}
+		}
+	}
+}
+
+func collectRenamedDefinitions(expression Expr, counts map[string]int) {
+	switch typed := expression.(type) {
+	case *LetInExpr:
+		collectRenamedDefinitions(typed.Body(), counts)
+		for _, declaration := range typed.Declarations() {
+			counts[declaration.Name()]++
+			collectRenamedDefinitions(declaration.Body(), counts)
+		}
+	case *OperExpr:
+		arguments := typed.Arguments()
+		if isSingleBinder(typed.Operator().Name()) && len(arguments) > 0 {
+			if name, ok := arguments[0].(*NameExpr); ok {
+				counts[name.Name()]++
+			}
+		} else if isMultipleBinder(typed.Operator().Name()) {
+			for index := 1; index < len(arguments); index += 2 {
+				if name, ok := arguments[index].(*NameExpr); ok {
+					counts[name.Name()]++
+				}
+			}
+		}
+		for _, argument := range arguments {
+			collectRenamedDefinitions(argument, counts)
+		}
 	}
 }
