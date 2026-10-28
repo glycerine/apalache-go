@@ -140,11 +140,25 @@ func positionForID(store *SourceStore, id UID) Position {
 }
 
 type TypeRewriter struct {
-	types   map[UID]Type
-	tracker TransformationTracker
+	types      map[UID]Type
+	tracker    TransformationTracker
+	defaultTag func(UID) TypeTag
 }
 
 func NewTypeRewriter(types map[UID]Type, sources *SourceStore) *TypeRewriter {
+	return newTypeRewriter(types, sources, nil)
+}
+
+// NewTypeRewriterWithDefault supplies the fallback used when inference did not
+// produce a type for a node, matching Scala's type-coverage callback.
+func NewTypeRewriterWithDefault(types map[UID]Type, sources *SourceStore, defaultTag func(UID) TypeTag) *TypeRewriter {
+	if defaultTag == nil {
+		panic("NewTypeRewriterWithDefault requires a fallback")
+	}
+	return newTypeRewriter(types, sources, defaultTag)
+}
+
+func newTypeRewriter(types map[UID]Type, sources *SourceStore, defaultTag func(UID) TypeTag) *TypeRewriter {
 	copy := make(map[UID]Type, len(types))
 	for id, typ := range types {
 		copy[id] = typ
@@ -153,11 +167,14 @@ func NewTypeRewriter(types map[UID]Type, sources *SourceStore) *TypeRewriter {
 	if sources != nil {
 		tracker = NewListenerTracker(sources)
 	}
-	return &TypeRewriter{types: copy, tracker: tracker}
+	return &TypeRewriter{types: copy, tracker: tracker, defaultTag: defaultTag}
 }
 func (rewriter *TypeRewriter) tag(id UID, old TypeTag) TypeTag {
 	if typ, found := rewriter.types[id]; found {
 		return Typed(typ)
+	}
+	if rewriter.defaultTag != nil {
+		return rewriter.defaultTag(id)
 	}
 	return old
 }
