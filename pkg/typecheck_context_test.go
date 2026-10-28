@@ -26,6 +26,32 @@ func TestTypeContextIsImmutableAndSorted(t *testing.T) {
 	}
 }
 
+func TestTypeContextEmptyLookupOverwriteAndSnapshots(t *testing.T) {
+	empty := EmptyTypeContext()
+	if len(empty.Types()) != 0 || len(empty.Names()) != 0 {
+		t.Fatalf("empty context = %v, %v", empty.Types(), empty.Names())
+	}
+	if _, err := empty.Lookup("missing"); err == nil || err.Error() != "No type binding for missing in the type context" {
+		t.Fatalf("Lookup(missing) error = %v", err)
+	}
+
+	intScheme, _ := NewTypeScheme(IntT1)
+	boolScheme, _ := NewTypeScheme(BoolT1)
+	context := empty.Bind("x", intScheme)
+	overwritten := context.Bind("x", boolScheme)
+	if scheme, _ := context.Lookup("x"); !EqualTypes(scheme.Principal(), IntT1) {
+		t.Fatalf("original binding = %v", scheme.Principal())
+	}
+	if scheme, _ := overwritten.Lookup("x"); !EqualTypes(scheme.Principal(), BoolT1) {
+		t.Fatalf("overwritten binding = %v", scheme.Principal())
+	}
+	snapshot := overwritten.Types()
+	delete(snapshot, "x")
+	if _, err := overwritten.Lookup("x"); err != nil {
+		t.Fatal("Types returned the context's mutable map")
+	}
+}
+
 type recordingTypeListener struct{ events []string }
 
 func (listener *recordingTypeListener) OnTypeFound(ref ExactRef, typ Type) {

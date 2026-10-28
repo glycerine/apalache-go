@@ -21,7 +21,7 @@ func EmptyTypeContext() TypeContext { return NewTypeContext(nil) }
 func (context TypeContext) Lookup(name string) (TypeScheme, error) {
 	scheme, found := context.types[name]
 	if !found {
-		return TypeScheme{}, fmt.Errorf("no type binding for %s in the type context", name)
+		return TypeScheme{}, fmt.Errorf("No type binding for %s in the type context", name)
 	}
 	return scheme, nil
 }
