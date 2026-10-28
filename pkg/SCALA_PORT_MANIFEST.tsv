@@ -1,0 +1,565 @@
+scala_path	status	go_evidence	remaining
+json-rpc/src/main/scala/com/github/apalachemc/apalache/jsonrpc/CheckerSnapshotsPerSession.scala	partial	json_rpc.go;exploration_service.go	Quint and zstd compatibility remain
+json-rpc/src/main/scala/com/github/apalachemc/apalache/jsonrpc/ExplorationServiceParams.scala	partial	json_rpc.go;exploration_service.go	Quint and zstd compatibility remain
+json-rpc/src/main/scala/com/github/apalachemc/apalache/jsonrpc/ExplorationServiceResult.scala	partial	json_rpc.go;exploration_service.go	Quint and zstd compatibility remain
+json-rpc/src/main/scala/com/github/apalachemc/apalache/jsonrpc/JsonParameterParser.scala	partial	json_rpc.go;exploration_service.go	Quint and zstd compatibility remain
+json-rpc/src/main/scala/com/github/apalachemc/apalache/jsonrpc/JsonRpcCodes.scala	partial	json_rpc.go;exploration_service.go	Quint and zstd compatibility remain
+json-rpc/src/main/scala/com/github/apalachemc/apalache/jsonrpc/JsonRpcServer.scala	partial	json_rpc.go;exploration_service.go	Quint and zstd compatibility remain
+mod-infra/src/main/scala/at/forsyte/apalache/infra/DefaultExceptionAdapter.scala	partial	diagnostic.go;configuration_pass.go;cmd/apalache	logging and pass-framework parity is partial
+mod-infra/src/main/scala/at/forsyte/apalache/infra/ExceptionAdapter.scala	partial	diagnostic.go;configuration_pass.go;cmd/apalache	logging and pass-framework parity is partial
+mod-infra/src/main/scala/at/forsyte/apalache/infra/ExitCodes.scala	partial	diagnostic.go;configuration_pass.go;cmd/apalache	logging and pass-framework parity is partial
+mod-infra/src/main/scala/at/forsyte/apalache/infra/exceptions.scala	partial	diagnostic.go;configuration_pass.go;cmd/apalache	logging and pass-framework parity is partial
+mod-infra/src/main/scala/at/forsyte/apalache/infra/log/LogbackConfigurator.scala	partial	diagnostic.go;configuration_pass.go;cmd/apalache	logging and pass-framework parity is partial
+mod-infra/src/main/scala/at/forsyte/apalache/infra/passes/DerivedPredicates.scala	partial	diagnostic.go;configuration_pass.go;cmd/apalache	logging and pass-framework parity is partial
+mod-infra/src/main/scala/at/forsyte/apalache/infra/passes/Pass.scala	partial	diagnostic.go;configuration_pass.go;cmd/apalache	logging and pass-framework parity is partial
+mod-infra/src/main/scala/at/forsyte/apalache/infra/passes/PassChainExecutor.scala	partial	diagnostic.go;configuration_pass.go;cmd/apalache	logging and pass-framework parity is partial
+mod-infra/src/main/scala/at/forsyte/apalache/infra/passes/ToolModule.scala	partial	diagnostic.go;configuration_pass.go;cmd/apalache	logging and pass-framework parity is partial
+mod-tool/src/main/scala/at/forsyte/apalache/tla/Tool.scala	partial	cmd/apalache;config_json.go	checker server and remaining CLI controls are open
+mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/AbstractCheckerCmd.scala	partial	cmd/apalache;config_json.go	checker server and remaining CLI controls are open
+mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/ApalacheCommand.scala	partial	cmd/apalache;config_json.go	checker server and remaining CLI controls are open
+mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/CheckCmd.scala	partial	cmd/apalache;config_json.go	checker server and remaining CLI controls are open
+mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/ConfigCmd.scala	partial	cmd/apalache;config_json.go	checker server and remaining CLI controls are open
+mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/ParseCmd.scala	partial	cmd/apalache;config_json.go	checker server and remaining CLI controls are open
+mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/ServerCmd.scala	partial	cmd/apalache;config_json.go	checker server and remaining CLI controls are open
+mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/SimulateCmd.scala	partial	cmd/apalache;config_json.go	checker server and remaining CLI controls are open
+mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/TestCmd.scala	partial	cmd/apalache;config_json.go	checker server and remaining CLI controls are open
+mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/TraceeCmd.scala	partial	cmd/apalache;config_json.go	checker server and remaining CLI controls are open
+mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/TranspileCmd.scala	partial	cmd/apalache;config_json.go	checker server and remaining CLI controls are open
+mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/TypeCheckCmd.scala	partial	cmd/apalache;config_json.go	checker server and remaining CLI controls are open
+passes/src/main/scala/at/forsyte/apalache/tla/passes/assignments/PrimingPass.scala	partial	safety_pipeline.go;configuration_pass.go;preprocess_*.go	remaining orchestration parity is open
+passes/src/main/scala/at/forsyte/apalache/tla/passes/assignments/PrimingPassImpl.scala	partial	safety_pipeline.go;configuration_pass.go;preprocess_*.go	remaining orchestration parity is open
+passes/src/main/scala/at/forsyte/apalache/tla/passes/assignments/TransitionPass.scala	partial	safety_pipeline.go;configuration_pass.go;preprocess_*.go	remaining orchestration parity is open
+passes/src/main/scala/at/forsyte/apalache/tla/passes/assignments/TransitionPassImpl.scala	partial	safety_pipeline.go;configuration_pass.go;preprocess_*.go	remaining orchestration parity is open
+passes/src/main/scala/at/forsyte/apalache/tla/passes/imp/ParserModule.scala	partial	safety_pipeline.go;configuration_pass.go;preprocess_*.go	remaining orchestration parity is open
+passes/src/main/scala/at/forsyte/apalache/tla/passes/imp/PassWithOutputs.scala	partial	safety_pipeline.go;configuration_pass.go;preprocess_*.go	remaining orchestration parity is open
+passes/src/main/scala/at/forsyte/apalache/tla/passes/imp/SanyParserPass.scala	partial	safety_pipeline.go;configuration_pass.go;preprocess_*.go	remaining orchestration parity is open
+passes/src/main/scala/at/forsyte/apalache/tla/passes/imp/SanyParserPassImpl.scala	partial	safety_pipeline.go;configuration_pass.go;preprocess_*.go	remaining orchestration parity is open
+passes/src/main/scala/at/forsyte/apalache/tla/passes/pp/ConfigurationPass.scala	partial	safety_pipeline.go;configuration_pass.go;preprocess_*.go	remaining orchestration parity is open
+passes/src/main/scala/at/forsyte/apalache/tla/passes/pp/ConfigurationPassImpl.scala	partial	safety_pipeline.go;configuration_pass.go;preprocess_*.go	remaining orchestration parity is open
+passes/src/main/scala/at/forsyte/apalache/tla/passes/pp/DesugarerPass.scala	partial	safety_pipeline.go;configuration_pass.go;preprocess_*.go	remaining orchestration parity is open
+passes/src/main/scala/at/forsyte/apalache/tla/passes/pp/DesugarerPassImpl.scala	partial	safety_pipeline.go;configuration_pass.go;preprocess_*.go	remaining orchestration parity is open
+passes/src/main/scala/at/forsyte/apalache/tla/passes/pp/InlinePass.scala	partial	safety_pipeline.go;configuration_pass.go;preprocess_*.go	remaining orchestration parity is open
+passes/src/main/scala/at/forsyte/apalache/tla/passes/pp/InlinePassImpl.scala	partial	safety_pipeline.go;configuration_pass.go;preprocess_*.go	remaining orchestration parity is open
+passes/src/main/scala/at/forsyte/apalache/tla/passes/pp/OptPass.scala	partial	safety_pipeline.go;configuration_pass.go;preprocess_*.go	remaining orchestration parity is open
+passes/src/main/scala/at/forsyte/apalache/tla/passes/pp/OptPassImpl.scala	partial	safety_pipeline.go;configuration_pass.go;preprocess_*.go	remaining orchestration parity is open
+passes/src/main/scala/at/forsyte/apalache/tla/passes/pp/PreproPass.scala	partial	safety_pipeline.go;configuration_pass.go;preprocess_*.go	remaining orchestration parity is open
+passes/src/main/scala/at/forsyte/apalache/tla/passes/pp/PreproPassImpl.scala	partial	safety_pipeline.go;configuration_pass.go;preprocess_*.go	remaining orchestration parity is open
+passes/src/main/scala/at/forsyte/apalache/tla/passes/pp/PreproPassPartial.scala	partial	safety_pipeline.go;configuration_pass.go;preprocess_*.go	remaining orchestration parity is open
+passes/src/main/scala/at/forsyte/apalache/tla/passes/pp/ReTLAPreproPassImpl.scala	partial	safety_pipeline.go;configuration_pass.go;preprocess_*.go	remaining orchestration parity is open
+passes/src/main/scala/at/forsyte/apalache/tla/passes/pp/TemporalPass.scala	partial	safety_pipeline.go;configuration_pass.go;preprocess_*.go	remaining orchestration parity is open
+passes/src/main/scala/at/forsyte/apalache/tla/passes/pp/TemporalPassImpl.scala	partial	safety_pipeline.go;configuration_pass.go;preprocess_*.go	remaining orchestration parity is open
+passes/src/main/scala/at/forsyte/apalache/tla/passes/pp/WatchdogPass.scala	partial	safety_pipeline.go;configuration_pass.go;preprocess_*.go	remaining orchestration parity is open
+passes/src/main/scala/at/forsyte/apalache/tla/passes/pp/WatchdogPassImpl.scala	partial	safety_pipeline.go;configuration_pass.go;preprocess_*.go	remaining orchestration parity is open
+passes/src/main/scala/at/forsyte/apalache/tla/passes/typecheck/EtcTypeCheckerAdapter.scala	partial	safety_pipeline.go;configuration_pass.go;preprocess_*.go	remaining orchestration parity is open
+passes/src/main/scala/at/forsyte/apalache/tla/passes/typecheck/EtcTypeCheckerPass.scala	partial	safety_pipeline.go;configuration_pass.go;preprocess_*.go	remaining orchestration parity is open
+passes/src/main/scala/at/forsyte/apalache/tla/passes/typecheck/EtcTypeCheckerPassImpl.scala	partial	safety_pipeline.go;configuration_pass.go;preprocess_*.go	remaining orchestration parity is open
+passes/src/main/scala/at/forsyte/apalache/tla/passes/typecheck/LoggingTypeCheckerListener.scala	partial	safety_pipeline.go;configuration_pass.go;preprocess_*.go	remaining orchestration parity is open
+passes/src/main/scala/at/forsyte/apalache/tla/passes/typecheck/TypeCheckerModule.scala	partial	safety_pipeline.go;configuration_pass.go;preprocess_*.go	remaining orchestration parity is open
+passes/src/main/scala/at/forsyte/apalache/tla/typecheck/TypeCheckerTool.scala	partial	safety_pipeline.go;configuration_pass.go;preprocess_*.go	remaining orchestration parity is open
+shai/src/main/scala/at/forsyte/apalache/shai/v1/CmdExecutorService.scala	open	no Go implementation	gRPC checker service is not ported
+shai/src/main/scala/at/forsyte/apalache/shai/v1/RpcServer.scala	open	no Go implementation	gRPC checker service is not ported
+shai/src/main/scala/at/forsyte/apalache/shai/v1/TransExplorerService.scala	open	no Go implementation	gRPC checker service is not ported
+tla-assignments/src/main/scala/at/forsyte/apalache/tla/assignments/AssignmentOperatorIntroduction.scala	partial	assignments*.go	remaining assignment suite mapping is open
+tla-assignments/src/main/scala/at/forsyte/apalache/tla/assignments/ModuleAdapter.scala	partial	assignments*.go	remaining assignment suite mapping is open
+tla-assignments/src/main/scala/at/forsyte/apalache/tla/assignments/SmtFreeSymbolicTransitionExtractor.scala	partial	assignments*.go	remaining assignment suite mapping is open
+tla-assignments/src/main/scala/at/forsyte/apalache/tla/assignments/SymbTransGenerator.scala	partial	assignments*.go	remaining assignment suite mapping is open
+tla-assignments/src/main/scala/at/forsyte/apalache/tla/assignments/exceptions.scala	partial	assignments*.go	remaining assignment suite mapping is open
+tla-assignments/src/main/scala/at/forsyte/apalache/tla/assignments/package.scala	partial	assignments*.go	remaining assignment suite mapping is open
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/Arena.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/Binding.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/Checker.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/CheckerInput.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/CheckerInputVC.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/CollectCounterexamplesModelCheckerListener.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/DumpFilesModelCheckerListener.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/InvariantKind.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/LazyEquality.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/Limits.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/MessageStorage.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/ModelCheckerContext.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/ModelCheckerListener.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/RewritingRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/SeqModelChecker.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/StackableContext.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/SymbState.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/SymbStateDecoder.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/SymbStateRewriter.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/SymbStateRewriterAuto.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/SymbStateRewriterAutoWithArrays.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/SymbStateRewriterAutoWithFunArrays.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/SymbStateRewriterImpl.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/SymbStateRewriterImplWithArrays.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/SymbStateRewriterImplWithFunArrays.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/VCGenerator.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/analyses/ExpansionMarker.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/analyses/ExprGrade.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/analyses/ExprGradeAnalysis.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/analyses/ExprGradeStore.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/analyses/ExprGradeStoreImpl.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/analyses/SkolemizationMarker.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/arena/PtrUtil.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/arena/PureArenaAdapter.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/caches/AbstractCache.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/caches/AbstractCacheSnapshot.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/caches/DefaultValueCache.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/caches/EqCache.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/caches/EqCacheSnapshot.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/caches/ExprCache.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/caches/IntRangeCache.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/caches/IntValueCache.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/caches/ModelValueCache.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/caches/RecordDomainCache.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/caches/SimpleCache.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/caches/SimpleCacheSnapshot.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/config/CheckerExceptionAdapter.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/config/CheckerModule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/config/ReTLACombinedPredicate.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/config/ReTLAToVMTModule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/config/TraceeModule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/config/TransformationTrackerProvider.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/exceptions.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/implicitConversions/package.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/package.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/passes/AnalysisPass.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/passes/AnalysisPassImpl.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/passes/BoundedCheckerPass.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/passes/BoundedCheckerPassImpl.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/passes/ReTLAToVMTTranspilePassImpl.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/passes/TranspilePass.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/passes/VCGenPass.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/passes/VCGenPassImpl.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/profiler/IdleSmtListener.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/profiler/RuleStat.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/profiler/RuleStatListener.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/profiler/RuleStatLocator.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/profiler/SmtListener.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rewriter/ConstSimplifierForSmt.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rewriter/MetricProfilerListener.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rewriter/Recoverable.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rewriter/RewriterConfig.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rewriter/SymbStateRewriterListener.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rewriter/SymbStateRewriterSnapshot.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/AndRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/AssignmentRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/BuiltinConstRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/CardinalityConstRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/CardinalityRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/ChooseOrGuessRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/DomainRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/DomainRuleWithArrays.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/EqRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/FoldSeqRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/FoldSetRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/FunAppRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/FunAppRuleWithArrays.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/FunCtorRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/FunCtorRuleWithArrays.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/FunExceptRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/FunExceptRuleWithArrays.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/FunSetCtorRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/GenRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/IfThenElseRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/IntArithPacker.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/IntArithRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/IntCmpRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/IntConstRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/IntDotDotRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/IsFiniteSetRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/LabelRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/LetInRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/MkSeqRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/NegRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/OrRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/PowSetCtorRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/PrimeRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/QuantRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/RecCtorRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/RepeatRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/SeqOpsRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/SetAsFunRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/SetCtorRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/SetCupRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/SetExpandRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/SetFilterRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/SetInRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/SetInRuleWithArrays.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/SetInRuleWithFunArrays.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/SetInclusionRuleWithArrays.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/SetInclusionRuleWithFunArrays.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/SetMapRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/SetUnionRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/StrConstRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/SubstRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/TupleOrSeqCtorRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/UserOperRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/VariantOpsRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/support/CherryPick.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/support/DefaultValueFactory.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/support/IntOracle.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/support/MapBase.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/support/MockOracle.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/support/Oracle.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/support/OracleFactory.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/support/OracleHelper.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/support/PowSetCtor.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/support/PropositionalOracle.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/support/ProtoSeqOps.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/support/RecordAndVariantOps.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/support/SetOps.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/support/SparseOracle.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/support/SupportOps.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/support/UninterpretedConstOracle.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/support/ValueGenerator.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/support/ZipOracle.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/vmt/BoolRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/vmt/EUFRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/vmt/FormulaRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/vmt/QuantifierRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/vmt/RestrictedSetJudgement.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/vmt/TermToVMTWriter.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/vmt/TlaExToVMTWriter.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/vmt/TlaType1ToSortConverter.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/vmt/ToTermRewriter.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/vmt/ToTermRewriterImpl.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/vmt/VMTExpr.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/vmt/ValueRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/vmt/package.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/search/ModelCheckerParams.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/search/SearchState.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/smt/Cvc5SolverContext.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/smt/PreproSolverContext.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/smt/RecordingSolverContext.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/smt/SmtLog.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/smt/SolverConfig.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/smt/SolverContext.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/smt/SolverContextFactory.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/smt/SolverContextMetrics.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/smt/Z3SolverContext.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/stratifiedRules/Rewriter.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/stratifiedRules/RewriterScope.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/stratifiedRules/StratifiedRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/stratifiedRules/apalache/AssignmentStratifiedRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/stratifiedRules/base/BuiltinConstStratifiedRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/stratifiedRules/base/IntConstStratifiedRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/stratifiedRules/base/SubstStratifiedRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/stratifiedRules/bool/AndStratifiedRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/stratifiedRules/bool/OrStratifiedRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/stratifiedRules/package.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/stratifiedRules/set/SetCtorStratifiedRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/stratifiedRules/set/SetCupStratifiedRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/stratifiedRules/set/SetFilterStratifiedRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/stratifiedRules/support/DelayedConstraintGenerator.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/stratifiedRules/support/RewriterImpl.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/stratifiedRules/support/caches/Cache.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/stratifiedRules/support/caches/IntRangeCache.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/stratifiedRules/support/caches/IntValueCache.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/stratifiedRules/support/caches/RecordDomainCache.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/stratifiedRules/support/caches/UninterpretedLiteralCache.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/stratifiedRules/support/oracles/IntOracle.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/stratifiedRules/support/oracles/MockOracle.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/stratifiedRules/support/oracles/Oracle.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/stratifiedRules/support/oracles/SparseOracle.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/stratifiedRules/support/oracles/UninterpretedConstOracle.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/stratifiedRules/support/oracles/ZipOracle.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/trex/ConstrainedTransitionExecutor.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/trex/DecodedExecution.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/trex/EncodedExecution.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/trex/EncodedTransition.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/trex/ExecutionContext.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/trex/ExecutionSnapshot.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/trex/ExecutorControlState.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/trex/FilteredTransitionExecutor.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/trex/IncrementalExecutionContext.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/trex/IncrementalExecutionContextSnapshot.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/trex/OfflineExecutionContext.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/trex/OfflineExecutionContextSnapshot.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/trex/TransitionExecutor.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/trex/TransitionExecutorImpl.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/util/IntTupleIterator.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/util/LabelsCache.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/util/Prod2SeqIterator.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/util/TlaExUtil.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/tracee/DrivenTransitionConstructor.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/tracee/TraceReader.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/tracee/UJsonTraceReader.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/tracee/pass/TraceeBridgingPass.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/tracee/pass/TraceeBridgingPassImpl.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/tracee/pass/TraceePass.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/tracee/pass/TraceePassImpl.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/tracee/tracee.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-io/src/main/scala/at/forsyte/apalache/io/InputSource.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/OutputManager.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/ReportGenerator.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/annotations/Annotation.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/annotations/AnnotationArg.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/annotations/AnnotationParser.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/annotations/AnnotationParserError.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/annotations/AnnotationStoreProvider.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/annotations/PrettyWriterWithAnnotations.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/annotations/PrettyWriterWithAnnotationsFactory.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/annotations/StandardAnnotations.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/annotations/parser/AnnotationLexer.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/annotations/parser/AnnotationTokenReader.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/annotations/parser/CommentPreprocessor.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/annotations/parser/tokens.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/annotations/store/package.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/config/ApalacheConfig.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/config/ApalacheConfigJsonParser.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/config/ApalacheConfigLoader.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/config/ApalacheConfigResolver.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/config/ConfigEnums.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/config/ConfigParseResult.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/config/ConfigPatch.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/config/Constants.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/config/RemoteConfigValidator.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/config/ValidatedOptions.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/exceptions.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/itf/ItfJsonToTla.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/itf/TlaToItfJson.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/itf/package.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/json/DefaultTagJsonReader.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/json/JsonDecoder.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/json/JsonDeserializationError.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/json/JsonEncoder.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/json/JsonRepresentation.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/json/JsonTlaWriter.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/json/JsonToTla.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/json/JsonToTlaViaBuilder.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/json/JsonVersion.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/json/ScalaFromJsonAdapter.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/json/ScalaToJsonAdapter.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/json/TlaToJson.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/json/impl/BuilderCallByName.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/json/jackson/JacksonRepresentation.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/json/jackson/ScalaFromJacksonAdapter.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/json/jackson/ScalaToJacksonAdapter.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/json/ujsonimpl/ScalaFromUJsonAdapter.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/json/ujsonimpl/ScalaToUJsonAdapter.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/json/ujsonimpl/TlaToUJson.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/json/ujsonimpl/UJsonRepresentation.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/json/ujsonimpl/UJsonToTla.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/json/ujsonimpl/UJsonToTlaViaBuilder.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/lir/CounterexampleWriter.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/lir/ItfCounterexampleWriter.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/lir/NameReplacementMap.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/lir/PrettyWriter.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/lir/TextLayout.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/lir/TlaDeclAnnotator.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/lir/TlaType1PrinterPredefs.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/lir/TlaType1TagPrinter.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/lir/TlaWriter.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/lir/TlaWriterFactory.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/lir/Trace.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/lir/TypeTagPrinter.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/lir/TypeTagReader.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/lir/UntypedReader.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/quint/Quint.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/quint/QuintIR.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/quint/QuintNameGen.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/quint/QuintTypeConverter.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/tlc/TlcConfigParser.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/tlc/TlcConfigParserApalache.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/tlc/config/TlcConfig.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/tlc/config/TlcConfigLexer.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/tlc/config/TlcConfigParseError.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/tlc/config/TlcConfigTokenReader.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/tlc/config/tokens.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/tuning/FineTuningParser.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-parser/src/main/scala/at/forsyte/apalache/tla/imp/AnnotationExtractor.scala	dependency	frontend*.go;tlago-v0.1.9	exact parser diagnostic parity remains
+tla-parser/src/main/scala/at/forsyte/apalache/tla/imp/AssumeTranslator.scala	dependency	frontend*.go;tlago-v0.1.9	exact parser diagnostic parity remains
+tla-parser/src/main/scala/at/forsyte/apalache/tla/imp/Context.scala	dependency	frontend*.go;tlago-v0.1.9	exact parser diagnostic parity remains
+tla-parser/src/main/scala/at/forsyte/apalache/tla/imp/ExprOrOpArgNodeTranslator.scala	dependency	frontend*.go;tlago-v0.1.9	exact parser diagnostic parity remains
+tla-parser/src/main/scala/at/forsyte/apalache/tla/imp/FormalParamTranslator.scala	dependency	frontend*.go;tlago-v0.1.9	exact parser diagnostic parity remains
+tla-parser/src/main/scala/at/forsyte/apalache/tla/imp/ModuleTranslator.scala	dependency	frontend*.go;tlago-v0.1.9	exact parser diagnostic parity remains
+tla-parser/src/main/scala/at/forsyte/apalache/tla/imp/NullOpDefTranslator.scala	dependency	frontend*.go;tlago-v0.1.9	exact parser diagnostic parity remains
+tla-parser/src/main/scala/at/forsyte/apalache/tla/imp/OpApplTranslator.scala	dependency	frontend*.go;tlago-v0.1.9	exact parser diagnostic parity remains
+tla-parser/src/main/scala/at/forsyte/apalache/tla/imp/OpDefTranslator.scala	dependency	frontend*.go;tlago-v0.1.9	exact parser diagnostic parity remains
+tla-parser/src/main/scala/at/forsyte/apalache/tla/imp/ParserExceptionAdapter.scala	dependency	frontend*.go;tlago-v0.1.9	exact parser diagnostic parity remains
+tla-parser/src/main/scala/at/forsyte/apalache/tla/imp/SanyImporter.scala	dependency	frontend*.go;tlago-v0.1.9	exact parser diagnostic parity remains
+tla-parser/src/main/scala/at/forsyte/apalache/tla/imp/SanyNameToStream.scala	dependency	frontend*.go;tlago-v0.1.9	exact parser diagnostic parity remains
+tla-parser/src/main/scala/at/forsyte/apalache/tla/imp/StandardLibrary.scala	dependency	frontend*.go;tlago-v0.1.9	exact parser diagnostic parity remains
+tla-parser/src/main/scala/at/forsyte/apalache/tla/imp/SubstTranslator.scala	dependency	frontend*.go;tlago-v0.1.9	exact parser diagnostic parity remains
+tla-parser/src/main/scala/at/forsyte/apalache/tla/imp/exceptions.scala	dependency	frontend*.go;tlago-v0.1.9	exact parser diagnostic parity remains
+tla-parser/src/main/scala/at/forsyte/apalache/tla/imp/flags.scala	dependency	frontend*.go;tlago-v0.1.9	exact parser diagnostic parity remains
+tla-parser/src/main/scala/at/forsyte/apalache/tla/imp/package.scala	dependency	frontend*.go;tlago-v0.1.9	exact parser diagnostic parity remains
+tla-parser/src/main/scala/at/forsyte/apalache/tla/imp/src/SourceLocation.scala	dependency	frontend*.go;tlago-v0.1.9	exact parser diagnostic parity remains
+tla-parser/src/main/scala/at/forsyte/apalache/tla/imp/utils.scala	dependency	frontend*.go;tlago-v0.1.9	exact parser diagnostic parity remains
+tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/AbstractTransformer.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
+tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/ConstAndDefRewriter.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
+tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/ConstSimplifier.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
+tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/ConstSimplifierBase.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
+tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/Desugarer.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
+tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/ExprOptimizer.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
+tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/Inliner.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
+tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/IntegerQuantificationOptimizer.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
+tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/Keramelizer.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
+tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/LetInOptimizer.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
+tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/NormalizedNames.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
+tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/Normalizer.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
+tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/OperAppToLetInDef.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
+tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/ParameterNormalizer.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
+tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/SetMembershipSimplifier.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
+tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/TlaConstInliner.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
+tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/TlcConfigImporter.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
+tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/TypeSubstitutor.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
+tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/UniqueNameGenerator.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
+tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/exceptions.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
+tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/temporal/LoopEncoder.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
+tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/temporal/TableauEncoder.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
+tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/temporal/utils.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
+tla-typechecker/src/main/scala/at/forsyte/apalache/tla/typecheck/DefaultTypeCheckerListener.scala	partial	typechecker*.go;types_*.go	remaining Scala typechecker suite mapping is open
+tla-typechecker/src/main/scala/at/forsyte/apalache/tla/typecheck/MultiTypeCheckerListener.scala	partial	typechecker*.go;types_*.go	remaining Scala typechecker suite mapping is open
+tla-typechecker/src/main/scala/at/forsyte/apalache/tla/typecheck/SourceAwareTypeCheckerListener.scala	partial	typechecker*.go;types_*.go	remaining Scala typechecker suite mapping is open
+tla-typechecker/src/main/scala/at/forsyte/apalache/tla/typecheck/TypeChecker.scala	partial	typechecker*.go;types_*.go	remaining Scala typechecker suite mapping is open
+tla-typechecker/src/main/scala/at/forsyte/apalache/tla/typecheck/TypeCheckerListener.scala	partial	typechecker*.go;types_*.go	remaining Scala typechecker suite mapping is open
+tla-typechecker/src/main/scala/at/forsyte/apalache/tla/typecheck/TypeContext.scala	partial	typechecker*.go;types_*.go	remaining Scala typechecker suite mapping is open
+tla-typechecker/src/main/scala/at/forsyte/apalache/tla/typecheck/etc/Clause.scala	partial	typechecker*.go;types_*.go	remaining Scala typechecker suite mapping is open
+tla-typechecker/src/main/scala/at/forsyte/apalache/tla/typecheck/etc/ConstraintSolver.scala	partial	typechecker*.go;types_*.go	remaining Scala typechecker suite mapping is open
+tla-typechecker/src/main/scala/at/forsyte/apalache/tla/typecheck/etc/EtcBuilder.scala	partial	typechecker*.go;types_*.go	remaining Scala typechecker suite mapping is open
+tla-typechecker/src/main/scala/at/forsyte/apalache/tla/typecheck/etc/EtcExpr.scala	partial	typechecker*.go;types_*.go	remaining Scala typechecker suite mapping is open
+tla-typechecker/src/main/scala/at/forsyte/apalache/tla/typecheck/etc/EtcId.scala	partial	typechecker*.go;types_*.go	remaining Scala typechecker suite mapping is open
+tla-typechecker/src/main/scala/at/forsyte/apalache/tla/typecheck/etc/EtcTypeChecker.scala	partial	typechecker*.go;types_*.go	remaining Scala typechecker suite mapping is open
+tla-typechecker/src/main/scala/at/forsyte/apalache/tla/typecheck/etc/ToEtcExpr.scala	partial	typechecker*.go;types_*.go	remaining Scala typechecker suite mapping is open
+tla-typechecker/src/main/scala/at/forsyte/apalache/tla/typecheck/etc/TypeAliasSubstitution.scala	partial	typechecker*.go;types_*.go	remaining Scala typechecker suite mapping is open
+tla-typechecker/src/main/scala/at/forsyte/apalache/tla/typecheck/exceptions.scala	partial	typechecker*.go;types_*.go	remaining Scala typechecker suite mapping is open
+tla-typechecker/src/main/scala/at/forsyte/apalache/tla/typecheck/integration/RecordingTypeCheckerListener.scala	partial	typechecker*.go;types_*.go	remaining Scala typechecker suite mapping is open
+tla-typechecker/src/main/scala/at/forsyte/apalache/tla/typecheck/integration/TypeRewriter.scala	partial	typechecker*.go;types_*.go	remaining Scala typechecker suite mapping is open
+tla-typechecker/src/main/scala/at/forsyte/apalache/tla/typecheck/integration/TypeWatchdogTransformationListener.scala	partial	typechecker*.go;types_*.go	remaining Scala typechecker suite mapping is open
+tlair/src/main/scala/at/forsyte/apalache/tla/bmcmt/ArenaCell.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/bmcmt/ElemPtr.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/bmcmt/PureArena.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/bmcmt/types/package.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/Builder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/Feature.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/ModuleProperty.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/OperParam.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/TlaDecl.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/TlaEx.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/TlaLevel.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/TlaLevelFinder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/TlaType1.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/TlaValue.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/TypeTag.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/TypedPredefs.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/UntypedPredefs.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/convenience/convenience.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/exceptions.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/formulas/Base.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/formulas/Booleans.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/formulas/EUF.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/formulas/Integers.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/identifiers.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/io/Printer.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/oper/ApalacheInternalOper.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/oper/ApalacheOper.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/oper/TlaActionOper.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/oper/TlaArithOper.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/oper/TlaBoolOper.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/oper/TlaControlOper.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/oper/TlaFiniteSetOper.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/oper/TlaFunOper.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/oper/TlaOper.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/oper/TlaSeqOper.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/oper/TlaSetOper.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/oper/TlaTempOper.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/oper/VariantOper.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/oper/package.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/package.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/smt/SmtTools.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/src/RegionTree.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/src/SaveToStoreTransformationListener.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/src/SourceLocation.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/src/SourcePosition.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/src/SourceRegion.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/src/SourceStore.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/storage/BodyMapFactory.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/storage/ChangeListener.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/storage/DisjointSets.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/storage/SourceLocator.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/storage/package.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/LanguagePred.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/LanguageWatchdog.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/TransformationListener.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/TransformationTracker.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/impl/IdleTracker.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/impl/StableTopologicalSort.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/impl/TrackerWithListeners.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/package.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/standard/ContextualLanguagePred.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/standard/DeclarationSorter.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/standard/DeepCopy.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/standard/FlatLanguagePred.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/standard/Flatten.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/standard/IncrementalRenaming.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/standard/KeraLanguagePred.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/standard/KeramelizerInputLanguagePred.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/standard/ModuleByExTransformer.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/standard/MonotypeLanguagePred.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/standard/NonrecursiveLanguagePred.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/standard/PrimePropagation.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/standard/ReTLALanguagePred.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/standard/ReplaceFixed.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/standard/SimpleUnchangedUnroller.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/values/values.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/Applicative.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/BuilderUtil.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/ParamUtil.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/ScopeUnsafeBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/ScopedBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/TypeComputationFactory.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/package.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/signatures/ActionOperSignatures.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/signatures/ApalacheInternalOperSignatures.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/signatures/ApalacheOperSignatures.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/signatures/ArithOperSignatures.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/signatures/BaseOperSignatures.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/signatures/BoolOperSignatures.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/signatures/ControlOperSignatures.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/signatures/FiniteSetOperSignatures.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/signatures/FlexibleEquality.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/signatures/FunOperSignatures.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/signatures/SeqOperSignatures.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/signatures/SetOperSignatures.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/signatures/TemporalOperSignatures.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/signatures/VariantOperSignatures.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/subbuilder/ActionBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/subbuilder/ApalacheBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/subbuilder/ApalacheInternalBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/subbuilder/ArithmeticBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/subbuilder/BaseBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/subbuilder/BoolBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/subbuilder/ControlBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/subbuilder/FiniteSetBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/subbuilder/FunBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/subbuilder/LiteralAndNameBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/subbuilder/SeqBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/subbuilder/SetBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/subbuilder/TemporalBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/subbuilder/VariantBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/unsafe/ProtoBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/unsafe/UnsafeActionBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/unsafe/UnsafeApalacheBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/unsafe/UnsafeApalacheInternalBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/unsafe/UnsafeArithmeticBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/unsafe/UnsafeBaseBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/unsafe/UnsafeBoolBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/unsafe/UnsafeControlBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/unsafe/UnsafeFiniteSetBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/unsafe/UnsafeFunBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/unsafe/UnsafeLiteralAndNameBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/unsafe/UnsafeSeqBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/unsafe/UnsafeSetBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/unsafe/UnsafeTemporalBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/unsafe/UnsafeVariantBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/types/EqClass.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/types/ModelValueHandler.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/types/Substitution.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/types/TypeUnifier.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/types/TypeVarPool.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/types/package.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/types/parser/DefaultType1Parser.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/types/parser/Type1Lexer.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/types/parser/Type1ParseError.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/types/parser/Type1Parser.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/types/parser/Type1TokenReader.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/types/parser/tokens.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
