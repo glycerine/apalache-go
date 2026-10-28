@@ -62,6 +62,106 @@ func TestZeroSingletonAndMockOracleCases(t *testing.T) {
 	}
 }
 
+func TestIntAndMockOracleScalaPropertyMatrices(t *testing.T) {
+	base := InitialRewriterScope()
+	for size := -10; size <= 10; size++ {
+		scope, oracle, err := CreateIntOracle(base, size)
+		if size < 0 {
+			if err == nil {
+				t.Errorf("integer oracle accepted negative size %d", size)
+			}
+			continue
+		}
+		if err != nil || oracle.Size() != size {
+			t.Fatalf("integer oracle size %d = %#v, %v", size, oracle, err)
+		}
+		assertions := make([]Expr, size)
+		elseAssertions := make([]Expr, size)
+		for index := 0; index < size; index++ {
+			assertions[index] = NewNameExpr("A"+string(rune('a'+index)), Typed(BoolT1))
+			elseAssertions[index] = NewNameExpr("B"+string(rune('a'+index)), Typed(BoolT1))
+			chosen, chosenErr := oracle.Chosen(scope, index)
+			if chosenErr != nil {
+				t.Fatal(chosenErr)
+			}
+			arguments := chosen.(*OperExpr).Arguments()
+			if arguments[0].(*NameExpr).Name() != oracle.Cell.NameExpr().Name() ||
+				arguments[1].(*ValueExpr).Value().(IntValue).BigInt().Int64() != int64(index) {
+				t.Errorf("integer oracle choice %d/%d = %v", index, size, chosen)
+			}
+		}
+		for _, otherwise := range [][]Expr{nil, elseAssertions} {
+			cases, caseErr := oracle.Cases(scope, assertions, otherwise)
+			if caseErr != nil {
+				t.Fatal(caseErr)
+			}
+			switch size {
+			case 0:
+				if name, ok := cases.(*NameExpr); !ok || name.Name() != ArenaTrueName {
+					t.Errorf("zero integer oracle cases = %v", cases)
+				}
+			case 1:
+				if cases != assertions[0] {
+					t.Errorf("singleton integer oracle cases = %v", cases)
+				}
+			default:
+				conjunction := cases.(*OperExpr)
+				if conjunction.Operator().Name() != "AND" || len(conjunction.Arguments()) != size {
+					t.Errorf("integer oracle cases size %d = %v", size, cases)
+				}
+				for index, expression := range conjunction.Arguments() {
+					ite := expression.(*OperExpr)
+					args := ite.Arguments()
+					if ite.Operator().Name() != "IF_THEN_ELSE" || args[1] != assertions[index] {
+						t.Errorf("integer oracle ITE %d/%d = %v", index, size, ite)
+					}
+					if otherwise == nil {
+						if value, ok := args[2].(*ValueExpr); !ok || !bool(value.Value().(BoolValue)) {
+							t.Errorf("integer oracle default branch %d/%d = %v", index, size, args[2])
+						}
+					} else if args[2] != otherwise[index] {
+						t.Errorf("integer oracle else branch %d/%d = %v", index, size, args[2])
+					}
+				}
+			}
+		}
+		if _, caseErr := oracle.Cases(scope, append(assertions, boolExpr(true)), nil); caseErr == nil {
+			t.Errorf("integer oracle size %d accepted wrong assertion length", size)
+		}
+	}
+
+	for fixed := -10; fixed <= 10; fixed++ {
+		oracle, err := NewMockOracle(fixed)
+		if fixed < 0 {
+			if err == nil {
+				t.Errorf("mock oracle accepted negative value %d", fixed)
+			}
+			continue
+		}
+		if err != nil || oracle.Size() != fixed+1 {
+			t.Fatalf("mock oracle %d = %#v, %v", fixed, oracle, err)
+		}
+		assertions := make([]Expr, oracle.Size())
+		for index := range assertions {
+			assertions[index] = NewNameExpr("A"+string(rune('a'+index)), Typed(BoolT1))
+			chosen, _ := oracle.Chosen(base, index)
+			if bool(chosen.(*ValueExpr).Value().(BoolValue)) != (index == fixed) {
+				t.Errorf("mock oracle %d choice %d = %v", fixed, index, chosen)
+			}
+		}
+		cases, caseErr := oracle.Cases(base, assertions, nil)
+		if caseErr != nil || cases != assertions[fixed] {
+			t.Errorf("mock oracle %d cases = %v, %v", fixed, cases, caseErr)
+		}
+		if decoded, decodeErr := oracle.Decode(nil); decodeErr != nil || decoded != fixed {
+			t.Errorf("mock oracle %d decode = %d, %v", fixed, decoded, decodeErr)
+		}
+		if _, caseErr := oracle.Cases(base, assertions[:fixed], nil); caseErr == nil {
+			t.Errorf("mock oracle %d accepted wrong assertion length", fixed)
+		}
+	}
+}
+
 func TestSparseAndZipOracles(t *testing.T) {
 	scope, backend, err := CreateIntOracle(InitialRewriterScope(), 3)
 	if err != nil {
