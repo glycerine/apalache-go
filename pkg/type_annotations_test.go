@@ -213,8 +213,8 @@ A(n) == Inc(n)
 	if !result.OK() {
 		t.Fatalf("ParseAndTypeCheckSource() diagnostics = %v", result.Diagnostics)
 	}
-	if _, leaked := declarationNamed(result.Native, "Inc"); leaked {
-		t.Fatalf("LOCAL Inc leaked into root declarations: %v", declarationNames(result.Native))
+	if _, retained := declarationNamed(result.Native, "Inc"); !retained {
+		t.Fatalf("root LOCAL Inc was not retained: %v", declarationNames(result.Native))
 	}
 	body, found := OperatorBody(result.Native, "A")
 	let, ok := body.(*LetInExpr)
@@ -288,5 +288,28 @@ Rec[n \in Int] == IF n <= 1 THEN 1 ELSE n * Rec[n - 1]
 	}
 	if _, found := extracted.Types[recursiveFunction.ID()]; !found {
 		t.Fatal("recursive function lost @type annotation")
+	}
+}
+
+func TestRemapDeclarationAnnotationsSurvivesSortingAndNestedLets(t *testing.T) {
+	oldLocal := NewOperDecl("Local", nil, NewValueExpr(Int64Value(1), Untyped()), Untyped())
+	oldB := NewOperDecl("B", nil, NewLetInExpr(NewNameExpr("Local", Untyped()), Untyped(), oldLocal), Untyped())
+	oldA := NewOperDecl("A", nil, NewValueExpr(BoolValue(true), Untyped()), Untyped())
+	from := NewModule("M", []Decl{oldB, oldA})
+
+	newA := NewOperDecl("A", nil, NewValueExpr(BoolValue(true), Typed(BoolT1)), Typed(BoolT1))
+	newLocal := NewOperDecl("Local", nil, NewValueExpr(Int64Value(1), Typed(IntT1)), Typed(IntT1))
+	newB := NewOperDecl("B", nil, NewLetInExpr(NewNameExpr("Local", Untyped()), Typed(IntT1), newLocal), Typed(IntT1))
+	to := NewModule("M", []Decl{newA, newB})
+
+	annotations := NewAnnotationStore()
+	annotations.Set(oldB.ID(), []Annotation{{Name: "top"}})
+	annotations.Set(oldLocal.ID(), []Annotation{{Name: "nested"}})
+	remapped := remapDeclarationAnnotations(from, to, annotations)
+	if _, found := remapped.Find(newB.ID(), "top"); !found {
+		t.Fatal("top-level annotation was lost after declaration sorting")
+	}
+	if _, found := remapped.Find(newLocal.ID(), "nested"); !found {
+		t.Fatal("nested annotation was lost after declaration sorting")
 	}
 }

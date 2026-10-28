@@ -18,6 +18,43 @@ Next == x' = x + 1
 ====
 `
 
+func TestParseSourceAcceptsEmptyModule(t *testing.T) {
+	result := ParseSource(context.Background(), "JustASimpleTest.tla", `---- MODULE JustASimpleTest ----
+====
+`, FrontendOptions{})
+	if !result.OK() || result.Module != "JustASimpleTest" || result.Native == nil || len(result.Native.Declarations()) != 0 {
+		t.Fatalf("ParseSource() = module %q, native %#v, diagnostics %v", result.Module, result.Native, result.Diagnostics)
+	}
+}
+
+func TestParseSourceRejectsBlankInput(t *testing.T) {
+	result := ParseSource(context.Background(), "blank.tla", "", FrontendOptions{})
+	if result.OK() || result.Native != nil || len(result.Diagnostics) == 0 {
+		t.Fatalf("ParseSource(blank) = native %#v, diagnostics %v", result.Native, result.Diagnostics)
+	}
+	if !strings.Contains(strings.ToLower(result.Diagnostics[0].Message), "module") {
+		t.Fatalf("ParseSource(blank) diagnostic = %#v", result.Diagnostics[0])
+	}
+}
+
+func TestParseFileAcceptsEmptyModuleAndRejectsBlankFile(t *testing.T) {
+	directory := t.TempDir()
+	emptyModule := filepath.Join(directory, "Empty.tla")
+	if err := os.WriteFile(emptyModule, []byte("---- MODULE Empty ----\n====\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if result := ParseFile(context.Background(), emptyModule, FrontendOptions{}); !result.OK() || result.Module != "Empty" {
+		t.Fatalf("ParseFile(empty module) = %#v", result)
+	}
+	blank := filepath.Join(directory, "blank.tla")
+	if err := os.WriteFile(blank, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if result := ParseFile(context.Background(), blank, FrontendOptions{}); result.OK() || len(result.Diagnostics) == 0 {
+		t.Fatalf("ParseFile(blank) = %#v", result)
+	}
+}
+
 func TestParseSourceExportsCanonicalApalacheIR(t *testing.T) {
 	result := ParseSource(context.Background(), "Tiny.tla", tinyModule, FrontendOptions{})
 	if !result.OK() {

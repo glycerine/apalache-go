@@ -202,15 +202,53 @@ func remapDeclarationAnnotations(from, to *Module, annotations *AnnotationStore)
 	if annotations == nil || from == nil || to == nil {
 		return annotations
 	}
-	fromDeclarations := nestedModuleDeclarations(from)
-	toDeclarations := nestedModuleDeclarations(to)
+	fromDeclarations := nestedModuleDeclarationsByPath(from)
+	toDeclarations := nestedModuleDeclarationsByPath(to)
 	result := NewAnnotationStore()
-	for index, declaration := range fromDeclarations {
-		if index >= len(toDeclarations) || declaration.Name() != toDeclarations[index].Name() {
+	for path, declaration := range fromDeclarations {
+		target, found := toDeclarations[path]
+		if !found || declaration.Name() != target.Name() {
 			continue
 		}
 		if values := annotations.Get(declaration.ID()); len(values) > 0 {
-			result.Set(toDeclarations[index].ID(), values)
+			result.Set(target.ID(), values)
+		}
+	}
+	return result
+}
+
+func nestedModuleDeclarationsByPath(module *Module) map[string]Decl {
+	result := make(map[string]Decl)
+	if module == nil {
+		return result
+	}
+	var visitExpression func(Expr, string, *int)
+	visitExpression = func(expression Expr, parent string, ordinal *int) {
+		switch typed := expression.(type) {
+		case *OperExpr:
+			for _, argument := range typed.Arguments() {
+				visitExpression(argument, parent, ordinal)
+			}
+		case *LetInExpr:
+			for _, declaration := range typed.Declarations() {
+				path := fmt.Sprintf("%s/let:%d:%s", parent, *ordinal, declaration.Name())
+				*ordinal++
+				result[path] = declaration
+				nestedOrdinal := 0
+				visitExpression(declaration.Body(), path, &nestedOrdinal)
+			}
+			visitExpression(typed.Body(), parent, ordinal)
+		}
+	}
+	for _, declaration := range module.Declarations() {
+		path := "top:" + declaration.Name()
+		result[path] = declaration
+		ordinal := 0
+		switch typed := declaration.(type) {
+		case *OperDecl:
+			visitExpression(typed.Body(), path, &ordinal)
+		case *AssumeDecl:
+			visitExpression(typed.Body(), path, &ordinal)
 		}
 	}
 	return result

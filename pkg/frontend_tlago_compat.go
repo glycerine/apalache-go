@@ -345,13 +345,14 @@ func normalizeTlagoRootLocalInstances(spec *tlago.Spec) {
 type tlagoInstantiatedLocalScope struct {
 	names   []string
 	exports map[string]struct{}
+	retain  bool
 }
 
 func exposeTlagoRootLocalDefinitions(spec *tlago.Spec) []tlagoInstantiatedLocalScope {
 	if spec == nil || spec.Root == nil {
 		return nil
 	}
-	scope := tlagoInstantiatedLocalScope{exports: make(map[string]struct{})}
+	scope := tlagoInstantiatedLocalScope{exports: make(map[string]struct{}), retain: true}
 	for _, definition := range spec.Root.Definitions {
 		if definition.Local {
 			scope.names = append(scope.names, definition.Name)
@@ -498,10 +499,14 @@ func normalizeTlagoInstantiatedLocalDefinitions(
 		return module
 	}
 	localNames := make(map[string]struct{})
+	retainedLocalNames := make(map[string]struct{})
 	localDeclarations := make(map[string]*OperDecl)
 	for _, scope := range scopes {
 		for _, name := range scope.names {
 			localNames[name] = struct{}{}
+			if scope.retain {
+				retainedLocalNames[name] = struct{}{}
+			}
 		}
 	}
 	for _, declaration := range module.OperDeclarations() {
@@ -520,6 +525,9 @@ func normalizeTlagoInstantiatedLocalDefinitions(
 	kept := make([]Decl, 0, len(declarations)-len(localDeclarations))
 	for _, declaration := range declarations {
 		if _, local := localNames[declaration.Name()]; local {
+			if _, retain := retainedLocalNames[declaration.Name()]; retain {
+				kept = append(kept, declaration)
+			}
 			continue
 		}
 		operator, ok := declaration.(*OperDecl)

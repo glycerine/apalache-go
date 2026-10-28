@@ -125,6 +125,7 @@ func ExtractTypeAnnotations(filename, source string, module *Module, sources *So
 		}
 		result.Types[target.ID()] = typ
 	}
+	propagateRetainedLocalAnnotations(module, result.Types, result.Annotations)
 	propagateExpandedOperatorAnnotations(source, module, sources, result.Types)
 
 	closed, err := NewTypeAliasSubstitution(aliases).Closure()
@@ -136,6 +137,31 @@ func ExtractTypeAnnotations(filename, source string, module *Module, sources *So
 		result.Aliases = closed
 	}
 	return result
+}
+
+func propagateRetainedLocalAnnotations(module *Module, types map[UID]Type, annotations *AnnotationStore) {
+	if module == nil || annotations == nil {
+		return
+	}
+	topLevel := make(map[string]Decl)
+	for _, declaration := range module.Declarations() {
+		topLevel[declaration.Name()] = declaration
+	}
+	for _, declaration := range nestedModuleDeclarations(module) {
+		if !strings.HasPrefix(declaration.Name(), "LOCAL$") {
+			continue
+		}
+		original, found := topLevel[strings.TrimPrefix(declaration.Name(), "LOCAL$")]
+		if !found {
+			continue
+		}
+		if values := annotations.Get(original.ID()); len(values) != 0 {
+			annotations.Set(declaration.ID(), values)
+		}
+		if typ, found := types[original.ID()]; found {
+			types[declaration.ID()] = typ
+		}
+	}
 }
 
 // propagateExpandedOperatorAnnotations repairs a tlago v0.1.9 compatibility
