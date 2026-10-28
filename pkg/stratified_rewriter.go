@@ -166,6 +166,8 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 			return rewriter.rewriteSequenceConcat(typed, scope)
 		case "Sequences!SubSeq":
 			return rewriter.rewriteSubSequence(typed, scope)
+		case "ApalacheInternal!__ApalacheSeqCapacity":
+			return rewriter.rewriteSequenceCapacity(typed, scope)
 		case "SequencesExt!ToSet":
 			return rewriter.rewriteSequenceToSet(typed, scope)
 		case "Apalache!MkSeq":
@@ -878,6 +880,22 @@ func (rewriter *StratifiedRewriter) rewriteSequenceLength(expression *OperExpr, 
 	}
 	length, _, _, err := unpackSequence(scope.Arena, sequence)
 	return scope, length, err
+}
+
+func (rewriter *StratifiedRewriter) rewriteSequenceCapacity(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
+	arguments := expression.Arguments()
+	if len(arguments) != 1 {
+		return scope, ArenaCell{}, fmt.Errorf("sequence capacity requires one operand")
+	}
+	scope, sequence, err := rewriter.Rewrite(arguments[0], scope)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	_, _, elements, err := unpackSequence(scope.Arena, sequence)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	return rewriter.Rewrite(NewValueExpr(Int64Value(int64(len(elements))), Typed(IntT1)), scope)
 }
 
 func (rewriter *StratifiedRewriter) rewriteCardinality(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {

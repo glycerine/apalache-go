@@ -1507,6 +1507,38 @@ func TestStratifiedSequenceAppendAndTailThroughG3(t *testing.T) {
 	}
 }
 
+func TestStratifiedSequenceCapacityOperator(t *testing.T) {
+	sequenceType := mustSeq(IntT1)
+	tag := Typed(sequenceType)
+	sequence := func(values ...int64) Expr {
+		elements := make([]Expr, len(values))
+		for index, value := range values {
+			elements[index] = intLiteral(value)
+		}
+		return MustOperExpr(Op("TUPLE"), tag, elements...)
+	}
+	falsePredicate := MustOperExpr(Op("GT"), Typed(BoolT1), intLiteral(1), intLiteral(2))
+	conditional := MustOperExpr(Op("IF_THEN_ELSE"), tag, falsePredicate, sequence(1), sequence(2, 3, 4))
+	for _, test := range []struct {
+		name     string
+		sequence Expr
+		want     int64
+	}{
+		{"concrete", sequence(1, 2), 2},
+		{"symbolic length", conditional, 3},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			rewriter := NewStratifiedRewriter()
+			_, result, err := rewriter.Rewrite(MustOperExpr(Op("ApalacheInternal!__ApalacheSeqCapacity"),
+				Typed(IntT1), test.sequence), InitialRewriterScope())
+			value, found := rewriter.IntegerCache().FindValue(result)
+			if err != nil || !found || value.Int64() != test.want {
+				t.Fatalf("capacity = %v, %v, %v; want %d", value, found, err, test.want)
+			}
+		})
+	}
+}
+
 func TestStratifiedBoundedChoiceThroughG3(t *testing.T) {
 	setTag := Typed(mustSet(IntT1))
 	set := func(values ...int64) Expr {
