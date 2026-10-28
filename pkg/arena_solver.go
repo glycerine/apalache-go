@@ -108,9 +108,11 @@ func (adapter *ArenaSolverAdapter) AppendCellTypeNoSMT(cellType CellType, uncons
 func (adapter *ArenaSolverAdapter) AppendCellTypes(types ...CellType) (*ArenaSolverAdapter, []ArenaCell, error) {
 	current := adapter
 	cells := make([]ArenaCell, len(types))
-	for index, cellType := range types {
+	// Scala's legacy Arena and PureArenaAdapter batch helpers recurse/fold
+	// from the right, but return cells in the caller's original type order.
+	for index := len(types) - 1; index >= 0; index-- {
 		var err error
-		current, cells[index], err = current.AppendCellType(cellType)
+		current, cells[index], err = current.AppendCellType(types[index])
 		if err != nil {
 			return nil, nil, err
 		}

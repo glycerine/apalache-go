@@ -142,3 +142,24 @@ func TestArenaSolverAdapterForwardsPureArenaQueriesAndReplacesSolver(t *testing.
 		t.Fatal("solver replacement changed the arena or retained the old encoder")
 	}
 }
+
+func TestArenaSolverAdapterBatchAllocationMatchesScalaRightFold(t *testing.T) {
+	adapter, err := NewArenaSolverAdapter(newTestG3Solver(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, cells, err := adapter.AppendCellTypes(
+		BasicCellType{Type: IntT1},
+		BasicCellType{Type: BoolT1},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cells) != 2 || cells[0].ID != 6 || cells[1].ID != 5 || updated.TopCell().ID != 6 {
+		t.Fatalf("batch cells/top = %#v / %v", cells, updated.TopCell())
+	}
+	if !EqualCellTypes(cells[0].Type, BasicCellType{Type: IntT1}) ||
+		!EqualCellTypes(cells[1].Type, BasicCellType{Type: BoolT1}) {
+		t.Fatalf("batch cell order changed with allocation order: %#v", cells)
+	}
+}
