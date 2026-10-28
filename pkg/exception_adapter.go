@@ -141,9 +141,37 @@ func (adapter CheckerExceptionAdapter) Adapt(err error) (ErrorMessage, bool) {
 	if errors.As(err, &malformed) {
 		return FailureMessage{Text: adapter.location(malformed.CauseExpr().ID()) + ": unexpected TLA+ expression: " + malformed.Error()}, true
 	}
+	var noRule *NoRuleException
+	if errors.As(err, &noRule) {
+		return FailureMessage{Text: adapter.location(noRule.CauseExpr().ID()) + ": no rule to rewrite a TLA+ expression: " + noRule.Error()}, true
+	}
+	var limitation *RewriterKnownLimitationError
+	if errors.As(err, &limitation) {
+		return NormalErrorMessage{Text: adapter.location(limitation.CauseExpr().ID()) + ": known limitation: " + limitation.Error()}, true
+	}
+	var rewriter *RewriterException
+	if errors.As(err, &rewriter) {
+		return FailureMessage{Text: adapter.location(rewriter.CauseExpr().ID()) + ": rewriter error: " + rewriter.Error()}, true
+	}
+	var encoding *SmtEncodingException
+	if errors.As(err, &encoding) {
+		return FailureMessage{Text: adapter.location(encoding.CauseExpr().ID()) + ": error when rewriting to SMT: " + encoding.Error()}, true
+	}
+	var invalid *InvalidTlaExException
+	if errors.As(err, &invalid) {
+		return FailureMessage{Text: adapter.location(invalid.CauseExpr().ID()) + ": unexpected TLA+ expression: " + invalid.Error()}, true
+	}
+	var internal *InternalCheckerError
+	if errors.As(err, &internal) {
+		return FailureMessage{Text: adapter.location(internal.CauseExpr().ID()) + ": internal error: " + internal.Error()}, true
+	}
 	var specification *MalformedSepecificationError
 	if errors.As(err, &specification) {
 		return NormalErrorMessage{Text: "The specification is malformed: " + specification.Error()}, true
+	}
+	var checker *CheckerException
+	if errors.As(err, &checker) {
+		return FailureMessage{Text: adapter.location(checker.CauseExpr().ID()) + ": checker error: " + checker.Error()}, true
 	}
 	return nil, false
 }

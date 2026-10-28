@@ -124,6 +124,13 @@ func TestCheckerExceptionAdapterMatchesScalaClassification(t *testing.T) {
 		{"JSON", NewJSONDeserializationError("bad JSON", errors.New("syntax")), "Error in JSON deserialization. Perhaps the file is malformed?: bad JSON.", false},
 		{"ITF", &ITFFormatError{ITFError: &ITFError{Kind: "ITF format error", Message: "bad state"}}, "Error in ITF deserialization. Perhaps the file is malformed?: ITF format error: bad state.", false},
 		{"malformed TLA", NewMalformedTlaError("bad node", transformed), "Spec.tla:3:4-3:8: unexpected TLA+ expression: bad node", true},
+		{"no rule", NewNoRuleException("missing EQ", transformed), "Spec.tla:3:4-3:8: no rule to rewrite a TLA+ expression: missing EQ", true},
+		{"known limitation", NewRewriterKnownLimitationError("infinite set", transformed), "Spec.tla:3:4-3:8: known limitation: infinite set", false},
+		{"rewriter", NewRewriterException("bad state", transformed), "Spec.tla:3:4-3:8: rewriter error: bad state", true},
+		{"SMT encoding", NewSmtEncodingException("bad cell", transformed), "Spec.tla:3:4-3:8: error when rewriting to SMT: bad cell", true},
+		{"invalid expression", NewInvalidTlaExException("bad arity", transformed), "Spec.tla:3:4-3:8: unexpected TLA+ expression: bad arity", true},
+		{"internal checker", NewInternalCheckerError("broken invariant", transformed), "Spec.tla:3:4-3:8: internal error: broken invariant", true},
+		{"checker", NewCheckerException("generic", transformed), "Spec.tla:3:4-3:8: checker error: generic", true},
 		{"malformed specification", NewMalformedSepecificationError("no behavior"), "The specification is malformed: no behavior", false},
 	}
 	for _, test := range tests {
