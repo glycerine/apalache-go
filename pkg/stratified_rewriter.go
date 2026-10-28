@@ -2166,6 +2166,9 @@ func (rewriter *StratifiedRewriter) rewriteMembership(expression *OperExpr, scop
 		return scope, ArenaCell{}, err
 	}
 	if setCell.Equal(scope.Arena.IntSetCell()) {
+		if !EqualTypes(element.Type.TLAType(), IntT1) {
+			return scope, ArenaCell{}, fmt.Errorf("Int membership requires an integer element")
+		}
 		return scope, scope.Arena.TrueCell(), nil
 	}
 	if setCell.Equal(scope.Arena.NatSetCell()) {

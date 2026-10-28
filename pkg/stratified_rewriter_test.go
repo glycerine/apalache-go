@@ -1100,6 +1100,41 @@ func TestStratifiedFiniteAndNaturalMembershipThroughG3(t *testing.T) {
 	}
 }
 
+func TestStratifiedMembershipAliasesEmptyAndInvalidOperands(t *testing.T) {
+	intSetTag := Typed(mustSet(IntT1))
+	for _, test := range []struct {
+		name     string
+		operator string
+		element  Expr
+		set      Expr
+		want     bool
+	}{
+		{"internal select", "Apalache!SelectInSet", intLiteral(1), MustOperExpr(Op("SET_ENUM"), intSetTag, intLiteral(1)), true},
+		{"empty", "SET_IN", intLiteral(1), MustOperExpr(Op("SET_ENUM"), intSetTag), false},
+		{"integer universe", "SET_IN", intLiteral(-17), NewValueExpr(IntSet, intSetTag), true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			rewriter := NewStratifiedRewriter()
+			scope, result, err := rewriter.Rewrite(
+				MustOperExpr(Op(test.operator), Typed(BoolT1), test.element, test.set), InitialRewriterScope())
+			if err != nil {
+				t.Fatal(err)
+			}
+			checkRewrittenTruth(t, rewriter, scope, result, test.want)
+		})
+	}
+
+	invalid := []Expr{
+		MustOperExpr(Op("SET_IN"), Typed(BoolT1), boolExpr(true), NewValueExpr(IntSet, intSetTag)),
+		MustOperExpr(Op("SET_IN"), Typed(BoolT1), intLiteral(1), intLiteral(2)),
+	}
+	for _, expression := range invalid {
+		if _, _, err := NewStratifiedRewriter().Rewrite(expression, InitialRewriterScope()); err == nil {
+			t.Fatalf("invalid membership was accepted: %v", expression)
+		}
+	}
+}
+
 func TestStratifiedFiniteSetAlgebraThroughG3(t *testing.T) {
 	setType := mustSet(IntT1)
 	setTag := Typed(setType)
