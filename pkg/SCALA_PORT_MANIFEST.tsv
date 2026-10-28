@@ -14,18 +14,18 @@ mod-infra/src/main/scala/at/forsyte/apalache/infra/passes/DerivedPredicates.scal
 mod-infra/src/main/scala/at/forsyte/apalache/infra/passes/Pass.scala	partial	diagnostic.go;configuration_pass.go;cmd/apalache	logging and pass-framework parity is partial
 mod-infra/src/main/scala/at/forsyte/apalache/infra/passes/PassChainExecutor.scala	partial	diagnostic.go;configuration_pass.go;cmd/apalache	logging and pass-framework parity is partial
 mod-infra/src/main/scala/at/forsyte/apalache/infra/passes/ToolModule.scala	partial	diagnostic.go;configuration_pass.go;cmd/apalache	logging and pass-framework parity is partial
-mod-tool/src/main/scala/at/forsyte/apalache/tla/Tool.scala	partial	cmd/apalache;config_json.go	checker server and remaining CLI controls are open
-mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/AbstractCheckerCmd.scala	partial	cmd/apalache;config_json.go	checker server and remaining CLI controls are open
-mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/ApalacheCommand.scala	partial	cmd/apalache;config_json.go	checker server and remaining CLI controls are open
-mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/CheckCmd.scala	partial	cmd/apalache;config_json.go	checker server and remaining CLI controls are open
-mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/ConfigCmd.scala	partial	cmd/apalache;config_json.go	checker server and remaining CLI controls are open
-mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/ParseCmd.scala	partial	cmd/apalache;config_json.go	checker server and remaining CLI controls are open
-mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/ServerCmd.scala	partial	cmd/apalache;config_json.go	checker server and remaining CLI controls are open
-mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/SimulateCmd.scala	partial	cmd/apalache;config_json.go	checker server and remaining CLI controls are open
-mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/TestCmd.scala	partial	cmd/apalache;config_json.go	checker server and remaining CLI controls are open
-mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/TraceeCmd.scala	partial	cmd/apalache;config_json.go	checker server and remaining CLI controls are open
-mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/TranspileCmd.scala	partial	cmd/apalache;config_json.go	checker server and remaining CLI controls are open
-mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/TypeCheckCmd.scala	partial	cmd/apalache;config_json.go	checker server and remaining CLI controls are open
+mod-tool/src/main/scala/at/forsyte/apalache/tla/Tool.scala	partial	cmd/apalache;config_json.go	remaining CLI controls are open
+mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/AbstractCheckerCmd.scala	partial	cmd/apalache;config_json.go	remaining CLI controls are open
+mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/ApalacheCommand.scala	partial	cmd/apalache;config_json.go	remaining CLI controls are open
+mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/CheckCmd.scala	partial	cmd/apalache;config_json.go	remaining CLI controls are open
+mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/ConfigCmd.scala	partial	cmd/apalache;config_json.go	remaining CLI controls are open
+mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/ParseCmd.scala	partial	cmd/apalache;config_json.go	remaining CLI controls are open
+mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/ServerCmd.scala	partial	cmd/apalache;config_json.go	remaining CLI controls are open
+mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/SimulateCmd.scala	partial	cmd/apalache;config_json.go	remaining CLI controls are open
+mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/TestCmd.scala	partial	cmd/apalache;config_json.go	remaining CLI controls are open
+mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/TraceeCmd.scala	partial	cmd/apalache;config_json.go	remaining CLI controls are open
+mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/TranspileCmd.scala	partial	cmd/apalache;config_json.go	remaining CLI controls are open
+mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/TypeCheckCmd.scala	partial	cmd/apalache;config_json.go	remaining CLI controls are open
 passes/src/main/scala/at/forsyte/apalache/tla/passes/assignments/PrimingPass.scala	partial	safety_pipeline.go;configuration_pass.go;preprocess_*.go	remaining orchestration parity is open
 passes/src/main/scala/at/forsyte/apalache/tla/passes/assignments/PrimingPassImpl.scala	partial	safety_pipeline.go;configuration_pass.go;preprocess_*.go	remaining orchestration parity is open
 passes/src/main/scala/at/forsyte/apalache/tla/passes/assignments/TransitionPass.scala	partial	safety_pipeline.go;configuration_pass.go;preprocess_*.go	remaining orchestration parity is open
@@ -56,8 +56,8 @@ passes/src/main/scala/at/forsyte/apalache/tla/passes/typecheck/EtcTypeCheckerPas
 passes/src/main/scala/at/forsyte/apalache/tla/passes/typecheck/LoggingTypeCheckerListener.scala	partial	safety_pipeline.go;configuration_pass.go;preprocess_*.go	remaining orchestration parity is open
 passes/src/main/scala/at/forsyte/apalache/tla/passes/typecheck/TypeCheckerModule.scala	partial	safety_pipeline.go;configuration_pass.go;preprocess_*.go	remaining orchestration parity is open
 passes/src/main/scala/at/forsyte/apalache/tla/typecheck/TypeCheckerTool.scala	partial	safety_pipeline.go;configuration_pass.go;preprocess_*.go	remaining orchestration parity is open
-shai/src/main/scala/at/forsyte/apalache/shai/v1/CmdExecutorService.scala	open	shai/cmdexecutor generated protocol	command execution service is not ported
-shai/src/main/scala/at/forsyte/apalache/shai/v1/RpcServer.scala	partial	shai/cmdexecutor;shai/transexplorer generated protocols	gRPC listener and service registration are not ported
+shai/src/main/scala/at/forsyte/apalache/shai/v1/CmdExecutorService.scala	partial	shai/cmd_executor_service.go	core commands and remote path rejection are ported; tuning and exact error-shape parity remain
+shai/src/main/scala/at/forsyte/apalache/shai/v1/RpcServer.scala	ported	shai/server.go;cmd/apalache/main.go	no known v1 service-registration gap
 shai/src/main/scala/at/forsyte/apalache/shai/v1/TransExplorerService.scala	partial	shai/trans_explorer_service.go	model loading is ported; transition execution RPCs remain absent from the v1 protocol
 tla-assignments/src/main/scala/at/forsyte/apalache/tla/assignments/AssignmentOperatorIntroduction.scala	partial	assignments*.go	remaining assignment suite mapping is open
 tla-assignments/src/main/scala/at/forsyte/apalache/tla/assignments/ModuleAdapter.scala	partial	assignments*.go	remaining assignment suite mapping is open

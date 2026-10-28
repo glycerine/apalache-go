@@ -136,12 +136,25 @@ func (listener *testListener) Accept() (net.Conn, error) { return nil, net.ErrCl
 func (listener *testListener) Close() error              { return nil }
 func (listener *testListener) Addr() net.Addr            { return listener.address }
 
-func TestRunServerRejectsUnsupportedCheckerService(t *testing.T) {
+func TestRunServerStartsCheckerAndRejectsUnknownService(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
+	originalListen := listenTCP
+	listenTCP = func(network, address string) (net.Listener, error) {
+		return &testListener{address: &net.TCPAddr{Port: 43212}}, nil
+	}
+	t.Cleanup(func() { listenTCP = originalListen })
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
 	var stdout, stderr bytes.Buffer
-	code := run(context.Background(), []string{"server", "--server-type=checker"}, &stdout, &stderr)
-	if code != exitUsage || !strings.Contains(stderr.String(), "currently supports explorer") {
+	code := run(ctx, []string{"server", "--port=0", "--server-type=checker"}, &stdout, &stderr)
+	if code != exitOK || !strings.Contains(stdout.String(), "gRPC checker server running") {
 		t.Fatalf("server = %d, stderr = %q", code, &stderr)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	code = run(context.Background(), []string{"server", "--server-type=unknown"}, &stdout, &stderr)
+	if code != exitUsage || !strings.Contains(stderr.String(), "want explorer or checker") {
+		t.Fatalf("unknown server = %d, stderr = %q", code, &stderr)
 	}
 }
 

@@ -79,11 +79,20 @@ func (service *TransExplorerService) LoadModel(ctx context.Context, request *tra
 }
 
 func parseShaiSources(ctx context.Context, root string, auxiliary []string) (pal.FrontendResult, error) {
-	directory, err := os.MkdirTemp("", "apalache-shai-")
+	rootPath, cleanup, err := materializeShaiSources(root, auxiliary)
 	if err != nil {
 		return pal.FrontendResult{}, err
 	}
-	defer os.RemoveAll(directory)
+	defer cleanup()
+	return pal.ParseFile(ctx, rootPath, pal.FrontendOptions{}), nil
+}
+
+func materializeShaiSources(root string, auxiliary []string) (string, func(), error) {
+	directory, err := os.MkdirTemp("", "apalache-shai-")
+	if err != nil {
+		return "", func() {}, err
+	}
+	cleanup := func() { _ = os.RemoveAll(directory) }
 	sources := append([]string{root}, auxiliary...)
 	rootPath := ""
 	for index, source := range sources {
@@ -94,13 +103,14 @@ func parseShaiSources(ctx context.Context, root string, auxiliary []string) (pal
 		}
 		path := filepath.Join(directory, name+".tla")
 		if err = os.WriteFile(path, []byte(source), 0o600); err != nil {
-			return pal.FrontendResult{}, err
+			cleanup()
+			return "", func() {}, err
 		}
 		if index == 0 {
 			rootPath = path
 		}
 	}
-	return pal.ParseFile(ctx, rootPath, pal.FrontendOptions{}), nil
+	return rootPath, cleanup, nil
 }
 
 func newShaiUUID() (string, error) {

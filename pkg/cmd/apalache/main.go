@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -19,6 +20,8 @@ import (
 	"time"
 
 	pal "github.com/glycerine/apalache-go"
+	"github.com/glycerine/apalache-go/shai"
+	"google.golang.org/grpc"
 )
 
 const (
@@ -80,7 +83,7 @@ func runServer(ctx context.Context, args []string, stdout, stderr io.Writer) int
 	flags.SetOutput(stderr)
 	configFile := flags.String("config-file", "", "Apalache JSON configuration file")
 	port := flags.Int("port", 8822, "port served by the RPC server")
-	serverType := flags.String("server-type", "explorer", "server type: explorer")
+	serverType := flags.String("server-type", "explorer", "server type: explorer or checker")
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
 	}
@@ -121,14 +124,18 @@ func runServer(ctx context.Context, args []string, stdout, stderr io.Writer) int
 		fmt.Fprintln(stderr, "server port must be in [0, 65535]")
 		return exitUsage
 	}
-	if strings.ToLower(*serverType) != "explorer" {
-		fmt.Fprintf(stderr, "unsupported server type %q (Go port currently supports explorer)\n", *serverType)
+	kind := strings.ToLower(*serverType)
+	if kind != "explorer" && kind != "checker" {
+		fmt.Fprintf(stderr, "unsupported server type %q (want explorer or checker)\n", *serverType)
 		return exitUsage
 	}
 	listener, err := listenTCP("tcp", fmt.Sprintf(":%d", *port))
 	if err != nil {
-		fmt.Fprintf(stderr, "cannot listen for JSON-RPC: %v\n", err)
+		fmt.Fprintf(stderr, "cannot listen for %s server: %v\n", kind, err)
 		return exitTool
+	}
+	if kind == "checker" {
+		return serveChecker(ctx, listener, stdout, stderr)
 	}
 	server := newExplorationHTTPServer(ctx)
 	fmt.Fprintf(stdout, "JSON-RPC explorer server running on http://localhost:%d/rpc.\n", listener.Addr().(*net.TCPAddr).Port)
@@ -155,6 +162,44 @@ func runServer(ctx context.Context, args []string, stdout, stderr io.Writer) int
 	<-shutdownDone
 	if err != nil && err != http.ErrServerClosed {
 		fmt.Fprintf(stderr, "JSON-RPC server failed: %v\n", err)
+		return exitTool
+	}
+	return exitOK
+}
+
+func serveChecker(ctx context.Context, listener net.Listener, stdout, stderr io.Writer) int {
+	server := shai.NewServer()
+	fmt.Fprintf(stdout, "gRPC checker server running on localhost:%d.\n", listener.Addr().(*net.TCPAddr).Port)
+	if ctx.Err() != nil {
+		_ = listener.Close()
+		return exitOK
+	}
+	shutdownContext, stopShutdown := context.WithCancel(ctx)
+	defer stopShutdown()
+	shutdownDone := make(chan struct{})
+	go func() {
+		defer close(shutdownDone)
+		<-shutdownContext.Done()
+		if ctx.Err() == nil {
+			return
+		}
+		graceful := make(chan struct{})
+		go func() {
+			server.GracefulStop()
+			close(graceful)
+		}()
+		select {
+		case <-graceful:
+		case <-time.After(10 * time.Second):
+			server.Stop()
+			<-graceful
+		}
+	}()
+	err := server.Serve(listener)
+	stopShutdown()
+	<-shutdownDone
+	if err != nil && !errors.Is(err, grpc.ErrServerStopped) {
+		fmt.Fprintf(stderr, "gRPC checker server failed: %v\n", err)
 		return exitTool
 	}
 	return exitOK

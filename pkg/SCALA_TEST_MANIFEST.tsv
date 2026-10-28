@@ -6,8 +6,8 @@ mod-tool/src/test/scala/at/forsyte/apalache/tla/TestConcurrentToolRuns.scala	par
 mod-tool/src/test/scala/at/forsyte/apalache/tla/tooling/opt/TestCommandConfig.scala	partial	cmd/apalache/*_test.go;release_integration_test.go	remaining CLI matrix cases are open
 passes/src/test/scala/at/forsyte/apalache/tla/pp/TestTlcConfigImporter.scala	partial	safety_pipeline_test.go;configuration_pass_test.go	remaining pass orchestration cases are open
 passes/src/test/scala/at/forsyte/apalache/tla/typecheck/etc/TestTypeCheckerTool.scala	partial	safety_pipeline_test.go;configuration_pass_test.go	remaining pass orchestration cases are open
-shai/src/test/scala/at/forsyte/apalache/shai/v1/TestCmdExecutorService.scala	open	shai/cmdexecutor generated protocol	command execution service tests are not ported
-shai/src/test/scala/at/forsyte/apalache/shai/v1/TestTransExplorerService.scala	partial	shai/trans_explorer_service_test.go	direct service coverage is ported; network registration coverage remains
+shai/src/test/scala/at/forsyte/apalache/shai/v1/TestCmdExecutorService.scala	partial	shai/cmd_executor_service_test.go	Scala core cases are mapped; broader configuration option parity remains
+shai/src/test/scala/at/forsyte/apalache/shai/v1/TestTransExplorerService.scala	ported	shai/trans_explorer_service_test.go;shai/server_test.go	no known v1 test-case gap
 tla-assignments/src/test/scala/at/forsyte/apalache/tla/assignments/TestSmtFreeSTE.scala	partial	assignments*_test.go	remaining assignment cases are open
 tla-assignments/src/test/scala/at/forsyte/apalache/tla/assignments/TestSymbTransGenerator.scala	partial	assignments*_test.go	remaining assignment cases are open
 tla-bmcmt/src/test/scala/at/forsyte/apalache/tla/bmcmt/CrossTestEncodings.scala	partial	arena*_test.go;smt*_test.go;rewrite*_test.go;bounded_checker_test.go;transition_executor_test.go	specialized rule and oracle case mapping remains

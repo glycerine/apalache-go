@@ -12,20 +12,12 @@ explicit review here.
 | `github.com/cespare/xxhash/v2` | `v2.3.0` | `LICENSE.txt`, MIT | Reviewed |
 | `github.com/glycerine/insdict` | `v0.14.6` | `LICENSE`, MIT | Reviewed |
 | `github.com/glycerine/rbtree` | `v0.2.2` | `LICENSE`, MIT | Reviewed |
+| `golang.org/x/net` | `v0.28.0` | `LICENSE`, BSD-3-Clause | Reviewed |
+| `golang.org/x/sys` | `v0.24.0` | `LICENSE`, BSD-3-Clause | Reviewed |
 | `golang.org/x/text` | `v0.28.0` | `LICENSE`, BSD-3-Clause | Reviewed |
-
-The module also contains a staged Shai gRPC implementation that is not yet
-imported by the production CLI and therefore does not change the linked module
-set above. Building and testing `./shai/...` additionally uses these pinned
-modules:
-
-| Module | Pinned version | License evidence | Status |
-| --- | --- | --- | --- |
 | `google.golang.org/grpc` | `v1.67.1` | `LICENSE`, Apache-2.0 | Reviewed |
 | `google.golang.org/protobuf` | `v1.34.2` | `LICENSE`, BSD-3-Clause | Reviewed |
 | `google.golang.org/genproto/googleapis/rpc` | `v0.0.0-20240814211410-ddb44dafa142` | `LICENSE`, Apache-2.0 | Reviewed |
-| `golang.org/x/net` | `v0.28.0` | `LICENSE`, BSD-3-Clause | Reviewed |
-| `golang.org/x/sys` | `v0.24.0` | `LICENSE`, BSD-3-Clause | Reviewed |
 
 The standard library is distributed under Go's BSD-style license. The Go
 release build uses `CGO_ENABLED=0`, and the Linux release gate rejects imported
