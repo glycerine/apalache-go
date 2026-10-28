@@ -1,6 +1,7 @@
 package apalache
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -43,8 +44,24 @@ func TestTLAConstantInlinerTraversesLetsAndRejectsConflicts(t *testing.T) {
 	if err != nil || !EqualTypedExpr(values["N"], one) {
 		t.Fatalf("LET constant map = %#v, %v", values, err)
 	}
+	duplicate, err := inliner.BuildConstantMap(values, eq(one))
+	if err != nil || !EqualTypedExpr(duplicate["N"], one) {
+		t.Fatalf("identical duplicate initialization = %#v, %v", duplicate, err)
+	}
 	_, err = inliner.BuildConstantMap(values, eq(two))
 	if err == nil || !strings.Contains(err.Error(), "multiple initializations") {
 		t.Fatalf("conflict error = %v", err)
+	}
+	var inputError *TlaInputError
+	if !errors.As(err, &inputError) {
+		t.Fatalf("conflict error type = %T, want *TlaInputError", err)
+	}
+
+	replaced := inliner.Replace(root, values).(*LetInExpr)
+	if _, ok := replaced.Body().(*OperExpr).Arguments()[0].(*ValueExpr); !ok {
+		t.Fatalf("LET body constant was not replaced: %v", replaced.Body())
+	}
+	if _, ok := replaced.Declarations()[0].Body().(*OperExpr).Arguments()[0].(*ValueExpr); !ok {
+		t.Fatalf("LET declaration constant was not replaced: %v", replaced.Declarations()[0].Body())
 	}
 }

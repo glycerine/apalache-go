@@ -36,7 +36,7 @@ func (inliner *TLAConstantInliner) BuildConstantMap(initial map[string]*ValueExp
 				if named && literal {
 					if _, configured := inliner.constants[name.Name()]; configured {
 						if old, exists := result[name.Name()]; exists && (!EqualValues(old.Value(), value.Value()) || !old.Tag().Equal(value.Tag())) {
-							return fmt.Errorf("constant %s has multiple initializations: %v and %v", name.Name(), value.Value(), old.Value())
+							return NewTlaInputError(fmt.Sprintf("Constant %s has multiple initializations: %v and %v.", name.Name(), value.Value(), old.Value()))
 						}
 						result[name.Name()] = value
 					}
