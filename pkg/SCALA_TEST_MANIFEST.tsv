@@ -166,7 +166,7 @@ tla-typechecker/src/test/scala/at/forsyte/apalache/tla/types/TestTypesApi.scala	
 tlair/src/test/scala/at/forsyte/apalache/tla/lir/IrGenerators.scala	partial	ir_*_test.go;types_*_test.go;operator_test.go;transform_*_test.go	case-by-case Scala assertion mapping remains
 tlair/src/test/scala/at/forsyte/apalache/tla/lir/TestBuilder.scala	partial	ir_*_test.go;types_*_test.go;operator_test.go;transform_*_test.go	case-by-case Scala assertion mapping remains
 tlair/src/test/scala/at/forsyte/apalache/tla/lir/TestIncrementalRenaming.scala	partial	ir_*_test.go;types_*_test.go;operator_test.go;transform_*_test.go	case-by-case Scala assertion mapping remains
-tlair/src/test/scala/at/forsyte/apalache/tla/lir/TestLirValues.scala	partial	ir_*_test.go;types_*_test.go;operator_test.go;transform_*_test.go	case-by-case Scala assertion mapping remains
+tlair/src/test/scala/at/forsyte/apalache/tla/lir/TestLirValues.scala	ported	ir_leaf_test.go;ir_expr_decl_test.go	all cases are mapped: Boolean payloads, arbitrary-precision integer value/equality and negative/zero/positive natural classification, string payloads, and constant/variable declaration names; decimal and alias-safety cases are additionally covered
 tlair/src/test/scala/at/forsyte/apalache/tla/lir/TestModule.scala	partial	ir_*_test.go;types_*_test.go;operator_test.go;transform_*_test.go	case-by-case Scala assertion mapping remains
 tlair/src/test/scala/at/forsyte/apalache/tla/lir/TestPrinter.scala	partial	ir_*_test.go;types_*_test.go;operator_test.go;transform_*_test.go	case-by-case Scala assertion mapping remains
 tlair/src/test/scala/at/forsyte/apalache/tla/lir/TestSourcePosition.scala	partial	ir_*_test.go;types_*_test.go;operator_test.go;transform_*_test.go	case-by-case Scala assertion mapping remains
