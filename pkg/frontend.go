@@ -157,6 +157,11 @@ func ParseSource(ctx context.Context, filename, source string, opts FrontendOpti
 				Severity: SeverityError,
 				Message:  fmt.Sprintf("cannot convert frontend output to native IR: %v", conversionErr),
 			})
+		} else if diagnostic := tlagoSubformulaReferenceDiagnostic(result.Native, result.Sources); diagnostic != nil {
+			result.IR = nil
+			result.Native = nil
+			result.Sources = nil
+			result.Diagnostics = append(result.Diagnostics, *diagnostic)
 		}
 	}
 	return result

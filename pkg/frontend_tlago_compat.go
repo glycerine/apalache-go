@@ -1462,6 +1462,67 @@ func normalizeTlagoRealValues(module *Module, sources *SourceStore, imported boo
 	return transformTlagoModuleExpressions(module, rewrite, sources)
 }
 
+func tlagoSubformulaReferenceDiagnostic(module *Module, sources *SourceStore) *Diagnostic {
+	if module == nil {
+		return nil
+	}
+	var reference *NameExpr
+	isNumericSelector := func(name string) bool {
+		for _, segment := range strings.Split(name, "!")[1:] {
+			if segment == "" {
+				continue
+			}
+			numeric := true
+			for _, character := range segment {
+				if character < '0' || character > '9' {
+					numeric = false
+					break
+				}
+			}
+			if numeric {
+				return true
+			}
+		}
+		return false
+	}
+	inspect := RewriteExpressions(IdleTracker{}, func(expression Expr) (Expr, bool) {
+		if reference != nil {
+			return nil, false
+		}
+		if name, ok := expression.(*NameExpr); ok && isNumericSelector(name.Name()) {
+			reference = name
+		}
+		return nil, false
+	})
+	for _, declaration := range module.Declarations() {
+		switch typed := declaration.(type) {
+		case *OperDecl:
+			inspect(typed.Body())
+		case *AssumeDecl:
+			inspect(typed.Body())
+		}
+		if reference != nil {
+			break
+		}
+	}
+	if reference == nil {
+		return nil
+	}
+	position := Position{}
+	if sources != nil {
+		if location, found := sources.Find(reference.ID()); found {
+			position = Position{
+				Filename: location.Filename, Line: location.Region.Start.Line, Column: location.Region.Start.Column,
+				EndLine: location.Region.End.Line, EndColumn: location.Region.End.Column,
+			}
+		}
+	}
+	return &Diagnostic{
+		Code: "E-UNSUPPORTED-SUBFORMULA", Severity: SeverityError,
+		Message: "subformula references are not supported: " + reference.Name(), Position: position,
+	}
+}
+
 // normalizeTlagoNamedAssumptionReferences repairs named ASSUME references
 // that tlago exports as first-class (() => Bool) values. A named assumption
 // denotes its formula body, so inline a fresh copy at every reference.

@@ -219,6 +219,58 @@ Next == f' = [f EXCEPT !["a"] = [@ EXCEPT !.cnt = @ + 1]]
 	}
 }
 
+func TestParseSourcePreservesExpressionLabels(t *testing.T) {
+	result := ParseSource(context.Background(), "Labels.tla", `---- MODULE Labels ----
+A == {FALSE} \union (l1 :: {TRUE})
+B == \E x \in BOOLEAN: l2(x) :: x /= FALSE
+====
+`, FrontendOptions{IncludeSource: true})
+	if !result.OK() {
+		t.Fatalf("ParseSource() diagnostics = %v", result.Diagnostics)
+	}
+	for name, labelName := range map[string]string{"A": "l1", "B": "l2"} {
+		body, found := OperatorBody(result.Native, name)
+		if !found || countOperator(body, "LABEL") != 1 {
+			t.Fatalf("%s body = %#v, want one LABEL", name, body)
+		}
+		var label *OperExpr
+		RewriteExpressions(nil, func(expression Expr) (Expr, bool) {
+			if operation, ok := expression.(*OperExpr); ok && operation.Operator().Name() == "LABEL" {
+				label = operation
+			}
+			return nil, false
+		})(body)
+		if label == nil || len(label.Arguments()) < 2 {
+			t.Fatalf("%s label = %#v", name, label)
+		}
+		value, ok := label.Arguments()[1].(*ValueExpr)
+		if !ok || !EqualValues(value.Value(), StringValue(labelName)) {
+			t.Fatalf("%s label metadata = %#v, want %q", name, label.Arguments()[1:], labelName)
+		}
+		if _, found := result.Sources.Find(label.ID()); !found {
+			t.Fatalf("%s label has no source location", name)
+		}
+	}
+}
+
+func TestParseSourceRejectsSubformulaReferences(t *testing.T) {
+	result := ParseSource(context.Background(), "Subformulas.tla", `---- MODULE Subformulas ----
+A == /\ 1 = 2
+     /\ 2 = 2
+B == A!2
+====
+`, FrontendOptions{IncludeSource: true})
+	if result.OK() {
+		t.Fatalf("ParseSource() unexpectedly accepted a subformula reference: %#v", result.Native)
+	}
+	if len(result.Diagnostics) == 0 || result.Diagnostics[0].Severity != SeverityError {
+		t.Fatalf("ParseSource() diagnostics = %v", result.Diagnostics)
+	}
+	if result.Diagnostics[0].Code != "E-UNSUPPORTED-SUBFORMULA" || result.Diagnostics[0].Position.Line != 4 {
+		t.Fatalf("ParseSource() diagnostic = %#v", result.Diagnostics[0])
+	}
+}
+
 func TestParseAndTypeCheckFileReadsCanonicalIRJSON(t *testing.T) {
 	result := ParseAndTypeCheckSource(context.Background(), "JSONInput.tla", `---- MODULE JSONInput ----
 EXTENDS Integers
