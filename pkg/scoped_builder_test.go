@@ -38,6 +38,24 @@ func TestScopedBuilderCanInferPriorNameType(t *testing.T) {
 	}
 }
 
+func TestScopedBuilderFiniteSetOperations(t *testing.T) {
+	builder := NewScopedBuilder()
+	set := builder.Name("S", mustSetType(t, IntT1))
+	finite, err := builder.IsFiniteSet(set).Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireExprType(t, finite, BoolT1)
+	cardinality, err := builder.Cardinality(set).Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireExprType(t, cardinality, IntT1)
+	if _, err := builder.Cardinality(builder.Int64(1)).Build(); err == nil {
+		t.Fatal("scoped Cardinality accepted a non-set")
+	}
+}
+
 func TestScopedBuilderBoundedVariableUse(t *testing.T) {
 	builder := NewScopedBuilder()
 	set := builder.Apply(Op("SET_ENUM"), builder.Int64(1), builder.Int64(2))

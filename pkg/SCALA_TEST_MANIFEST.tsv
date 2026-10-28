@@ -200,7 +200,7 @@ tlair/src/test/scala/at/forsyte/apalache/tla/typecomp/TestArithmeticBuilder.scal
 tlair/src/test/scala/at/forsyte/apalache/tla/typecomp/TestBaseBuilder.scala	partial	ir_*_test.go;types_*_test.go;operator_test.go;transform_*_test.go	case-by-case Scala assertion mapping remains
 tlair/src/test/scala/at/forsyte/apalache/tla/typecomp/TestBoolBuilder.scala	partial	ir_*_test.go;types_*_test.go;operator_test.go;transform_*_test.go	case-by-case Scala assertion mapping remains
 tlair/src/test/scala/at/forsyte/apalache/tla/typecomp/TestControlBuilder.scala	partial	ir_*_test.go;types_*_test.go;operator_test.go;transform_*_test.go	case-by-case Scala assertion mapping remains
-tlair/src/test/scala/at/forsyte/apalache/tla/typecomp/TestFiniteSetBuilder.scala	partial	ir_*_test.go;types_*_test.go;operator_test.go;transform_*_test.go	case-by-case Scala assertion mapping remains
+tlair/src/test/scala/at/forsyte/apalache/tla/typecomp/TestFiniteSetBuilder.scala	ported	typed_builder_test.go;scoped_builder_test.go	isFiniteSet and cardinality are mapped across primitive and structural set element types with exact operator/result typing and representative non-set categories rejected
 tlair/src/test/scala/at/forsyte/apalache/tla/typecomp/TestFunBuilder.scala	partial	ir_*_test.go;types_*_test.go;operator_test.go;transform_*_test.go	case-by-case Scala assertion mapping remains
 tlair/src/test/scala/at/forsyte/apalache/tla/typecomp/TestHybrid.scala	partial	ir_*_test.go;types_*_test.go;operator_test.go;transform_*_test.go	case-by-case Scala assertion mapping remains
 tlair/src/test/scala/at/forsyte/apalache/tla/typecomp/TestLiteralAndNameBuilder.scala	partial	ir_*_test.go;types_*_test.go;operator_test.go;transform_*_test.go	case-by-case Scala assertion mapping remains

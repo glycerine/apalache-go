@@ -529,7 +529,7 @@ tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/subbuilder/ArithmeticBuild
 tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/subbuilder/BaseBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/subbuilder/BoolBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/subbuilder/ControlBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
-tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/subbuilder/FiniteSetBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/subbuilder/FiniteSetBuilder.scala	ported	scoped_builder.go;scoped_builder_test.go	scope-safe IsFiniteSet and Cardinality instruction composition, inferred result types, and invalid non-set rejection are ported
 tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/subbuilder/FunBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/subbuilder/LiteralAndNameBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/subbuilder/SeqBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
@@ -544,7 +544,7 @@ tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/unsafe/UnsafeArithmeticBui
 tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/unsafe/UnsafeBaseBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/unsafe/UnsafeBoolBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/unsafe/UnsafeControlBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
-tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/unsafe/UnsafeFiniteSetBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/unsafe/UnsafeFiniteSetBuilder.scala	ported	typed_builder.go;typed_builder_test.go;types_signatures.go	direct typed IsFiniteSet and Cardinality construction uses signature inference with exact operators, argument preservation, result types, and non-set rejection
 tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/unsafe/UnsafeFunBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/unsafe/UnsafeLiteralAndNameBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/unsafe/UnsafeSeqBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains

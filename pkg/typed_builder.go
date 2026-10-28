@@ -219,6 +219,12 @@ func (builder *TypedBuilder) EmptySet(element Type) *OperExpr {
 func (builder *TypedBuilder) EmptySequence(element Type) *OperExpr {
 	return MustOperExpr(Op("TUPLE"), Typed(newSeqTypeUnchecked(element)))
 }
+func (builder *TypedBuilder) IsFiniteSet(set Expr) (*OperExpr, error) {
+	return builder.Apply(Op("FiniteSets!IsFiniteSet"), set)
+}
+func (builder *TypedBuilder) Cardinality(set Expr) (*OperExpr, error) {
+	return builder.Apply(Op("FiniteSets!Cardinality"), set)
+}
 func (builder *TypedBuilder) Tuple(arguments ...Expr) (*OperExpr, error) {
 	types, err := expressionTypes(arguments)
 	if err != nil {

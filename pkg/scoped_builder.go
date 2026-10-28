@@ -87,6 +87,12 @@ func (builder *ScopedBuilder) EmptySet(element Type) ExprInstruction {
 func (builder *ScopedBuilder) EmptySequence(element Type) ExprInstruction {
 	return builder.Unchecked(builder.typed.EmptySequence(element))
 }
+func (builder *ScopedBuilder) IsFiniteSet(set ExprInstruction) ExprInstruction {
+	return builder.Apply(Op("FiniteSets!IsFiniteSet"), set)
+}
+func (builder *ScopedBuilder) Cardinality(set ExprInstruction) ExprInstruction {
+	return builder.Apply(Op("FiniteSets!Cardinality"), set)
+}
 
 func (builder *ScopedBuilder) Apply(operator Operator, arguments ...ExprInstruction) ExprInstruction {
 	return ExprInstruction{run: func(context *scopeContext) (Expr, error) {

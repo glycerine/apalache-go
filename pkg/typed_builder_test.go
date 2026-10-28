@@ -77,6 +77,50 @@ func TestTypedBuilderTuplesAndSequences(t *testing.T) {
 	requireExprType(t, builder.EmptySet(BoolT1), mustSetType(t, BoolT1))
 }
 
+func TestTypedBuilderFiniteSetScalaOracleCases(t *testing.T) {
+	builder := NewTypedBuilder()
+	elementTypes := []Type{
+		IntT1, BoolT1, StrT1,
+		mustTupleType(t, IntT1, BoolT1),
+		mustSetType(t, IntT1),
+		mustSeqType(t, StrT1),
+	}
+	for _, elementType := range elementTypes {
+		set := builder.Name("S", mustSetType(t, elementType))
+		finite, err := builder.IsFiniteSet(set)
+		if err != nil {
+			t.Fatalf("IsFiniteSet(Set(%s)): %v", elementType, err)
+		}
+		requireExprType(t, finite, BoolT1)
+		if finite.Operator().Name() != "FiniteSets!IsFiniteSet" || len(finite.Arguments()) != 1 || finite.Arguments()[0] != set {
+			t.Fatalf("IsFiniteSet(Set(%s)) = %v", elementType, finite)
+		}
+		cardinality, err := builder.Cardinality(set)
+		if err != nil {
+			t.Fatalf("Cardinality(Set(%s)): %v", elementType, err)
+		}
+		requireExprType(t, cardinality, IntT1)
+		if cardinality.Operator().Name() != "FiniteSets!Cardinality" || len(cardinality.Arguments()) != 1 || cardinality.Arguments()[0] != set {
+			t.Fatalf("Cardinality(Set(%s)) = %v", elementType, cardinality)
+		}
+	}
+
+	nonSets := []Expr{
+		builder.Int64(1), builder.Bool(true), builder.Name("str", StrT1),
+		builder.Name("tuple", mustTupleType(t, IntT1)),
+		builder.Name("sequence", mustSeqType(t, IntT1)),
+		builder.Name("function", mustFun(IntT1, BoolT1)),
+	}
+	for _, nonSet := range nonSets {
+		if _, err := builder.IsFiniteSet(nonSet); err == nil {
+			t.Errorf("IsFiniteSet accepted %v", nonSet.Tag())
+		}
+		if _, err := builder.Cardinality(nonSet); err == nil {
+			t.Errorf("Cardinality accepted %v", nonSet.Tag())
+		}
+	}
+}
+
 func TestTypedBuilderRecordsAndRecordSets(t *testing.T) {
 	builder := NewTypedBuilder()
 	record, err := builder.Record(
