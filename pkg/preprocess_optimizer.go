@@ -35,18 +35,24 @@ func (optimizer *ExprOptimizer) Expression(expression Expr) (Expr, error) {
 
 func (optimizer *ExprOptimizer) transform(expression Expr) (Expr, error) {
 	var rebuilt Expr = expression
+	applyOneLevel := true
 	switch typed := expression.(type) {
 	case *OperExpr:
 		arguments := typed.Arguments()
+		changed := false
 		for index, argument := range arguments {
 			var err error
 			arguments[index], err = optimizer.transform(argument)
 			if err != nil {
 				return nil, err
 			}
+			changed = changed || arguments[index].ID() != argument.ID()
 		}
-		rebuilt = MustOperExpr(typed.Operator(), typed.Tag(), arguments...)
+		if changed {
+			rebuilt = optimizer.tracker.Hold(typed, MustOperExpr(typed.Operator(), typed.Tag(), arguments...))
+		}
 	case *LetInExpr:
+		applyOneLevel = false
 		declarations := typed.Declarations()
 		for index, declaration := range declarations {
 			body, err := optimizer.transform(declaration.Body())
@@ -97,9 +103,14 @@ func (optimizer *ExprOptimizer) transform(expression Expr) (Expr, error) {
 			rebuilt = NewLetInExpr(body, typed.Tag(), declarations...)
 		}
 	}
-	result, err := optimizer.oneLevel(rebuilt)
-	if err != nil {
-		return nil, err
+	result := rebuilt
+	if applyOneLevel {
+		var err error
+		result, err = optimizer.oneLevel(rebuilt)
+		if err != nil {
+			return nil, err
+		}
+		result = optimizer.tracker.TrackExpression(func(Expr) Expr { return result })(rebuilt)
 	}
 	return optimizer.tracker.TrackExpression(func(Expr) Expr { return result })(expression), nil
 }
@@ -130,7 +141,8 @@ func (optimizer *ExprOptimizer) oneLevel(expression Expr) (Expr, error) {
 						return fields[index+1], nil
 					}
 				}
-				return nil, fmt.Errorf("access to non-existent record field %s", key)
+				return nil, NewTlaInputError(
+					fmt.Sprintf("Access to non-existent record field %s in %v", key, op), op.ID())
 			}
 		}
 	}

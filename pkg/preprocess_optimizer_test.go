@@ -1,6 +1,9 @@
 package apalache
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 func i(value int64) Expr { return NewValueExpr(Int64Value(value), Typed(IntT1)) }
 func s(value string) Expr {
@@ -48,6 +51,11 @@ func TestExprOptimizerRecordAccessAndSetBasics(t *testing.T) {
 	missing := MustOperExpr(Op("FUN_APP"), Typed(IntT1), record, s("c"))
 	if _, err := optimizerForTest().Expression(missing); err == nil {
 		t.Fatal("missing record field was accepted")
+	} else {
+		var inputError *TlaInputError
+		if !errors.As(err, &inputError) || inputError.SourceID == nil || *inputError.SourceID != missing.ID() {
+			t.Fatalf("missing record field error = %T %v", err, err)
+		}
 	}
 }
 
@@ -244,5 +252,37 @@ func TestExprOptimizerPreservesPassByNameOperatorReturningFunction(t *testing.T)
 	let, ok := got.(*LetInExpr)
 	if !ok || len(let.Declarations()) != 1 || let.Declarations()[0].Name() != "Plus" {
 		t.Fatalf("pass-by-name operator was removed: %v", got)
+	}
+}
+
+func TestExprOptimizerUsesAbstractTransformerTrackingLayers(t *testing.T) {
+	leaf := NewNameExpr("x", Typed(IntT1))
+	unchanged := MustOperExpr(Op("PLUS"), Typed(IntT1), leaf, i(1))
+	listener := &recordingListener{}
+	got, err := NewExprOptimizer(nil, NewListenerTracker(listener)).Expression(unchanged)
+	if err != nil || got != unchanged {
+		t.Fatalf("unchanged expression = %v, %v", got, err)
+	}
+	// Each leaf and operator has a shallow and recursive tracking layer. No
+	// hold is introduced because all recursively transformed child IDs agree.
+	if len(listener.expressions) != 6 {
+		t.Fatalf("tracking events = %d, want 6: %#v", len(listener.expressions), listener.expressions)
+	}
+	for _, event := range listener.expressions {
+		if event[0] != event[1] {
+			t.Fatalf("unchanged expression acquired an intermediate rebuild: %#v", event)
+		}
+	}
+
+	definition := NewOperDecl("D", nil, leaf, Typed(mustOperator(nil, IntT1)))
+	let := NewLetInExpr(leaf, Typed(IntT1), definition)
+	listener = &recordingListener{}
+	if _, err := NewExprOptimizer(nil, NewListenerTracker(listener)).Expression(let); err != nil {
+		t.Fatal(err)
+	}
+	// Two leaves receive two layers each; LET itself receives only the outer
+	// recursive layer because AbstractTransformer never offers LET to rules.
+	if len(listener.expressions) != 5 {
+		t.Fatalf("LET tracking events = %d, want 5: %#v", len(listener.expressions), listener.expressions)
 	}
 }
