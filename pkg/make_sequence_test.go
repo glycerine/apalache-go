@@ -11,16 +11,26 @@ func makeUnaryIntegerLambda(body Expr) Expr {
 func TestStratifiedMkSeqThroughG3(t *testing.T) {
 	intValue := func(value int64) Expr { return NewValueExpr(Int64Value(value), Typed(IntT1)) }
 	sequenceType, _ := NewSeqType(IntT1)
-	body := MustOperExpr(Op("MULT"), Typed(IntT1), NewNameExpr("i", Typed(IntT1)), intValue(2))
-	expression := MustOperExpr(Op("Apalache!MkSeq"), Typed(sequenceType), intValue(3), makeUnaryIntegerLambda(body))
-	expected := MustOperExpr(Op("TUPLE"), Typed(sequenceType), intValue(2), intValue(4), intValue(6))
-	rewriter := NewStratifiedRewriter()
-	scope, result, err := rewriter.Rewrite(
-		MustOperExpr(Op("EQ"), Typed(BoolT1), expression, expected), InitialRewriterScope())
-	if err != nil {
-		t.Fatal(err)
+	body := MustOperExpr(Op("PLUS"), Typed(IntT1), NewNameExpr("i", Typed(IntT1)), intValue(1))
+	for _, test := range []struct {
+		name     string
+		capacity int64
+		expected Expr
+	}{
+		{"three elements", 3, MustOperExpr(Op("TUPLE"), Typed(sequenceType), intValue(2), intValue(3), intValue(4))},
+		{"empty", 0, MustOperExpr(Op("TUPLE"), Typed(sequenceType))},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			expression := MustOperExpr(Op("Apalache!MkSeq"), Typed(sequenceType), intValue(test.capacity), makeUnaryIntegerLambda(body))
+			rewriter := NewStratifiedRewriter()
+			scope, result, err := rewriter.Rewrite(
+				MustOperExpr(Op("EQ"), Typed(BoolT1), expression, test.expected), InitialRewriterScope())
+			if err != nil {
+				t.Fatal(err)
+			}
+			checkRewrittenTruth(t, rewriter, scope, result, true)
+		})
 	}
-	checkRewrittenTruth(t, rewriter, scope, result, true)
 }
 
 func TestStratifiedMkSeqUsesExistingCapacity(t *testing.T) {
