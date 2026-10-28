@@ -12,6 +12,11 @@ func TestBindingMergeForgetAndShift(t *testing.T) {
 		BindingEntry{Name: "x", Cell: x}, BindingEntry{Name: "x'", Cell: nextX},
 		BindingEntry{Name: "y'", Cell: y}, BindingEntry{Name: "N", Cell: constant},
 	)
+	exposed := binding.Map()
+	delete(exposed, "x")
+	if !binding.Contains("x") {
+		t.Fatal("Binding.Map exposed mutable internal storage")
+	}
 	if !binding.Contains("x") || binding.MustGet("x'").ID != 1 || len(binding.Map()) != 4 {
 		t.Fatalf("binding = %#v", binding.Map())
 	}
@@ -59,6 +64,14 @@ func TestSymbolicStateCellsUpdatesAndChangedNames(t *testing.T) {
 	}
 	if changed := state.ChangedNames(); !reflect.DeepEqual(changed, []string{"y'", "z'"}) {
 		t.Fatalf("changed names = %v", changed)
+	}
+	replacedExpression, err := state.SetExpression(cells[2].NameExpr())
+	if err != nil || replacedExpression.Expression == state.Expression || replacedExpression.Arena != state.Arena {
+		t.Fatalf("expression update = %#v, %v", replacedExpression, err)
+	}
+	replacedBinding := state.SetBinding(EmptyBinding())
+	if len(replacedBinding.Binding.Map()) != 0 || len(state.Binding.Map()) == 0 {
+		t.Fatal("binding update mutated the original symbolic state")
 	}
 	updated, err := state.UpdateArena(func(arena *ArenaSolverAdapter) (*ArenaSolverAdapter, error) {
 		result, _, err := arena.AppendTLAType(BoolT1)
