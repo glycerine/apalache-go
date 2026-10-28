@@ -249,6 +249,9 @@ func NewArenaCell(id int, cellType CellType, unconstrained ...bool) ArenaCell {
 }
 
 func (cell ArenaCell) String() string { return fmt.Sprintf("%s%d", ArenaCellNamePrefix, cell.ID) }
+func (cell ArenaCell) ToBuilder() BuilderT {
+	return TLA.Name(cell.String(), cell.Type.TLAType())
+}
 func (cell ArenaCell) NameExpr() *NameExpr {
 	return NewNameExpr(cell.String(), Typed(cell.Type.TLAType()))
 }
@@ -313,5 +316,13 @@ func (pointer SMTElementPointer) Element() ArenaCell            { return pointer
 func (pointer SMTElementPointer) ToSMT() Expr                   { return pointer.Expression }
 func (pointer SMTElementPointer) Generalize() SMTElementPointer { return pointer }
 func (pointer SMTElementPointer) Restrict(condition Expr) SMTElementPointer {
+	conditionType, err := ExpressionType(condition)
+	if err != nil || !EqualTypes(conditionType, BoolT1) {
+		panic(fmt.Sprintf("element-pointer restriction requires a Boolean condition, found %v", conditionType))
+	}
+	pointerType, err := ExpressionType(pointer.Expression)
+	if err != nil || !EqualTypes(pointerType, BoolT1) {
+		panic(fmt.Sprintf("SMT element pointer requires a Boolean expression, found %v", pointerType))
+	}
 	return SMTElementPointer{Cell: pointer.Cell, Expression: MustOperExpr(Op("AND"), Typed(BoolT1), pointer.Expression, condition)}
 }
