@@ -90,6 +90,24 @@ func TestSourceStoreTransformationPropagation(t *testing.T) {
 	if got, ok := store.Find(copyOnly.ID()); !ok || got != location {
 		t.Fatalf("copy-only location = %v, %v", got, ok)
 	}
+	if got, ok := store.FindOrWarn(original.ID()); !ok || got != location {
+		t.Fatalf("FindOrWarn(existing) = %v, %v", got, ok)
+	}
+
+	originalDeclaration := NewOperDecl("A", nil, original, Untyped())
+	transformedDeclaration := NewOperDecl("A", nil, transformed, Untyped())
+	if err := store.Add(originalDeclaration.ID(), location); err != nil {
+		t.Fatal(err)
+	}
+	store.OnDeclarationTransformation(originalDeclaration, transformedDeclaration)
+	if got, ok := store.Find(transformedDeclaration.ID()); !ok || got != location {
+		t.Fatalf("declaration propagation = %v, %v", got, ok)
+	}
+	copyDeclaration := NewOperDecl("A", nil, copyOnly, Untyped())
+	StoreCopyListener{Store: store}.OnDeclarationTransformation(originalDeclaration, copyDeclaration)
+	if got, ok := store.Find(copyDeclaration.ID()); !ok || got != location {
+		t.Fatalf("copy declaration propagation = %v, %v", got, ok)
+	}
 }
 
 func TestSourceStoreConcurrentAccess(t *testing.T) {

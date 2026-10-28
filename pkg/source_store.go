@@ -2,6 +2,7 @@ package apalache
 
 import (
 	"fmt"
+	"log"
 	"math"
 	"sync"
 )
@@ -183,6 +184,14 @@ func (store *SourceStore) Find(id UID) (SourceLocation, bool) {
 func (store *SourceStore) Contains(id UID) bool {
 	_, ok := store.Find(id)
 	return ok
+}
+
+func (store *SourceStore) FindOrWarn(id UID) (SourceLocation, bool) {
+	location, found := store.Find(id)
+	if !found {
+		log.Printf("No source location for expression %s", id)
+	}
+	return location, found
 }
 
 func (store *SourceStore) SourceMap() SourceMap {
