@@ -1,6 +1,7 @@
 package apalache
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -133,6 +134,81 @@ func TestTemporalTableauRejectsUnsupportedTemporalOperators(t *testing.T) {
 		if encodeErr == nil || !strings.Contains(encodeErr.Error(), "not supported") && operator != "LEADS_TO" {
 			t.Errorf("%s error = %v", operator, encodeErr)
 		}
+		if operator == "LEADS_TO" {
+			var language *LanguagePredError
+			if !errors.As(encodeErr, &language) || len(language.FailedIDs()) != 1 {
+				t.Errorf("LEADS_TO error type = %T, failures = %#v", encodeErr, language)
+			}
+		}
+	}
+}
+
+func TestTemporalTableauNestedAndMultipleFormulas(t *testing.T) {
+	module := temporalTestModule()
+	x := NewNameExpr("x", Typed(IntT1))
+	atom := MustOperExpr(Op("EQ"), Typed(BoolT1), x, intLiteral(0))
+	global := MustOperExpr(Op("GLOBALLY"), Typed(BoolT1), atom)
+	eventual := MustOperExpr(Op("EVENTUALLY"), Typed(BoolT1), atom)
+	first := boolDefinition("Both", MustOperExpr(Op("AND"), Typed(BoolT1), global, eventual))
+	second := boolDefinition("Eventually", eventual)
+	module = NewModule(module.Name(), append(module.Declarations(), first, second))
+	module.AddProperty(PropertyTypeChecked)
+	loopEncoder := NewTemporalLoopEncoder(nil)
+	loop, err := loopEncoder.AddLoopLogic(module, "Init", "Next")
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoder, err := NewTemporalTableauEncoder(loop.Module, nil, loopEncoder, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := encoder.TemporalsToInvariants(loop, first, second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"Both", "Eventually", "__Both_init", "__Eventually_init"} {
+		if _, found := declarationNamed(encoded, name); !found {
+			t.Errorf("encoded declaration %s is missing", name)
+		}
+	}
+	for _, declaration := range encoded.OperDeclarations() {
+		if countOperator(declaration.Body(), "GLOBALLY") != 0 || countOperator(declaration.Body(), "EVENTUALLY") != 0 {
+			t.Fatalf("temporal operator survived nested tableau encoding in %s", declaration.Name())
+		}
+	}
+	if len(encoded.NameReplacements()) != 4*2 {
+		t.Fatalf("nested tableau name replacements = %#v", encoded.NameReplacements())
+	}
+}
+
+func TestTemporalTableauPassesThroughNonTemporalExpressions(t *testing.T) {
+	module := temporalTestModule()
+	loopEncoder := NewTemporalLoopEncoder(nil)
+	encoder, err := NewTemporalTableauEncoder(module, nil, loopEncoder, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := MustOperExpr(Op("EQ"), Typed(BoolT1), NewNameExpr("x", Typed(IntT1)), intLiteral(0))
+	encoded, err := encoder.EncodeSyntaxTree(state)
+	if err != nil || encoded.Expression != state || len(encoded.Variables) != 0 ||
+		len(encoded.Predicates.Init)+len(encoded.Predicates.Next)+len(encoded.Predicates.LoopOK) != 0 {
+		t.Fatalf("non-temporal encoding = %#v, %v", encoded, err)
+	}
+}
+
+func TestTemporalTableauClassifiesUnexpectedTemporalLet(t *testing.T) {
+	module := temporalTestModule()
+	loopEncoder := NewTemporalLoopEncoder(nil)
+	encoder, err := NewTemporalTableauEncoder(module, nil, loopEncoder, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	temporal := MustOperExpr(Op("EVENTUALLY"), Typed(BoolT1), temporalBool(true))
+	let := NewLetInExpr(temporal, Typed(BoolT1))
+	_, err = encoder.EncodeSyntaxTree(let)
+	var irrecoverable *IrrecoverablePreprocessingError
+	if !errors.As(err, &irrecoverable) || !strings.Contains(err.Error(), "LET-IN") {
+		t.Fatalf("unexpected temporal LET error = %T: %v", err, err)
 	}
 }
 

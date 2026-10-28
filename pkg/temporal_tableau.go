@@ -38,7 +38,7 @@ type temporalFormulaEncoding struct {
 }
 
 // TemporalTableauEncoder ports the lasso tableau construction of the Scala
-// TableauEncoder for Boolean structure and the [] and <> operators.
+// TableauEncoder for propositional structure and the [] and <> operators.
 type TemporalTableauEncoder struct {
 	module           *Module
 	names            *UniqueNameGenerator
@@ -137,7 +137,18 @@ func (encoder *TemporalTableauEncoder) EncodeSyntaxTree(expression Expr) (Tempor
 	}
 	operation, ok := expression.(*OperExpr)
 	if !ok {
-		return TemporalSyntaxEncoding{}, fmt.Errorf("temporal-level expression %T must be an operator application after inlining", expression)
+		message := fmt.Sprintf("Cannot handle expression %v of type %T", expression, expression)
+		switch expression.(type) {
+		case *nullExpr:
+			message = "Found a null expression of temporal level; this should not be possible."
+		case *NameExpr:
+			message = "Found a name expression of temporal level. After inlining no such name expressions should be left in the predicate!"
+		case *ValueExpr:
+			message = "Found a value expression of temporal level. This should not be possible."
+		case *LetInExpr:
+			message = "Expected to find no LET-IN expressions. They should have been rewritten by the inliner."
+		}
+		return TemporalSyntaxEncoding{}, &IrrecoverablePreprocessingError{Message: message}
 	}
 	node := NewVarDecl(TemporalTableauPrefix+encoder.names.NewName(), Typed(BoolT1))
 	node.MarkInternal()
@@ -209,7 +220,10 @@ func (encoder *TemporalTableauEncoder) EncodeSyntaxTree(expression Expr) (Tempor
 			},
 		})
 	case "LEADS_TO":
-		return TemporalSyntaxEncoding{}, fmt.Errorf("temporal operator ~> must be removed by desugaring before tableau encoding")
+		return TemporalSyntaxEncoding{}, NewLanguagePredError(
+			"Don't know how to handle operator '~>'. It should have been removed by the Desugarer",
+			[]LanguageFailure{{ID: expression.ID(), Message: ""}},
+		)
 	case "GUARANTEES":
 		return TemporalSyntaxEncoding{}, fmt.Errorf("temporal guarantees is not supported")
 	case "WEAK_FAIRNESS", "STRONG_FAIRNESS":
