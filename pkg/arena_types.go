@@ -3,6 +3,7 @@ package apalache
 import (
 	"fmt"
 	"strconv"
+	"strings"
 )
 
 // CellType is the compact type system used by symbolic arena cells.
@@ -11,6 +12,12 @@ type CellType interface {
 	TLAType() Type
 	String() string
 	cellTypeNode()
+}
+
+// CompareCellTypes implements the signature ordering used by Scala CellT
+// when cell types are keys in sorted collections.
+func CompareCellTypes(left, right CellType) int {
+	return strings.Compare(left.Signature(), right.Signature())
 }
 
 type UnknownCellType struct{}
