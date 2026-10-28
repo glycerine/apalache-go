@@ -41,6 +41,38 @@ func TestStratifiedPowerSetMembershipThroughG3(t *testing.T) {
 	}
 }
 
+func TestStratifiedSetOfSetsInclusionInPowerSetThroughG3(t *testing.T) {
+	intSetType := mustSet(IntT1)
+	setOfSetsType := mustSet(intSetType)
+	set := func(values ...int64) Expr {
+		elements := make([]Expr, len(values))
+		for index, value := range values {
+			elements[index] = NewValueExpr(Int64Value(value), Typed(IntT1))
+		}
+		return MustOperExpr(Op("SET_ENUM"), Typed(intSetType), elements...)
+	}
+	base := set(1, 2)
+	power := MustOperExpr(Op("SET_POWERSET"), Typed(setOfSetsType), base)
+	for _, test := range []struct {
+		name string
+		left Expr
+		want bool
+	}{
+		{"all subsets", MustOperExpr(Op("SET_ENUM"), Typed(setOfSetsType), set(), set(1), set(1, 2)), true},
+		{"contains non-subset", MustOperExpr(Op("SET_ENUM"), Typed(setOfSetsType), set(1), set(3)), false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			rewriter := NewStratifiedRewriter()
+			scope, result, err := rewriter.Rewrite(
+				MustOperExpr(Op("SET_SUBSET_EQ"), Typed(BoolT1), test.left, power), InitialRewriterScope())
+			if err != nil {
+				t.Fatal(err)
+			}
+			checkRewrittenTruth(t, rewriter, scope, result, test.want)
+		})
+	}
+}
+
 func TestStratifiedPowerSetStoresItsDomain(t *testing.T) {
 	intSetType := mustSet(IntT1)
 	domainExpression := MustOperExpr(Op("SET_ENUM"), Typed(intSetType),

@@ -987,6 +987,53 @@ func (rewriter *StratifiedRewriter) rewriteSubset(expression *OperExpr, scope Re
 	if err != nil {
 		return scope, ArenaCell{}, err
 	}
+	if _, infinite := right.Type.(InfiniteSetCellType); infinite {
+		if !isFiniteSetCellType(left.Type) {
+			return scope, ArenaCell{}, fmt.Errorf("subset comparison with an infinite right operand requires a finite left set, found %s", left.Type)
+		}
+		leftType := left.Type.TLAType().(SetType)
+		if !EqualTypes(leftType.Element(), IntT1) {
+			return scope, ArenaCell{}, fmt.Errorf("subset comparison with %s requires integer elements, found %s", right.Type, leftType.Element())
+		}
+		conditions := make([]Expr, len(scope.Arena.GetHas(left)))
+		for index, pointer := range scope.Arena.GetHas(left) {
+			member := Expr(boolExpr(true))
+			if right.Equal(scope.Arena.NatSetCell()) {
+				member = MustOperExpr(Op("GE"), Typed(BoolT1), pointer.Element().NameExpr(), intLiteral(0))
+			} else if !right.Equal(scope.Arena.IntSetCell()) {
+				return scope, ArenaCell{}, fmt.Errorf("unsupported infinite set in subset comparison: %s", right)
+			}
+			conditions[index] = booleanOr(MustOperExpr(Op("NOT"), Typed(BoolT1), pointer.ToSMT()), member)
+		}
+		scope, result := rewriter.bindBoolean(scope, booleanAnd(conditions...))
+		return scope, result, nil
+	}
+	if _, powerSet := right.Type.(PowerSetCellType); powerSet {
+		if !isFiniteSetCellType(left.Type) {
+			return scope, ArenaCell{}, fmt.Errorf("subset comparison with a powerset requires a finite left set, found %s", left.Type)
+		}
+		domain, domainErr := scope.Arena.Domain(right)
+		if domainErr != nil {
+			return scope, ArenaCell{}, domainErr
+		}
+		leftElementType := left.Type.TLAType().(SetType).Element()
+		if !EqualTypes(leftElementType, domain.Type.TLAType()) {
+			return scope, ArenaCell{}, fmt.Errorf("powerset inclusion requires elements of type %s, found %s", domain.Type.TLAType(), leftElementType)
+		}
+		conditions := make([]Expr, len(scope.Arena.GetHas(left)))
+		for index, pointer := range scope.Arena.GetHas(left) {
+			if !isFiniteSetCellType(pointer.Element().Type) {
+				return scope, ArenaCell{}, fmt.Errorf("powerset inclusion requires finite-set elements, found %s", pointer.Element().Type)
+			}
+			subset, subsetErr := rewriter.equality.subsetCondition(scope.Arena, pointer.Element(), domain)
+			if subsetErr != nil {
+				return scope, ArenaCell{}, subsetErr
+			}
+			conditions[index] = booleanOr(MustOperExpr(Op("NOT"), Typed(BoolT1), pointer.ToSMT()), subset)
+		}
+		scope, result := rewriter.bindBoolean(scope, booleanAnd(conditions...))
+		return scope, result, nil
+	}
 	commonType, compatible, err := CommonSupertype(left.Type.TLAType(), right.Type.TLAType())
 	if err != nil || !compatible {
 		return scope, ArenaCell{}, fmt.Errorf("subset comparison requires compatible sets, found %s and %s", left.Type, right.Type)

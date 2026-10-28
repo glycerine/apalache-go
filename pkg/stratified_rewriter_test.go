@@ -1195,6 +1195,37 @@ func TestStratifiedFiniteSetAlgebraThroughG3(t *testing.T) {
 	}
 }
 
+func TestStratifiedFiniteSubsetOfInfiniteSetsThroughG3(t *testing.T) {
+	setTag := Typed(mustSet(IntT1))
+	set := func(values ...int64) Expr {
+		elements := make([]Expr, len(values))
+		for index, value := range values {
+			elements[index] = intLiteral(value)
+		}
+		return MustOperExpr(Op("SET_ENUM"), setTag, elements...)
+	}
+	for _, test := range []struct {
+		name  string
+		left  Expr
+		right PredefinedSet
+		want  bool
+	}{
+		{"integers", set(-2, 3), IntSet, true},
+		{"naturals", set(0, 3), NatSet, true},
+		{"negative natural", set(-1, 3), NatSet, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			rewriter := NewStratifiedRewriter()
+			expression := MustOperExpr(Op("SET_SUBSET_EQ"), Typed(BoolT1), test.left, NewValueExpr(test.right, setTag))
+			scope, result, err := rewriter.Rewrite(expression, InitialRewriterScope())
+			if err != nil {
+				t.Fatal(err)
+			}
+			checkRewrittenTruth(t, rewriter, scope, result, test.want)
+		})
+	}
+}
+
 func TestStratifiedStructuralSetMembershipThroughG3(t *testing.T) {
 	tupleType, err := NewTupleType(IntT1)
 	if err != nil {
