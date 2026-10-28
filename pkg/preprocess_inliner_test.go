@@ -1,6 +1,9 @@
 package apalache
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 func inlineApplication(name string, operatorType Type, resultType Type, arguments ...Expr) Expr {
 	all := append([]Expr{NewNameExpr(name, Typed(operatorType))}, arguments...)
@@ -204,5 +207,50 @@ func TestInlinerDoesNotExpandRecursiveDeclaration(t *testing.T) {
 	application, ok := got.(*OperExpr)
 	if !ok || application.Operator().Name() != "OPER_APP" || application.Arguments()[0].(*NameExpr).Name() != "R" {
 		t.Fatalf("recursive call was expanded: %v", got)
+	}
+}
+
+func TestInlinerTracksLeavesApplicationsAndModuleDeclarations(t *testing.T) {
+	operatorType := mustOperator([]Type{IntT1}, IntT1)
+	parameter := NewNameExpr("x", Typed(IntT1))
+	declaration := NewOperDecl("Id", []OperatorParam{ValueParam("x")}, parameter, Typed(operatorType))
+	argument := NewValueExpr(Int64Value(1), Typed(IntT1))
+	application := inlineApplication("Id", operatorType, IntT1, argument)
+	root := NewLetInExpr(application, Typed(IntT1), declaration)
+	listener := &recordingListener{}
+	got, err := NewInliner(NewListenerTracker(listener), nil, true, nil).Transform(root)
+	if err != nil || !EqualTypedExpr(got, argument) {
+		t.Fatalf("tracked inline = %v, %v", got, err)
+	}
+	foundLeaf, foundApplication := false, false
+	for _, event := range listener.expressions {
+		foundLeaf = foundLeaf || event[0] == parameter && event[1] == parameter
+		foundApplication = foundApplication || event[0] == application && EqualTypedExpr(event[1], argument)
+	}
+	if !foundLeaf || !foundApplication {
+		t.Fatalf("missing tracking layers: leaf=%v application=%v events=%#v", foundLeaf, foundApplication, listener.expressions)
+	}
+
+	assumption := NewNamedAssumeDecl("Ready", NewValueExpr(BoolValue(true), Typed(BoolT1)), Typed(BoolT1))
+	theorem := NewTheoremDecl("Safe", NewValueExpr(BoolValue(true), Typed(BoolT1)), Typed(BoolT1))
+	listener = &recordingListener{}
+	if _, err := NewInliner(NewListenerTracker(listener), nil, true, nil).Module(NewModule("M", []Decl{assumption, theorem})); err != nil {
+		t.Fatal(err)
+	}
+	if len(listener.declarations) != 2 || listener.declarations[0][0] != assumption || listener.declarations[1][0] != theorem {
+		t.Fatalf("module declaration events = %#v", listener.declarations)
+	}
+}
+
+func TestInlinerReportsSignatureMismatchAsTypingException(t *testing.T) {
+	calleeType := mustOperator([]Type{BoolT1}, BoolT1)
+	callType := mustOperator([]Type{IntT1}, IntT1)
+	declaration := NewOperDecl("F", []OperatorParam{ValueParam("x")}, NewNameExpr("x", Typed(BoolT1)), Typed(calleeType))
+	root := NewLetInExpr(inlineApplication("F", callType, IntT1, intLiteral(1)), Typed(IntT1), declaration)
+	listener := &recordingListener{}
+	_, err := NewInliner(NewListenerTracker(listener), nil, true, nil).Transform(root)
+	var typing *TypingException
+	if !errors.As(err, &typing) || len(listener.declarations) != 1 || typing.CauseExprID() != listener.declarations[0][1].ID() {
+		t.Fatalf("signature mismatch = %T %v", err, err)
 	}
 }

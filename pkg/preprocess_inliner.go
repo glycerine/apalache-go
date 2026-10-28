@@ -57,16 +57,29 @@ func (inliner *Inliner) transform(scope map[string]*OperDecl, expression Expr) (
 		if typed.Operator().Name() == "OPER_APP" && len(arguments) > 0 {
 			if name, ok := arguments[0].(*NameExpr); ok {
 				if callee, found := scope[name.Name()]; found {
-					return inliner.instantiate(scope, name, arguments[1:], callee)
+					var err error
+					result, err = inliner.instantiate(scope, name, arguments[1:], callee)
+					if err != nil {
+						return nil, err
+					}
+					break
 				}
 			}
 			if lambda, ok := arguments[0].(*LetInExpr); ok && isPassByNameLet(lambda) {
 				declaration := lambda.Declarations()[0]
 				if len(declaration.FormalParams()) == len(arguments)-1 {
 					inside := inliner.extend(scope, declaration, func(*OperDecl) bool { return true })
-					return inliner.instantiate(inside, lambda.Body().(*NameExpr), arguments[1:], declaration)
+					var err error
+					result, err = inliner.instantiate(inside, lambda.Body().(*NameExpr), arguments[1:], declaration)
+					if err != nil {
+						return nil, err
+					}
+					break
 				}
 			}
+		}
+		if result != nil {
+			break
 		}
 		newArguments := make([]Expr, len(arguments))
 		for index, argument := range arguments {
@@ -102,7 +115,8 @@ func (inliner *Inliner) transform(scope map[string]*OperDecl, expression Expr) (
 	case *NameExpr:
 		callee, found := scope[typed.Name()]
 		if !found {
-			return expression, nil
+			result = expression
+			break
 		}
 		embedded, err := inliner.embedPassByName(typed, callee)
 		if err != nil {
@@ -110,7 +124,7 @@ func (inliner *Inliner) transform(scope map[string]*OperDecl, expression Expr) (
 		}
 		result = embedded
 	default:
-		return expression, nil
+		result = expression
 	}
 	return inliner.tracker.TrackExpression(func(Expr) Expr { return result })(expression), nil
 }
@@ -189,7 +203,9 @@ func (inliner *Inliner) callSubstitution(callTag TypeTag, callee *OperDecl) (*Su
 		return nil, nil, err
 	}
 	if !unifies {
-		return nil, nil, fmt.Errorf("inliner: unable to unify signature %s of %s with call-site type %s", calleeType, callee.Name(), callType)
+		return nil, nil, NewTypingException(fmt.Sprintf(
+			"Inliner: Unable to unify the signature %s of %s with the type %s at call site",
+			calleeType, callee.Name(), callType), callee.ID())
 	}
 	resolved := make([]SubstitutionEntry, 0, len(originals))
 	for index, number := range originals {
@@ -280,13 +296,16 @@ func (inliner *Inliner) Module(module *Module) (*Module, error) {
 			} else {
 				copy = NewUnnamedAssumeDecl(body, typed.Tag())
 			}
+			copy = inliner.tracker.TrackDeclaration(func(Decl) Decl { return copy })(typed).(*AssumeDecl)
 			output = append(output, copy)
 		case *TheoremDecl:
 			body, transformErr := inliner.transform(scope, typed.Body())
 			if transformErr != nil {
 				return nil, transformErr
 			}
-			output = append(output, NewTheoremDecl(typed.Name(), body, typed.Tag()))
+			copy := NewTheoremDecl(typed.Name(), body, typed.Tag())
+			copy = inliner.tracker.TrackDeclaration(func(Decl) Decl { return copy })(typed).(*TheoremDecl)
+			output = append(output, copy)
 		default:
 			output = append(output, declaration)
 		}
