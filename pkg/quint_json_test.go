@@ -378,6 +378,86 @@ func TestConvertQuintRejectsMalformedConstructors(t *testing.T) {
 	}
 }
 
+func TestMarshalQuintTaggedUnionsMatchesScalaSchema(t *testing.T) {
+	truth := quintJSONExpr{ID: json.Number("2"), Kind: "bool", Value: json.RawMessage("true"), Name: "ignored"}
+	definition := quintJSONDef{
+		ID: json.Number("1"), Kind: "def", Name: "myDef", Qualifier: "val", Expr: &truth,
+		Doc: "ignored", Depth: json.Number("99"), TypeAnnotation: &quintJSONType{Kind: "str"},
+	}
+	encoded, err := json.Marshal(definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"kind":"def","id":1,"name":"myDef","qualifier":"val","expr":{"kind":"bool","id":2,"value":true}}`
+	if string(encoded) != want {
+		t.Fatalf("definition JSON = %s, want %s", encoded, want)
+	}
+	typeDefinition := quintJSONDef{ID: json.Number("3"), Kind: "typedef", Name: "myType"}
+	encoded, err = json.Marshal(typeDefinition)
+	if err != nil || string(encoded) != `{"kind":"typedef","id":3,"name":"myType"}` {
+		t.Fatalf("type definition JSON = %s, %v", encoded, err)
+	}
+}
+
+func TestMarshalQuintJSONIRCanonicalizesBigIntsAndTypeVariants(t *testing.T) {
+	large := "42922337203685477580742"
+	document := fmt.Sprintf(`{
+		"stage":"typechecking","modules":[{"id":1,"name":"M","declarations":[
+			{"kind":"def","id":2,"name":"n","qualifier":"val","expr":{"kind":"int","id":3,"value":%q}}
+		]}],"types":{"3":{"type":{"id":99,"kind":"int"},"typeVariables":[],"rowVariables":[]}},
+		"table":{},"warnings":[],"effects":{},"errors":[]}`, large)
+	encoded, err := MarshalQuintJSONIR([]byte(document), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(encoded)
+	if !strings.Contains(text, `"value":`+large) || strings.Contains(text, `"value":"`+large+`"`) ||
+		strings.Contains(text, `"id":99`) || strings.Contains(text, `"warnings"`) ||
+		strings.Contains(text, `"effects"`) || strings.Contains(text, `"errors"`) {
+		t.Fatalf("canonical Quint JSON = %s", text)
+	}
+	pretty, err := MarshalQuintJSONIR(encoded, true)
+	if err != nil || !json.Valid(pretty) || !strings.Contains(string(pretty), "\n  \"stage\"") {
+		t.Fatalf("pretty Quint JSON = %s, %v", pretty, err)
+	}
+}
+
+func TestMarshalQuintJSONIRRoundTripsUpstreamFixtures(t *testing.T) {
+	for _, path := range []string{
+		"../tla-io/src/test/resources/tictactoe.json",
+		"../tla-io/src/test/resources/clockSync3.json",
+	} {
+		t.Run(path, func(t *testing.T) {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			encoded, err := MarshalQuintJSONIR(data, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			module, err := ParseQuintJSON(encoded)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if module.Name() == "" {
+				t.Fatalf("round-tripped module = %#v", module)
+			}
+		})
+	}
+}
+
+func TestMarshalQuintJSONIRRejectsMalformedAndTrailingInput(t *testing.T) {
+	if _, err := MarshalQuintJSONIR([]byte(`{}`), false); err == nil || !strings.Contains(err.Error(), "missing keys in dictionary") {
+		t.Errorf("empty document => %v", err)
+	}
+	for _, input := range []string{`{"foo":1}`, quintBigIntFixture + `{}`} {
+		if _, err := MarshalQuintJSONIR([]byte(input), false); err == nil || !strings.Contains(err.Error(), "not valid Quint JSON IR") {
+			t.Errorf("%q => %v", input[:min(len(input), 40)], err)
+		}
+	}
+}
+
 func TestConvertQuintSimpleOperatorSurface(t *testing.T) {
 	importer := quintJSONImporter{types: map[string]quintJSONScheme{
 		"1": {Type: quintJSONType{Kind: "int"}},

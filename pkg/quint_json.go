@@ -90,6 +90,209 @@ type quintJSONLambdaParam struct {
 	Depth          json.Number    `json:"depth"`
 }
 
+func (output quintJSONOutput) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Stage   string                     `json:"stage"`
+		Modules []quintJSONModule          `json:"modules"`
+		Types   map[string]quintJSONScheme `json:"types"`
+		Table   json.RawMessage            `json:"table"`
+	}{output.Stage, output.Modules, output.Types, output.Table})
+}
+
+func (definition quintJSONDef) MarshalJSON() ([]byte, error) {
+	switch definition.Kind {
+	case "def":
+		return json.Marshal(struct {
+			Kind      string         `json:"kind"`
+			ID        json.Number    `json:"id"`
+			Name      string         `json:"name"`
+			Qualifier string         `json:"qualifier"`
+			Expr      *quintJSONExpr `json:"expr"`
+		}{definition.Kind, definition.ID, definition.Name, definition.Qualifier, definition.Expr})
+	case "const", "var":
+		return json.Marshal(struct {
+			Kind           string         `json:"kind"`
+			ID             json.Number    `json:"id"`
+			Name           string         `json:"name"`
+			TypeAnnotation *quintJSONType `json:"typeAnnotation"`
+		}{definition.Kind, definition.ID, definition.Name, definition.TypeAnnotation})
+	case "assume":
+		return json.Marshal(struct {
+			Kind       string         `json:"kind"`
+			ID         json.Number    `json:"id"`
+			Name       string         `json:"name"`
+			Assumption *quintJSONExpr `json:"assumption"`
+		}{definition.Kind, definition.ID, definition.Name, definition.Assumption})
+	case "typedef":
+		if definition.Type == nil {
+			return json.Marshal(struct {
+				Kind string      `json:"kind"`
+				ID   json.Number `json:"id"`
+				Name string      `json:"name"`
+			}{definition.Kind, definition.ID, definition.Name})
+		}
+		return json.Marshal(struct {
+			Kind string         `json:"kind"`
+			ID   json.Number    `json:"id"`
+			Name string         `json:"name"`
+			Type *quintJSONType `json:"type"`
+		}{definition.Kind, definition.ID, definition.Name, definition.Type})
+	default:
+		return nil, fmt.Errorf("unsupported Quint definition kind %q", definition.Kind)
+	}
+}
+
+func (expression quintJSONExpr) MarshalJSON() ([]byte, error) {
+	switch expression.Kind {
+	case "name":
+		return json.Marshal(struct {
+			Kind string      `json:"kind"`
+			ID   json.Number `json:"id"`
+			Name string      `json:"name"`
+		}{expression.Kind, expression.ID, expression.Name})
+	case "bool", "str":
+		return json.Marshal(struct {
+			Kind  string          `json:"kind"`
+			ID    json.Number     `json:"id"`
+			Value json.RawMessage `json:"value"`
+		}{expression.Kind, expression.ID, expression.Value})
+	case "int":
+		text := string(expression.Value)
+		var quoted string
+		if len(text) > 0 && text[0] == '"' {
+			if err := json.Unmarshal(expression.Value, &quoted); err != nil {
+				return nil, fmt.Errorf("invalid Quint integer: %w", err)
+			}
+			text = quoted
+		}
+		if _, ok := new(big.Int).SetString(text, 10); !ok {
+			return nil, fmt.Errorf("invalid Quint integer %q", text)
+		}
+		return json.Marshal(struct {
+			Kind  string          `json:"kind"`
+			ID    json.Number     `json:"id"`
+			Value json.RawMessage `json:"value"`
+		}{expression.Kind, expression.ID, json.RawMessage(text)})
+	case "app":
+		return json.Marshal(struct {
+			Kind   string          `json:"kind"`
+			ID     json.Number     `json:"id"`
+			Opcode string          `json:"opcode"`
+			Args   []quintJSONExpr `json:"args"`
+		}{expression.Kind, expression.ID, expression.Opcode, expression.Args})
+	case "lambda":
+		return json.Marshal(struct {
+			Kind      string                 `json:"kind"`
+			ID        json.Number            `json:"id"`
+			Params    []quintJSONLambdaParam `json:"params"`
+			Qualifier string                 `json:"qualifier"`
+			Expr      *quintJSONExpr         `json:"expr"`
+		}{expression.Kind, expression.ID, expression.Params, expression.Qualifier, expression.Expr})
+	case "let":
+		return json.Marshal(struct {
+			Kind  string         `json:"kind"`
+			ID    json.Number    `json:"id"`
+			Opdef *quintJSONDef  `json:"opdef"`
+			Expr  *quintJSONExpr `json:"expr"`
+		}{expression.Kind, expression.ID, expression.Opdef, expression.Expr})
+	default:
+		return nil, fmt.Errorf("unsupported Quint expression kind %q", expression.Kind)
+	}
+}
+
+func (parameter quintJSONLambdaParam) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		ID   json.Number `json:"id"`
+		Name string      `json:"name"`
+	}{parameter.ID, parameter.Name})
+}
+
+func (typ quintJSONType) MarshalJSON() ([]byte, error) {
+	switch typ.Kind {
+	case "bool", "int", "str":
+		return json.Marshal(struct {
+			Kind string `json:"kind"`
+		}{typ.Kind})
+	case "const", "var":
+		return json.Marshal(struct {
+			Kind string `json:"kind"`
+			Name string `json:"name"`
+		}{typ.Kind, typ.Name})
+	case "set", "list":
+		return json.Marshal(struct {
+			Kind string         `json:"kind"`
+			Elem *quintJSONType `json:"elem"`
+		}{typ.Kind, typ.Elem})
+	case "fun":
+		return json.Marshal(struct {
+			Kind string         `json:"kind"`
+			Arg  *quintJSONType `json:"arg"`
+			Res  *quintJSONType `json:"res"`
+		}{typ.Kind, typ.Arg, typ.Res})
+	case "oper":
+		return json.Marshal(struct {
+			Kind string          `json:"kind"`
+			Args []quintJSONType `json:"args"`
+			Res  *quintJSONType  `json:"res"`
+		}{typ.Kind, typ.Args, typ.Res})
+	case "tup", "rec", "sum":
+		return json.Marshal(struct {
+			Kind   string        `json:"kind"`
+			Fields *quintJSONRow `json:"fields"`
+		}{typ.Kind, typ.Fields})
+	default:
+		return nil, fmt.Errorf("unsupported Quint type kind %q", typ.Kind)
+	}
+}
+
+func (row quintJSONRow) MarshalJSON() ([]byte, error) {
+	switch row.Kind {
+	case "row":
+		return json.Marshal(struct {
+			Kind   string                 `json:"kind"`
+			Fields []quintJSONRecordField `json:"fields"`
+			Other  *quintJSONRow          `json:"other"`
+		}{row.Kind, row.Fields, row.Other})
+	case "var":
+		return json.Marshal(struct {
+			Kind string `json:"kind"`
+			Name string `json:"name"`
+		}{row.Kind, row.Name})
+	case "empty":
+		return json.Marshal(struct {
+			Kind string `json:"kind"`
+		}{row.Kind})
+	default:
+		return nil, fmt.Errorf("unsupported Quint row kind %q", row.Kind)
+	}
+}
+
+// MarshalQuintJSONIR validates Quint's typed JSON IR and writes it back in
+// the canonical tagged-union schema used by the Scala QuintIR writers. Type
+// source IDs and output diagnostics are intentionally omitted, as in Scala.
+func MarshalQuintJSONIR(data []byte, pretty bool) ([]byte, error) {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	decoder.DisallowUnknownFields()
+	var output quintJSONOutput
+	if err := decoder.Decode(&output); err != nil {
+		return nil, fmt.Errorf("input was not valid Quint JSON IR: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return nil, fmt.Errorf("input was not valid Quint JSON IR: trailing JSON value")
+		}
+		return nil, fmt.Errorf("input was not valid Quint JSON IR: %w", err)
+	}
+	if err := validateQuintJSONOutput(output); err != nil {
+		return nil, err
+	}
+	if pretty {
+		return json.MarshalIndent(output, "", "  ")
+	}
+	return json.Marshal(output)
+}
+
 type quintJSONImporter struct {
 	types   map[string]quintJSONScheme
 	nullary map[string]struct{}
@@ -111,6 +314,9 @@ func ParseQuintJSON(data []byte) (*Module, error) {
 			return nil, fmt.Errorf("input was not valid Quint JSON IR: trailing JSON value")
 		}
 		return nil, fmt.Errorf("input was not valid Quint JSON IR: %w", err)
+	}
+	if err := validateQuintJSONOutput(output); err != nil {
+		return nil, err
 	}
 	if len(output.Modules) != 1 {
 		return nil, fmt.Errorf("Quint JSON IR contains %d modules; exactly one is required", len(output.Modules))
@@ -136,6 +342,26 @@ func ParseQuintJSON(data []byte) (*Module, error) {
 	result := NewModule(module.Name, declarations)
 	result.AddProperty(PropertyTypeChecked)
 	return result, nil
+}
+
+func validateQuintJSONOutput(output quintJSONOutput) error {
+	missing := make([]string, 0, 4)
+	if output.Stage == "" {
+		missing = append(missing, "stage")
+	}
+	if output.Modules == nil {
+		missing = append(missing, "modules")
+	}
+	if output.Types == nil {
+		missing = append(missing, "types")
+	}
+	if output.Table == nil {
+		missing = append(missing, "table")
+	}
+	if len(missing) != 0 {
+		return fmt.Errorf("input was not valid Quint JSON IR: missing keys in dictionary: %s", strings.Join(missing, ", "))
+	}
+	return nil
 }
 
 func (importer quintJSONImporter) declaration(definition quintJSONDef) (Decl, bool, error) {
