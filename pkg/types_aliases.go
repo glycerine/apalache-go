@@ -1,6 +1,10 @@
 package apalache
 
-import "fmt"
+import (
+	"fmt"
+	"sort"
+	"strings"
+)
 
 const typeAliasClosureLimit = 100
 
@@ -30,6 +34,36 @@ func (substitution *TypeAliasSubstitution) Context() map[string]Type {
 		result[name] = typ
 	}
 	return result
+}
+
+func (substitution *TypeAliasSubstitution) String() string {
+	names := make([]string, 0, len(substitution.context))
+	for name := range substitution.context {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	pairs := make([]string, len(names))
+	for index, name := range names {
+		pairs[index] = fmt.Sprintf("%s -> %s", name, substitution.context[name])
+	}
+	return "ConstSub{" + strings.Join(pairs, ", ") + "}"
+}
+
+// Equal is the Go counterpart of Scala's context-based equals contract.
+func (substitution *TypeAliasSubstitution) Equal(other *TypeAliasSubstitution) bool {
+	if substitution == nil || other == nil {
+		return substitution == other
+	}
+	if len(substitution.context) != len(other.context) {
+		return false
+	}
+	for name, typ := range substitution.context {
+		otherType, found := other.context[name]
+		if !found || !EqualTypes(typ, otherType) {
+			return false
+		}
+	}
+	return true
 }
 
 func (substitution *TypeAliasSubstitution) Apply(typ Type) (Type, bool, error) {
@@ -186,6 +220,9 @@ func (substitution *TypeAliasSubstitution) applyIntFields(fields map[int]Type) (
 
 func (substitution *TypeAliasSubstitution) Closure() (*TypeAliasSubstitution, error) {
 	aliases := substitution.Context()
+	if caller, callee, cyclic := findAliasCycle(aliases); cyclic {
+		return nil, fmt.Errorf("cannot resolve a reference to type alias %s in type alias %s: cyclic dependency", callee, caller)
+	}
 	for iteration := 0; iteration < typeAliasClosureLimit; iteration++ {
 		current := NewTypeAliasSubstitution(aliases)
 		changed := false
@@ -211,6 +248,44 @@ func (substitution *TypeAliasSubstitution) Closure() (*TypeAliasSubstitution, er
 		}
 	}
 	return nil, fmt.Errorf("type alias closure did not converge")
+}
+
+func findAliasCycle(aliases map[string]Type) (caller string, callee string, cyclic bool) {
+	names := make([]string, 0, len(aliases))
+	for name := range aliases {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	state := make(map[string]uint8, len(aliases)) // 0 unseen, 1 active, 2 complete
+	var visit func(string) (string, string, bool)
+	visit = func(name string) (string, string, bool) {
+		state[name] = 1
+		references := aliasReferences(aliases[name])
+		sort.Strings(references)
+		for _, reference := range references {
+			if _, defined := aliases[reference]; !defined {
+				continue
+			}
+			switch state[reference] {
+			case 1:
+				return name, reference, true
+			case 0:
+				if cycleCaller, cycleCallee, found := visit(reference); found {
+					return cycleCaller, cycleCallee, true
+				}
+			}
+		}
+		state[name] = 2
+		return "", "", false
+	}
+	for _, name := range names {
+		if state[name] == 0 {
+			if cycleCaller, cycleCallee, found := visit(name); found {
+				return cycleCaller, cycleCallee, true
+			}
+		}
+	}
+	return "", "", false
 }
 
 func aliasReferences(typ Type) []string {

@@ -420,7 +420,7 @@ tla-typechecker/src/main/scala/at/forsyte/apalache/tla/typecheck/etc/EtcExpr.sca
 tla-typechecker/src/main/scala/at/forsyte/apalache/tla/typecheck/etc/EtcId.scala	partial	typechecker*.go;types_*.go	remaining Scala typechecker suite mapping is open
 tla-typechecker/src/main/scala/at/forsyte/apalache/tla/typecheck/etc/EtcTypeChecker.scala	partial	typechecker*.go;types_*.go	remaining Scala typechecker suite mapping is open
 tla-typechecker/src/main/scala/at/forsyte/apalache/tla/typecheck/etc/ToEtcExpr.scala	partial	typechecker*.go;types_*.go	remaining Scala typechecker suite mapping is open
-tla-typechecker/src/main/scala/at/forsyte/apalache/tla/typecheck/etc/TypeAliasSubstitution.scala	partial	typechecker*.go;types_*.go	remaining Scala typechecker suite mapping is open
+tla-typechecker/src/main/scala/at/forsyte/apalache/tla/typecheck/etc/TypeAliasSubstitution.scala	ported	types_aliases.go;types_aliases_test.go;types_aliases_contract_test.go	all type constructors, one-pass changed flags, missing new-style and uninterpreted old-style aliases, transitive closure, deterministic cycle detection including nested rows/variants, empty/value/display contracts, and defensive context ownership are covered
 tla-typechecker/src/main/scala/at/forsyte/apalache/tla/typecheck/exceptions.scala	partial	typechecker*.go;types_*.go	remaining Scala typechecker suite mapping is open
 tla-typechecker/src/main/scala/at/forsyte/apalache/tla/typecheck/integration/RecordingTypeCheckerListener.scala	partial	typechecker*.go;types_*.go	remaining Scala typechecker suite mapping is open
 tla-typechecker/src/main/scala/at/forsyte/apalache/tla/typecheck/integration/TypeRewriter.scala	partial	typechecker*.go;types_*.go	remaining Scala typechecker suite mapping is open
