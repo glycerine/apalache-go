@@ -46,6 +46,33 @@ func TestMarkSkolemizableModuleMarksCardinalityAndProperty(t *testing.T) {
 	}
 }
 
+func TestAnalyzeModuleRunsCompletePassAndLabelsGrades(t *testing.T) {
+	module := NewModule("M", nil)
+	if _, err := AnalyzeModule(module, nil, nil); err == nil {
+		t.Fatal("analysis accepted a module without TransitionsFound")
+	}
+	x := NewNameExpr("x", Typed(IntT1))
+	unused := NewOperDecl("Unused", nil, intLiteral(1), Typed(mustOperator(nil, IntT1)))
+	body := NewLetInExpr(MustOperExpr(Op("EQ"), Typed(BoolT1), x, intLiteral(0)), Typed(BoolT1), unused)
+	module = NewModule("M", []Decl{NewVarDecl("x", Typed(IntT1)), boolDefinition("P", body)})
+	module.AddProperty(PropertyTransitionsFound)
+	grades := NewExprGradeStore()
+	analyzed, err := AnalyzeModule(module, grades, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !analyzed.HasProperty(PropertyAnalyzed) || module.HasProperty(PropertyAnalyzed) {
+		t.Fatal("analysis properties were not added immutably")
+	}
+	analyzedBody, _ := OperatorBody(analyzed, "P")
+	if _, stillLet := analyzedBody.(*LetInExpr); stillLet {
+		t.Fatalf("unused LET survived analysis: %v", analyzedBody)
+	}
+	if grade, found := grades.Get(analyzedBody.ID()); !found || grade != ExprGradeStateFree {
+		t.Fatalf("analyzed root grade = %v, %v", grade, found)
+	}
+}
+
 func TestMarkSkolemizableExpressionScalaOracleCases(t *testing.T) {
 	intSetType := mustSet(IntT1)
 	binder := func(name string) Expr { return NewNameExpr(name, Typed(IntT1)) }

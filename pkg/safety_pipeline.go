@@ -121,11 +121,7 @@ func PrepareSafetyTransitions(module *Module, options SafetyPipelineOptions) (Sa
 	if err != nil {
 		return SafetyPipelineResult{}, err
 	}
-	analyzed, err := MarkSkolemizableModule(optimized, tracker)
-	if err != nil {
-		return SafetyPipelineResult{}, err
-	}
-	analyzed, err = MarkSetExpansionsModule(analyzed, tracker)
+	analyzed, err := AnalyzeModule(optimized, NewExprGradeStore(), tracker)
 	if err != nil {
 		return SafetyPipelineResult{}, err
 	}

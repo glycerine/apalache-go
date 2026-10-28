@@ -234,3 +234,54 @@ func MarkSetExpansionsModule(module *Module, tracker TransformationTracker) (*Mo
 	return transformModuleExpressionsWithError(module, "set expansion analysis", nil,
 		func(expression Expr) (Expr, error) { return MarkSetExpansionsExpression(expression, tracker), nil })
 }
+
+// AnalyzeModule runs the production analysis pass: mark Skolemizable
+// formulas, mark set constructors that require expansion, remove LET
+// definitions made unused by marking, and label expression grades.
+func AnalyzeModule(module *Module, grades *ExprGradeStore, tracker TransformationTracker) (*Module, error) {
+	if module == nil {
+		return nil, fmt.Errorf("cannot analyze a nil module")
+	}
+	if !module.HasProperty(PropertyTransitionsFound) {
+		return nil, fmt.Errorf("analysis requires a module with transitions")
+	}
+	if tracker == nil {
+		tracker = IdleTracker{}
+	}
+	if grades == nil {
+		grades = NewExprGradeStore()
+	}
+	marked, err := MarkSkolemizableModule(module, tracker)
+	if err != nil {
+		return nil, err
+	}
+	marked, err = MarkSetExpansionsModule(marked, tracker)
+	if err != nil {
+		return nil, err
+	}
+	marked, err = transformModuleExpressionsWithError(marked, "unused LET removal", nil,
+		func(expression Expr) (Expr, error) {
+			return OptimizeLetIn(TouchExpr{Expr: expression, Changed: true}, tracker).Expr, nil
+		})
+	if err != nil {
+		return nil, err
+	}
+	constants := make(map[string]struct{}, len(marked.ConstDeclarations()))
+	for _, declaration := range marked.ConstDeclarations() {
+		constants[declaration.Name()] = struct{}{}
+	}
+	variables := make(map[string]struct{}, len(marked.VarDeclarations()))
+	for _, declaration := range marked.VarDeclarations() {
+		variables[declaration.Name()] = struct{}{}
+	}
+	for _, declaration := range marked.Declarations() {
+		switch typed := declaration.(type) {
+		case *OperDecl:
+			LabelExpressionGrades(grades, constants, variables, typed.Body())
+		case *AssumeDecl:
+			LabelExpressionGrades(grades, constants, variables, typed.Body())
+		}
+	}
+	marked.AddProperty(PropertyAnalyzed)
+	return marked, nil
+}
