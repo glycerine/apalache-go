@@ -43,6 +43,7 @@ func TestVMTRewriterValuesAndDeclarations(t *testing.T) {
 	}{
 		{"integer-literal", NewValueExpr(Int64Value(1), Typed(IntT1)), "1"},
 		{"integer-variable", NewNameExpr("x", Typed(IntT1)), "x"},
+		{"untyped-variable", NewNameExpr("u", Untyped()), "u"},
 		{"Boolean-literal", NewValueExpr(BoolValue(true), Typed(BoolT1)), "true"},
 		{"Boolean-variable", NewNameExpr("p", Typed(BoolT1)), "p"},
 		{"model-value", NewValueExpr(StringValue("1_OF_A"), Typed(aType)), "1_A"},
@@ -81,7 +82,10 @@ func TestVMTRewriterBooleanAndQuantifierRules(t *testing.T) {
 		want       string
 	}{
 		{"and", MustOperExpr(Op("AND"), Typed(BoolT1), p, q), "(and p q)"},
+		{"empty-and", MustOperExpr(Op("AND"), Typed(BoolT1)), "true"},
+		{"empty-or", MustOperExpr(Op("OR"), Typed(BoolT1)), "false"},
 		{"not", MustOperExpr(Op("NOT"), Typed(BoolT1), p), "(not p)"},
+		{"equiv", MustOperExpr(Op("EQUIV"), Typed(BoolT1), p, q), "(= p q)"},
 		{"or-implies", MustOperExpr(Op("OR"), Typed(BoolT1),
 			MustOperExpr(Op("IMPLIES"), Typed(BoolT1), p, q), p), "(or (=> p q) p)"},
 	}
@@ -112,6 +116,9 @@ func TestVMTRewriterBooleanAndQuantifierRules(t *testing.T) {
 				t.Fatalf("quantifier rewrite = %q, want %q", got, test.want)
 			}
 		})
+	}
+	if _, ok := rewriter.Declarations().UninterpretedSorts["SSORT"]; !ok {
+		t.Fatal("quantifier domain sort was not retained")
 	}
 
 	unknownType := mustNamedConst(t, "TSORT")

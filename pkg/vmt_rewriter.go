@@ -53,12 +53,12 @@ func typeOfVMTExpression(expression Expr) (Type, error) {
 
 func (rewriter *VMTRewriter) variable(name string, expression Expr) (VMTTerm, error) {
 	typ, err := typeOfVMTExpression(expression)
-	if err != nil {
-		return VMTTerm{}, err
-	}
-	sort, err := VMTSortFromType(typ)
-	if err != nil {
-		return VMTTerm{}, err
+	sort := UntypedVMTSort()
+	if err == nil {
+		sort, err = VMTSortFromType(typ)
+		if err != nil {
+			return VMTTerm{}, err
+		}
 	}
 	term, err := VMTVar(name, sort)
 	if err == nil {
@@ -230,6 +230,7 @@ func (rewriter *VMTRewriter) rewriteOperator(expression *OperExpr) (VMTTerm, err
 		if err != nil {
 			return VMTTerm{}, err
 		}
+		rewriter.rememberSort(sort)
 		predicate, err := rewriter.Rewrite(arguments[2])
 		if err != nil {
 			return VMTTerm{}, err
