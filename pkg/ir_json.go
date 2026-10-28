@@ -8,7 +8,11 @@ import (
 	"strings"
 )
 
-const ApalacheIRJSONVersion = "1.0"
+const (
+	ApalacheIRJSONMajor   = 1
+	ApalacheIRJSONMinor   = 0
+	ApalacheIRJSONVersion = "1.0"
+)
 const apalacheIRJSONDescription = "https://apalache-mc.org/docs/adr/005adr-json.html"
 
 type IRJSONOptions struct{ SourceStore *SourceStore }
@@ -69,10 +73,7 @@ func encodeIRModule(module *Module, options IRJSONOptions) (irJSONModule, error)
 }
 
 func jsonTypeTag(tag TypeTag) string {
-	if typ, ok := tag.Type(); ok {
-		return typ.String()
-	}
-	return "Untyped"
+	return (TLAType1TagPrinter{}).PrintTypeTag(tag)
 }
 
 func jsonSource(id UID, options IRJSONOptions) any {
@@ -228,6 +229,14 @@ func finiteDecimalString(rational *big.Rat) (string, error) {
 }
 
 func UnmarshalIRJSON(data []byte, sourceStore *SourceStore) ([]*Module, error) {
+	modules, err := unmarshalIRJSON(data, sourceStore)
+	if err != nil {
+		return nil, NewJSONDeserializationError(err.Error(), err)
+	}
+	return modules, nil
+}
+
+func unmarshalIRJSON(data []byte, sourceStore *SourceStore) ([]*Module, error) {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.UseNumber()
 	var root map[string]json.RawMessage
@@ -563,14 +572,11 @@ func decodeKindAndTag(object map[string]json.RawMessage, requireTag bool) (strin
 	if err := requiredJSON(object, "type", &text); err != nil {
 		return "", Untyped(), err
 	}
-	if text == "Untyped" {
-		return kind, Untyped(), nil
-	}
-	typ, err := ParseType(text)
+	tag, err := ReadTLAType1Tag(text)
 	if err != nil {
 		return "", Untyped(), fmt.Errorf("error in type annotation %q: %w", text, err)
 	}
-	return kind, Typed(typ), nil
+	return kind, tag, nil
 }
 
 func decodeIRSource(object map[string]json.RawMessage, id UID, store *SourceStore) error {

@@ -319,13 +319,13 @@ tla-io/src/main/scala/at/forsyte/apalache/io/itf/TlaToItfJson.scala	partial	ir_j
 tla-io/src/main/scala/at/forsyte/apalache/io/itf/package.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
 tla-io/src/main/scala/at/forsyte/apalache/io/json/DefaultTagJsonReader.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
 tla-io/src/main/scala/at/forsyte/apalache/io/json/JsonDecoder.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
-tla-io/src/main/scala/at/forsyte/apalache/io/json/JsonDeserializationError.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/json/JsonDeserializationError.scala	ported	io_contracts.go;io_contracts_test.go;ir_json.go	typed malformed-import errors preserve exact messages, optional underlying causes through unwrapping, and the public IR JSON boundary classification
 tla-io/src/main/scala/at/forsyte/apalache/io/json/JsonEncoder.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
 tla-io/src/main/scala/at/forsyte/apalache/io/json/JsonRepresentation.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
 tla-io/src/main/scala/at/forsyte/apalache/io/json/JsonTlaWriter.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
 tla-io/src/main/scala/at/forsyte/apalache/io/json/JsonToTla.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
 tla-io/src/main/scala/at/forsyte/apalache/io/json/JsonToTlaViaBuilder.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
-tla-io/src/main/scala/at/forsyte/apalache/io/json/JsonVersion.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/json/JsonVersion.scala	ported	io_contracts.go;io_contracts_test.go;ir_json.go	independent major 1, minor 0, exact current 1.0 text, encoder emission, and decoder version enforcement are ported
 tla-io/src/main/scala/at/forsyte/apalache/io/json/ScalaFromJsonAdapter.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
 tla-io/src/main/scala/at/forsyte/apalache/io/json/ScalaToJsonAdapter.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
 tla-io/src/main/scala/at/forsyte/apalache/io/json/TlaToJson.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
@@ -345,14 +345,14 @@ tla-io/src/main/scala/at/forsyte/apalache/io/lir/NameReplacementMap.scala	partia
 tla-io/src/main/scala/at/forsyte/apalache/io/lir/PrettyWriter.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
 tla-io/src/main/scala/at/forsyte/apalache/io/lir/TextLayout.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
 tla-io/src/main/scala/at/forsyte/apalache/io/lir/TlaDeclAnnotator.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
-tla-io/src/main/scala/at/forsyte/apalache/io/lir/TlaType1PrinterPredefs.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
-tla-io/src/main/scala/at/forsyte/apalache/io/lir/TlaType1TagPrinter.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/lir/TlaType1PrinterPredefs.scala	ported	io_contracts.go;ir_json.go;io_contracts_test.go	the canonical Type System 1 tag printer is directly used by JSON encoding and exposed as the zero-value Go predefinition
+tla-io/src/main/scala/at/forsyte/apalache/io/lir/TlaType1TagPrinter.scala	ported	io_contracts.go;io_contracts_test.go;ir_json.go	Untyped and every valid typed tag emit Scala's bare canonical type text and round-trip through the Type System 1 parser
 tla-io/src/main/scala/at/forsyte/apalache/io/lir/TlaWriter.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
 tla-io/src/main/scala/at/forsyte/apalache/io/lir/TlaWriterFactory.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
 tla-io/src/main/scala/at/forsyte/apalache/io/lir/Trace.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
-tla-io/src/main/scala/at/forsyte/apalache/io/lir/TypeTagPrinter.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
-tla-io/src/main/scala/at/forsyte/apalache/io/lir/TypeTagReader.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
-tla-io/src/main/scala/at/forsyte/apalache/io/lir/UntypedReader.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/lir/TypeTagPrinter.scala	ported	io_contracts.go;io_contracts_test.go	public type-tag printer contract and canonical implementation are represented and exercised by JSON encoding
+tla-io/src/main/scala/at/forsyte/apalache/io/lir/TypeTagReader.scala	ported	io_contracts.go;io_contracts_test.go;ir_json.go	public fallible type-tag reader contract, Untyped handling, canonical parsing, malformed rejection, and JSON decoding integration are ported
+tla-io/src/main/scala/at/forsyte/apalache/io/lir/UntypedReader.scala	ported	io_contracts.go;io_contracts_test.go	type-erasing reader ignores every input and always returns the zero-value Untyped tag without failure
 tla-io/src/main/scala/at/forsyte/apalache/io/quint/Quint.scala	ported	quint_json.go;quint_json_test.go;exploration_service.go	no known supported expression/declaration conversion gap
 tla-io/src/main/scala/at/forsyte/apalache/io/quint/QuintIR.scala	partial	quint_json.go;quint_json_test.go	Quint JSON serialization back to the source schema is not implemented
 tla-io/src/main/scala/at/forsyte/apalache/io/quint/QuintNameGen.scala	ported	quint_json.go;quint_json_test.go	deterministic source-ID-derived names replace mutable generated names
