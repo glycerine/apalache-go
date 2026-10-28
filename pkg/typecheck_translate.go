@@ -1,6 +1,9 @@
 package apalache
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 type ToEtcExpr struct {
 	annotations map[UID]Type
@@ -51,7 +54,7 @@ func (translator *ToEtcExpr) TranslateDeclaration(declaration Decl, scoped EtcEx
 	case *OperDecl:
 		return translator.translateOperatorDeclaration(typed, scoped)
 	default:
-		return nil, fmt.Errorf("unexpected declaration %T", declaration)
+		return nil, NewTypingInputException(fmt.Sprintf("Unexpected declaration: %T", declaration), declaration.ID())
 	}
 }
 
@@ -61,7 +64,8 @@ func (translator *ToEtcExpr) translateTypedNameDeclaration(declaration Decl, kin
 		return nil, err
 	}
 	if !found {
-		return nil, fmt.Errorf("expected a type annotation for %s %s", kind, declaration.Name())
+		return nil, NewTypingInputException(
+			fmt.Sprintf("Expected a type annotation for %s %s", kind, declaration.Name()), declaration.ID())
 	}
 	return NewEtcTypeDecl(ExactRef{SourceID: declaration.ID()}, declaration.Name(), typ, scoped), nil
 }
@@ -122,6 +126,9 @@ func (translator *ToEtcExpr) declarationType(declaration Decl) (Type, bool, erro
 }
 
 func (translator *ToEtcExpr) TranslateExpression(expression Expr) (EtcExpr, error) {
+	if expression == nil {
+		return nil, fmt.Errorf("cannot translate a nil expression")
+	}
 	translated, err := translator.transform(expression)
 	if err != nil {
 		return nil, err
@@ -187,7 +194,12 @@ func (translator *ToEtcExpr) translateOperator(expression *OperExpr) (EtcExpr, e
 		result, err := appAll(mustOperator([]Type{a, a}, BoolT1))
 		if err == nil {
 			result.SetTypeErrorExplanation(func(_, actual []Type) (string, bool) {
-				return fmt.Sprintf("Arguments to %s should have the same type; found %s", name, joinTypeList(actual, ", ")), true
+				operation := "="
+				if name == "NE" {
+					operation = "/="
+				}
+				return fmt.Sprintf("Arguments to %s should have the same type. For arguments %s with types %s, in expression %s",
+					operation, formatExpressionList(args), joinTypeList(actual, ", "), formatExpression(expression)), true
 			})
 		}
 		return result, err
@@ -200,7 +212,27 @@ func (translator *ToEtcExpr) translateOperator(expression *OperExpr) (EtcExpr, e
 		if err != nil {
 			return nil, err
 		}
-		return NewEtcAppByName(ref, NewEtcName(ExactRef{SourceID: callee.ID()}, callee.Name()), translated...), nil
+		result := NewEtcAppByName(ref, NewEtcName(ExactRef{SourceID: callee.ID()}, callee.Name()), translated...)
+		result.SetTypeErrorExplanation(func(expected, actual []Type) (string, bool) {
+			if len(expected) != 1 {
+				return "", false
+			}
+			operator, ok := expected[0].(OperatorType)
+			if !ok {
+				return "", false
+			}
+			expectedArguments := operator.Arguments()
+			differences := make([]string, 0)
+			for i := 0; i < len(args)-1 && i < len(expectedArguments) && i < len(actual); i++ {
+				if !EqualTypes(expectedArguments[i], actual[i]) {
+					differences = append(differences, fmt.Sprintf("Argument %s should have type %s but has type %s.",
+						formatExpression(args[i+1]), expectedArguments[i], actual[i]))
+				}
+			}
+			return fmt.Sprintf("The operator %s of type %s is applied to arguments of incompatible types in %s:\n%s",
+				formatExpression(callee), operator, formatExpression(expression), strings.Join(differences, "\n")), true
+		})
+		return result, nil
 	case "CHOOSE3":
 		a := fresh()
 		return translator.translateBoundedBinder(expression, mustOperator([]Type{mustOperator([]Type{a}, BoolT1)}, a))
@@ -437,6 +469,9 @@ func (translator *ToEtcExpr) translateOperator(expression *OperExpr) (EtcExpr, e
 		// Scala orders label metadata before the labelled expression, but both
 		// encodings impose the same type constraints.
 		return appAll(mustOperator(inputs, a))
+	case "Apalache!<:":
+		return nil, NewOutdatedAnnotationsError(
+			"Old Apalache type annotations (predating 0.12.0) are no longer supported", expression)
 	case "Apalache!:=":
 		a := fresh()
 		return appAll(mustOperator([]Type{a, a}, BoolT1))
@@ -495,11 +530,15 @@ func (translator *ToEtcExpr) translateVariant(expression *OperExpr, operation st
 	}
 	tagExpr, ok := args[0].(*ValueExpr)
 	if !ok {
-		return nil, fmt.Errorf("the first argument of a variant operation must be a string")
+		return nil, NewTypingInputException(
+			fmt.Sprintf("The first argument of a variant operation must be a string, found: %s", formatExpression(args[0])),
+			expression.ID())
 	}
 	tag, ok := tagExpr.Value().(StringValue)
 	if !ok {
-		return nil, fmt.Errorf("the first argument of a variant operation must be a string")
+		return nil, NewTypingInputException(
+			fmt.Sprintf("The first argument of a variant operation must be a string, found: %s", formatExpression(args[0])),
+			expression.ID())
 	}
 	valueType, tail := translator.pool.Fresh(), translator.pool.Fresh()
 	row, _ := NewRowType(map[string]Type{tag.Value(): valueType}, &tail)
@@ -542,7 +581,7 @@ func (translator *ToEtcExpr) translateBoundedBinder(expression *OperExpr, princi
 func (translator *ToEtcExpr) unboundedLambda(id UID, target, body Expr, element Type) (EtcExpr, error) {
 	name, ok := target.(*NameExpr)
 	if !ok {
-		return nil, fmt.Errorf("unexpected unbounded binding %T", target)
+		return nil, NewTypingInputException(fmt.Sprintf("Unexpected binding %T", target), target.ID())
 	}
 	translated, err := translator.TranslateExpression(body)
 	if err != nil {
@@ -572,7 +611,8 @@ func (translator *ToEtcExpr) unpackBinding(id UID, target Expr, set EtcExpr) ([]
 		return []EtcBinding{{Name: NewEtcName(ExactRef{SourceID: typed.ID()}, typed.Name()), Domain: set}}, nil
 	case *OperExpr:
 		if typed.Operator().Name() != "TUPLE" {
-			return nil, fmt.Errorf("unexpected binding expression %s", typed.Operator().Name())
+			return nil, NewTypingInputException(
+				fmt.Sprintf("Unexpected binding %s", typed.Operator().Name()), typed.ID())
 		}
 		result := make([]EtcBinding, 0)
 		elements := typed.Arguments()
@@ -588,7 +628,7 @@ func (translator *ToEtcExpr) unpackBinding(id UID, target Expr, set EtcExpr) ([]
 		}
 		return result, nil
 	default:
-		return nil, fmt.Errorf("unexpected binding %T", target)
+		return nil, NewTypingInputException(fmt.Sprintf("Unexpected binding %T", target), target.ID())
 	}
 }
 
@@ -867,6 +907,23 @@ func deinterleaveBindings(expressions []Expr) ([]bindingPair, error) {
 	}
 	return result, nil
 }
+
+func formatExpression(expression Expr) string {
+	formatted, err := FormatTLAExpression(expression)
+	if err != nil {
+		return fmt.Sprintf("<%T>", expression)
+	}
+	return formatted
+}
+
+func formatExpressionList(expressions []Expr) string {
+	formatted := make([]string, len(expressions))
+	for i, expression := range expressions {
+		formatted[i] = formatExpression(expression)
+	}
+	return strings.Join(formatted, ", ")
+}
+
 func typeOfTLAValue(value Value) (Type, error) {
 	switch typed := value.(type) {
 	case IntValue:

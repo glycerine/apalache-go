@@ -78,6 +78,15 @@ func NewTypingException(message string, causeExprID UID) *TypingException {
 func (err *TypingException) Error() string    { return err.message }
 func (err *TypingException) CauseExprID() UID { return err.causeExprID }
 
+// TypingInputException identifies irrecoverable typing failures caused by
+// malformed user input, as distinct from internal TypingException failures.
+type TypingInputException struct{ *TypingException }
+
+func NewTypingInputException(message string, causeExprID UID) *TypingInputException {
+	return &TypingInputException{TypingException: NewTypingException(message, causeExprID)}
+}
+func (err *TypingInputException) Unwrap() error { return err.TypingException }
+
 type OutdatedAnnotationsError struct {
 	*LirError
 	causeExpr Expr

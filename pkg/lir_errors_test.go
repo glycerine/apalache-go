@@ -36,6 +36,7 @@ func TestLirExceptionHierarchyAndPayloadsMatchScala(t *testing.T) {
 
 func TestNonLirExceptionsAndTypingPayloadMatchScala(t *testing.T) {
 	typing := NewTypingException("typing", NullUID())
+	input := NewTypingInputException("input", NewUID())
 	malformed := NewMalformedSepecificationError("specification")
 	unsupported := NewUnsupportedFeatureError("unsupported")
 	for _, err := range []error{typing, malformed, unsupported} {
@@ -45,8 +46,13 @@ func TestNonLirExceptionsAndTypingPayloadMatchScala(t *testing.T) {
 		}
 	}
 	if typing.Error() != "typing" || typing.CauseExprID() != NullUID() ||
+		input.Error() != "input" || input.CauseExprID() == NullUID() ||
 		malformed.Error() != "specification" || unsupported.Error() != "unsupported" {
 		t.Fatal("plain exception message or typing UID payload was not retained")
+	}
+	var typingBase *TypingException
+	if !errors.As(input, &typingBase) || typingBase.CauseExprID() != input.CauseExprID() {
+		t.Fatal("TypingInputException does not unwrap to TypingException")
 	}
 }
 

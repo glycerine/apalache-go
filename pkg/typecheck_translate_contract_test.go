@@ -1,6 +1,9 @@
 package apalache
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 func tlaBool(value bool) Expr { return NewValueExpr(BoolValue(value), Untyped()) }
 
@@ -325,7 +328,8 @@ func TestToEtcExprRecordAndVariantContracts(t *testing.T) {
 		t.Fatalf("invalid record error = %v", err)
 	}
 	invalidVariant := tlaOper("Variants!Variant", tlaName("not-a-string"), tlaInt(1))
-	if _, err := newTranslator().TranslateExpression(invalidVariant); err == nil || err.Error() != "the first argument of a variant operation must be a string" {
+	if _, err := newTranslator().TranslateExpression(invalidVariant); err == nil ||
+		err.Error() != "The first argument of a variant operation must be a string, found: not_a_string" {
 		t.Fatalf("invalid variant error = %v", err)
 	}
 }
@@ -342,5 +346,207 @@ func TestToEtcExprStringIndexRespectsRowsMode(t *testing.T) {
 	got, ok, err := NewEtcTypeChecker(translator.pool, true).Compute(listener, EmptyTypeContext(), translated)
 	if err != nil || !ok || !EqualTypes(got, parsedType(t, "{ bar: Bool, foo: Int }")) {
 		t.Fatalf("Compute() = %v, %v, %v; events = %+v", got, ok, err, listener.events)
+	}
+}
+
+func TestToEtcExprDeclarationAnnotationContracts(t *testing.T) {
+	tests := []struct {
+		name        string
+		declaration func() Decl
+		annotation  Type
+		want        Type
+	}{
+		{"constant", func() Decl { return NewConstDecl("C", Untyped()) }, IntT1, IntT1},
+		{"variable", func() Decl { return NewVarDecl("x", Untyped()) }, BoolT1, BoolT1},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			declaration := test.declaration()
+			translator := NewToEtcExpr(map[UID]Type{declaration.ID(): test.annotation}, nil, NewTypeVarPool(1000), false)
+			scoped, err := translator.TranslateExpression(tlaName(declaration.Name()))
+			if err != nil {
+				t.Fatal(err)
+			}
+			translated, err := translator.TranslateDeclaration(declaration, scoped)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, ok, err := NewEtcTypeChecker(translator.pool, true).Compute(&collectingTypeListener{}, EmptyTypeContext(), translated)
+			if err != nil || !ok || !EqualTypes(got, test.want) {
+				t.Fatalf("Compute() = %v, %v, %v", got, ok, err)
+			}
+		})
+	}
+
+	for _, declaration := range []Decl{NewConstDecl("C", Untyped()), NewVarDecl("x", Untyped())} {
+		_, err := newTranslator().TranslateDeclaration(declaration, NewUniqueEtcConst(BoolT1))
+		var inputErr *TypingInputException
+		if !errors.As(err, &inputErr) || inputErr.CauseExprID() != declaration.ID() ||
+			err.Error() != "Expected a type annotation for "+map[bool]string{true: "CONSTANT", false: "VARIABLE"}[declaration.Name() == "C"]+" "+declaration.Name() {
+			t.Fatalf("missing annotation error for %T = %v", declaration, err)
+		}
+	}
+}
+
+func TestToEtcExprTagPrecedenceAliasesAndFreshAnnotationVariables(t *testing.T) {
+	declaration := NewConstDecl("C", Typed(BoolT1))
+	translator := NewToEtcExpr(map[UID]Type{declaration.ID(): IntT1}, nil, NewTypeVarPool(1000), false)
+	translated, err := translator.TranslateDeclaration(declaration, NewUniqueEtcName("C"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	typeDeclaration := translated.(*EtcTypeDecl)
+	if !EqualTypes(typeDeclaration.DeclaredType(), BoolT1) {
+		t.Fatalf("typed tag did not take precedence: %s", typeDeclaration.DeclaredType())
+	}
+
+	alias, _ := NewConstType("A")
+	aliased := NewConstDecl("Aliased", Untyped())
+	translator = NewToEtcExpr(map[UID]Type{aliased.ID(): alias}, NewTypeAliasSubstitution(map[string]Type{"A": IntT1}), NewTypeVarPool(1000), false)
+	translated, err = translator.TranslateDeclaration(aliased, NewUniqueEtcConst(BoolT1))
+	if err != nil || !EqualTypes(translated.(*EtcTypeDecl).DeclaredType(), IntT1) {
+		t.Fatalf("alias translation = %v, %v", translated, err)
+	}
+
+	variable, _ := NewVarType(0)
+	polymorphic := NewConstDecl("P", Untyped())
+	translator = NewToEtcExpr(map[UID]Type{polymorphic.ID(): variable}, nil, NewTypeVarPool(1000), false)
+	translated, err = translator.TranslateDeclaration(polymorphic, NewUniqueEtcConst(BoolT1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	declared := translated.(*EtcTypeDecl).DeclaredType()
+	if names := declared.UsedNames(); len(names) != 1 || names[0] < 1000 {
+		t.Fatalf("annotation variables were not freshened: %s (%v)", declared, names)
+	}
+}
+
+func TestToEtcExprOperatorAssumptionAndTheoremDeclarations(t *testing.T) {
+	higherOrder := NewOperDecl("Foo", []OperatorParam{{Name: "Bar", Arity: 1}}, tlaInt(1), Untyped())
+	assumption := NewNamedAssumeDecl("A", tlaBool(true), Untyped())
+	theorem := NewTheoremDecl("T", tlaBool(true), Untyped())
+	translator := newTranslator()
+	scoped := EtcExpr(NewUniqueEtcConst(BoolT1))
+	var err error
+	for _, declaration := range []Decl{theorem, assumption, higherOrder} {
+		scoped, err = translator.TranslateDeclaration(declaration, scoped)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, ok, err := NewEtcTypeChecker(translator.pool, true).Compute(&collectingTypeListener{}, EmptyTypeContext(), scoped)
+	if err != nil || !ok || !EqualTypes(got, BoolT1) {
+		t.Fatalf("Compute() = %v, %v, %v", got, ok, err)
+	}
+
+	bad := NewUnnamedAssumeDecl(tlaInt(1), Untyped())
+	translated, err := newTranslator().TranslateDeclaration(bad, NewUniqueEtcConst(BoolT1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener := &collectingTypeListener{}
+	if _, ok, err = newEtcChecker().Compute(listener, EmptyTypeContext(), translated); err != nil || ok {
+		t.Fatalf("bad assumption Compute() = %v, %v", ok, err)
+	}
+	if listener.count("error") == 0 {
+		t.Fatal("non-Boolean assumption produced no type error")
+	}
+}
+
+func TestToEtcExprMalformedAndOutdatedBoundaries(t *testing.T) {
+	translator := newTranslator()
+	if _, err := translator.TranslateExpression(nil); err == nil {
+		t.Fatal("nil expression accepted")
+	}
+	if _, err := translator.TranslateDeclaration(nil, NewUniqueEtcConst(BoolT1)); err == nil {
+		t.Fatal("nil declaration accepted")
+	}
+	if _, err := translator.TranslateDeclaration(NewConstDecl("C", Typed(IntT1)), nil); err == nil {
+		t.Fatal("nil scoped expression accepted")
+	}
+
+	old := tlaOper("Apalache!<:", tlaName("e"), tlaOper("SET_ENUM", tlaOper("SET_ENUM", tlaInt(1))))
+	_, err := translator.TranslateExpression(old)
+	var outdated *OutdatedAnnotationsError
+	if !errors.As(err, &outdated) || outdated.CauseExpr() != old ||
+		err.Error() != "Old Apalache type annotations (predating 0.12.0) are no longer supported" {
+		t.Fatalf("outdated annotation error = %T %v", err, err)
+	}
+}
+
+func TestToEtcExprRemainingScalaOperatorContracts(t *testing.T) {
+	realValue := func() Expr { return NewValueExpr(Real(), Untyped()) }
+	intSeq := func() Expr { return tlaOper("TUPLE", tlaInt(1), tlaInt(2)).WithTag(Typed(mustSeq(IntT1))) }
+	setAsFunInput := func() Expr {
+		return tlaOper("SET_ENUM",
+			tlaOper("TUPLE", tlaInt(1), tlaBool(true)),
+			tlaOper("TUPLE", tlaInt(2), tlaBool(false)))
+	}
+	tests := []struct {
+		name       string
+		expression func() Expr
+		want       Type
+	}{
+		{"real division", func() Expr { return tlaOper("REAL_DIV", realValue(), realValue()) }, RealT1},
+		{"label", func() Expr { return tlaOper("LABEL", tlaInt(1), tlaString("lab"), tlaString("arg")) }, IntT1},
+		{"skolem", func() Expr { return tlaOper("Apalache!Skolem", tlaBool(true)) }, BoolT1},
+		{"constant cardinality", func() Expr { return tlaOper("Apalache!ConstCardinality", tlaBool(true)) }, BoolT1},
+		{"set as function", func() Expr { return tlaOper("Apalache!SetAsFun", setAsFunInput()) }, mustFun(IntT1, BoolT1)},
+		{"sequence capacity", func() Expr { return tlaOper("ApalacheInternal!__ApalacheSeqCapacity", intSeq()) }, IntT1},
+		{"generated value constrained by old tag", func() Expr {
+			return tlaOper("Apalache!Gen", tlaInt(1)).WithTag(Typed(IntT1))
+		}, IntT1},
+		{"unsupported marker constrained by old tag", func() Expr {
+			return tlaOper("ApalacheInternal!__NotSupportedByModelChecker", tlaString("why")).WithTag(Typed(BoolT1))
+		}, BoolT1},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, listener, ok := inferIRExpression(t, test.expression())
+			if !ok || !EqualTypes(got, test.want) {
+				t.Fatalf("inferred %v, want %v; events %+v", got, test.want, listener.events)
+			}
+		})
+	}
+
+	constructor := NewOperDecl("Ctor", []OperatorParam{ValueParam("i")}, tlaName("i"), Untyped())
+	mkSeq := tlaOper("Apalache!MkSeq", tlaInt(2), tlaName("Ctor"))
+	let := NewLetInExpr(mkSeq, Untyped(), constructor)
+	got, listener, ok := inferIRExpression(t, let)
+	if !ok || !EqualTypes(got, mustSeq(IntT1)) {
+		t.Fatalf("MkSeq inferred %v; events %+v", got, listener.events)
+	}
+
+	modelSet := tlaOper("SET_ENUM", tlaString("1_OF_A"), tlaString("2_OF_A"))
+	modelFunction := tlaOper("FUN_CTOR", tlaBool(true), tlaName("x"), modelSet)
+	modelApplication := tlaOper("FUN_APP", modelFunction, tlaString("1_OF_A"))
+	got, listener, ok = inferIRExpression(t, modelApplication)
+	if !ok || !EqualTypes(got, BoolT1) {
+		t.Fatalf("model-value application inferred %v; events %+v", got, listener.events)
+	}
+}
+
+func TestToEtcExprPreservesCustomExplanationContracts(t *testing.T) {
+	equality := tlaOper("EQ", tlaInt(1), tlaBool(true))
+	translated, err := newTranslator().TranslateExpression(equality)
+	if err != nil {
+		t.Fatal(err)
+	}
+	application := translated.(*EtcApp)
+	message, found := application.Explain(nil, []Type{IntT1, BoolT1})
+	if !found || message != "Arguments to = should have the same type. For arguments 1, TRUE with types Int, Bool, in expression 1 = TRUE" {
+		t.Fatalf("equality explanation = %q, %v", message, found)
+	}
+
+	call := tlaOper("OPER_APP", tlaName("F"), tlaInt(1))
+	translated, err = newTranslator().TranslateExpression(call)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byName := translated.(*EtcAppByName)
+	message, found = byName.Explain([]Type{parsedType(t, "Bool => Bool")}, []Type{IntT1})
+	want := "The operator F of type ((Bool) => Bool) is applied to arguments of incompatible types in F(1):\nArgument 1 should have type Bool but has type Int."
+	if !found || message != want {
+		t.Fatalf("operator-application explanation = %q, %v", message, found)
 	}
 }

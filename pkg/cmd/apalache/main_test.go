@@ -722,7 +722,7 @@ func TestRunTypeCheckReportsMissingAnnotation(t *testing.T) {
 	}
 	var stdout, stderr bytes.Buffer
 	code := run(context.Background(), []string{"typecheck", path}, &stdout, &stderr)
-	if code != exitFrontend || !strings.Contains(stderr.String(), "expected a type annotation for CONSTANT N") {
+	if code != exitFrontend || !strings.Contains(stderr.String(), "Expected a type annotation for CONSTANT N") {
 		t.Fatalf("run() = %d, stderr = %q", code, &stderr)
 	}
 }
