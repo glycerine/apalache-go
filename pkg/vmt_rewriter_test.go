@@ -178,3 +178,50 @@ func TestVMTRewriterRejectsUnsupportedExpressions(t *testing.T) {
 		t.Fatal("arithmetic expression was accepted")
 	}
 }
+
+func TestVMTRestrictedSetJudgementScalaOracleCases(t *testing.T) {
+	s1, _ := UninterpretedVMTSort("S1")
+	s2, _ := UninterpretedVMTSort("S2")
+	zSort, _ := UninterpretedVMTSort("ZSORT")
+	rewriter, err := NewVMTRewriter(map[string]VMTSort{"x": s1, "y": s2, "z": zSort})
+	if err != nil {
+		t.Fatal(err)
+	}
+	constType := mustNamedConst(t, "X")
+	allowed := []struct {
+		name       string
+		expression Expr
+		want       VMTSort
+	}{
+		{"Int", NewValueExpr(IntSet, Typed(mustSet(IntT1))), IntVMTSort()},
+		{"Nat", NewValueExpr(NatSet, Typed(mustSet(IntT1))), IntVMTSort()},
+		{"BOOLEAN", NewValueExpr(BoolSet, Typed(mustSet(BoolT1))), BoolVMTSort()},
+		{"x", NewNameExpr("x", Typed(constType)), s1},
+		{"y", NewNameExpr("y", Typed(constType)), s2},
+		{"z", NewNameExpr("z", Typed(constType)), zSort},
+	}
+	for _, test := range allowed {
+		t.Run("allowed-"+test.name, func(t *testing.T) {
+			got, err := rewriter.restrictedSetSort(test.expression)
+			if err != nil || !got.Equal(test.want) {
+				t.Fatalf("restricted-set sort = %v, %v; want %v", got, err, test.want)
+			}
+		})
+	}
+
+	intSetType := mustSet(IntT1)
+	disallowed := []Expr{
+		NewValueExpr(RealSet, Typed(mustSet(RealT1))),
+		NewValueExpr(StringSet, Typed(mustSet(StrT1))),
+		MustOperExpr(Op("SET_ENUM"), Typed(intSetType),
+			NewValueExpr(Int64Value(1), Typed(IntT1)), NewValueExpr(Int64Value(2), Typed(IntT1))),
+		MustOperExpr(Op("INT_RANGE"), Typed(intSetType),
+			NewValueExpr(Int64Value(0), Typed(IntT1)), NewValueExpr(Int64Value(42), Typed(IntT1))),
+		NewNameExpr("potato", Typed(intSetType)),
+	}
+	for index, expression := range disallowed {
+		if _, err := rewriter.restrictedSetSort(expression); err == nil {
+			t.Errorf("disallowed restricted-set oracle case %d was accepted", index)
+		}
+	}
+}
