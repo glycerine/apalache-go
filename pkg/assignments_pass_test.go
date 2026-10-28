@@ -1,6 +1,9 @@
 package apalache
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 func TestNormalizedDeclarationPredicates(t *testing.T) {
 	boolOperator := func(name string, parameters ...OperatorParam) *OperDecl {
@@ -13,6 +16,9 @@ func TestNormalizedDeclarationPredicates(t *testing.T) {
 	if !IsVerificationCondition(boolOperator("VCInv$0")) || !IsVerificationCondition(boolOperator(NormalizedVCView)) {
 		t.Fatal("verification condition was not recognized")
 	}
+	if IsVerificationCondition(boolOperator("VCTemporal$0")) || IsVerificationCondition(boolOperator("Other")) {
+		t.Fatal("non-checker verification condition was recognized")
+	}
 	if IsVerificationCondition(NewConstDecl("VCInv$0", Typed(BoolT1))) {
 		t.Fatal("constant was recognized as a verification condition")
 	}
@@ -21,6 +27,19 @@ func TestNormalizedDeclarationPredicates(t *testing.T) {
 	}
 	if !IsNormalizedConstantInit(boolOperator(NormalizedConstInit)) || !IsNormalizedInit(boolOperator("Init$0000")) || !IsNormalizedNext(boolOperator("Next$0000")) {
 		t.Fatal("normalized transition declaration was not recognized")
+	}
+	if IsNormalizedConstantInit(boolOperator(NormalizedConstInit, ValueParam("p"))) ||
+		IsNormalizedInit(boolOperator("Init$0000", ValueParam("p"))) ||
+		IsNormalizedNext(boolOperator("Next$0000", ValueParam("p"))) {
+		t.Fatal("normalized transition declaration arity was ignored")
+	}
+	if got, want := NormalizedStandardOptionNames(), []string{ConfigInit, ConfigCInit, ConfigNext, ConfigInvariant, ConfigTemporal}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("standard option names = %v, want %v", got, want)
+	}
+	got := NormalizedStandardOptionNames()
+	got[0] = "changed"
+	if NormalizedStandardOptionNames()[0] != ConfigInit {
+		t.Fatal("standard option names leaked mutable shared state")
 	}
 }
 

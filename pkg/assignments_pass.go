@@ -20,6 +20,13 @@ const (
 	NormalizedVCView               = "VCView$0"
 )
 
+// NormalizedStandardOptionNames returns the checker options that identify the
+// critical pieces of a specification, in the order used by Scala's
+// NormalizedNames.STANDARD_OPTION_NAMES.
+func NormalizedStandardOptionNames() []string {
+	return []string{ConfigInit, ConfigCInit, ConfigNext, ConfigInvariant, ConfigTemporal}
+}
+
 func IsVerificationCondition(declaration Decl) bool {
 	if _, ok := declaration.(*OperDecl); !ok {
 		return false
