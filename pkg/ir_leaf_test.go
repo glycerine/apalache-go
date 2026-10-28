@@ -104,14 +104,26 @@ func TestOperatorParam(t *testing.T) {
 }
 
 func TestSourcePositionOrdering(t *testing.T) {
-	positions := []SourcePosition{{0, 0}, {15, 20}, {15, 55}, {19, 5}, {5454, 4646}}
+	positions := []SourcePosition{{0, 0}, {15, 20}, {15, 55}, {19, 5}, {19, 20}, {5454, 4646}}
+	wantStrings := []string{"0:0", "15:20", "15:55", "19:5", "19:20", "5454:4646"}
+	for index, position := range positions {
+		if position.String() != wantStrings[index] {
+			t.Errorf("position %v string = %q, want %q", position, position.String(), wantStrings[index])
+		}
+	}
 	for i := 1; i < len(positions); i++ {
 		if positions[i-1].Compare(positions[i]) >= 0 {
 			t.Fatalf("%v is not before %v", positions[i-1], positions[i])
 		}
 	}
-	if (SourcePosition{15, 20}).Compare(SourcePosition{15, 20}) != 0 {
+	first := SourcePosition{15, 20}
+	second := SourcePosition{15, 20}
+	if first != second || first.Compare(second) != 0 {
 		t.Fatal("equal positions compare nonzero")
+	}
+	lookup := map[SourcePosition]string{first: "found"}
+	if lookup[second] != "found" {
+		t.Fatal("equal positions do not behave as equal map keys")
 	}
 }
 
