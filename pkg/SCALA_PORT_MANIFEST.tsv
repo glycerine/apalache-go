@@ -1,10 +1,10 @@
 scala_path	status	go_evidence	remaining
-json-rpc/src/main/scala/com/github/apalachemc/apalache/jsonrpc/CheckerSnapshotsPerSession.scala	partial	json_rpc.go;exploration_service.go;quint_json.go	full Quint operator coverage remains
-json-rpc/src/main/scala/com/github/apalachemc/apalache/jsonrpc/ExplorationServiceParams.scala	partial	json_rpc.go;exploration_service.go;quint_json.go	full Quint operator coverage remains
-json-rpc/src/main/scala/com/github/apalachemc/apalache/jsonrpc/ExplorationServiceResult.scala	partial	json_rpc.go;exploration_service.go;quint_json.go	full Quint operator coverage remains
-json-rpc/src/main/scala/com/github/apalachemc/apalache/jsonrpc/JsonParameterParser.scala	partial	json_rpc.go;exploration_service.go;quint_json.go	full Quint operator coverage remains
-json-rpc/src/main/scala/com/github/apalachemc/apalache/jsonrpc/JsonRpcCodes.scala	partial	json_rpc.go;exploration_service.go;quint_json.go	full Quint operator coverage remains
-json-rpc/src/main/scala/com/github/apalachemc/apalache/jsonrpc/JsonRpcServer.scala	partial	json_rpc.go;exploration_service.go;quint_json.go	full Quint operator coverage remains
+json-rpc/src/main/scala/com/github/apalachemc/apalache/jsonrpc/CheckerSnapshotsPerSession.scala	partial	json_rpc.go;exploration_service.go;quint_json.go	exact session-limit and error-shape parity remains
+json-rpc/src/main/scala/com/github/apalachemc/apalache/jsonrpc/ExplorationServiceParams.scala	partial	json_rpc.go;exploration_service.go;quint_json.go	exact request-default and validation-message parity remains
+json-rpc/src/main/scala/com/github/apalachemc/apalache/jsonrpc/ExplorationServiceResult.scala	partial	json_rpc.go;exploration_service.go;quint_json.go	exact result serialization parity remains
+json-rpc/src/main/scala/com/github/apalachemc/apalache/jsonrpc/JsonParameterParser.scala	partial	json_rpc.go;exploration_service.go;quint_json.go	exact malformed-parameter diagnostic parity remains
+json-rpc/src/main/scala/com/github/apalachemc/apalache/jsonrpc/JsonRpcCodes.scala	partial	json_rpc.go;exploration_service.go;quint_json.go	exact Scala extension-code audit remains
+json-rpc/src/main/scala/com/github/apalachemc/apalache/jsonrpc/JsonRpcServer.scala	partial	json_rpc.go;exploration_service.go;quint_json.go	exact lifecycle and HTTP error-shape parity remains
 mod-infra/src/main/scala/at/forsyte/apalache/infra/DefaultExceptionAdapter.scala	partial	diagnostic.go;configuration_pass.go;cmd/apalache	logging and pass-framework parity is partial
 mod-infra/src/main/scala/at/forsyte/apalache/infra/ExceptionAdapter.scala	partial	diagnostic.go;configuration_pass.go;cmd/apalache	logging and pass-framework parity is partial
 mod-infra/src/main/scala/at/forsyte/apalache/infra/ExitCodes.scala	partial	diagnostic.go;configuration_pass.go;cmd/apalache	logging and pass-framework parity is partial
@@ -353,10 +353,10 @@ tla-io/src/main/scala/at/forsyte/apalache/io/lir/Trace.scala	partial	ir_json.go;
 tla-io/src/main/scala/at/forsyte/apalache/io/lir/TypeTagPrinter.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
 tla-io/src/main/scala/at/forsyte/apalache/io/lir/TypeTagReader.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
 tla-io/src/main/scala/at/forsyte/apalache/io/lir/UntypedReader.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
-tla-io/src/main/scala/at/forsyte/apalache/io/quint/Quint.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
-tla-io/src/main/scala/at/forsyte/apalache/io/quint/QuintIR.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
-tla-io/src/main/scala/at/forsyte/apalache/io/quint/QuintNameGen.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
-tla-io/src/main/scala/at/forsyte/apalache/io/quint/QuintTypeConverter.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/quint/Quint.scala	ported	quint_json.go;quint_json_test.go;exploration_service.go	no known supported expression/declaration conversion gap
+tla-io/src/main/scala/at/forsyte/apalache/io/quint/QuintIR.scala	partial	quint_json.go;quint_json_test.go	Quint JSON serialization back to the source schema is not implemented
+tla-io/src/main/scala/at/forsyte/apalache/io/quint/QuintNameGen.scala	ported	quint_json.go;quint_json_test.go	deterministic source-ID-derived names replace mutable generated names
+tla-io/src/main/scala/at/forsyte/apalache/io/quint/QuintTypeConverter.scala	ported	quint_json.go;quint_json_test.go	no known type-algebra conversion gap
 tla-io/src/main/scala/at/forsyte/apalache/io/tlc/TlcConfigParser.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
 tla-io/src/main/scala/at/forsyte/apalache/io/tlc/TlcConfigParserApalache.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
 tla-io/src/main/scala/at/forsyte/apalache/io/tlc/config/TlcConfig.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
