@@ -14,10 +14,19 @@ func TestStratifiedRewriterBuiltinsSubstitutionIntegersAndAssignment(t *testing.
 	for value, expected := range map[Value]int{
 		BoolValue(false): 0, BoolValue(true): 1, BoolSet: 2, NatSet: 3, IntSet: 4,
 	} {
-		_, cell, err := rewriter.Rewrite(NewValueExpr(value, Untyped()), scope)
-		if err != nil || cell.ID != expected {
-			t.Fatalf("builtin %v = %v, %v", value, cell, err)
+		end, cell, err := rewriter.Rewrite(NewValueExpr(value, Untyped()), scope)
+		if err != nil || cell.ID != expected || end.Arena != scope.Arena || len(rewriter.Constraints()) != 0 {
+			t.Fatalf("builtin %v = %v, arena changed %v, constraints %d, error %v",
+				value, cell, end.Arena != scope.Arena, len(rewriter.Constraints()), err)
 		}
+	}
+	booleanMembers := scope.Arena.GetHas(scope.Arena.BooleanSetCell())
+	if len(booleanMembers) != 2 || !booleanMembers[0].Element().Equal(scope.Arena.FalseCell()) ||
+		!booleanMembers[1].Element().Equal(scope.Arena.TrueCell()) ||
+		!EqualTypes(scope.Arena.NatSetCell().Type.TLAType(), mustSet(IntT1)) ||
+		!EqualTypes(scope.Arena.IntSetCell().Type.TLAType(), mustSet(IntT1)) {
+		t.Fatalf("predefined arena cells = BOOLEAN %v, Nat %s, Int %s",
+			booleanMembers, scope.Arena.NatSetCell().Type, scope.Arena.IntSetCell().Type)
 	}
 	scope.Binding = scope.Binding.With("x", scope.Arena.TrueCell())
 	_, substituted, err := rewriter.Rewrite(NewNameExpr("x", Typed(BoolT1)), scope)
