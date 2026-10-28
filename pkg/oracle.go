@@ -77,6 +77,23 @@ func oracleCases(oracle ChoiceOracle, scope RewriterScope, assertions, elseAsser
 	return MustOperExpr(Op("AND"), Typed(BoolT1), conjuncts...), nil
 }
 
+// oraclePicksSetMembers ports OracleHelper.assertOraclePicksSetMembers. The
+// final oracle case is the default and is enabled exactly when every candidate
+// pointer is absent from the set.
+func oraclePicksSetMembers(oracle ChoiceOracle, scope RewriterScope, pointers []ElementPointer) (Expr, error) {
+	if oracle == nil || oracle.Size() != len(pointers)+1 {
+		return nil, fmt.Errorf("set-member oracle requires %d cases", len(pointers)+1)
+	}
+	assertions := make([]Expr, oracle.Size())
+	allAbsent := make([]Expr, len(pointers))
+	for index, pointer := range pointers {
+		assertions[index] = pointer.ToSMT()
+		allAbsent[index] = MustOperExpr(Op("NOT"), Typed(BoolT1), pointer.ToSMT())
+	}
+	assertions[len(pointers)] = booleanAnd(allAbsent...)
+	return oracle.Cases(scope, assertions, nil)
+}
+
 type IntOracle struct {
 	Cell    ArenaCell
 	NValues int

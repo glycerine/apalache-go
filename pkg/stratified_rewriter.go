@@ -597,14 +597,7 @@ func (rewriter *StratifiedRewriter) rewriteBoundedChoice(expression *OperExpr, s
 	if err != nil {
 		return scope, ArenaCell{}, err
 	}
-	assertions := make([]Expr, oracle.Size())
-	allAbsent := make([]Expr, len(pointers))
-	for index, pointer := range pointers {
-		assertions[index] = pointer.ToSMT()
-		allAbsent[index] = MustOperExpr(Op("NOT"), Typed(BoolT1), pointer.ToSMT())
-	}
-	assertions[len(candidates)] = booleanAnd(allAbsent...)
-	membershipConstraint, err := oracle.Cases(scope, assertions, nil)
+	membershipConstraint, err := oraclePicksSetMembers(oracle, scope, pointers)
 	if err != nil {
 		return scope, ArenaCell{}, err
 	}

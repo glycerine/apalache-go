@@ -1611,6 +1611,48 @@ func TestStratifiedBoundedChoiceThroughG3(t *testing.T) {
 	}
 }
 
+func TestStratifiedChoiceOracleHonorsGuardedMembershipAndDefault(t *testing.T) {
+	setTag := Typed(mustSet(IntT1))
+	x := NewNameExpr("x", Typed(IntT1))
+	base := MustOperExpr(Op("SET_ENUM"), setTag, intLiteral(1), intLiteral(2))
+	filtered := func(predicate Expr) Expr {
+		return MustOperExpr(Op("SET_FILTER"), setTag, x, base, predicate)
+	}
+	for _, test := range []struct {
+		name  string
+		set   Expr
+		value int64
+		want  SMTStatus
+	}{
+		{"present member", filtered(MustOperExpr(Op("EQ"), Typed(BoolT1), x, intLiteral(2))), 2, SMTUnsatisfiable},
+		{"default when all absent", filtered(boolExpr(false)), 99, SMTSatisfiable},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			rewriter := NewStratifiedRewriter()
+			scope, picked, err := rewriter.Rewrite(
+				MustOperExpr(Op("Apalache!Guess"), Typed(IntT1), test.set), InitialRewriterScope())
+			if err != nil {
+				t.Fatal(err)
+			}
+			solver := newTestG3Solver(t)
+			encoder, err := EncodeRewriterScope(solver, scope, rewriter.Constraints())
+			if err != nil {
+				t.Fatal(err)
+			}
+			claim := MustOperExpr(Op("NE"), Typed(BoolT1), picked.NameExpr(), intLiteral(test.value))
+			if test.want == SMTSatisfiable {
+				claim = MustOperExpr(Op("EQ"), Typed(BoolT1), picked.NameExpr(), intLiteral(test.value))
+			}
+			if err := encoder.Assert(claim); err != nil {
+				t.Fatal(err)
+			}
+			if status, err := solver.Check(context.Background()); err != nil || status != test.want {
+				t.Fatalf("guarded choice = %v, want %v, %v", status, test.want, err)
+			}
+		})
+	}
+}
+
 func TestStratifiedFiniteQuantifiersThroughG3(t *testing.T) {
 	setTag := Typed(mustSet(IntT1))
 	set := func(values ...int64) Expr {
