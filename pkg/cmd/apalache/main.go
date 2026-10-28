@@ -107,6 +107,16 @@ func runServer(ctx context.Context, args []string, stdout, stderr io.Writer) int
 			*serverType = *applicationConfig.Server.ServerType
 		}
 	}
+	if !visited["port"] {
+		if environmentPort, found := os.LookupEnv("PORT"); found && environmentPort != "" {
+			parsedPort, parseErr := strconv.Atoi(environmentPort)
+			if parseErr != nil {
+				fmt.Fprintf(stderr, "invalid PORT environment value %q: %v\n", environmentPort, parseErr)
+				return exitUsage
+			}
+			*port = parsedPort
+		}
+	}
 	if *port < 0 || *port > 65535 {
 		fmt.Fprintln(stderr, "server port must be in [0, 65535]")
 		return exitUsage

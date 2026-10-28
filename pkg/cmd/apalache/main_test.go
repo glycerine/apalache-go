@@ -68,6 +68,7 @@ func TestRunConfigRejectsInvalidStatisticsChoice(t *testing.T) {
 
 func TestRunServerStartsExplorerAndStopsWithContext(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
+	t.Setenv("PORT", "not-used-because-cli-wins")
 	originalListen := listenTCP
 	listenTCP = func(network, address string) (net.Listener, error) {
 		if network != "tcp" || address != ":0" {
@@ -82,6 +83,35 @@ func TestRunServerStartsExplorerAndStopsWithContext(t *testing.T) {
 	code := run(ctx, []string{"server", "--port=0", "--server-type=explorer"}, &stdout, &stderr)
 	if code != exitOK || !strings.Contains(stdout.String(), "JSON-RPC explorer server running on http://localhost:") {
 		t.Fatalf("server = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
+	}
+}
+
+func TestRunServerUsesPORTEnvironment(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("PORT", "0")
+	originalListen := listenTCP
+	listenTCP = func(network, address string) (net.Listener, error) {
+		if network != "tcp" || address != ":0" {
+			t.Fatalf("listen = %q, %q", network, address)
+		}
+		return &testListener{address: &net.TCPAddr{Port: 43211}}, nil
+	}
+	t.Cleanup(func() { listenTCP = originalListen })
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	var stdout, stderr bytes.Buffer
+	if code := run(ctx, []string{"server"}, &stdout, &stderr); code != exitOK {
+		t.Fatalf("server with PORT = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
+	}
+}
+
+func TestRunServerRejectsInvalidPORTEnvironment(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("PORT", "not-a-port")
+	var stdout, stderr bytes.Buffer
+	code := run(context.Background(), []string{"server"}, &stdout, &stderr)
+	if code != exitUsage || !strings.Contains(stderr.String(), "invalid PORT environment") {
+		t.Fatalf("server with invalid PORT = %d, stderr = %q", code, &stderr)
 	}
 }
 
