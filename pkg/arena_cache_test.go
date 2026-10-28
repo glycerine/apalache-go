@@ -138,6 +138,55 @@ func TestUninterpretedLiteralCacheTypesAndDistinctness(t *testing.T) {
 	}
 }
 
+func TestUninterpretedLiteralCacheScalaOracleCases(t *testing.T) {
+	cache := NewUninterpretedLiteralCache()
+	plain := UninterpretedLiteral{Type: StrT1, Index: "idx"}
+	base := EmptyPureArena()
+	if _, found := cache.Get(plain); found {
+		t.Fatal("uncached string literal was found")
+	}
+	arena, plainCell, err := cache.GetOrCreate(base, plain)
+	if err != nil || arena == base {
+		t.Fatalf("first literal insertion = arena %p, cell %v, error %v", arena, plainCell, err)
+	}
+	sameArena, sameCell, err := cache.GetOrCreate(arena, plain)
+	if err != nil || sameArena != arena || !sameCell.Equal(plainCell) {
+		t.Fatalf("literal reuse = arena %p, cell %v, error %v", sameArena, sameCell, err)
+	}
+	typeA := mustNamedConst(t, "A")
+	typeB := mustNamedConst(t, "B")
+	arena, aCell, _ := cache.GetOrCreate(arena, UninterpretedLiteral{Type: typeA, Index: "idx"})
+	_, bCell, _ := cache.GetOrCreate(arena, UninterpretedLiteral{Type: typeB, Index: "idx"})
+	if plainCell.Equal(aCell) || aCell.Equal(bCell) {
+		t.Fatal("same literal index was shared across distinct types")
+	}
+
+	distinctCache := NewUninterpretedLiteralCache()
+	distinctArena := base
+	cells := make([]ArenaCell, 3)
+	for index, value := range []string{"1", "2", "3"} {
+		distinctArena, cells[index], err = distinctCache.GetOrCreate(distinctArena,
+			UninterpretedLiteral{Type: typeA, Index: value})
+		if err != nil {
+			t.Fatal(err)
+		}
+		constraint, err := distinctCache.ConstraintFor(UninterpretedLiteral{Type: typeA, Index: value}, cells[index])
+		if err != nil || len(constraint.(*OperExpr).Arguments()) != index+1 {
+			t.Fatalf("incremental distinctness %d = %v, %v", index, constraint, err)
+		}
+	}
+	constraints := distinctCache.Constraints()
+	if len(constraints) != 1 {
+		t.Fatalf("global distinctness constraints = %v", constraints)
+	}
+	arguments := constraints[0].(*OperExpr).Arguments()
+	if len(arguments) != 3 || arguments[0].(*NameExpr).Name() != cells[2].NameExpr().Name() ||
+		arguments[1].(*NameExpr).Name() != cells[1].NameExpr().Name() ||
+		arguments[2].(*NameExpr).Name() != cells[0].NameExpr().Name() {
+		t.Fatalf("global distinctness arguments = %v", arguments)
+	}
+}
+
 func TestIntRangeCacheBuildsAndReusesArenaSets(t *testing.T) {
 	ints := NewIntValueCache()
 	cache := NewIntRangeCache(ints)
@@ -237,5 +286,43 @@ func TestRecordDomainCacheSortsDeduplicatesAndSharesStrings(t *testing.T) {
 	}
 	if len(stringsCache.Constraints()) != 1 {
 		t.Fatalf("string-cache constraints = %d", len(stringsCache.Constraints()))
+	}
+}
+
+func TestRecordDomainCacheScalaOracleCases(t *testing.T) {
+	stringsCache := NewUninterpretedLiteralCache()
+	cache := NewRecordDomainCache(stringsCache)
+	base := EmptyPureArena()
+	if _, found := cache.Get([]string{"a", "b", "c"}); found {
+		t.Fatal("uncached record domain was found")
+	}
+	arena, abc, err := cache.GetOrCreate(base, []string{"a", "b", "c"})
+	if err != nil || arena == base || len(abc.Elements) != 3 {
+		t.Fatalf("record domain insertion = %#v, arena %p, error %v", abc, arena, err)
+	}
+	sameArena, same, err := cache.GetOrCreate(arena, []string{"c", "a", "b"})
+	if err != nil || sameArena != arena || !same.Set.Equal(abc.Set) {
+		t.Fatalf("record domain reuse = %#v, arena %p, error %v", same, sameArena, err)
+	}
+
+	constraintStrings := NewUninterpretedLiteralCache()
+	constraintCache := NewRecordDomainCache(constraintStrings)
+	a1, empty, _ := constraintCache.GetOrCreate(base, nil)
+	constraintCache.GetOrCreate(base, nil)
+	a2, ab, _ := constraintCache.GetOrCreate(a1, []string{"a", "b"})
+	constraintCache.GetOrCreate(a1, []string{"a", "b"})
+	_, ac, _ := constraintCache.GetOrCreate(a2, []string{"a", "c"})
+	constraintCache.GetOrCreate(a2, []string{"a", "c"})
+	if len(empty.Elements) != 0 || len(constraintStrings.Values()) != 3 {
+		t.Fatalf("domain elements/strings = %d/%d", len(empty.Elements), len(constraintStrings.Values()))
+	}
+	constraints := constraintCache.Constraints()
+	if len(constraints) != len(empty.Elements)+len(ab.Elements)+len(ac.Elements) || len(constraints) != 4 {
+		t.Fatalf("record-domain constraints = %d, want 4", len(constraints))
+	}
+	for _, constraint := range constraints {
+		if constraint.(*OperExpr).Operator().Name() != "SET_IN" {
+			t.Fatalf("record-domain constraint = %v", constraint)
+		}
 	}
 }
