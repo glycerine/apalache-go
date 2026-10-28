@@ -1,6 +1,9 @@
 package apalache
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 func TestStratifiedSetMapFiniteProductsThroughG3(t *testing.T) {
 	intValue := func(value int64) Expr { return NewValueExpr(Int64Value(value), Typed(IntT1)) }
@@ -105,9 +108,17 @@ func TestStratifiedSetMapEnumeratesFirstBinderFastest(t *testing.T) {
 		t.Fatalf("mapped pointers = %d, want %d", len(pointers), len(want))
 	}
 	for index, pointer := range pointers {
-		value, found := rewriter.IntegerCache().FindValue(pointer.Element())
-		if !found || value.Int64() != want[index] {
-			t.Fatalf("mapped image %d = %v, found %v; want %d", index, value, found, want[index])
+		solver := newTestG3Solver(t)
+		encoder, encodeErr := EncodeRewriterScope(solver, scope, rewriter.Constraints())
+		if encodeErr != nil {
+			t.Fatal(encodeErr)
+		}
+		if assertErr := encoder.Assert(MustOperExpr(Op("NE"), Typed(BoolT1),
+			pointer.Element().NameExpr(), intLiteral(want[index]))); assertErr != nil {
+			t.Fatal(assertErr)
+		}
+		if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTUnsatisfiable {
+			t.Fatalf("mapped image %d != %d = %v, %v", index, want[index], status, checkErr)
 		}
 	}
 }

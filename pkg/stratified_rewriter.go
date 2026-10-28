@@ -1523,61 +1523,77 @@ func (rewriter *StratifiedRewriter) rewriteBasicEquality(expression *OperExpr, s
 
 func (rewriter *StratifiedRewriter) rewriteArithmetic(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
 	arguments := expression.Arguments()
-	terms := make([]Expr, len(arguments))
-	cells := make([]ArenaCell, len(arguments))
-	for index, argument := range arguments {
-		var cell ArenaCell
-		var err error
-		scope, cell, err = rewriter.Rewrite(argument, scope)
-		if err != nil {
-			return scope, ArenaCell{}, err
+	if expression.Operator().Name() == "UNARY_MINUS" {
+		if len(arguments) != 1 {
+			return scope, ArenaCell{}, fmt.Errorf("integer unary minus requires one argument")
 		}
-		if !EqualTypes(cell.Type.TLAType(), IntT1) {
-			return scope, ArenaCell{}, fmt.Errorf("integer operator %s received %s", expression.Operator().Name(), cell.Type)
-		}
-		cells[index] = cell
-		terms[index] = cell.NameExpr()
+	} else if len(arguments) != 2 {
+		return scope, ArenaCell{}, fmt.Errorf("integer operator %s requires two arguments", expression.Operator().Name())
 	}
-	if len(cells) == 1 && expression.Operator().Name() == "UNARY_MINUS" {
-		if value, known := rewriter.integers.FindValue(cells[0]); known {
-			return rewriter.Rewrite(NewValueExpr(NewIntValue(value.Neg(value)), Typed(IntT1)), scope)
-		}
+	packedScope, packed, err := rewriter.packArithmeticExpression(expression, scope)
+	if err != nil {
+		return packedScope, ArenaCell{}, err
 	}
-	if len(cells) == 2 {
-		left, leftKnown := rewriter.integers.FindValue(cells[0])
-		right, rightKnown := rewriter.integers.FindValue(cells[1])
-		if leftKnown && rightKnown {
-			value := left
-			switch expression.Operator().Name() {
-			case "PLUS":
-				value.Add(left, right)
-			case "MINUS":
-				value.Sub(left, right)
-			case "MULT":
-				value.Mul(left, right)
-			case "DIV":
-				if right.Sign() == 0 {
-					return scope, ArenaCell{}, fmt.Errorf("division by zero")
-				}
-				value.Quo(left, right)
-			case "MOD":
-				if right.Sign() == 0 {
-					return scope, ArenaCell{}, fmt.Errorf("modulo by zero")
-				}
-				value.Rem(left, right)
-			default:
-				value = nil
+	newArena, result := packedScope.Arena.AppendCellType(BasicCellType{Type: IntT1})
+	packedScope.Arena = newArena
+	rewriter.assert(MustOperExpr(Op("EQ"), Typed(BoolT1), result.NameExpr(), packed))
+	return packedScope, result, nil
+}
+
+func isPackedArithmeticOperator(name string) bool {
+	switch name {
+	case "PLUS", "MINUS", "MULT", "DIV", "MOD", "POW":
+		return true
+	default:
+		return false
+	}
+}
+
+func (rewriter *StratifiedRewriter) packArithmeticExpression(expression Expr, scope RewriterScope) (RewriterScope, Expr, error) {
+	switch typed := expression.(type) {
+	case *ValueExpr:
+		if _, integer := typed.Value().(IntValue); integer {
+			return scope, typed, nil
+		}
+	case *NameExpr:
+		if IsArenaCellName(typed.Name()) {
+			return scope, typed, nil
+		}
+		cell, found := scope.Binding.Get(typed.Name())
+		if !found {
+			return scope, nil, fmt.Errorf("name %s is unbound", typed.Name())
+		}
+		return scope, cell.NameExpr(), nil
+	case *OperExpr:
+		arguments := typed.Arguments()
+		if typed.Operator().Name() == "UNARY_MINUS" && len(arguments) == 1 {
+			var packed Expr
+			var err error
+			scope, packed, err = rewriter.packArithmeticExpression(arguments[0], scope)
+			if err != nil {
+				return scope, nil, err
 			}
-			if value != nil {
-				return rewriter.Rewrite(NewValueExpr(NewIntValue(value), Typed(IntT1)), scope)
+			return scope, MustOperExpr(typed.Operator(), Typed(IntT1), packed), nil
+		}
+		if isPackedArithmeticOperator(typed.Operator().Name()) && len(arguments) == 2 {
+			var left, right Expr
+			var err error
+			scope, left, err = rewriter.packArithmeticExpression(arguments[0], scope)
+			if err != nil {
+				return scope, nil, err
 			}
+			scope, right, err = rewriter.packArithmeticExpression(arguments[1], scope)
+			if err != nil {
+				return scope, nil, err
+			}
+			return scope, MustOperExpr(typed.Operator(), Typed(IntT1), left, right), nil
 		}
 	}
-	newArena, result := scope.Arena.AppendCellType(BasicCellType{Type: IntT1})
-	scope.Arena = newArena
-	operation := MustOperExpr(expression.Operator(), Typed(IntT1), terms...)
-	rewriter.assert(MustOperExpr(Op("EQ"), Typed(BoolT1), result.NameExpr(), operation))
-	return scope, result, nil
+	scope, cell, err := rewriter.Rewrite(expression, scope)
+	if err != nil {
+		return scope, nil, err
+	}
+	return scope, cell.NameExpr(), nil
 }
 
 func (rewriter *StratifiedRewriter) rewritePower(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
@@ -1648,22 +1664,19 @@ func (rewriter *StratifiedRewriter) rewriteComparison(expression *OperExpr, scop
 	if len(arguments) != 2 {
 		return scope, ArenaCell{}, fmt.Errorf("integer comparison requires two arguments")
 	}
-	terms := make([]Expr, 2)
-	for index, argument := range arguments {
-		var cell ArenaCell
-		var err error
-		scope, cell, err = rewriter.Rewrite(argument, scope)
-		if err != nil {
-			return scope, ArenaCell{}, err
-		}
-		if !EqualTypes(cell.Type.TLAType(), IntT1) {
-			return scope, ArenaCell{}, fmt.Errorf("integer comparison received %s", cell.Type)
-		}
-		terms[index] = cell.NameExpr()
+	var left, right Expr
+	var err error
+	scope, left, err = rewriter.packArithmeticExpression(arguments[0], scope)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	scope, right, err = rewriter.packArithmeticExpression(arguments[1], scope)
+	if err != nil {
+		return scope, ArenaCell{}, err
 	}
 	newArena, result := scope.Arena.AppendCellType(BasicCellType{Type: BoolT1})
 	scope.Arena = newArena
-	comparison := MustOperExpr(expression.Operator(), Typed(BoolT1), terms...)
+	comparison := MustOperExpr(expression.Operator(), Typed(BoolT1), left, right)
 	rewriter.assert(MustOperExpr(Op("EQ"), Typed(BoolT1), result.NameExpr(), comparison))
 	return scope, result, nil
 }

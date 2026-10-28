@@ -765,6 +765,84 @@ func TestStratifiedArithmeticEqualityAndConditionalThroughG3(t *testing.T) {
 	}
 }
 
+func TestStratifiedArithmeticPackerAndComparisonRule(t *testing.T) {
+	rewriter := NewStratifiedRewriter()
+	scope := InitialRewriterScope()
+	newArena, xCell := scope.Arena.AppendCellType(BasicCellType{Type: IntT1})
+	scope.Arena = newArena
+	scope.Binding = scope.Binding.With("x", xCell)
+	packedExpression := MustOperExpr(Op("MULT"), Typed(IntT1),
+		MustOperExpr(Op("PLUS"), Typed(IntT1), NewNameExpr("x", Typed(IntT1)), intLiteral(1)),
+		MustOperExpr(Op("MINUS"), Typed(IntT1), intLiteral(5),
+			MustOperExpr(Op("UNARY_MINUS"), Typed(IntT1), intLiteral(2))))
+	resultScope, result, err := rewriter.Rewrite(packedExpression, scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resultScope.Arena.CellCount() != scope.Arena.CellCount()+1 {
+		t.Fatalf("packed arithmetic allocated %d cells, want one", resultScope.Arena.CellCount()-scope.Arena.CellCount())
+	}
+	wantPacked := MustOperExpr(Op("MULT"), Typed(IntT1),
+		MustOperExpr(Op("PLUS"), Typed(IntT1), xCell.NameExpr(), intLiteral(1)),
+		MustOperExpr(Op("MINUS"), Typed(IntT1), intLiteral(5),
+			MustOperExpr(Op("UNARY_MINUS"), Typed(IntT1), intLiteral(2))))
+	wantConstraint := MustOperExpr(Op("EQ"), Typed(BoolT1), result.NameExpr(), wantPacked)
+	if constraints := rewriter.Constraints(); len(constraints) != 1 || !EqualTypedExpr(constraints[0], wantConstraint) {
+		t.Fatalf("packed arithmetic constraints = %v, want %v", constraints, wantConstraint)
+	}
+	if packedScope, packedCellName, packErr := rewriter.packArithmeticExpression(xCell.NameExpr(), scope); packErr != nil ||
+		packedScope.Arena != scope.Arena || !EqualTypedExpr(packedCellName, xCell.NameExpr()) {
+		t.Fatalf("packed arena-cell name = %v, scope changed=%v, err=%v", packedCellName, packedScope.Arena != scope.Arena, packErr)
+	}
+
+	rewriter = NewStratifiedRewriter()
+	nonArithmetic := MustOperExpr(Op("IF_THEN_ELSE"), Typed(IntT1),
+		NewValueExpr(BoolValue(true), Typed(BoolT1)), intLiteral(4), intLiteral(9))
+	delegated := MustOperExpr(Op("PLUS"), Typed(IntT1), nonArithmetic, intLiteral(3))
+	delegatedScope, _, err := rewriter.Rewrite(delegated, InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if delegatedScope.Arena.CellCount() != InitialRewriterScope().Arena.CellCount()+2 || len(rewriter.Constraints()) != 2 {
+		t.Fatalf("delegated arithmetic arena=%d constraints=%d, want one delegated and one packed cell",
+			delegatedScope.Arena.CellCount(), len(rewriter.Constraints()))
+	}
+
+	rewriter = NewStratifiedRewriter()
+	comparison := MustOperExpr(Op("LT"), Typed(BoolT1),
+		MustOperExpr(Op("PLUS"), Typed(IntT1), NewNameExpr("x", Typed(IntT1)), intLiteral(1)),
+		MustOperExpr(Op("MULT"), Typed(IntT1), intLiteral(2), intLiteral(3)))
+	comparisonScope, comparisonResult, err := rewriter.Rewrite(comparison, scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if comparisonScope.Arena.CellCount() != scope.Arena.CellCount()+1 {
+		t.Fatalf("packed comparison allocated %d cells, want one", comparisonScope.Arena.CellCount()-scope.Arena.CellCount())
+	}
+	wantComparison := MustOperExpr(Op("LT"), Typed(BoolT1),
+		MustOperExpr(Op("PLUS"), Typed(IntT1), xCell.NameExpr(), intLiteral(1)),
+		MustOperExpr(Op("MULT"), Typed(IntT1), intLiteral(2), intLiteral(3)))
+	wantConstraint = MustOperExpr(Op("EQ"), Typed(BoolT1), comparisonResult.NameExpr(), wantComparison)
+	if constraints := rewriter.Constraints(); len(constraints) != 1 || !EqualTypedExpr(constraints[0], wantConstraint) {
+		t.Fatalf("packed comparison constraints = %v, want %v", constraints, wantConstraint)
+	}
+
+	solver := newTestG3Solver(t)
+	encoder, err := EncodeRewriterScope(solver, comparisonScope, rewriter.Constraints())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := encoder.Assert(MustOperExpr(Op("EQ"), Typed(BoolT1), xCell.NameExpr(), intLiteral(0))); err != nil {
+		t.Fatal(err)
+	}
+	if err := encoder.Assert(MustOperExpr(Op("NOT"), Typed(BoolT1), comparisonResult.NameExpr())); err != nil {
+		t.Fatal(err)
+	}
+	if status, err := solver.Check(context.Background()); err != nil || status != SMTUnsatisfiable {
+		t.Fatalf("packed 0 + 1 < 2 * 3 contradicted = %v, %v", status, err)
+	}
+}
+
 func TestStratifiedStringLiteralsAndEqualityThroughG3(t *testing.T) {
 	tests := []struct {
 		name       string
