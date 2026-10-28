@@ -643,9 +643,26 @@ CardinalityValue == Cardinality(BOOLEAN)
 			t.Errorf("%s body = %#v, want %s", name, body, want)
 		}
 	}
+	if got, want := len(result.Native.Declarations()), len(values)+len(operators); got != want {
+		t.Fatalf("standard-module declarations = %v (count %d), want only %d user definitions",
+			declarationNames(result.Native), got, want)
+	}
 	plus, _ := OperatorBody(result.Native, "Plus")
 	if location, found := result.Sources.Find(plus.ID()); !found || location.Region.Start.Line != 7 {
 		t.Fatalf("Plus source location = %#v, %v", location, found)
+	}
+}
+
+func TestParseSourceFiltersStandardModuleDefinitions(t *testing.T) {
+	result := ParseSource(context.Background(), "EmptyStandardImport.tla", `---- MODULE EmptyStandardImport ----
+EXTENDS Naturals
+====
+`, FrontendOptions{})
+	if !result.OK() {
+		t.Fatalf("ParseSource() diagnostics = %v", result.Diagnostics)
+	}
+	if declarations := result.Native.Declarations(); len(declarations) != 0 {
+		t.Fatalf("standard definitions leaked into root: %v", declarationNames(result.Native))
 	}
 }
 
@@ -698,6 +715,58 @@ VariantDefault(v) == VariantGetOrElse("A", v, [value |-> 0])
 		literal, ok := body.(*ValueExpr)
 		if !found || !ok || !EqualValues(literal.Value(), want) {
 			t.Errorf("%s body = %#v, want %v", name, body, want)
+		}
+	}
+}
+
+func TestParseSourceNormalizesTLCHelpers(t *testing.T) {
+	result := ParseSource(context.Background(), "TLCHelpers.tla", `---- MODULE TLCHelpers ----
+EXTENDS TLC
+VARIABLE i
+Clock == JavaTime
+Read == TLCGet(i)
+Write == TLCSet(i, 3)
+Singleton == {1, 2} :> 3
+Override == [j \in {1, 2} |-> j] @@ [k \in {3, 4} |-> k]
+Permuted == Permutations(<<1, 2>>)
+Less(a, b) == TRUE
+Sorted == SortSeq(<<2, 1>>, Less)
+Random == RandomElement({1, 2})
+Arbitrary == Any
+====
+`, FrontendOptions{IncludeSource: true})
+	if !result.OK() {
+		t.Fatalf("ParseSource() diagnostics = %v", result.Diagnostics)
+	}
+	clock, found := OperatorBody(result.Native, "Clock")
+	clockValue, ok := clock.(*ValueExpr)
+	if !found || !ok || !EqualValues(clockValue.Value(), Int64Value(123)) {
+		t.Errorf("Clock body = %#v, want JavaTime compatibility value", clock)
+	}
+	write, found := OperatorBody(result.Native, "Write")
+	writeValue, ok := write.(*ValueExpr)
+	if !found || !ok || !EqualValues(writeValue.Value(), BoolValue(true)) {
+		t.Errorf("Write body = %#v, want TRUE", write)
+	}
+	operators := map[string]string{
+		"Read": "TLC!TLCGet", "Singleton": "FUN_CTOR", "Override": "FUN_CTOR",
+		"Random": "Apalache!Guess",
+	}
+	for name, want := range operators {
+		body, found := OperatorBody(result.Native, name)
+		if !found || countOperator(body, want) == 0 {
+			t.Errorf("%s body = %#v, want %s", name, body, want)
+		}
+	}
+	for name, callee := range map[string]string{
+		"Permuted": "Permutations", "Sorted": "SortSeq", "Arbitrary": "Any",
+	} {
+		body, found := OperatorBody(result.Native, name)
+		if !found || countNamed(body, callee) != 1 {
+			t.Errorf("%s body = %#v, want call to %s", name, body, callee)
+		}
+		if _, sourceFound := result.Sources.Find(body.ID()); !sourceFound {
+			t.Errorf("%s body has no source location", name)
 		}
 	}
 }

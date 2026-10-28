@@ -1540,6 +1540,11 @@ func normalizeTlagoTLCCalls(module *Module, sources *SourceStore, tlcImported bo
 		if len(arguments) == 0 {
 			return nil, false
 		}
+		if len(arguments) == 1 {
+			if value, ok := arguments[0].(*ValueExpr); ok {
+				return value, true
+			}
+		}
 		callee, ok := arguments[0].(*NameExpr)
 		if !ok {
 			return nil, false
