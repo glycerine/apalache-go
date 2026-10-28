@@ -153,7 +153,7 @@ tla-pp/src/test/scala/at/forsyte/apalache/tla/pp/TestSourceLocator.scala	partial
 tla-pp/src/test/scala/at/forsyte/apalache/tla/pp/TestTableauEncoder.scala	partial	preprocess_*_test.go;temporal_*_test.go;retla*_test.go	remaining preprocessing cases are open
 tla-pp/src/test/scala/at/forsyte/apalache/tla/pp/TestTlaConstInliner.scala	partial	preprocess_*_test.go;temporal_*_test.go;retla*_test.go	remaining preprocessing cases are open
 tla-pp/src/test/scala/at/forsyte/apalache/tla/pp/TestTypeSubstitutor.scala	partial	preprocess_*_test.go;temporal_*_test.go;retla*_test.go	remaining preprocessing cases are open
-tla-pp/src/test/scala/at/forsyte/apalache/tla/pp/TestUniqueNameGenerator.scala	partial	preprocess_*_test.go;temporal_*_test.go;retla*_test.go	remaining preprocessing cases are open
+tla-pp/src/test/scala/at/forsyte/apalache/tla/pp/TestUniqueNameGenerator.scala	ported	preprocess_membership_test.go	first three names and Scala base-36 name after 10,000 allocations are exact; concurrent uniqueness is additionally tested
 tla-typechecker/src/test/scala/at/forsyte/apalache/tla/typecheck/TestDefaultType1Parser.scala	partial	typechecker*_test.go;types_*_test.go	remaining constraint cases are open
 tla-typechecker/src/test/scala/at/forsyte/apalache/tla/typecheck/etc/TestConstraintSolver.scala	partial	typechecker*_test.go;types_*_test.go	remaining constraint cases are open
 tla-typechecker/src/test/scala/at/forsyte/apalache/tla/typecheck/etc/TestEtcTypeChecker.scala	partial	typechecker*_test.go;types_*_test.go	remaining constraint cases are open

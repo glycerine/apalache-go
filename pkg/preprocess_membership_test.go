@@ -7,9 +7,20 @@ import (
 
 func TestUniqueNameGeneratorScalaSequenceAndConcurrency(t *testing.T) {
 	generator := NewUniqueNameGenerator()
-	if generator.NewName() != "t_1" {
-		t.Fatal("first generated name differs from Scala")
+	for index, want := range []string{"t_1", "t_2", "t_3"} {
+		if got := generator.NewName(); got != want {
+			t.Fatalf("generated name %d = %q, want %q", index+1, got, want)
+		}
 	}
+	generator = NewUniqueNameGenerator()
+	for range 10000 {
+		generator.NewName()
+	}
+	if got := generator.NewName(); got != "t_7pt" {
+		t.Fatalf("generated name 10001 = %q, want t_7pt", got)
+	}
+
+	generator = NewUniqueNameGenerator()
 	seen := sync.Map{}
 	var wait sync.WaitGroup
 	for range 100 {
