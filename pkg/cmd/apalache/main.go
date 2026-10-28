@@ -928,7 +928,8 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 		return exitTool
 	}
 	report, err := pal.SimulateAndCheckWithOptions(ctx, prepared.Module, prepared.Predicates,
-		pal.SimulationOptions{MaxSteps: *length, MaxRuns: *maxRun, MaxErrors: *maxErrors, Tuning: checkerTuning})
+		pal.SimulationOptions{MaxSteps: *length, MaxRuns: *maxRun, MaxErrors: *maxErrors, Tuning: checkerTuning,
+			SMTEncoding: pal.SMTEncoding(backend.encoding)})
 	if err != nil {
 		fmt.Fprintf(stderr, "simulation failed: %v\n", err)
 		return exitTool
@@ -1380,7 +1381,7 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	checkerTuning = checkerTuning.WithOutputTraces(*outputTraces)
 	result, err := pal.CheckBoundedSafetyWithOptions(ctx, prepared.Module, prepared.Predicates, pal.BoundedSafetyOptions{
 		MaxSteps: *length, CheckDeadlocks: checkDeadlocks, Tuning: checkerTuning, MaxErrors: *maxErrors,
-		DiscardDisabled: &discardDisabled,
+		DiscardDisabled: &discardDisabled, SMTEncoding: pal.SMTEncoding(backend.encoding),
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "bounded safety check failed: %v\n", err)
@@ -1790,7 +1791,7 @@ type checkerBackendOptions struct {
 func addCheckerBackendFlags(flags *flag.FlagSet) *checkerBackendOptions {
 	options := &checkerBackendOptions{}
 	flags.StringVar(&options.algorithm, "algo", "incremental", "checking algorithm (incremental)")
-	flags.StringVar(&options.encoding, "smt-encoding", "oopsla19", "SMT encoding (oopsla19)")
+	flags.StringVar(&options.encoding, "smt-encoding", "oopsla19", "SMT encoding (oopsla19, arrays, or funArrays)")
 	flags.StringVar(&options.solver, "smt-solver", "z3", "SMT solver backend (z3 via g3)")
 	return options
 }
@@ -1802,8 +1803,8 @@ func validateCheckerBackendOptions(options *checkerBackendOptions) error {
 	if algorithm := strings.ToLower(options.algorithm); algorithm != "incremental" {
 		return fmt.Errorf("unsupported checker algorithm %q (Go port currently supports incremental)", options.algorithm)
 	}
-	if encoding := strings.ToLower(options.encoding); encoding != "oopsla19" {
-		return fmt.Errorf("unsupported SMT encoding %q (Go port currently supports oopsla19)", options.encoding)
+	if _, err := pal.ParseSMTEncoding(options.encoding); err != nil {
+		return fmt.Errorf("unsupported SMT encoding %q (want oopsla19, arrays, or funArrays)", options.encoding)
 	}
 	if solver := strings.ToLower(options.solver); solver != "z3" {
 		return fmt.Errorf("unsupported SMT solver %q (Go port uses g3 v0.0.5 as its Z3 backend)", options.solver)

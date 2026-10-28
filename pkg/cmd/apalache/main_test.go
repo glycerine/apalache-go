@@ -846,6 +846,42 @@ Inv == x < 2
 	}
 }
 
+func TestRunCheckSupportsNativeArrayEncodings(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "NativeArrays.tla")
+	if err := os.WriteFile(path, []byte(`---- MODULE NativeArrays ----
+EXTENDS Integers
+\* @type: Int;
+VARIABLE x
+Native == LET f == [i \in {1} |-> {i, i + 1}] IN 2 \in f[1]
+Init == x = 0 /\ Native
+Next == x' = x
+Inv == Native
+====
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, encoding := range []string{"arrays", "funArrays"} {
+		t.Run(encoding, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := run(context.Background(), []string{
+				"check", "--smt-encoding=" + encoding, "--no-deadlock", "--inv=Inv", "--length=1", path,
+			}, &stdout, &stderr)
+			if code != exitOK || !strings.Contains(stdout.String(), "No counterexample found through depth 1") {
+				t.Fatalf("native %s check = %d, stdout = %q, stderr = %q", encoding, code, &stdout, &stderr)
+			}
+			stdout.Reset()
+			stderr.Reset()
+			code = run(context.Background(), []string{
+				"simulate", "--smt-encoding=" + encoding, "--max-run=1", "--length=1", path,
+			}, &stdout, &stderr)
+			if code != exitOK || !strings.Contains(stdout.String(), "Simulation completed through depth 1") {
+				t.Fatalf("native %s simulation = %d, stdout = %q, stderr = %q", encoding, code, &stdout, &stderr)
+			}
+		})
+	}
+}
+
 func TestRunCheckLoadsTLCConfiguration(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "Configured.tla")
@@ -1108,7 +1144,7 @@ func TestRunCheckerCommandsRejectUnsupportedBackends(t *testing.T) {
 		command, option, message string
 	}{
 		{"check", "--algo=offline", "supports incremental"},
-		{"check", "--smt-encoding=arrays", "supports oopsla19"},
+		{"check", "--smt-encoding=unknown", "want oopsla19, arrays, or funArrays"},
 		{"check", "--smt-solver=cvc5", "g3 v0.0.5"},
 		{"simulate", "--algo=remote", "supports incremental"},
 	} {
