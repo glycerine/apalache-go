@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"sort"
 	"strconv"
+	"strings"
 )
 
 type quintJSONOutput struct {
@@ -203,6 +204,14 @@ func (importer quintJSONImporter) expression(expression quintJSONExpr) (Expr, er
 	}
 	switch expression.Kind {
 	case "name":
+		switch expression.Name {
+		case "Bool":
+			return NewValueExpr(BoolSet, Typed(mustSet(BoolT1))), nil
+		case "Int":
+			return NewValueExpr(IntSet, Typed(mustSet(IntT1))), nil
+		case "Nat":
+			return NewValueExpr(NatSet, Typed(mustSet(IntT1))), nil
+		}
 		return NewNameExpr(expression.Name, Typed(typ)), nil
 	case "bool":
 		var value bool
@@ -263,24 +272,47 @@ func (importer quintJSONImporter) expression(expression quintJSONExpr) (Expr, er
 			return nil, fmt.Errorf("let expression is incomplete")
 		}
 		definition := expression.Opdef
-		if definition.Qualifier != "nondet" || definition.Expr == nil || definition.Expr.Kind != "app" ||
-			definition.Expr.Opcode != "oneOf" || len(definition.Expr.Args) != 1 {
-			return nil, fmt.Errorf("unsupported Quint let definition %q with qualifier %q", definition.Name, definition.Qualifier)
+		if labelIndex := strings.LastIndex(definition.Name, "__label_"); labelIndex >= 0 {
+			scope, scopeErr := importer.expression(*expression.Expr)
+			if scopeErr != nil {
+				return nil, scopeErr
+			}
+			label := strings.TrimPrefix(definition.Name[labelIndex:], "__label_")
+			return NewOperExpr(Op("LABEL"), Typed(typ), scope, NewValueExpr(StringValue(label), Typed(StrT1)))
 		}
-		boundType, typeErr := importer.typeOf(definition.Expr.ID)
-		if typeErr != nil {
-			return nil, typeErr
+		if definition.Qualifier == "nondet" {
+			if definition.Expr == nil || definition.Expr.Kind != "app" || len(definition.Expr.Args) != 1 ||
+				(definition.Expr.Opcode != "oneOf" && definition.Expr.Opcode != "apalache::generate") {
+				return nil, fmt.Errorf("unsupported nondeterministic Quint let definition %q", definition.Name)
+			}
+			boundType, typeErr := importer.typeOf(definition.Expr.ID)
+			if typeErr != nil {
+				return nil, typeErr
+			}
+			domain, domainErr := importer.expression(definition.Expr.Args[0])
+			if domainErr != nil {
+				return nil, domainErr
+			}
+			if definition.Expr.Opcode == "apalache::generate" {
+				generated := MustOperExpr(Op("Apalache!Gen"), Typed(boundType), domain)
+				domain = MustOperExpr(Op("SET_ENUM"), Typed(mustSet(boundType)), generated)
+			}
+			scope, scopeErr := importer.expression(*expression.Expr)
+			if scopeErr != nil {
+				return nil, scopeErr
+			}
+			bound := NewNameExpr(definition.Name, Typed(boundType))
+			return NewOperExpr(Op("EXISTS3"), Typed(typ), bound, domain, scope)
 		}
-		domain, domainErr := importer.expression(definition.Expr.Args[0])
-		if domainErr != nil {
-			return nil, domainErr
+		declaration, declarationErr := importer.localOperDeclaration(*definition)
+		if declarationErr != nil {
+			return nil, declarationErr
 		}
 		scope, scopeErr := importer.expression(*expression.Expr)
 		if scopeErr != nil {
 			return nil, scopeErr
 		}
-		bound := NewNameExpr(definition.Name, Typed(boundType))
-		return NewOperExpr(Op("EXISTS3"), Typed(typ), bound, domain, scope)
+		return NewLetInExpr(scope, Typed(typ), declaration), nil
 	case "app":
 		if expression.Opcode == "exists" || expression.Opcode == "forall" || expression.Opcode == "filter" ||
 			expression.Opcode == "map" || expression.Opcode == "mapBy" {
@@ -388,10 +420,42 @@ func (importer quintJSONImporter) expression(expression quintJSONExpr) (Expr, er
 			keyType := mustTagType(arguments[1].Tag())
 			path := MustOperExpr(Op("TUPLE"), Typed(mustTuple(keyType)), arguments[1])
 			valueType := functionType.Result()
-			oldValue := MustOperExpr(Op("FUN_APP"), Typed(valueType), arguments[0], arguments[1])
+			cacheType := mustOperator(nil, typ)
+			cacheName := "__QUINT_SETBY_" + expression.ID.String()
+			cache := NewNameExpr(cacheName, Typed(cacheType))
+			cachedMap := MustOperExpr(Op("OPER_APP"), Typed(typ), cache)
+			oldValue := MustOperExpr(Op("FUN_APP"), Typed(valueType), cachedMap, arguments[1])
 			newValue := MustOperExpr(Op("OPER_APP"), Typed(valueType), arguments[2], oldValue)
-			return NewOperExpr(Op("EXCEPT"), Typed(typ), arguments[0], path, newValue)
-		case "oneOf", "chooseSome", "indices", "put", "range", "select":
+			updated := MustOperExpr(Op("EXCEPT"), Typed(typ), cachedMap, path, newValue)
+			declaration := NewOperDecl(cacheName, nil, arguments[0], Typed(cacheType))
+			return NewLetInExpr(updated, Typed(typ), declaration), nil
+		case "chooseSome":
+			if len(arguments) != 1 {
+				return nil, fmt.Errorf("chooseSome expects one argument, found %d", len(arguments))
+			}
+			binder := NewNameExpr("__QUINT_CHOOSE_"+expression.ID.String(), Typed(typ))
+			return NewOperExpr(Op("CHOOSE3"), Typed(typ), binder, arguments[0], NewValueExpr(BoolValue(true), Typed(BoolT1)))
+		case "indices":
+			if len(arguments) != 1 {
+				return nil, fmt.Errorf("indices expects one argument, found %d", len(arguments))
+			}
+			return convertQuintIndices(expression.ID, arguments[0], typ)
+		case "put":
+			if len(arguments) != 3 {
+				return nil, fmt.Errorf("put expects three arguments, found %d", len(arguments))
+			}
+			return convertQuintPut(expression.ID, arguments, typ)
+		case "range":
+			if len(arguments) != 2 {
+				return nil, fmt.Errorf("range expects two arguments, found %d", len(arguments))
+			}
+			return convertQuintRange(expression.ID, arguments[0], arguments[1], typ)
+		case "select":
+			if len(arguments) != 2 {
+				return nil, fmt.Errorf("select expects two arguments, found %d", len(arguments))
+			}
+			return convertQuintSelect(expression.ID, arguments[0], arguments[1], typ)
+		case "oneOf", "repeated":
 			return nil, fmt.Errorf("unsupported Quint builtin opcode %q", expression.Opcode)
 		}
 		operator, found := quintSimpleOperators[expression.Opcode]
@@ -415,6 +479,126 @@ func (importer quintJSONImporter) expression(expression quintJSONExpr) (Expr, er
 	default:
 		return nil, fmt.Errorf("unsupported expression kind %q", expression.Kind)
 	}
+}
+
+func (importer quintJSONImporter) localOperDeclaration(definition quintJSONDef) (*OperDecl, error) {
+	if definition.Expr == nil {
+		return nil, fmt.Errorf("local operator definition %q has no expression", definition.Name)
+	}
+	typ, err := importer.typeOf(definition.ID)
+	if err != nil {
+		return nil, err
+	}
+	expression := *definition.Expr
+	parameters := []OperatorParam(nil)
+	declarationType := mustOperator(nil, typ)
+	if expression.Kind == "lambda" {
+		operatorType, ok := typ.(OperatorType)
+		if !ok || expression.Expr == nil {
+			return nil, fmt.Errorf("local lambda definition %q has invalid type or body", definition.Name)
+		}
+		argumentTypes := operatorType.Arguments()
+		if len(expression.Params) != len(argumentTypes) {
+			return nil, fmt.Errorf("local lambda %q has %d parameters but %d argument types", definition.Name, len(expression.Params), len(argumentTypes))
+		}
+		parameters = make([]OperatorParam, len(expression.Params))
+		for index, parameter := range expression.Params {
+			parameters[index] = ValueParam(parameter.Name)
+			if argumentType, isOperator := argumentTypes[index].(OperatorType); isOperator {
+				parameters[index].Arity = len(argumentType.Arguments())
+			}
+		}
+		expression = *expression.Expr
+		declarationType = operatorType
+	}
+	body, err := importer.expression(expression)
+	if err != nil {
+		return nil, err
+	}
+	return NewOperDecl(definition.Name, parameters, body, Typed(declarationType)), nil
+}
+
+func quintAnonymousOperator(id json.Number, parameters []OperatorParam, parameterTypes []Type, result Type, body Expr) Expr {
+	operatorType := mustOperator(parameterTypes, result)
+	name := "__QUINT_LAMBDA_" + id.String()
+	declaration := NewOperDecl(name, parameters, body, Typed(operatorType))
+	return NewLetInExpr(NewNameExpr(name, Typed(operatorType)), Typed(operatorType), declaration)
+}
+
+func convertQuintIndices(id json.Number, sequence Expr, resultType Type) (Expr, error) {
+	setOfInts := mustSet(IntT1)
+	nullarySet := mustOperator(nil, setOfInts)
+	nameText := "__QUINT_DOMAIN_" + id.String()
+	name := NewNameExpr(nameText, Typed(nullarySet))
+	domain := MustOperExpr(Op("OPER_APP"), Typed(setOfInts), name)
+	empty := MustOperExpr(Op("SET_ENUM"), Typed(setOfInts))
+	zero := NewValueExpr(Int64Value(0), Typed(IntT1))
+	withZero := MustOperExpr(Op("SET_UNION2"), Typed(setOfInts), domain,
+		MustOperExpr(Op("SET_ENUM"), Typed(setOfInts), zero))
+	length := MustOperExpr(Op("Sequences!Len"), Typed(IntT1), sequence)
+	withoutLength := MustOperExpr(Op("SET_MINUS"), Typed(setOfInts), withZero,
+		MustOperExpr(Op("SET_ENUM"), Typed(setOfInts), length))
+	body := MustOperExpr(Op("IF_THEN_ELSE"), Typed(resultType),
+		MustOperExpr(Op("EQ"), Typed(BoolT1), domain, empty), empty, withoutLength)
+	declaration := NewOperDecl(nameText, nil, MustOperExpr(Op("DOMAIN"), Typed(setOfInts), sequence), Typed(nullarySet))
+	return NewLetInExpr(body, Typed(resultType), declaration), nil
+}
+
+func convertQuintPut(id json.Number, arguments []Expr, resultType Type) (Expr, error) {
+	functionType, ok := resultType.(FunType)
+	if !ok {
+		return nil, fmt.Errorf("put has non-function type %s", resultType)
+	}
+	keyType := functionType.Argument()
+	keySet := mustSet(keyType)
+	mapNameText := "__QUINT_PUT_MAP_" + id.String()
+	mapOperatorType := mustOperator(nil, resultType)
+	mapName := NewNameExpr(mapNameText, Typed(mapOperatorType))
+	mapValue := MustOperExpr(Op("OPER_APP"), Typed(resultType), mapName)
+	domainNameText := "__QUINT_PUT_DOMAIN_" + id.String()
+	domainOperatorType := mustOperator(nil, keySet)
+	domainName := NewNameExpr(domainNameText, Typed(domainOperatorType))
+	domainValue := MustOperExpr(Op("OPER_APP"), Typed(keySet), domainName)
+	binder := NewNameExpr("__QUINT_PUT_"+id.String(), Typed(keyType))
+	domain := MustOperExpr(Op("SET_UNION2"), Typed(keySet),
+		MustOperExpr(Op("SET_ENUM"), Typed(keySet), arguments[1]),
+		domainValue)
+	body := MustOperExpr(Op("IF_THEN_ELSE"), Typed(functionType.Result()),
+		MustOperExpr(Op("EQ"), Typed(BoolT1), binder, arguments[1]), arguments[2],
+		MustOperExpr(Op("FUN_APP"), Typed(functionType.Result()), mapValue, binder))
+	composed := MustOperExpr(Op("FUN_CTOR"), Typed(resultType), body, binder, domain)
+	mapDeclaration := NewOperDecl(mapNameText, nil, arguments[0], Typed(mapOperatorType))
+	domainDeclaration := NewOperDecl(domainNameText, nil,
+		MustOperExpr(Op("DOMAIN"), Typed(keySet), mapValue), Typed(domainOperatorType))
+	return NewLetInExpr(composed, Typed(resultType), mapDeclaration, domainDeclaration), nil
+}
+
+func convertQuintRange(id json.Number, low, high Expr, resultType Type) (Expr, error) {
+	parameter := ValueParam("__QUINT_RANGE_INDEX_" + id.String())
+	index := NewNameExpr(parameter.Name, Typed(IntT1))
+	body := MustOperExpr(Op("MINUS"), Typed(IntT1),
+		MustOperExpr(Op("PLUS"), Typed(IntT1), low, index), NewValueExpr(Int64Value(1), Typed(IntT1)))
+	lambda := quintAnonymousOperator(id, []OperatorParam{parameter}, []Type{IntT1}, IntT1, body)
+	length := MustOperExpr(Op("MINUS"), Typed(IntT1), high, low)
+	return NewOperExpr(Op("Apalache!MkSeq"), Typed(resultType), length, lambda)
+}
+
+func convertQuintSelect(id json.Number, sequence, predicate Expr, resultType Type) (Expr, error) {
+	sequenceType, ok := resultType.(SeqType)
+	if !ok {
+		return nil, fmt.Errorf("select has non-sequence type %s", resultType)
+	}
+	elementType := sequenceType.Element()
+	resultParam := ValueParam("__QUINT_SELECT_RESULT_" + id.String())
+	elementParam := ValueParam("__QUINT_SELECT_ELEMENT_" + id.String())
+	result := NewNameExpr(resultParam.Name, Typed(resultType))
+	element := NewNameExpr(elementParam.Name, Typed(elementType))
+	test := MustOperExpr(Op("OPER_APP"), Typed(BoolT1), predicate, element)
+	body := MustOperExpr(Op("IF_THEN_ELSE"), Typed(resultType), test,
+		MustOperExpr(Op("Sequences!Append"), Typed(resultType), result, element), result)
+	lambda := quintAnonymousOperator(id, []OperatorParam{resultParam, elementParam}, []Type{resultType, elementType}, resultType, body)
+	empty := MustOperExpr(Op("TUPLE"), Typed(resultType))
+	return NewOperExpr(Op("Apalache!ApaFoldSeqLeft"), Typed(resultType), lambda, empty, sequence)
 }
 
 func (importer quintJSONImporter) bindingExpression(expression quintJSONExpr, typ Type) (Expr, error) {

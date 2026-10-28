@@ -227,6 +227,126 @@ func TestConvertQuintCollectionExpressions(t *testing.T) {
 	}
 }
 
+func TestConvertQuintDerivedCollectionOperators(t *testing.T) {
+	integer := quintJSONType{Kind: "int"}
+	boolean := quintJSONType{Kind: "bool"}
+	setOfInts := quintJSONType{Kind: "set", Elem: &integer}
+	listOfInts := quintJSONType{Kind: "list", Elem: &integer}
+	predicate := quintJSONType{Kind: "oper", Args: []quintJSONType{integer}, Res: &boolean}
+	intMap := quintJSONType{Kind: "fun", Arg: &integer, Res: &integer}
+	importer := quintJSONImporter{types: map[string]quintJSONScheme{
+		"1": {Type: integer}, "2": {Type: integer}, "3": {Type: setOfInts},
+		"4": {Type: boolean}, "5": {Type: listOfInts}, "7": {Type: predicate}, "8": {Type: intMap},
+	}}
+	integerExpr := func(id, value string) quintJSONExpr {
+		return quintJSONExpr{ID: json.Number(id), Kind: "int", Value: json.RawMessage(value)}
+	}
+	nameExpr := func(id, name string) quintJSONExpr {
+		return quintJSONExpr{ID: json.Number(id), Kind: "name", Name: name}
+	}
+	app := func(id, opcode string, args ...quintJSONExpr) Expr {
+		result, err := importer.expression(quintJSONExpr{ID: json.Number(id), Kind: "app", Opcode: opcode, Args: args})
+		if err != nil {
+			t.Fatalf("%s: %v", opcode, err)
+		}
+		return result
+	}
+	set := setExpr("3", integerExpr("1", "1"), integerExpr("2", "2"))
+	list := listExpr("5", integerExpr("1", "1"), integerExpr("2", "2"))
+
+	tests := []struct {
+		name     string
+		expr     Expr
+		operator string
+	}{
+		{"choose", app("1", "chooseSome", set), "CHOOSE3"},
+		{"indices", app("3", "indices", list), "SET_MINUS"},
+		{"range", app("5", "range", integerExpr("1", "2"), integerExpr("2", "7")), "Apalache!MkSeq"},
+		{"select", app("5", "select", list, nameExpr("7", "Positive")), "Apalache!ApaFoldSeqLeft"},
+		{"put", app("8", "put", nameExpr("8", "M"), integerExpr("1", "3"), integerExpr("2", "4")), "FUN_CTOR"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if countOperator(test.expr, test.operator) == 0 {
+				t.Fatalf("converted expression does not contain %s: %v", test.operator, test.expr)
+			}
+			if result := (TypedLanguagePredicate{}).CheckExpression(test.expr); !result.OK() {
+				t.Fatalf("converted expression is untyped: %+v", result.Failures)
+			}
+		})
+	}
+	if _, err := importer.expression(quintJSONExpr{ID: json.Number("1"), Kind: "app", Opcode: "oneOf", Args: []quintJSONExpr{set}}); err == nil {
+		t.Fatal("standalone oneOf was accepted")
+	}
+}
+
+func TestConvertQuintPredefinedNamesAndLocalLets(t *testing.T) {
+	integer := quintJSONType{Kind: "int"}
+	boolean := quintJSONType{Kind: "bool"}
+	setInt := quintJSONType{Kind: "set", Elem: &integer}
+	setBool := quintJSONType{Kind: "set", Elem: &boolean}
+	importer := quintJSONImporter{types: map[string]quintJSONScheme{
+		"1": {Type: integer}, "2": {Type: integer}, "3": {Type: integer},
+		"4": {Type: integer}, "5": {Type: boolean}, "6": {Type: setInt}, "7": {Type: setBool},
+	}}
+	for _, test := range []struct {
+		id   string
+		name string
+		want PredefinedSet
+	}{
+		{"7", "Bool", BoolSet}, {"6", "Int", IntSet}, {"6", "Nat", NatSet},
+	} {
+		expression, err := importer.expression(quintJSONExpr{ID: json.Number(test.id), Kind: "name", Name: test.name})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := expression.(*ValueExpr).Value(); got != test.want {
+			t.Errorf("%s converted to %v, want %v", test.name, got, test.want)
+		}
+	}
+
+	localBody := quintJSONExpr{ID: json.Number("1"), Kind: "int", Value: json.RawMessage("7")}
+	localName := quintJSONExpr{ID: json.Number("2"), Kind: "name", Name: "local"}
+	local := quintJSONExpr{ID: json.Number("4"), Kind: "let",
+		Opdef: &quintJSONDef{ID: json.Number("3"), Kind: "def", Name: "local", Qualifier: "val", Expr: &localBody},
+		Expr:  &localName}
+	converted, err := importer.expression(local)
+	if err != nil {
+		t.Fatal(err)
+	}
+	let, ok := converted.(*LetInExpr)
+	if !ok || len(let.Declarations()) != 1 || let.Declarations()[0].Name() != "local" {
+		t.Fatalf("local let converted to %#v", converted)
+	}
+
+	truth := quintJSONExpr{ID: json.Number("5"), Kind: "bool", Value: json.RawMessage("true")}
+	for _, labelName := range []string{"__label_Step", "main::__label_Step", "main::worker::__label_Step"} {
+		label := quintJSONExpr{ID: json.Number("5"), Kind: "let",
+			Opdef: &quintJSONDef{ID: json.Number("5"), Kind: "def", Name: labelName, Qualifier: "val", Expr: &truth},
+			Expr:  &truth}
+		converted, err = importer.expression(label)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if countOperator(converted, "LABEL") != 1 {
+			t.Fatalf("label let %q converted to %v", labelName, converted)
+		}
+	}
+
+	generate := quintJSONExpr{ID: json.Number("6"), Kind: "app", Opcode: "apalache::generate",
+		Args: []quintJSONExpr{{ID: json.Number("1"), Kind: "int", Value: json.RawMessage("5")}}}
+	nondeterministic := quintJSONExpr{ID: json.Number("5"), Kind: "let",
+		Opdef: &quintJSONDef{ID: json.Number("6"), Kind: "def", Name: "S", Qualifier: "nondet", Expr: &generate},
+		Expr:  &truth}
+	converted, err = importer.expression(nondeterministic)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if countOperator(converted, "EXISTS3") != 1 || countOperator(converted, "Apalache!Gen") != 1 {
+		t.Fatalf("nondet generate converted to %v", converted)
+	}
+}
+
 func setExpr(id string, arguments ...quintJSONExpr) quintJSONExpr {
 	return quintJSONExpr{ID: json.Number(id), Kind: "app", Opcode: "Set", Args: arguments}
 }
