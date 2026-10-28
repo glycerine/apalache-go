@@ -32,16 +32,17 @@ type TransitionExecutor struct {
 }
 
 func NewTransitionExecutor(constants, variables []string) *TransitionExecutor {
-	return newTransitionExecutorWithSolverOptions(constants, variables, nil, nil)
+	return newTransitionExecutorWithSolverOptions(constants, variables, nil, nil, false)
 }
 
 func newTransitionExecutorWithSolverOptions(
 	constants, variables []string, solverUIntOptions map[string]uint32, solverTextOptions map[string]string,
+	shortCircuit bool,
 ) *TransitionExecutor {
 	return &TransitionExecutor{
 		constants:         stringSet(constants),
 		variables:         stringSet(variables),
-		rewriter:          NewStratifiedRewriter(),
+		rewriter:          NewStratifiedRewriterWithOptions(StratifiedRewriterOptions{ShortCircuit: shortCircuit}),
 		scope:             InitialRewriterScope(),
 		prepared:          make(map[int]EncodedTransition),
 		solverUIntOptions: solverUIntOptions,

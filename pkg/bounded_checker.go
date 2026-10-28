@@ -531,7 +531,8 @@ func replayPendingNext(inputs modulePathInputs, path boundedPath, nextNumber int
 
 func replaySafetyPath(inputs modulePathInputs, path boundedPath) (*TransitionExecutor, error) {
 	executor := newTransitionExecutorWithSolverOptions(
-		inputs.constants, inputs.variables, inputs.tuning.solverUIntOptions, inputs.tuning.solverTextOptions)
+		inputs.constants, inputs.variables, inputs.tuning.solverUIntOptions, inputs.tuning.solverTextOptions,
+		inputs.tuning.shortCircuit)
 	if inputs.hasConstantInit {
 		if err := executor.InitializeConstants(inputs.constantInit); err != nil {
 			return nil, err

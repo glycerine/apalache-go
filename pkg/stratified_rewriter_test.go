@@ -63,6 +63,38 @@ func TestStratifiedRewriterAssignmentAndBooleanRules(t *testing.T) {
 	}
 }
 
+func TestStratifiedRewriterShortCircuitsAndOrAsConditionals(t *testing.T) {
+	for _, operator := range []string{"AND", "OR"} {
+		t.Run(operator, func(t *testing.T) {
+			rewriter := NewStratifiedRewriterWithOptions(StratifiedRewriterOptions{ShortCircuit: true})
+			scope := InitialRewriterScope()
+			arena, cells := scope.Arena.AppendCellTypes(
+				BasicCellType{Type: BoolT1}, BasicCellType{Type: BoolT1}, BasicCellType{Type: BoolT1})
+			scope.Arena = arena
+			scope.Binding = scope.Binding.With("p", cells[0]).With("q", cells[1]).With("r", cells[2])
+			expression := MustOperExpr(Op(operator), Typed(BoolT1),
+				NewNameExpr("p", Typed(BoolT1)), NewNameExpr("q", Typed(BoolT1)), NewNameExpr("r", Typed(BoolT1)))
+			if _, _, err := rewriter.Rewrite(expression, scope); err != nil {
+				t.Fatal(err)
+			}
+			constraints := rewriter.Constraints()
+			if len(constraints) != 2 {
+				t.Fatalf("%s generated %d constraints, want two nested conditionals", operator, len(constraints))
+			}
+			for _, constraint := range constraints {
+				equality, ok := constraint.(*OperExpr)
+				if !ok || equality.Operator().Name() != "EQ" {
+					t.Fatalf("%s constraint = %#v", operator, constraint)
+				}
+				conditional, ok := equality.Arguments()[1].(*OperExpr)
+				if !ok || conditional.Operator().Name() != "IF_THEN_ELSE" {
+					t.Fatalf("%s did not produce an IF_THEN_ELSE: %#v", operator, equality)
+				}
+			}
+		})
+	}
+}
+
 func TestStratifiedApplicationResolvesResidualResultVariable(t *testing.T) {
 	a, _ := NewVarType(1000)
 	sequence := MustOperExpr(Op("TUPLE"), Typed(mustSeq(StrT1)),

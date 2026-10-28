@@ -18,6 +18,7 @@ type CheckerTuning struct {
 	// Explicit path enumeration has no joined transition relation, so the
 	// Scala before/after modes have identical behavior after validation.
 	invariantMode     string
+	shortCircuit      bool
 	solverUIntOptions map[string]uint32
 	solverTextOptions map[string]string
 	outputTraces      bool
@@ -65,6 +66,12 @@ func ParseCheckerTuning(values map[string]string) (CheckerTuning, error) {
 				return CheckerTuning{}, fmt.Errorf("invalid value %s for %s, expected one of before, after", value, key)
 			}
 			result.invariantMode = value
+		case "rewriter.shortCircuit":
+			parsed, err := parseTuningBool(key, value)
+			if err != nil {
+				return CheckerTuning{}, err
+			}
+			result.shortCircuit = parsed
 		case "search.simulation":
 			parsed, err := parseTuningBool(key, value)
 			if err != nil {
@@ -99,6 +106,12 @@ func ParseCheckerTuning(values map[string]string) (CheckerTuning, error) {
 				return CheckerTuning{}, err
 			}
 			result.solverUIntOptions[key[len("z3."):]] = parsed
+		case "z3.memory_high_watermark_mb":
+			parsed, err := parseTuningUInt(key, value)
+			if err != nil {
+				return CheckerTuning{}, err
+			}
+			result.solverUIntOptions["memory_high_watermark"] = parsed
 		default:
 			if strings.HasPrefix(key, "z3.") {
 				result.solverTextOptions[key[len("z3."):]] = value

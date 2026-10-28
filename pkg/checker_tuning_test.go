@@ -63,6 +63,35 @@ func TestParseCheckerTuningUsesPinnedG3TypedCatalog(t *testing.T) {
 	}
 }
 
+func TestParseCheckerTuningMatchesFineTuningParserOptions(t *testing.T) {
+	tuning, err := ParseCheckerTuning(map[string]string{
+		"rewriter.shortCircuit":       "true",
+		"z3.memory_high_watermark_mb": "123",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !tuning.shortCircuit {
+		t.Fatal("rewriter.shortCircuit was not enabled")
+	}
+	if got := tuning.solverUIntOptions["memory_high_watermark"]; got != 123 {
+		t.Fatalf("memory_high_watermark = %d, want 123", got)
+	}
+	if solver, err := newG3SolverContextWithUIntOptions("QF_AUFNIA", tuning.solverUIntOptions); err != nil {
+		t.Fatalf("g3 rejected memory watermark: %v", err)
+	} else if err = solver.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for _, values := range []map[string]string{
+		{"rewriter.shortCircuit": "12333"},
+		{"z3.memory_high_watermark_mb": "aaaa"},
+	} {
+		if _, err = ParseCheckerTuning(values); err == nil {
+			t.Fatalf("invalid fine tuning accepted: %v", values)
+		}
+	}
+}
+
 func TestParseCheckerTuningMapsIntegerSolverOptionsToG3(t *testing.T) {
 	tuning, err := ParseCheckerTuning(map[string]string{
 		"smt.randomSeed":     "17",

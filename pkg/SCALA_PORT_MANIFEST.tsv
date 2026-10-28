@@ -364,7 +364,7 @@ tla-io/src/main/scala/at/forsyte/apalache/io/tlc/config/TlcConfigLexer.scala	par
 tla-io/src/main/scala/at/forsyte/apalache/io/tlc/config/TlcConfigParseError.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
 tla-io/src/main/scala/at/forsyte/apalache/io/tlc/config/TlcConfigTokenReader.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
 tla-io/src/main/scala/at/forsyte/apalache/io/tlc/config/tokens.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
-tla-io/src/main/scala/at/forsyte/apalache/io/tuning/FineTuningParser.scala	partial	checker_tuning.go	search filters, invariant mode, output-trace emission, and integer, Boolean, floating-point, and symbolic options in the pinned g3 typed catalog are validated and propagated; rewriter and Scala-only solver parameters stay open
+tla-io/src/main/scala/at/forsyte/apalache/io/tuning/FineTuningParser.scala	partial	checker_tuning.go;stratified_rewriter.go	search filters, invariant mode, short-circuit rewriting, output-trace emission, memory watermark aliasing, and options in the pinned g3 typed catalog are validated and propagated; CVC5 and solver parameters absent from g3 v0.0.5 stay unsupported
 tla-parser/src/main/scala/at/forsyte/apalache/tla/imp/AnnotationExtractor.scala	dependency	frontend*.go;tlago-v0.1.9	exact parser diagnostic parity remains
 tla-parser/src/main/scala/at/forsyte/apalache/tla/imp/AssumeTranslator.scala	dependency	frontend*.go;tlago-v0.1.9	exact parser diagnostic parity remains
 tla-parser/src/main/scala/at/forsyte/apalache/tla/imp/Context.scala	dependency	frontend*.go;tlago-v0.1.9	exact parser diagnostic parity remains

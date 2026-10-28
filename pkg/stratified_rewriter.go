@@ -8,16 +8,29 @@ import (
 // StratifiedRewriter lowers a supported ground/state expression into a
 // PureArena graph and records the ground constraints separately.
 type StratifiedRewriter struct {
-	integers    *IntValueCache
-	ranges      *IntRangeCache
-	literals    *UninterpretedLiteralCache
-	defaults    *DefaultValueCache
-	equality    *LazyEquality
-	constraints []Expr
+	integers     *IntValueCache
+	ranges       *IntRangeCache
+	literals     *UninterpretedLiteralCache
+	defaults     *DefaultValueCache
+	equality     *LazyEquality
+	shortCircuit bool
+	constraints  []Expr
 }
 
 func NewStratifiedRewriter() *StratifiedRewriter {
-	result := &StratifiedRewriter{integers: NewIntValueCache(), literals: NewUninterpretedLiteralCache()}
+	return NewStratifiedRewriterWithOptions(StratifiedRewriterOptions{})
+}
+
+// StratifiedRewriterOptions controls formula-shape choices that preserve TLA+
+// semantics but can materially affect solver performance.
+type StratifiedRewriterOptions struct {
+	ShortCircuit bool
+}
+
+func NewStratifiedRewriterWithOptions(options StratifiedRewriterOptions) *StratifiedRewriter {
+	result := &StratifiedRewriter{
+		integers: NewIntValueCache(), literals: NewUninterpretedLiteralCache(), shortCircuit: options.ShortCircuit,
+	}
 	result.ranges = NewIntRangeCache(result.integers)
 	result.equality = NewLazyEquality(result.assert, func(tag string) (ArenaCell, bool) {
 		return result.literals.Get(UninterpretedLiteral{Type: StrT1, Index: tag})
@@ -1877,6 +1890,19 @@ func (rewriter *StratifiedRewriter) rewriteBoolean(expression *OperExpr, scope R
 	}
 	if len(arguments) == 1 {
 		return rewriter.Rewrite(arguments[0], scope)
+	}
+	if rewriter.shortCircuit && (expression.Operator().Name() == "AND" || expression.Operator().Name() == "OR") {
+		conditional := arguments[len(arguments)-1]
+		for index := len(arguments) - 2; index >= 0; index-- {
+			if expression.Operator().Name() == "AND" {
+				conditional = MustOperExpr(Op("IF_THEN_ELSE"), Typed(BoolT1),
+					arguments[index], conditional, scope.Arena.FalseCell().NameExpr())
+			} else {
+				conditional = MustOperExpr(Op("IF_THEN_ELSE"), Typed(BoolT1),
+					arguments[index], scope.Arena.TrueCell().NameExpr(), conditional)
+			}
+		}
+		return rewriter.Rewrite(conditional, scope)
 	}
 	newArena, result := scope.Arena.AppendCellType(BasicCellType{Type: BoolT1})
 	scope.Arena = newArena
