@@ -684,7 +684,7 @@ func runTest(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stdout, "No example found.")
 		return exitOK
 	case pal.SafetyCounterexample:
-		if err = writeTestViolationITF(outputPaths, prepared.Module, result.States); err != nil {
+		if err = writeTestViolationTraces(outputPaths, prepared.Module, result.States, assertion); err != nil {
 			fmt.Fprintf(stderr, "cannot write test violation trace: %v\n", err)
 			return exitTool
 		}
@@ -695,7 +695,7 @@ func runTest(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		}
 		return exitCounterexample
 	case pal.SafetyDeadlock:
-		if err = writeTestViolationITF(outputPaths, prepared.Module, result.States); err != nil {
+		if err = writeTestViolationTraces(outputPaths, prepared.Module, result.States, ""); err != nil {
 			fmt.Fprintf(stderr, "cannot write test deadlock trace: %v\n", err)
 			return exitTool
 		}
@@ -711,11 +711,12 @@ func runTest(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	}
 }
 
-func writeTestViolationITF(paths commandOutputPaths, module *pal.Module, states []pal.DecodedState) error {
+func writeTestViolationTraces(paths commandOutputPaths, module *pal.Module, states []pal.DecodedState, invariant string) error {
 	if paths.runDir == "" && paths.customRunDir == "" {
 		return nil
 	}
-	_, err := writeDecodedITFPaths(paths.implicitFiles("violation.itf.json"), module, states)
+	_, err := writeDecodedTraceFormatPaths(paths.implicitFiles("violation.itf.json"), module, states,
+		traceViolationExpression(module, invariant))
 	return err
 }
 
@@ -907,13 +908,14 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 		for index, counterexample := range report.Counterexamples {
 			if *outputTraces {
 				name := traceITFPath("", "violation", index+1, len(report.Counterexamples))
-				written, writeErr := writeDecodedITFPaths(outputPaths.implicitFiles(name), prepared.Module, counterexample.States)
+				written, writeErr := writeDecodedTraceFormatPaths(outputPaths.implicitFiles(name), prepared.Module,
+					counterexample.States, traceViolationExpression(prepared.Module, counterexample.Invariant))
 				if writeErr != nil {
-					fmt.Fprintf(stderr, "cannot write ITF simulation counterexample: %v\n", writeErr)
+					fmt.Fprintf(stderr, "cannot write simulation counterexample traces: %v\n", writeErr)
 					return exitTool
 				}
 				for _, outputPath := range written {
-					fmt.Fprintf(stdout, "Wrote ITF trace to %s.\n", outputPath)
+					fmt.Fprintf(stdout, "Wrote trace to %s.\n", outputPath)
 				}
 			}
 			kind := "Invariant"
@@ -943,13 +945,19 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 			if *itfPath == "" {
 				outputFiles = outputPaths.implicitFiles(name)
 			}
-			written, writeErr := writeDecodedITFPaths(outputFiles, prepared.Module, result.States)
+			var written []string
+			var writeErr error
+			if *itfPath == "" {
+				written, writeErr = writeDecodedTraceFormatPaths(outputFiles, prepared.Module, result.States, nil)
+			} else {
+				written, writeErr = writeDecodedITFPaths(outputFiles, prepared.Module, result.States)
+			}
 			if writeErr != nil {
-				fmt.Fprintf(stderr, "cannot write ITF simulation: %v\n", writeErr)
+				fmt.Fprintf(stderr, "cannot write simulation trace: %v\n", writeErr)
 				return exitTool
 			}
 			for _, outputPath := range written {
-				fmt.Fprintf(stdout, "Wrote ITF trace to %s.\n", outputPath)
+				fmt.Fprintf(stdout, "Wrote trace to %s.\n", outputPath)
 			}
 		}
 		if len(results) > 1 {
@@ -1003,6 +1011,72 @@ func writeDecodedITFPaths(paths []string, module *pal.Module, states []pal.Decod
 		written = append(written, path)
 	}
 	return written, nil
+}
+
+func writeDecodedTraceFormats(
+	itfPath string,
+	module *pal.Module,
+	states []pal.DecodedState,
+	violation pal.Expr,
+) ([]string, error) {
+	prefix := strings.TrimSuffix(itfPath, ".itf.json")
+	if prefix == itfPath {
+		return nil, fmt.Errorf("implicit trace path %s does not end in .itf.json", itfPath)
+	}
+	tla, err := pal.FormatDecodedTraceTLA(module, states, violation)
+	if err != nil {
+		return nil, err
+	}
+	legacy, err := pal.MarshalDecodedTraceApalacheJSON(module, states, violation)
+	if err != nil {
+		return nil, err
+	}
+	files := []struct {
+		path string
+		data []byte
+	}{
+		{prefix + ".tla", []byte(tla)},
+		{prefix + ".json", append(legacy, '\n')},
+	}
+	written := make([]string, 0, 3)
+	for _, file := range files {
+		if err = os.WriteFile(file.path, file.data, 0o644); err != nil {
+			return written, err
+		}
+		written = append(written, file.path)
+	}
+	if err = writeDecodedITF(itfPath, module, states); err != nil {
+		return written, err
+	}
+	return append(written, itfPath), nil
+}
+
+func writeDecodedTraceFormatPaths(
+	itfPaths []string,
+	module *pal.Module,
+	states []pal.DecodedState,
+	violation pal.Expr,
+) ([]string, error) {
+	written := make([]string, 0, len(itfPaths)*3)
+	for _, path := range itfPaths {
+		files, err := writeDecodedTraceFormats(path, module, states, violation)
+		if err != nil {
+			return written, err
+		}
+		written = append(written, files...)
+	}
+	return written, nil
+}
+
+func traceViolationExpression(module *pal.Module, name string) pal.Expr {
+	if module != nil && name != "" {
+		for _, declaration := range module.OperDeclarations() {
+			if declaration.Name() == name {
+				return pal.MustOperExpr(pal.Op("NOT"), pal.Typed(pal.BoolT1), declaration.Body())
+			}
+		}
+	}
+	return pal.NewValueExpr(pal.BoolValue(true), pal.Typed(pal.BoolT1))
 }
 
 func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int {
@@ -1225,13 +1299,23 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 			if *itfPath == "" {
 				outputFiles = outputPaths.implicitFiles(name)
 			}
-			written, writeErr := writeDecodedITFPaths(outputFiles, prepared.Module, states)
+			var violation pal.Expr
+			if result.Outcome == pal.SafetyCounterexample && index < len(result.Counterexamples) {
+				violation = traceViolationExpression(prepared.Module, result.Counterexamples[index].Invariant)
+			}
+			var written []string
+			var writeErr error
+			if *itfPath == "" {
+				written, writeErr = writeDecodedTraceFormatPaths(outputFiles, prepared.Module, states, violation)
+			} else {
+				written, writeErr = writeDecodedITFPaths(outputFiles, prepared.Module, states)
+			}
 			if writeErr != nil {
-				fmt.Fprintf(stderr, "cannot write ITF trace: %v\n", writeErr)
+				fmt.Fprintf(stderr, "cannot write trace: %v\n", writeErr)
 				return exitTool
 			}
 			for _, outputPath := range written {
-				fmt.Fprintf(stdout, "Wrote ITF trace to %s.\n", outputPath)
+				fmt.Fprintf(stdout, "Wrote trace to %s.\n", outputPath)
 			}
 		}
 	}

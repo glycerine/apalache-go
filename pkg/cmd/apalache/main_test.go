@@ -661,6 +661,17 @@ Inv == x < 2
 	if _, err := os.Stat(filepath.Join(runDir, "example.itf.json")); err != nil {
 		t.Fatalf("custom run trace: %v", err)
 	}
+	legacyData, err := os.ReadFile(filepath.Join(runDir, "example.json"))
+	if err != nil {
+		t.Fatalf("custom legacy trace: %v", err)
+	}
+	if legacyStates, decodeErr := pal.UnmarshalApalacheJSONTrace(legacyData); decodeErr != nil || len(legacyStates) != 2 {
+		t.Fatalf("custom legacy trace states = %#v, %v", legacyStates, decodeErr)
+	}
+	if tlaData, err := os.ReadFile(filepath.Join(runDir, "example.tla")); err != nil ||
+		!bytes.Contains(tlaData, []byte("State1")) {
+		t.Fatalf("custom TLA trace = %q, %v", tlaData, err)
+	}
 	if data, err := os.ReadFile(filepath.Join(runDir, "run.txt")); err != nil ||
 		!strings.Contains(string(data), "check --output-traces") || !strings.Contains(string(data), path) {
 		t.Fatalf("custom run metadata = %q, %v", data, err)
@@ -950,7 +961,7 @@ StillZero == x = 0
 	if code := run(context.Background(), args, &stdout, &stderr); code != exitCounterexample {
 		t.Fatalf("failing output test = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
 	}
-	for _, name := range []string{"run.txt", "violation.itf.json"} {
+	for _, name := range []string{"run.txt", "violation.tla", "violation.json", "violation.itf.json"} {
 		if _, err := os.Stat(filepath.Join(runDir, name)); err != nil {
 			t.Fatalf("test output %s: %v", name, err)
 		}
