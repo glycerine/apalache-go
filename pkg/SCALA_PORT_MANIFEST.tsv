@@ -393,7 +393,7 @@ tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/ExprOptimizer.scala	partial	pre
 tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/Inliner.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
 tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/IntegerQuantificationOptimizer.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
 tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/Keramelizer.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
-tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/LetInOptimizer.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
+tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/LetInOptimizer.scala	ported	preprocess_let.go;preprocess_let_test.go	conservative one-pass use analysis removes unused LET declarations, preserves used/lambda definitions and untouched identities, propagates nested changes, and tracks rebuilt nodes
 tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/NormalizedNames.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
 tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/Normalizer.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
 tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/OperAppToLetInDef.scala	ported	preprocess_app_wrap.go;preprocess_app_wrap_test.go	selected named applications with arguments become fresh nullary LET definitions, nested/local calls are handled in dependency order, malformed callees fall through, and module transformation matches Scala identity semantics

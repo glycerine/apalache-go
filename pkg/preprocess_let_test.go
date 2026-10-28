@@ -2,6 +2,26 @@ package apalache
 
 import "testing"
 
+func TestOptimizeLetInKeepsValuesAndOperatorsWithoutLet(t *testing.T) {
+	values := []Expr{
+		NewValueExpr(BoolValue(true), Typed(BoolT1)),
+		intLiteral(42),
+		NewValueExpr(StringValue("foo"), Typed(StrT1)),
+	}
+	for _, value := range values {
+		result := OptimizeLetIn(TouchExpr{Expr: value, Changed: true}, nil)
+		if result.Changed || result.Expr != value {
+			t.Fatalf("value was changed: %#v", result)
+		}
+	}
+	operator := MustOperExpr(Op("PLUS"), Typed(IntT1), intLiteral(1),
+		MustOperExpr(Op("MULT"), Typed(IntT1), intLiteral(2), intLiteral(3)))
+	result := OptimizeLetIn(TouchExpr{Expr: operator, Changed: true}, nil)
+	if result.Changed || result.Expr != operator {
+		t.Fatalf("LET-free operator was changed: %#v", result)
+	}
+}
+
 func TestOptimizeLetInScalaCases(t *testing.T) {
 	stringOperator := mustOperator(nil, StrT1)
 	declaration := func(name, value string) *OperDecl {
