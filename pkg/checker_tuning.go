@@ -9,9 +9,9 @@ import (
 	"strings"
 )
 
-// CheckerTuning is the validated subset of Scala search tuning whose
-// semantics are implemented by the Go checker. Regular expressions use full
-// matches, as java.util.regex.Matcher.matches does in Scala.
+// CheckerTuning is the validated Scala search-tuning contract used by the Go
+// checker. Regular expressions use full matches, as
+// java.util.regex.Matcher.matches does in Scala.
 type CheckerTuning struct {
 	transitionFilter *regexp.Regexp
 	invariantFilter  *regexp.Regexp
@@ -26,6 +26,9 @@ type CheckerTuning struct {
 	simulation        bool
 	simulationRuns    int
 	hasSimulation     bool
+	jailTimeoutMinSec int64
+	jailTimeoutFactor int64
+	idleTimeoutSec    int64
 }
 
 // ParseCheckerTuning validates checker tuning accepted by the Go backend.
@@ -93,6 +96,24 @@ func ParseCheckerTuning(values map[string]string) (CheckerTuning, error) {
 			}
 			result.outputTraces = parsed
 			result.hasOutputTraces = true
+		case "search.split.timeout.minimum":
+			parsed, err := parseTuningInt64(key, value)
+			if err != nil {
+				return CheckerTuning{}, err
+			}
+			result.jailTimeoutMinSec = parsed
+		case "search.split.timeout.factor":
+			parsed, err := strconv.ParseInt(value, 10, 32)
+			if err != nil {
+				return CheckerTuning{}, fmt.Errorf("expected a 32-bit integer for %s, but got %s", key, value)
+			}
+			result.jailTimeoutFactor = parsed
+		case "search.idle.timeout":
+			parsed, err := parseTuningInt64(key, value)
+			if err != nil {
+				return CheckerTuning{}, err
+			}
+			result.idleTimeoutSec = parsed
 		case "smt.randomSeed":
 			parsed, err := parseTuningUInt(key, value)
 			if err != nil {
@@ -140,6 +161,14 @@ func parseTuningBool(key, value string) (bool, error) {
 		return false, nil
 	}
 	return false, fmt.Errorf("non-Boolean value %s for %s", value, key)
+}
+
+func parseTuningInt64(key, value string) (int64, error) {
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("expected a 64-bit integer for %s, but got %s", key, value)
+	}
+	return parsed, nil
 }
 
 func (tuning CheckerTuning) SimulationRuns() int {
