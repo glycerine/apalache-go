@@ -51,3 +51,22 @@ func TestMultiTypeCheckerListenerBroadcastsInOrder(t *testing.T) {
 		t.Fatalf("events = %v, %v; want %v", first.events, second.events, want)
 	}
 }
+
+func TestIdleTypeCheckerListenerAcceptsEveryEvent(t *testing.T) {
+	listener := IdleTypeCheckerListener{}
+	exact := ExactRef{SourceID: NewUID()}
+	listener.OnTypeFound(exact, IntT1)
+	listener.OnTypeError(BlameRef{SourceID: exact.SourceID}, "bad")
+	listener.OnTypeWarning(exact, "maybe")
+}
+
+func TestMultiTypeCheckerListenerOwnsSubscriberSequence(t *testing.T) {
+	first, replacement := &recordingTypeListener{}, &recordingTypeListener{}
+	subscribers := []TypeCheckerListener{first}
+	listener := NewMultiTypeCheckerListener(subscribers...)
+	subscribers[0] = replacement
+	listener.OnTypeFound(ExactRef{SourceID: NewUID()}, BoolT1)
+	if len(first.events) != 1 || len(replacement.events) != 0 {
+		t.Fatalf("subscriber events = %v, %v", first.events, replacement.events)
+	}
+}

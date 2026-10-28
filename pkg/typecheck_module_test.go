@@ -1,6 +1,55 @@
 package apalache
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
+
+func TestRecordingTypeCheckerListenerContracts(t *testing.T) {
+	store := NewSourceStore()
+	original := NewNameExpr("x", Untyped())
+	location := SourceLocation{Filename: "Types", Region: NewSourceRegion(4, 2, 4, 8)}
+	if err := store.Add(original.ID(), location); err != nil {
+		t.Fatal(err)
+	}
+	transformed := NewNameExpr("x", Untyped())
+	store.OnExpressionTransformation(original, transformed)
+
+	listener := NewRecordingTypeCheckerListener(store)
+	exact := ExactRef{SourceID: transformed.ID()}
+	listener.OnTypeFound(exact, IntT1)
+	listener.OnTypeFound(exact, BoolT1)
+	listener.OnTypeError(BlameRef{SourceID: transformed.ID()}, "bad")
+	listener.OnTypeWarning(exact, "maybe")
+	listener.OnTypeError(BlameRef{SourceID: NewUID()}, "unknown")
+
+	types := listener.Types()
+	if typ := types[transformed.ID()]; !EqualTypes(typ, BoolT1) {
+		t.Fatalf("recorded type = %v", typ)
+	}
+	delete(types, transformed.ID())
+	if _, found := listener.Types()[transformed.ID()]; !found {
+		t.Fatal("Types returned the listener's mutable map")
+	}
+
+	wantPosition := Position{Filename: "Types", Line: 4, Column: 2, EndLine: 4, EndColumn: 8}
+	diagnostics := listener.Diagnostics()
+	if len(diagnostics) != 3 || diagnostics[0].Message != "bad" || diagnostics[0].Position != wantPosition ||
+		diagnostics[1].Message != "maybe" || diagnostics[1].Position != wantPosition ||
+		diagnostics[2].Message != "unknown" || diagnostics[2].Position != (Position{}) {
+		t.Fatalf("diagnostics = %+v", diagnostics)
+	}
+	if got := listener.Errors(); len(got) != 2 || got[0].Code != "E-TYPE" || got[1].Message != "unknown" {
+		t.Fatalf("errors = %+v", got)
+	}
+	if got := listener.Warnings(); len(got) != 1 || got[0].Code != "W-TYPE" || got[0].Message != "maybe" {
+		t.Fatalf("warnings = %+v", got)
+	}
+	diagnostics[0].Message = "mutated"
+	if reflect.DeepEqual(diagnostics, listener.Diagnostics()) {
+		t.Fatal("Diagnostics returned the listener's mutable slice")
+	}
+}
 
 func TestTypeCheckModuleProducesTypedCopy(t *testing.T) {
 	constant := NewConstDecl("N", Untyped())

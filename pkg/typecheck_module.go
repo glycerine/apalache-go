@@ -21,14 +21,7 @@ func (listener *RecordingTypeCheckerListener) OnTypeWarning(ref EtcRef, message 
 	listener.diagnostics = append(listener.diagnostics, Diagnostic{Code: "W-TYPE", Severity: SeverityWarning, Message: message, Position: listener.position(ref.ID())})
 }
 func (listener *RecordingTypeCheckerListener) position(id UID) Position {
-	if listener.sources == nil {
-		return Position{}
-	}
-	location, found := listener.sources.Find(id)
-	if !found {
-		return Position{}
-	}
-	return Position{Filename: location.Filename, Line: location.Region.Start.Line, Column: location.Region.Start.Column, EndLine: location.Region.End.Line, EndColumn: location.Region.End.Column}
+	return positionForID(listener.sources, id)
 }
 func (listener *RecordingTypeCheckerListener) Types() map[UID]Type {
 	result := make(map[UID]Type, len(listener.types))
@@ -39,6 +32,21 @@ func (listener *RecordingTypeCheckerListener) Types() map[UID]Type {
 }
 func (listener *RecordingTypeCheckerListener) Diagnostics() []Diagnostic {
 	return append([]Diagnostic(nil), listener.diagnostics...)
+}
+func (listener *RecordingTypeCheckerListener) Errors() []Diagnostic {
+	return listener.diagnosticsWithSeverity(SeverityError)
+}
+func (listener *RecordingTypeCheckerListener) Warnings() []Diagnostic {
+	return listener.diagnosticsWithSeverity(SeverityWarning)
+}
+func (listener *RecordingTypeCheckerListener) diagnosticsWithSeverity(severity Severity) []Diagnostic {
+	result := make([]Diagnostic, 0)
+	for _, diagnostic := range listener.diagnostics {
+		if diagnostic.Severity == severity {
+			result = append(result, diagnostic)
+		}
+	}
+	return result
 }
 
 type TypeCheckOptions struct {

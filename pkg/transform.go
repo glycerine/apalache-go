@@ -1,5 +1,7 @@
 package apalache
 
+import "fmt"
+
 type ExprTransform func(Expr) Expr
 type DeclTransform func(Decl) Decl
 type OperDeclTransform func(*OperDecl) *OperDecl
@@ -16,6 +18,27 @@ type TouchTransform func(TouchExpr) TouchExpr
 type TransformationListener interface {
 	OnExpressionTransformation(original, transformed Expr)
 	OnDeclarationTransformation(original, transformed Decl)
+}
+
+// TypeWatchdogTransformationListener rejects transformations that discard an
+// already inferred type. TypingException is raised as a panic because listener
+// callbacks deliberately have no error return, matching the Scala contract.
+type TypeWatchdogTransformationListener struct{}
+
+func (TypeWatchdogTransformationListener) OnExpressionTransformation(original, transformed Expr) {
+	if original.Tag().IsTyped() && !transformed.Tag().IsTyped() {
+		panic(NewTypingException(fmt.Sprintf(
+			"A typed expression %s was transformed to an untyped expression %s",
+			original.ID(), transformed.ID()), transformed.ID()))
+	}
+}
+
+func (TypeWatchdogTransformationListener) OnDeclarationTransformation(original, transformed Decl) {
+	if original.Tag().IsTyped() && !transformed.Tag().IsTyped() {
+		panic(NewTypingException(fmt.Sprintf(
+			"A typed declaration %s was transformed to an untyped expression %s",
+			original.Name(), transformed.Name()), transformed.ID()))
+	}
 }
 
 type TransformationTracker interface {

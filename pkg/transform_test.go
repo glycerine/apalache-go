@@ -43,6 +43,50 @@ func TestListenerTracker(t *testing.T) {
 	}
 }
 
+func TestTypeWatchdogTransformationListener(t *testing.T) {
+	watchdog := TypeWatchdogTransformationListener{}
+	watchdog.OnExpressionTransformation(NewNameExpr("x", Untyped()), NewNameExpr("x", Untyped()))
+	watchdog.OnExpressionTransformation(NewNameExpr("x", Untyped()), NewNameExpr("x", Typed(IntT1)))
+	watchdog.OnExpressionTransformation(NewNameExpr("x", Typed(IntT1)), NewNameExpr("x", Typed(BoolT1)))
+	watchdog.OnDeclarationTransformation(NewConstDecl("X", Untyped()), NewConstDecl("X", Untyped()))
+	watchdog.OnDeclarationTransformation(NewConstDecl("X", Untyped()), NewConstDecl("X", Typed(IntT1)))
+	watchdog.OnDeclarationTransformation(NewConstDecl("X", Typed(IntT1)), NewConstDecl("X", Typed(BoolT1)))
+
+	t.Run("expression", func(t *testing.T) {
+		original := NewNameExpr("x", Typed(IntT1))
+		transformed := NewNameExpr("x", Untyped())
+		assertTypingPanic(t, transformed.ID(), "A typed expression "+original.ID().String()+
+			" was transformed to an untyped expression "+transformed.ID().String(), func() {
+			NewListenerTracker(watchdog).Hold(original, transformed)
+		})
+	})
+
+	t.Run("declaration", func(t *testing.T) {
+		original := NewConstDecl("Old", Typed(IntT1))
+		transformed := NewConstDecl("New", Untyped())
+		assertTypingPanic(t, transformed.ID(),
+			"A typed declaration Old was transformed to an untyped expression New", func() {
+				NewListenerTracker(watchdog).TrackDeclaration(func(Decl) Decl { return transformed })(original)
+			})
+	})
+}
+
+func assertTypingPanic(t *testing.T, cause UID, message string, action func()) {
+	t.Helper()
+	defer func() {
+		recovered := recover()
+		err, ok := recovered.(*TypingException)
+		if !ok {
+			t.Fatalf("panic = %T %v, want *TypingException", recovered, recovered)
+		}
+		if err.CauseExprID() != cause || err.Error() != message {
+			t.Fatalf("typing panic = %q at %s, want %q at %s", err, err.CauseExprID(), message, cause)
+		}
+	}()
+	action()
+	t.Fatal("action did not panic")
+}
+
 func TestDeepCopyExpressionTree(t *testing.T) {
 	x := NewNameExpr("x", Typed(IntT1))
 	one := NewValueExpr(Int64Value(1), Typed(IntT1))
