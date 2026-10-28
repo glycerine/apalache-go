@@ -70,6 +70,16 @@ func TestStratifiedVariantConstructionAndAccess(t *testing.T) {
 	if !found || unsafeValue.Int64() != 7 {
 		t.Fatalf("unsafe variant value = %v, found %v", unsafeValue, found)
 	}
+	wrongTag := MustOperExpr(Op("Variants!VariantGetUnsafe"), Typed(IntT1),
+		NewValueExpr(StringValue("A"), Typed(StrT1)),
+		testVariantExpression(variantType, "B", NewValueExpr(BoolValue(false), Typed(BoolT1))))
+	wrongScope, wrongCell, err := rewriter.Rewrite(wrongTag, scope)
+	if err != nil {
+		t.Fatalf("unsafe access with wrong tag became unsatisfiable: %v", err)
+	}
+	if !EqualTypes(wrongCell.Type.TLAType(), IntT1) || wrongScope.Arena.CellCount() < scope.Arena.CellCount() {
+		t.Fatalf("unsafe wrong-tag result = %v in arena %d", wrongCell, wrongScope.Arena.CellCount())
+	}
 
 	tag := MustOperExpr(Op("Variants!VariantTag"), Typed(StrT1), variant)
 	tagEquals := MustOperExpr(Op("EQ"), Typed(BoolT1), tag, NewValueExpr(StringValue("A"), Typed(StrT1)))
@@ -120,11 +130,13 @@ func TestStratifiedVariantFilterAndDefaultThroughG3(t *testing.T) {
 	variantType := testVariantType(t)
 	setType := mustSet(variantType)
 	variantA := testVariantExpression(variantType, "A", NewValueExpr(Int64Value(4), Typed(IntT1)))
+	variantASecond := testVariantExpression(variantType, "A", NewValueExpr(Int64Value(10), Typed(IntT1)))
 	variantB := testVariantExpression(variantType, "B", NewValueExpr(BoolValue(true), Typed(BoolT1)))
-	variants := MustOperExpr(Op("SET_ENUM"), Typed(setType), variantA, variantB)
+	variants := MustOperExpr(Op("SET_ENUM"), Typed(setType), variantA, variantASecond, variantB)
 	filtered := MustOperExpr(Op("Variants!VariantFilter"), Typed(mustSet(IntT1)),
 		NewValueExpr(StringValue("A"), Typed(StrT1)), variants)
-	expected := MustOperExpr(Op("SET_ENUM"), Typed(mustSet(IntT1)), NewValueExpr(Int64Value(4), Typed(IntT1)))
+	expected := MustOperExpr(Op("SET_ENUM"), Typed(mustSet(IntT1)),
+		NewValueExpr(Int64Value(4), Typed(IntT1)), NewValueExpr(Int64Value(10), Typed(IntT1)))
 	equal := MustOperExpr(Op("EQ"), Typed(BoolT1), filtered, expected)
 	rewriter := NewStratifiedRewriter()
 	scope, result, err := rewriter.Rewrite(equal, InitialRewriterScope())
