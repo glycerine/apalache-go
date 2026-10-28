@@ -96,3 +96,45 @@ func TestEtcTypeCheckerAdapterMatchesScalaClassification(t *testing.T) {
 		t.Fatalf("unrecognized error = %#v, %v", message, matched)
 	}
 }
+
+func TestCheckerExceptionAdapterMatchesScalaClassification(t *testing.T) {
+	store := NewSourceStore()
+	changes := NewChangeListener()
+	original := NewNameExpr("x", Typed(IntT1))
+	transformed := NewNameExpr("x", Typed(IntT1))
+	location := SourceLocation{Filename: "Spec", Region: NewSourceRegion(3, 4, 3, 8)}
+	if err := store.Add(original.ID(), location); err != nil {
+		t.Fatal(err)
+	}
+	changes.OnExpressionTransformation(original, transformed)
+	adapter := CheckerExceptionAdapter{Sources: store, Changes: changes}
+	tests := []struct {
+		name       string
+		err        error
+		want       string
+		stackTrace bool
+	}{
+		{"configuration", &ConfigurationError{Message: "missing INIT"}, "Configuration error (see the manual): missing INIT", false},
+		{"override", &OverrideError{Message: "bad override"}, "Configuration error (see the manual): bad override", false},
+		{"assignment", &AssignmentError{Message: "x is unassigned"}, "Assignment error: x is unassigned", false},
+		{"outdated", NewOutdatedAnnotationsError("old annotation", transformed), "Spec.tla:3:4-3:8: rewriter error: old annotation", false},
+		{"language", NewLanguagePredError("bad fragment", nil), "Unexpected expressions in the specification (see the error messages)", false},
+		{"typing input", NewTypingInputException("bad type", transformed.ID()), "Spec.tla:3:4-3:8: type input error: bad type", false},
+		{"typing internal", NewTypingException("lost type", transformed.ID()), "Spec.tla:3:4-3:8: internal error in type checking: lost type", true},
+		{"JSON", NewJSONDeserializationError("bad JSON", errors.New("syntax")), "Error in JSON deserialization. Perhaps the file is malformed?: bad JSON.", false},
+		{"ITF", &ITFFormatError{ITFError: &ITFError{Kind: "ITF format error", Message: "bad state"}}, "Error in ITF deserialization. Perhaps the file is malformed?: ITF format error: bad state.", false},
+		{"malformed TLA", NewMalformedTlaError("bad node", transformed), "Spec.tla:3:4-3:8: unexpected TLA+ expression: bad node", true},
+		{"malformed specification", NewMalformedSepecificationError("no behavior"), "The specification is malformed: no behavior", false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			message, matched := adapter.Adapt(test.err)
+			if !matched || message.Message() != test.want || message.RequiresStackTrace() != test.stackTrace {
+				t.Fatalf("Adapt(%T) = %#v, %v", test.err, message, matched)
+			}
+		})
+	}
+	if message, matched := adapter.Adapt(errors.New("other")); matched || message != nil {
+		t.Fatalf("unrecognized error = %#v, %v", message, matched)
+	}
+}

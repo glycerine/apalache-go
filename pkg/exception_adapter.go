@@ -82,6 +82,72 @@ func (adapter EtcTypeCheckerAdapter) Adapt(err error) (ErrorMessage, bool) {
 	return nil, false
 }
 
+// CheckerExceptionAdapter classifies the user-facing and internal failures
+// emitted by the standalone checker pipeline. Source locations are resolved
+// through transformation ancestry, matching the Scala checker adapter.
+type CheckerExceptionAdapter struct {
+	Sources *SourceStore
+	Changes *ChangeListener
+}
+
+func (adapter CheckerExceptionAdapter) location(id UID) string {
+	if adapter.Sources != nil {
+		locator := NewSourceLocator(adapter.Sources.SourceMap(), adapter.Changes)
+		if found, ok := locator.SourceOfID(id); ok {
+			return found.String()
+		}
+	}
+	return "<unknown>"
+}
+
+func (adapter CheckerExceptionAdapter) Adapt(err error) (ErrorMessage, bool) {
+	var configuration *ConfigurationError
+	if errors.As(err, &configuration) {
+		return NormalErrorMessage{Text: "Configuration error (see the manual): " + configuration.Error()}, true
+	}
+	var override *OverrideError
+	if errors.As(err, &override) {
+		return NormalErrorMessage{Text: "Configuration error (see the manual): " + override.Error()}, true
+	}
+	var assignment *AssignmentError
+	if errors.As(err, &assignment) {
+		return NormalErrorMessage{Text: "Assignment error: " + assignment.Error()}, true
+	}
+	var outdated *OutdatedAnnotationsError
+	if errors.As(err, &outdated) {
+		return NormalErrorMessage{Text: adapter.location(outdated.CauseExpr().ID()) + ": rewriter error: " + outdated.Error()}, true
+	}
+	var language *LanguagePredError
+	if errors.As(err, &language) {
+		return NormalErrorMessage{Text: "Unexpected expressions in the specification (see the error messages)"}, true
+	}
+	var input *TypingInputException
+	if errors.As(err, &input) {
+		return NormalErrorMessage{Text: adapter.location(input.CauseExprID()) + ": type input error: " + input.Error()}, true
+	}
+	var typing *TypingException
+	if errors.As(err, &typing) {
+		return FailureMessage{Text: adapter.location(typing.CauseExprID()) + ": internal error in type checking: " + typing.Error()}, true
+	}
+	var jsonError *JSONDeserializationError
+	if errors.As(err, &jsonError) {
+		return NormalErrorMessage{Text: "Error in JSON deserialization. Perhaps the file is malformed?: " + jsonError.Error() + "."}, true
+	}
+	var itfError *ITFError
+	if errors.As(err, &itfError) {
+		return NormalErrorMessage{Text: "Error in ITF deserialization. Perhaps the file is malformed?: " + itfError.Error() + "."}, true
+	}
+	var malformed *MalformedTlaError
+	if errors.As(err, &malformed) {
+		return FailureMessage{Text: adapter.location(malformed.CauseExpr().ID()) + ": unexpected TLA+ expression: " + malformed.Error()}, true
+	}
+	var specification *MalformedSepecificationError
+	if errors.As(err, &specification) {
+		return NormalErrorMessage{Text: "The specification is malformed: " + specification.Error()}, true
+	}
+	return nil, false
+}
+
 // AdaptedError retains the message classification produced by an adapter.
 type AdaptedError struct{ Message ErrorMessage }
 
