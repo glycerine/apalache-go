@@ -135,6 +135,59 @@ func TestFlattenBooleanConnectives(t *testing.T) {
 	}
 }
 
+func TestFlattenBooleanConnectivesScalaLetAndTagRegressions(t *testing.T) {
+	truth := NewValueExpr(BoolValue(true), Typed(BoolT1))
+	nestedAnd := func() Expr {
+		return MustOperExpr(Op("AND"), Typed(BoolT1),
+			MustOperExpr(Op("AND"), Typed(BoolT1), truth, truth), truth)
+	}
+	nestedOr := func() Expr {
+		return MustOperExpr(Op("OR"), Typed(BoolT1),
+			MustOperExpr(Op("OR"), Typed(BoolT1), truth, truth), truth)
+	}
+	flatten := FlattenBooleanConnectives(IdleTracker{})
+
+	local := NewOperDecl("A", nil, nestedOr(), Typed(mustOperatorType(t, nil, BoolT1)))
+	let := NewLetInExpr(untypedApp("A"), Typed(BoolT1), local)
+	flattenedLet := flatten(let).(*LetInExpr)
+	if body := flattenedLet.Declarations()[0].Body().(*OperExpr); body.Operator().Name() != "OR" || len(body.Arguments()) != 3 {
+		t.Fatal("nested LET declaration body was not flattened")
+	}
+	if !flattenedLet.Tag().Equal(let.Tag()) {
+		t.Fatal("LET tag changed")
+	}
+
+	setInt := mustSetType(t, IntT1)
+	one := NewValueExpr(Int64Value(1), Typed(IntT1))
+	setOne := MustOperExpr(Op("SET_ENUM"), Typed(setInt), one)
+	empty := MustOperExpr(Op("SET_ENUM"), Typed(setInt))
+	variable := NewNameExpr("x", Typed(IntT1))
+	filter := MustOperExpr(Op("SET_FILTER"), Typed(setInt), variable, setOne, nestedOr())
+	flattenedFilter := flatten(filter).(*OperExpr)
+	if !flattenedFilter.Tag().Equal(Typed(setInt)) || len(flattenedFilter.Arguments()[2].(*OperExpr).Arguments()) != 3 {
+		t.Fatal("SET_FILTER lost its type or flattened predicate")
+	}
+
+	conditional := MustOperExpr(Op("IF_THEN_ELSE"), Typed(setInt), nestedAnd(), setOne, empty)
+	flattenedConditional := flatten(conditional).(*OperExpr)
+	if !flattenedConditional.Tag().Equal(Typed(setInt)) || len(flattenedConditional.Arguments()[0].(*OperExpr).Arguments()) != 3 {
+		t.Fatal("IF-THEN-ELSE lost its result type or flattened condition")
+	}
+	membership := MustOperExpr(Op("SET_IN"), Typed(BoolT1), one, conditional)
+	flattenedMembership := flatten(membership).(*OperExpr)
+	if !flattenedMembership.Tag().Equal(Typed(BoolT1)) ||
+		!flattenedMembership.Arguments()[1].Tag().Equal(Typed(setInt)) {
+		t.Fatal("rebuilt parent/child tags were conflated")
+	}
+
+	functionType := mustFunType(t, IntT1, BoolT1)
+	function := MustOperExpr(Op("FUN_CTOR"), Typed(functionType),
+		MustOperExpr(Op("IF_THEN_ELSE"), Typed(BoolT1), nestedAnd(), truth, truth), variable, setOne)
+	if got := flatten(function); !got.Tag().Equal(Typed(functionType)) {
+		t.Fatalf("function constructor tag = %v", got.Tag())
+	}
+}
+
 func TestPropagatePrimes(t *testing.T) {
 	x := NewNameExpr("x", Untyped())
 	y := NewNameExpr("y", Untyped())
