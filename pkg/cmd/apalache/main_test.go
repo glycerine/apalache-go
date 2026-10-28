@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -798,6 +799,20 @@ Next == x' = x + 1
 	}
 	if states, ok := trace["states"].([]any); !ok || len(states) != 3 {
 		t.Fatalf("ITF simulation = %#v", trace)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	multiPath := filepath.Join(dir, "multi.itf.json")
+	code = run(context.Background(), []string{"simulate", "--max-run=2", "--length=1", "--itf=" + multiPath, path},
+		&stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("multi-run ITF = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
+	}
+	for run := 1; run <= 2; run++ {
+		outputPath := filepath.Join(dir, fmt.Sprintf("multi.itf-run-%d.json", run))
+		if _, err = os.Stat(outputPath); err != nil {
+			t.Fatalf("numbered ITF run %d: %v", run, err)
+		}
 	}
 }
 

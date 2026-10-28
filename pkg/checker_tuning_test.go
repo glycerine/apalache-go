@@ -69,6 +69,25 @@ func TestParseCheckerTuningMapsIntegerSolverOptionsToG3(t *testing.T) {
 	}
 }
 
+func TestParseCheckerTuningSimulationControls(t *testing.T) {
+	tuning, err := ParseCheckerTuning(map[string]string{
+		"search.simulation": "true", "search.simulation.maxRun": "17",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !tuning.HasSimulationControls() || tuning.SimulationRuns() != 17 || !tuning.simulation {
+		t.Fatalf("simulation tuning = %#v", tuning)
+	}
+	for _, values := range []map[string]string{
+		{"search.simulation": "yes"}, {"search.simulation.maxRun": "0"}, {"search.outputTraces": "true"},
+	} {
+		if _, err = ParseCheckerTuning(values); err == nil {
+			t.Fatalf("invalid simulation tuning accepted: %v", values)
+		}
+	}
+}
+
 func TestBoundedSafetyHonorsInvariantFilter(t *testing.T) {
 	module, configuration := counterSafetyModule(0)
 	prepared, err := PrepareSafetyTransitions(module, SafetyPipelineOptions{Specification: configuration})

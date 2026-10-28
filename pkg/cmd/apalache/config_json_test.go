@@ -250,7 +250,7 @@ Next == x' = x + 1
 	}
 	configuration := `{
   "source":"Simulation.tla",
-  "checker":{"length":2},
+  "checker":{"length":2,"tuning":{"search.simulation":"true","search.simulation.maxRun":"3"}},
   "typechecker":{"infer-poly":true}
 }`
 	if err := os.WriteFile("simulation.json", []byte(configuration), 0o600); err != nil {
@@ -260,14 +260,16 @@ Next == x' = x + 1
 	var stdout, stderr bytes.Buffer
 	if code := run(context.Background(), []string{"simulate", "--config-file=simulation.json"}, &stdout, &stderr); code != exitOK ||
 		!strings.Contains(stdout.String(), "Simulation completed through depth 2") ||
-		!strings.Contains(stdout.String(), "State 2: x = 2") {
+		!strings.Contains(stdout.String(), "State 2: x = 2") ||
+		!strings.Contains(stdout.String(), "Simulation run 3 of 3") {
 		t.Fatalf("configured simulation = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
 	}
 
 	stdout.Reset()
 	stderr.Reset()
-	if code := run(context.Background(), []string{"simulate", "--config-file=simulation.json", "--length=1"}, &stdout, &stderr); code != exitOK ||
-		!strings.Contains(stdout.String(), "through depth 1") || strings.Contains(stdout.String(), "State 2:") {
+	if code := run(context.Background(), []string{"simulate", "--config-file=simulation.json", "--length=1", "--max-run=1"}, &stdout, &stderr); code != exitOK ||
+		!strings.Contains(stdout.String(), "through depth 1") || strings.Contains(stdout.String(), "State 2:") ||
+		strings.Contains(stdout.String(), "Simulation run 2") {
 		t.Fatalf("simulation CLI override = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
 	}
 }

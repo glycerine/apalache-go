@@ -400,8 +400,12 @@ func (config jsonCommandConfig) validateForModelCommand(command string, checkSpe
 		}
 	}
 	if config.Checker.Tuning != nil {
-		if _, err := pal.ParseCheckerTuning(*config.Checker.Tuning); err != nil {
+		tuning, err := pal.ParseCheckerTuning(*config.Checker.Tuning)
+		if err != nil {
 			return fmt.Errorf("invalid JSON checker.tuning: %w", err)
+		}
+		if tuning.HasSimulationControls() && command != "simulate" {
+			return fmt.Errorf("JSON simulation tuning is currently supported only by the Go simulate command")
 		}
 	}
 	if !checkSpecific && (config.Checker.MaxError != nil || config.Checker.View != nil) {

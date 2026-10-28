@@ -18,6 +18,9 @@ type CheckerTuning struct {
 	// Scala before/after modes have identical behavior after validation.
 	invariantMode     string
 	solverUIntOptions map[string]uint32
+	simulation        bool
+	simulationRuns    int
+	hasSimulation     bool
 }
 
 // ParseCheckerTuning validates checker tuning accepted by the Go backend.
@@ -56,6 +59,20 @@ func ParseCheckerTuning(values map[string]string) (CheckerTuning, error) {
 				return CheckerTuning{}, fmt.Errorf("invalid value %s for %s, expected one of before, after", value, key)
 			}
 			result.invariantMode = value
+		case "search.simulation":
+			parsed, err := parseTuningBool(key, value)
+			if err != nil {
+				return CheckerTuning{}, err
+			}
+			result.simulation = parsed
+			result.hasSimulation = true
+		case "search.simulation.maxRun":
+			parsed, err := strconv.Atoi(value)
+			if err != nil || parsed <= 0 {
+				return CheckerTuning{}, fmt.Errorf("expected a positive integer for %s, but got %s", key, value)
+			}
+			result.simulationRuns = parsed
+			result.hasSimulation = true
 		case "smt.randomSeed":
 			parsed, err := parseTuningUInt(key, value)
 			if err != nil {
@@ -75,6 +92,25 @@ func ParseCheckerTuning(values map[string]string) (CheckerTuning, error) {
 	}
 	return result, nil
 }
+
+func parseTuningBool(key, value string) (bool, error) {
+	if value == "true" {
+		return true, nil
+	}
+	if value == "false" {
+		return false, nil
+	}
+	return false, fmt.Errorf("non-Boolean value %s for %s", value, key)
+}
+
+func (tuning CheckerTuning) SimulationRuns() int {
+	if tuning.simulationRuns > 0 {
+		return tuning.simulationRuns
+	}
+	return 100
+}
+
+func (tuning CheckerTuning) HasSimulationControls() bool { return tuning.hasSimulation }
 
 func parseTuningUInt(key, value string) (uint32, error) {
 	parsed, err := strconv.ParseUint(value, 10, 32)

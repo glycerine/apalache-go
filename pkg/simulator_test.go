@@ -63,3 +63,63 @@ func TestSimulateBehaviorRejectsUnsatisfiableInitialState(t *testing.T) {
 		t.Fatal("unsatisfiable initial state was accepted")
 	}
 }
+
+func TestSimulateBehaviorsRandomizesIndependentRuns(t *testing.T) {
+	x := NewNameExpr("x", Typed(IntT1))
+	prime := MustOperExpr(Op("PRIME"), Typed(IntT1), NewNameExpr("x", Typed(IntT1)))
+	constantInit := boolDefinition("CInit", NewValueExpr(BoolValue(true), Typed(BoolT1)))
+	init := boolDefinition("Init", MustOperExpr(Op("EQ"), Typed(BoolT1), x, intLiteral(0)))
+	next := boolDefinition("Next", MustOperExpr(Op("OR"), Typed(BoolT1),
+		MustOperExpr(Op("EQ"), Typed(BoolT1), prime, intLiteral(1)),
+		MustOperExpr(Op("EQ"), Typed(BoolT1), prime, intLiteral(2))))
+	module := configuredTestModule(NewVarDecl("x", Typed(IntT1)), constantInit, init, next)
+	prepared, err := PrepareSafetyTransitions(module, SafetyPipelineOptions{Specification: SpecificationConfiguration{
+		Behavior: InitNextSpec{Init: "Init", Next: "Next"}, ConstantInit: "CInit",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	results, err := SimulateBehaviorsWithOptions(context.Background(), prepared.Module, prepared.Predicates,
+		SimulationOptions{MaxSteps: 1, MaxRuns: 20, RandomSeed: 17})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 20 {
+		t.Fatalf("simulation run count = %d", len(results))
+	}
+	selected := make(map[int]struct{})
+	for _, result := range results {
+		if result.Outcome != SimulationCompleted || len(result.NextTransitions) != 1 {
+			t.Fatalf("simulation result = %#v", result)
+		}
+		selected[result.NextTransitions[0]] = struct{}{}
+	}
+	if len(selected) != 2 {
+		t.Fatalf("randomized transitions = %v", selected)
+	}
+}
+
+func TestSimulateBehaviorsStopsRunsAfterDeadlock(t *testing.T) {
+	x := NewNameExpr("x", Typed(IntT1))
+	constantInit := boolDefinition("CInit", NewValueExpr(BoolValue(true), Typed(BoolT1)))
+	init := boolDefinition("Init", MustOperExpr(Op("EQ"), Typed(BoolT1), x, intLiteral(0)))
+	next := boolDefinition("Next", MustOperExpr(Op("AND"), Typed(BoolT1),
+		MustOperExpr(Op("EQ"), Typed(BoolT1),
+			MustOperExpr(Op("PRIME"), Typed(IntT1), NewNameExpr("x", Typed(IntT1))), x),
+		NewValueExpr(BoolValue(false), Typed(BoolT1))))
+	module := configuredTestModule(NewVarDecl("x", Typed(IntT1)), constantInit, init, next)
+	prepared, err := PrepareSafetyTransitions(module, SafetyPipelineOptions{Specification: SpecificationConfiguration{
+		Behavior: InitNextSpec{Init: "Init", Next: "Next"}, ConstantInit: "CInit",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	results, err := SimulateBehaviorsWithOptions(context.Background(), prepared.Module, prepared.Predicates,
+		SimulationOptions{MaxSteps: 2, MaxRuns: 10, RandomSeed: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || results[0].Outcome != SimulationDeadlock {
+		t.Fatalf("deadlocking runs = %#v", results)
+	}
+}

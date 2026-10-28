@@ -660,6 +660,7 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	flags.SetOutput(stderr)
 	backend := addCheckerBackendFlags(flags)
 	length := flags.Int("length", 10, "maximum number of Next steps")
+	maxRun := flags.Int("max-run", 100, "maximum number of independent symbolic simulation runs")
 	timeoutSMT := flags.Int("timeout-smt", 0, "limit each SMT query to this many seconds (0 is unlimited)")
 	configFile := flags.String("config-file", "", "Apalache JSON configuration file")
 	configPath := flags.String("config", "", "TLC configuration file")
@@ -702,6 +703,9 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 				fmt.Fprintln(stderr, err)
 				return exitUsage
 			}
+			if !visited["max-run"] {
+				*maxRun = checkerTuning.SimulationRuns()
+			}
 		}
 	}
 	if visited["init"] != visited["next"] {
@@ -727,6 +731,19 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	if *length < 0 {
 		fmt.Fprintln(stderr, "simulate length cannot be negative")
 		return exitUsage
+	}
+	if *maxRun <= 0 {
+		fmt.Fprintln(stderr, "simulate max-run must be positive")
+		return exitUsage
+	}
+	configuredMaxRun := false
+	if applicationConfig.Checker.Tuning != nil {
+		_, configuredMaxRun = (*applicationConfig.Checker.Tuning)["search.simulation.maxRun"]
+	}
+	if *itfPath != "" && !visited["max-run"] && !configuredMaxRun {
+		// A singular output path denotes one run. Explicit multi-run requests
+		// use numbered sibling paths below.
+		*maxRun = 1
 	}
 	if err := validateSMTTimeout(*timeoutSMT); err != nil {
 		fmt.Fprintln(stderr, err)
@@ -783,38 +800,52 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 		fmt.Fprintf(stderr, "cannot prepare simulation: %v\n", err)
 		return exitTool
 	}
-	result, err := pal.SimulateBehaviorWithOptions(ctx, prepared.Module, prepared.Predicates,
-		pal.SimulationOptions{MaxSteps: *length, Tuning: checkerTuning})
+	results, err := pal.SimulateBehaviorsWithOptions(ctx, prepared.Module, prepared.Predicates,
+		pal.SimulationOptions{MaxSteps: *length, MaxRuns: *maxRun, Tuning: checkerTuning})
 	if err != nil {
 		fmt.Fprintf(stderr, "simulation failed: %v\n", err)
 		return exitTool
 	}
-	if result.Outcome == pal.SimulationUnknown {
-		fmt.Fprintln(stderr, "solver returned unknown")
-		return exitTool
-	}
-	if *itfPath != "" {
-		data, encodeErr := pal.MarshalDecodedTraceITF(prepared.Module, result.States, pal.ITFOptions{})
-		if encodeErr != nil {
-			fmt.Fprintf(stderr, "cannot encode ITF simulation: %v\n", encodeErr)
+	for run, result := range results {
+		if result.Outcome == pal.SimulationUnknown {
+			fmt.Fprintf(stderr, "solver returned unknown in simulation run %d\n", run+1)
 			return exitTool
 		}
-		if writeErr := os.WriteFile(*itfPath, append(data, '\n'), 0o644); writeErr != nil {
-			fmt.Fprintf(stderr, "cannot write ITF simulation: %v\n", writeErr)
+		if *itfPath != "" {
+			outputPath := simulationITFPath(*itfPath, run+1, len(results))
+			data, encodeErr := pal.MarshalDecodedTraceITF(prepared.Module, result.States, pal.ITFOptions{})
+			if encodeErr != nil {
+				fmt.Fprintf(stderr, "cannot encode ITF simulation: %v\n", encodeErr)
+				return exitTool
+			}
+			if writeErr := os.WriteFile(outputPath, append(data, '\n'), 0o644); writeErr != nil {
+				fmt.Fprintf(stderr, "cannot write ITF simulation: %v\n", writeErr)
+				return exitTool
+			}
+			fmt.Fprintf(stdout, "Wrote ITF trace to %s.\n", outputPath)
+		}
+		if len(results) > 1 {
+			fmt.Fprintf(stdout, "Simulation run %d of %d: ", run+1, len(results))
+		}
+		if result.Outcome == pal.SimulationDeadlock {
+			fmt.Fprintf(stdout, "Simulation deadlocked at depth %d.\n", result.Depth)
+		} else {
+			fmt.Fprintf(stdout, "Simulation completed through depth %d.\n", result.Depth)
+		}
+		if err = printDecodedStates(stdout, prepared.Module, result.States); err != nil {
+			fmt.Fprintf(stderr, "cannot format simulated state: %v\n", err)
 			return exitTool
 		}
-		fmt.Fprintf(stdout, "Wrote ITF trace to %s.\n", *itfPath)
-	}
-	if result.Outcome == pal.SimulationDeadlock {
-		fmt.Fprintf(stdout, "Simulation deadlocked at depth %d.\n", result.Depth)
-	} else {
-		fmt.Fprintf(stdout, "Simulation completed through depth %d.\n", result.Depth)
-	}
-	if err = printDecodedStates(stdout, prepared.Module, result.States); err != nil {
-		fmt.Fprintf(stderr, "cannot format simulated state: %v\n", err)
-		return exitTool
 	}
 	return exitOK
+}
+
+func simulationITFPath(path string, run, total int) string {
+	if total <= 1 {
+		return path
+	}
+	extension := filepath.Ext(path)
+	return strings.TrimSuffix(path, extension) + fmt.Sprintf("-run-%d", run) + extension
 }
 
 func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int {

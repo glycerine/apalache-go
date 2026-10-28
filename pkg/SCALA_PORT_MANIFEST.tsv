@@ -21,7 +21,7 @@ mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/CheckCmd.scala	parti
 mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/ConfigCmd.scala	partial	cmd/apalache;config_json.go	remaining CLI controls are open
 mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/ParseCmd.scala	partial	cmd/apalache;config_json.go	remaining CLI controls are open
 mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/ServerCmd.scala	partial	cmd/apalache;config_json.go	remaining CLI controls are open
-mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/SimulateCmd.scala	partial	cmd/apalache;config_json.go	remaining CLI controls are open
+mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/SimulateCmd.scala	partial	cmd/apalache;config_json.go;simulator.go	max-run, default run count, randomized transition selection, and numbered ITF runs are ported; invariant and output-trace tuning remain
 mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/TestCmd.scala	partial	cmd/apalache;config_json.go	remaining CLI controls are open
 mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/TraceeCmd.scala	partial	cmd/apalache;config_json.go	remaining CLI controls are open
 mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/TranspileCmd.scala	partial	cmd/apalache;config_json.go	remaining CLI controls are open

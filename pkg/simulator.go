@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
+	"time"
 )
 
 type SimulationOutcome uint8
@@ -36,8 +38,11 @@ func SimulateBehavior(
 }
 
 type SimulationOptions struct {
-	MaxSteps int
-	Tuning   CheckerTuning
+	MaxSteps   int
+	MaxRuns    int
+	Randomize  bool
+	RandomSeed int64
+	Tuning     CheckerTuning
 }
 
 // SimulateBehaviorWithOptions finds one behavior while honoring the same
@@ -47,6 +52,56 @@ func SimulateBehaviorWithOptions(
 	module *Module,
 	predicates DerivedPredicates,
 	options SimulationOptions,
+) (SimulationResult, error) {
+	var random *rand.Rand
+	if options.Randomize {
+		seed := options.RandomSeed
+		if seed == 0 {
+			seed = time.Now().UnixNano()
+		}
+		random = rand.New(rand.NewSource(seed))
+	}
+	return simulateBehavior(ctx, module, predicates, options, random)
+}
+
+// SimulateBehaviorsWithOptions performs independent symbolic runs. Each run
+// restores the constant state and randomly orders transition alternatives,
+// matching Scala's random-simulation execution model.
+func SimulateBehaviorsWithOptions(
+	ctx context.Context,
+	module *Module,
+	predicates DerivedPredicates,
+	options SimulationOptions,
+) ([]SimulationResult, error) {
+	if options.MaxRuns <= 0 {
+		return nil, fmt.Errorf("maximum simulation run count must be positive")
+	}
+	seed := options.RandomSeed
+	if seed == 0 {
+		seed = time.Now().UnixNano()
+	}
+	random := rand.New(rand.NewSource(seed))
+	results := make([]SimulationResult, 0, options.MaxRuns)
+	options.Randomize = true
+	for run := 0; run < options.MaxRuns; run++ {
+		result, err := simulateBehavior(ctx, module, predicates, options, random)
+		if err != nil {
+			return nil, fmt.Errorf("simulation run %d: %w", run+1, err)
+		}
+		results = append(results, result)
+		if result.Outcome != SimulationCompleted {
+			break
+		}
+	}
+	return results, nil
+}
+
+func simulateBehavior(
+	ctx context.Context,
+	module *Module,
+	predicates DerivedPredicates,
+	options SimulationOptions,
+	random *rand.Rand,
 ) (SimulationResult, error) {
 	maxSteps := options.MaxSteps
 	if module == nil {
@@ -85,7 +140,7 @@ func SimulateBehaviorWithOptions(
 	}
 
 	path := boundedPath{init: -1}
-	for number := range inputs.initTransitions {
+	for _, number := range simulationTransitionOrder(len(inputs.initTransitions), random) {
 		if !options.Tuning.allowsTransition(0, number) {
 			continue
 		}
@@ -116,7 +171,7 @@ func SimulateBehaviorWithOptions(
 	outcome := SimulationCompleted
 	for len(path.next) < maxSteps {
 		selected := -1
-		for number := range inputs.nextTransitions {
+		for _, number := range simulationTransitionOrder(len(inputs.nextTransitions), random) {
 			if !options.Tuning.allowsTransition(len(path.next)+1, number) {
 				continue
 			}
@@ -165,4 +220,17 @@ func SimulateBehaviorWithOptions(
 		Outcome: outcome, Depth: len(path.next), InitTransition: path.init,
 		NextTransitions: append([]int(nil), path.next...), States: states,
 	}, nil
+}
+
+func simulationTransitionOrder(count int, random *rand.Rand) []int {
+	order := make([]int, count)
+	for index := range order {
+		order[index] = index
+	}
+	if random != nil {
+		random.Shuffle(len(order), func(left, right int) {
+			order[left], order[right] = order[right], order[left]
+		})
+	}
+	return order
 }
