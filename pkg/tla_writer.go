@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -75,6 +77,89 @@ func (writer *PrettyTLAWriter) WriteExpression(expression Expr) error {
 		return err
 	}
 	_, err = io.WriteString(writer.output, formatted)
+	return err
+}
+
+func (writer *PrettyTLAWriter) WriteComment(comment string) error {
+	if writer == nil || writer.output == nil {
+		return fmt.Errorf("TLA+ writer has no output")
+	}
+	_, err := io.WriteString(writer.output, "(* "+comment+" *)\n")
+	return err
+}
+
+func (writer *PrettyTLAWriter) WriteHeader(moduleName string, extendedModules []string) error {
+	if writer == nil || writer.output == nil {
+		return fmt.Errorf("TLA+ writer has no output")
+	}
+	middle := " MODULE " + SanitizeTLAIdentifier(moduleName) + " "
+	dashes := (DefaultTextLayout().TextWidth - len(middle)) / 2
+	if dashes < 5 {
+		dashes = 5
+	}
+	var output strings.Builder
+	output.WriteString(strings.Repeat("-", dashes) + middle + strings.Repeat("-", dashes) + "\n")
+	if len(extendedModules) != 0 {
+		names := make([]string, len(extendedModules))
+		for index, name := range extendedModules {
+			names[index] = SanitizeTLAIdentifier(name)
+		}
+		output.WriteString("\nEXTENDS " + strings.Join(names, ", ") + "\n")
+	}
+	_, err := io.WriteString(writer.output, output.String())
+	return err
+}
+
+func (writer *PrettyTLAWriter) WriteFooter() error {
+	if writer == nil || writer.output == nil {
+		return fmt.Errorf("TLA+ writer has no output")
+	}
+	_, err := io.WriteString(writer.output, strings.Repeat("=", DefaultTextLayout().TextWidth)+"\n")
+	return err
+}
+
+func replaceFormattedTLANames(text string, replacements map[string]string) string {
+	keys := make([]string, 0, len(replacements))
+	for key := range replacements {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(left, right int) bool {
+		if len(keys[left]) != len(keys[right]) {
+			return len(keys[left]) > len(keys[right])
+		}
+		return keys[left] < keys[right]
+	})
+	for _, key := range keys {
+		formatted := ParseableTLAName(key)
+		pattern := regexp.MustCompile(`(^|[^a-zA-Z0-9_])` + regexp.QuoteMeta(formatted) + `([^a-zA-Z0-9_]|$)`)
+		text = pattern.ReplaceAllStringFunc(text, func(match string) string {
+			start := strings.Index(match, formatted)
+			return match[:start] + replacements[key] + match[start+len(formatted):]
+		})
+	}
+	return text
+}
+
+// WriteDeclarationWithNameReplacementComment emits the readable declaration
+// in a TLA+ comment before the parseable declaration used by downstream tools.
+func (writer *PrettyTLAWriter) WriteDeclarationWithNameReplacementComment(
+	declaration Decl,
+	replacements map[string]string,
+) error {
+	if writer == nil || writer.output == nil {
+		return fmt.Errorf("TLA+ writer has no output")
+	}
+	formatted, err := FormatTLADeclaration(declaration, writer.annotations)
+	if err != nil {
+		return err
+	}
+	if len(replacements) != 0 {
+		readable := replaceFormattedTLANames(formatted, replacements)
+		if _, err = io.WriteString(writer.output, "(* "+readable+" *)\n"); err != nil {
+			return err
+		}
+	}
+	_, err = io.WriteString(writer.output, formatted+"\n\n")
 	return err
 }
 

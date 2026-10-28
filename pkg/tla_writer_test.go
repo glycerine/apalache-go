@@ -42,6 +42,45 @@ func TestPrettyTLAWriterWritesEveryNodeShape(t *testing.T) {
 	}
 }
 
+func TestPrettyTLAWriterStreamingAndNameReplacementComment(t *testing.T) {
+	generated := "__temporal_t_1"
+	declaration := NewOperDecl("State0", nil,
+		MustOperExpr(Op("EQ"), Typed(BoolT1), NewNameExpr(generated, Typed(BoolT1)),
+			NewValueExpr(BoolValue(false), Typed(BoolT1))),
+		Typed(mustOperator(nil, BoolT1)))
+	var output bytes.Buffer
+	writer := NewPrettyTLAWriter(&output, nil)
+	if err := writer.WriteComment("generated trace module"); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.WriteHeader("Trace", []string{"Integers", "Sequences"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.WriteDeclarationWithNameReplacementComment(declaration,
+		map[string]string{generated: "<>(x = 11)"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.WriteFooter(); err != nil {
+		t.Fatal(err)
+	}
+	text := output.String()
+	for _, fragment := range []string{
+		"(* generated trace module *)",
+		"MODULE Trace",
+		"EXTENDS Integers, Sequences",
+		"(* State0 == <>(x = 11) = FALSE *)",
+		"State0 == __temporal_t_1 = FALSE",
+		strings.Repeat("=", 80),
+	} {
+		if !strings.Contains(text, fragment) {
+			t.Fatalf("streamed TLA+ lacks %q:\n%s", fragment, text)
+		}
+	}
+	if strings.Count(text, "State0 ==") != 2 {
+		t.Fatalf("readable and parseable declarations were not both emitted:\n%s", text)
+	}
+}
+
 func TestPrettyTLAWriterWithAnnotationsMatchesScalaDeclarationLayouts(t *testing.T) {
 	functionType, err := NewFunType(IntT1, BoolT1)
 	if err != nil {
