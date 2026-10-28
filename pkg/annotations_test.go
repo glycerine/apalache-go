@@ -73,6 +73,41 @@ func TestAnnotationRendering(t *testing.T) {
 	}
 }
 
+func TestAnnotationArgumentRenderingMatchesScalaInterpolation(t *testing.T) {
+	if got := (AnnotationString{Text: "a\\b\n\"c"}).String(); got != "\"a\\b\n\"c\"" {
+		t.Fatalf("string argument = %q", got)
+	}
+	if got := (AnnotationIdentifier{Name: "Alias"}).String(); got != "Alias" {
+		t.Fatalf("identifier argument = %q", got)
+	}
+	if got := (AnnotationInteger{Value: nil}).String(); got != "0" {
+		t.Fatalf("nil integer argument = %q", got)
+	}
+	if got := (AnnotationBoolean{Value: false}).String(); got != "false" {
+		t.Fatalf("Boolean argument = %q", got)
+	}
+}
+
+func TestStandardAnnotationsAndStoreProvider(t *testing.T) {
+	if got := NewTypeAnnotation("Int"); got.PrettyString() != "@type: Int;" {
+		t.Fatalf("type annotation = %q", got.PrettyString())
+	}
+	if got := NewTypeAliasAnnotation("ITEM = Int"); got.PrettyString() != "@typeAlias: ITEM = Int;" {
+		t.Fatalf("type alias annotation = %q", got.PrettyString())
+	}
+	firstProvider := NewAnnotationStoreProvider()
+	secondProvider := NewAnnotationStoreProvider()
+	first := firstProvider.Get()
+	if first == nil || first != firstProvider.Get() || first == secondProvider.Get() {
+		t.Fatalf("provider stores are not singleton-per-provider: %p %p %p", first, firstProvider.Get(), secondProvider.Get())
+	}
+	id := NewUID()
+	first.Set(id, []Annotation{NewTypeAnnotation("Bool")})
+	if annotation, found := firstProvider.Get().Find(id, StandardAnnotationType); !found || annotation.PrettyString() != "@type: Bool;" {
+		t.Fatalf("stored standard annotation = %v, %v", annotation, found)
+	}
+}
+
 func TestParseAnnotationMatchesScalaRegressionCases(t *testing.T) {
 	variant := "@typeAlias: MESSAGE =\n  Req({ ask: Int })\n  | Ack({ success: Bool });"
 	parsed, err := ParseAnnotation(variant)

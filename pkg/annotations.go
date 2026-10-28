@@ -65,7 +65,7 @@ type AnnotationArg interface {
 type AnnotationString struct{ Text string }
 
 func (AnnotationString) annotationArg()   {}
-func (a AnnotationString) String() string { return fmt.Sprintf("%q", a.Text) }
+func (a AnnotationString) String() string { return `"` + a.Text + `"` }
 
 type AnnotationIdentifier struct{ Name string }
 
@@ -95,6 +95,34 @@ func (a AnnotationBoolean) String() string {
 type Annotation struct {
 	Name      string
 	Arguments []AnnotationArg
+}
+
+const (
+	StandardAnnotationType      = "type"
+	StandardAnnotationTypeAlias = "typeAlias"
+)
+
+func NewTypeAnnotation(typeText string) Annotation {
+	return Annotation{Name: StandardAnnotationType, Arguments: []AnnotationArg{AnnotationString{Text: typeText}}}
+}
+
+func NewTypeAliasAnnotation(typeText string) Annotation {
+	return Annotation{Name: StandardAnnotationTypeAlias, Arguments: []AnnotationArg{AnnotationString{Text: typeText}}}
+}
+
+// AnnotationStoreProvider owns the singleton annotation store used by one
+// explicitly constructed application graph.
+type AnnotationStoreProvider struct{ store *AnnotationStore }
+
+func NewAnnotationStoreProvider() *AnnotationStoreProvider {
+	return &AnnotationStoreProvider{store: NewAnnotationStore()}
+}
+
+func (provider *AnnotationStoreProvider) Get() *AnnotationStore {
+	if provider == nil {
+		return nil
+	}
+	return provider.store
 }
 
 func (annotation Annotation) String() string {
