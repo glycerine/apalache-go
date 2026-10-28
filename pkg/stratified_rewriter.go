@@ -15,6 +15,7 @@ type StratifiedRewriter struct {
 	equality     *LazyEquality
 	shortCircuit bool
 	constraints  []Expr
+	messages     *MapMessageStorage
 }
 
 func NewStratifiedRewriter() *StratifiedRewriter {
@@ -30,6 +31,7 @@ type StratifiedRewriterOptions struct {
 func NewStratifiedRewriterWithOptions(options StratifiedRewriterOptions) *StratifiedRewriter {
 	result := &StratifiedRewriter{
 		integers: NewIntValueCache(), literals: NewUninterpretedLiteralCache(), shortCircuit: options.ShortCircuit,
+		messages: NewMessageStorage(),
 	}
 	result.ranges = NewIntRangeCache(result.integers)
 	result.equality = NewLazyEquality(result.assert, func(tag string) (ArenaCell, bool) {
@@ -37,6 +39,14 @@ func NewStratifiedRewriterWithOptions(options StratifiedRewriterOptions) *Strati
 	})
 	result.defaults = NewDefaultValueCache(result)
 	return result
+}
+
+func (rewriter *StratifiedRewriter) AddMessage(id int, message string) {
+	rewriter.messages.AddMessage(id, message)
+}
+
+func (rewriter *StratifiedRewriter) FindMessage(id int) (string, error) {
+	return rewriter.messages.FindMessage(id)
 }
 
 func (rewriter *StratifiedRewriter) IntegerCache() *IntValueCache { return rewriter.integers }
