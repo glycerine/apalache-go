@@ -183,6 +183,103 @@ func TestFormatTLASetMapBodyOracleCases(t *testing.T) {
 	}
 }
 
+func TestFormatTLASynthesizedLetsStayInsideApplicationScope(t *testing.T) {
+	for _, named := range []bool{false, true} {
+		for _, multipleDeclarations := range []bool{false, true} {
+			caseName := "native"
+			if named {
+				caseName = "named"
+			}
+			if multipleDeclarations {
+				caseName += " multiple"
+			}
+			t.Run(caseName, func(t *testing.T) {
+				lambdaDeclaration := NewOperDecl("Lambda3",
+					[]OperatorParam{ValueParam("p"), ValueParam("q")}, tlaName("p"), Untyped())
+				lambda := NewLetInExpr(tlaName("Lambda3"), Untyped(), lambdaDeclaration)
+				seed := Expr(NewValueExpr(BoolValue(false), Untyped()))
+				if multipleDeclarations {
+					seedDeclaration := NewOperDecl("Seed", nil, NewValueExpr(BoolValue(false), Untyped()), Untyped())
+					seed = NewLetInExpr(tlaOper("OPER_APP", tlaName("Seed")), Untyped(), seedDeclaration)
+				}
+				call := func() Expr {
+					arguments := []Expr{lambda, seed, tlaOper("TUPLE")}
+					if named {
+						return tlaOper("OPER_APP", append([]Expr{tlaName("Fold")}, arguments...)...)
+					}
+					return tlaOper("Apalache!ApaFoldSeqLeft", arguments...)
+				}
+				stepIsZero := func() Expr { return tlaOper("EQ", tlaName("step"), tlaInt(0)) }
+				contexts := []struct {
+					name string
+					expr Expr
+				}{
+					{"top level", call()},
+					{"issue 88", tlaOper("AND", tlaOper("EQ", tlaName("var0"), call()), stepIsZero())},
+					{"conjunction", tlaOper("AND", call(), stepIsZero())},
+					{"implication", tlaOper("IMPLIES", tlaOper("EQ", tlaName("var0"), call()), stepIsZero())},
+					{"membership", tlaOper("AND", tlaOper("SET_IN", call(), tlaOper("SET_ENUM", NewValueExpr(BoolValue(false), Untyped()))), stepIsZero())},
+					{"CASE OTHER", tlaOper("AND", tlaOper("CASE_OTHER", call(), NewValueExpr(BoolValue(true), Untyped()), NewValueExpr(BoolValue(false), Untyped())), stepIsZero())},
+					{"IF branch", tlaOper("AND", tlaOper("IF_THEN_ELSE", NewValueExpr(BoolValue(true), Untyped()), call(), NewValueExpr(BoolValue(false), Untyped())), stepIsZero())},
+				}
+				callee := "ApaFoldSeqLeft"
+				if named {
+					callee = "Fold"
+				}
+				letPrefix := "(LET Lambda3(p, q) == p IN "
+				if multipleDeclarations {
+					letPrefix += "LET Seed == FALSE IN "
+				}
+				application := callee + "(Lambda3, "
+				if multipleDeclarations {
+					application += "Seed"
+				} else {
+					application += "FALSE"
+				}
+				application += ", <<>>))"
+				for index, test := range contexts {
+					t.Run(test.name, func(t *testing.T) {
+						printed, err := FormatTLAExpression(test.expr)
+						if err != nil {
+							t.Fatal(err)
+						}
+						if !strings.Contains(printed, letPrefix+application) {
+							t.Fatalf("application-local LET was not preserved: %q", printed)
+						}
+						module := "---- MODULE SynthesizedLet ----\n" +
+							"EXTENDS Integers, Sequences, Apalache\n" +
+							"VARIABLES var0, step\n" +
+							"Fold(Op(_, _), initial, seq) == ApaFoldSeqLeft(Op, initial, seq)\n" +
+							"Test == " + printed + "\n====\n"
+						parsed := ParseSource(context.Background(), "SynthesizedLet"+string(rune('A'+index))+".tla", module, FrontendOptions{})
+						if !parsed.OK() {
+							t.Fatalf("formatted expression did not parse: %v\n%s", parsed.Diagnostics, module)
+						}
+					})
+				}
+			})
+		}
+	}
+}
+
+func TestFormatTLADoesNotHoistLetAcrossBinderScope(t *testing.T) {
+	local := NewOperDecl("Local", nil, tlaName("x"), Untyped())
+	body := NewLetInExpr(tlaName("Local"), Untyped(), local)
+	expression := tlaOper("EXISTS3", tlaName("x"), tlaName("S"), body)
+	printed, err := FormatTLAExpression(expression)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if printed != "\\E x \\in S: LET Local == x IN Local" {
+		t.Fatalf("got %q", printed)
+	}
+	module := "---- MODULE BinderLet ----\nVARIABLE S\nTest == " + printed + "\n====\n"
+	parsed := ParseSource(context.Background(), "BinderLet.tla", module, FrontendOptions{})
+	if !parsed.OK() {
+		t.Fatalf("formatted expression did not parse: %v\n%s", parsed.Diagnostics, module)
+	}
+}
+
 func TestFormatTLARecursiveFunctionDeclaration(t *testing.T) {
 	call := tlaOper("FUN_APP", tlaOper("FUN_REC_REF"), tlaOper("MINUS", tlaName("n"), tlaInt(1)))
 	body := tlaOper("IF_THEN_ELSE", tlaOper("EQ", tlaName("n"), tlaInt(0)), tlaInt(1), call)

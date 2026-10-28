@@ -140,6 +140,7 @@ func formatTLAArity(arity int) string {
 func FormatTLAExpression(expression Expr) (string, error) {
 	return formatTLAExpressionAt(Precedence{}, expression)
 }
+
 func formatTLAExpressionAt(parent Precedence, expression Expr) (string, error) {
 	switch typed := expression.(type) {
 	case *nullExpr:
@@ -275,14 +276,7 @@ func formatTLAOperator(parent Precedence, expression *OperExpr) (string, error) 
 		if err != nil {
 			return "", err
 		}
-		items, err := formatTLAArgs(arguments[1:], operator.Precedence())
-		if err != nil {
-			return "", err
-		}
-		if len(items) == 0 {
-			return callee, nil
-		}
-		return wrapTLA(parent, operator.Precedence(), callee+"("+strings.Join(items, ", ")+")"), nil
+		return formatTLAApplication(parent, operator.Precedence(), callee, arguments[1:])
 	case "EXISTS3", "FORALL3", "CHOOSE3":
 		return formatTLABinder(parent, expression, true)
 	case "EXISTS2", "FORALL2", "CHOOSE2":
@@ -438,19 +432,57 @@ func formatTLAOperator(parent Precedence, expression *OperExpr) (string, error) 
 		}
 		return "Variants!Variant(" + strings.Join(items, ", ") + ")", nil
 	}
-	items, err := formatTLAArgs(arguments, operator.Precedence())
-	if err != nil {
-		return "", err
-	}
 	unqualified := name
 	if bang := strings.LastIndex(unqualified, "!"); bang >= 0 {
 		unqualified = unqualified[bang+1:]
 	}
 	unqualified = ParseableTLAName(unqualified)
-	if len(items) == 0 {
-		return unqualified, nil
+	return formatTLAApplication(parent, operator.Precedence(), unqualified, arguments)
+}
+
+func formatTLAApplication(parent, precedence Precedence, callee string, arguments []Expr) (string, error) {
+	declarations, arguments := extractTLAArgumentLets(arguments)
+	items, err := formatTLAArgs(arguments, precedence)
+	if err != nil {
+		return "", err
 	}
-	return wrapTLA(parent, operator.Precedence(), unqualified+"("+strings.Join(items, ", ")+")"), nil
+	application := callee
+	if len(items) > 0 {
+		application += "(" + strings.Join(items, ", ") + ")"
+	}
+	if len(declarations) == 0 {
+		if len(items) == 0 {
+			return application, nil
+		}
+		return wrapTLA(parent, precedence, application), nil
+	}
+	parts := make([]string, len(declarations))
+	for index, declaration := range declarations {
+		formatted, err := FormatTLADeclaration(declaration, nil)
+		if err != nil {
+			return "", err
+		}
+		parts[index] = "LET " + formatted + " IN"
+	}
+	return wrapTLA(parent, precedence, "("+strings.Join(parts, " ")+" "+application+")"), nil
+}
+
+func extractTLAArgumentLets(arguments []Expr) ([]*OperDecl, []Expr) {
+	var declarations []*OperDecl
+	result := append([]Expr(nil), arguments...)
+	for index, argument := range result {
+		local, ok := argument.(*LetInExpr)
+		if !ok {
+			continue
+		}
+		localDeclarations := local.Declarations()
+		if len(localDeclarations) == 1 && localDeclarations[0].Name() == "LAMBDA" {
+			continue
+		}
+		declarations = append(declarations, localDeclarations...)
+		result[index] = local.Body()
+	}
+	return declarations, result
 }
 
 func formatTLAArgs(arguments []Expr, precedence Precedence) ([]string, error) {
