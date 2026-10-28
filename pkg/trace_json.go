@@ -1,6 +1,86 @@
 package apalache
 
-import "fmt"
+import (
+	"fmt"
+	"sort"
+)
+
+// MarshalDecodedTraceApalacheJSON emits the legacy Apalache-IR trace shape
+// written by Scala's JsonCounterexampleWriter.
+func MarshalDecodedTraceApalacheJSON(module *Module, states []DecodedState, violation Expr) ([]byte, error) {
+	traceModule, err := decodedTraceModule(module, states, violation)
+	if err != nil {
+		return nil, err
+	}
+	return MarshalSingleModuleIRJSON(traceModule, IRJSONOptions{})
+}
+
+// FormatDecodedTraceTLA emits the parseable counterexample module shape used
+// by Scala's TlaCounterexampleWriter, without nondeterministic timestamps.
+func FormatDecodedTraceTLA(module *Module, states []DecodedState, violation Expr) (string, error) {
+	traceModule, err := decodedTraceModule(module, states, violation)
+	if err != nil {
+		return "", err
+	}
+	return FormatTLAModule(traceModule, TLAFormatOptions{ExtendedModules: []string{module.Name()}})
+}
+
+func decodedTraceModule(module *Module, states []DecodedState, violation Expr) (*Module, error) {
+	if module == nil {
+		return nil, fmt.Errorf("cannot encode decoded trace for nil module")
+	}
+	if len(states) == 0 {
+		return nil, fmt.Errorf("expected at least one decoded state, found none")
+	}
+	if violation == nil {
+		violation = NewValueExpr(BoolValue(true), Typed(BoolT1))
+	}
+	constantNames := make(map[string]struct{}, len(module.ConstDeclarations()))
+	for _, declaration := range module.ConstDeclarations() {
+		constantNames[declaration.Name()] = struct{}{}
+	}
+	variableNames := make(map[string]struct{}, len(module.VarDeclarations()))
+	for _, declaration := range module.VarDeclarations() {
+		if !declaration.IsInternal() {
+			variableNames[declaration.Name()] = struct{}{}
+		}
+	}
+	declarations := make([]Decl, 0, len(states)+2)
+	declarations = append(declarations, traceStateDeclaration("ConstInit", states[0].Values, constantNames))
+	for index, state := range states {
+		declarations = append(declarations,
+			traceStateDeclaration(fmt.Sprintf("State%d", index), state.Values, variableNames))
+	}
+	declarations = append(declarations,
+		NewOperDecl("InvariantViolation", nil, violation, Typed(mustOperator(nil, BoolT1))))
+	return NewModule("counterexample", declarations), nil
+}
+
+func traceStateDeclaration(name string, values map[string]Expr, included map[string]struct{}) *OperDecl {
+	names := make([]string, 0, len(included))
+	for variable := range included {
+		if _, found := values[variable]; found {
+			names = append(names, variable)
+		}
+	}
+	sort.Strings(names)
+	assignments := make([]Expr, 0, len(names))
+	for _, variable := range names {
+		value := values[variable]
+		assignments = append(assignments, MustOperExpr(Op("EQ"), Typed(BoolT1),
+			NewNameExpr(variable, value.Tag()), value))
+	}
+	var body Expr
+	switch len(assignments) {
+	case 0:
+		body = NewValueExpr(BoolValue(true), Typed(BoolT1))
+	case 1:
+		body = assignments[0]
+	default:
+		body = MustOperExpr(Op("AND"), Typed(BoolT1), assignments...)
+	}
+	return NewOperDecl(name, nil, body, Typed(mustOperator(nil, BoolT1)))
+}
 
 // UnmarshalApalacheJSONTrace decodes the legacy Apalache-IR trace shape used
 // by the Scala trace evaluator. The first operator is the synthetic constant
@@ -31,6 +111,11 @@ func UnmarshalApalacheJSONTrace(data []byte) ([]TraceState, error) {
 }
 
 func apalacheJSONTraceState(expression Expr) (TraceState, error) {
+	if value, ok := expression.(*ValueExpr); ok {
+		if boolean, isBoolean := value.Value().(BoolValue); isBoolean && boolean.Bool() {
+			return TraceState{}, nil
+		}
+	}
 	assignments := []Expr{expression}
 	if conjunction, ok := expression.(*OperExpr); ok && conjunction.Operator().Name() == "AND" {
 		assignments = conjunction.Arguments()

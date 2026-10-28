@@ -1,6 +1,63 @@
 package apalache
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
+
+func TestMarshalDecodedTraceFormatsRoundTrip(t *testing.T) {
+	internal := NewVarDecl("__internal", Typed(BoolT1))
+	internal.MarkInternal()
+	module := NewModule("Root", []Decl{
+		NewConstDecl("N", Typed(IntT1)),
+		NewVarDecl("x", Typed(IntT1)),
+		NewVarDecl("y", Typed(BoolT1)),
+		internal,
+	})
+	states := []DecodedState{
+		{Values: map[string]Expr{
+			"N": intLiteral(10), "x": intLiteral(1), "y": boolExpr(false), "__internal": boolExpr(true),
+		}},
+		{Values: map[string]Expr{
+			"N": intLiteral(10), "x": intLiteral(2), "y": boolExpr(true), "__internal": boolExpr(false),
+		}},
+	}
+	data, err := MarshalDecodedTraceApalacheJSON(module, states, boolExpr(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	roundTrip, err := UnmarshalApalacheJSONTrace(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(roundTrip) != 2 || roundTrip[0]["N"] != nil || roundTrip[0]["__internal"] != nil ||
+		!EqualExpr(roundTrip[0]["x"], intLiteral(1)) || !EqualExpr(roundTrip[1]["y"], boolExpr(true)) {
+		t.Fatalf("round-trip trace = %#v", roundTrip)
+	}
+	tla, err := FormatDecodedTraceTLA(module, states, boolExpr(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, fragment := range []string{
+		"MODULE counterexample", "EXTENDS Root", "ConstInit == N = 10",
+		"State0 == x = 1 /\\ y = FALSE", "State1 == x = 2 /\\ y = TRUE",
+		"InvariantViolation == TRUE",
+	} {
+		if !strings.Contains(tla, fragment) {
+			t.Errorf("TLA trace missing %q:\n%s", fragment, tla)
+		}
+	}
+}
+
+func TestMarshalDecodedTraceFormatsRejectEmptyTrace(t *testing.T) {
+	module := NewModule("Root", nil)
+	if _, err := MarshalDecodedTraceApalacheJSON(module, nil, nil); err == nil {
+		t.Fatal("legacy JSON accepted an empty decoded trace")
+	}
+	if _, err := FormatDecodedTraceTLA(module, nil, nil); err == nil {
+		t.Fatal("TLA accepted an empty decoded trace")
+	}
+}
 
 func TestUnmarshalApalacheJSONTrace(t *testing.T) {
 	x := NewNameExpr("x", Typed(IntT1))
@@ -41,7 +98,7 @@ func TestUnmarshalApalacheJSONTrace(t *testing.T) {
 func TestUnmarshalApalacheJSONTraceRejectsMalformedState(t *testing.T) {
 	module := NewModule("BadTrace", []Decl{
 		NewOperDecl("CInit", nil, boolExpr(true), Typed(BoolT1)),
-		NewOperDecl("State0", nil, boolExpr(true), Typed(BoolT1)),
+		NewOperDecl("State0", nil, boolExpr(false), Typed(BoolT1)),
 		NewOperDecl("Inv", nil, boolExpr(true), Typed(BoolT1)),
 	})
 	data, err := MarshalSingleModuleIRJSON(module, IRJSONOptions{})
@@ -50,5 +107,21 @@ func TestUnmarshalApalacheJSONTraceRejectsMalformedState(t *testing.T) {
 	}
 	if _, err = UnmarshalApalacheJSONTrace(data); err == nil {
 		t.Fatal("accepted a trace state without assignments")
+	}
+}
+
+func TestUnmarshalApalacheJSONTraceAcceptsEmptyState(t *testing.T) {
+	module := NewModule("EmptyTrace", []Decl{
+		NewOperDecl("CInit", nil, boolExpr(true), Typed(BoolT1)),
+		NewOperDecl("State0", nil, boolExpr(true), Typed(BoolT1)),
+		NewOperDecl("Inv", nil, boolExpr(true), Typed(BoolT1)),
+	})
+	data, err := MarshalSingleModuleIRJSON(module, IRJSONOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	states, err := UnmarshalApalacheJSONTrace(data)
+	if err != nil || len(states) != 1 || len(states[0]) != 0 {
+		t.Fatalf("empty legacy state = %#v, %v", states, err)
 	}
 }
