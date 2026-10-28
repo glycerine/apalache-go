@@ -233,6 +233,12 @@ func withOutputFile(path string, write func(io.Writer) error) (err error) {
 	return write(writer)
 }
 
+// WithWriterToFile applies write to a newly truncated file and guarantees the
+// buffered writer is flushed and closed, including when write panics.
+func (manager *OutputManager) WithWriterToFile(path string, write func(io.Writer) error) error {
+	return withOutputFile(path, write)
+}
+
 func (manager *OutputManager) WithWriterInRunDir(parts []string, write func(io.Writer) error) (bool, error) {
 	if manager == nil {
 		return false, nil
