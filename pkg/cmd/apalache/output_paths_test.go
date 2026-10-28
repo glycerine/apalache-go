@@ -60,8 +60,8 @@ func TestResolveOutputDirectoryOptionsPrecedence(t *testing.T) {
 	if err := config.validateForFrontend("parse"); err == nil {
 		t.Fatal("parse JSON output directories should remain unsupported until the command writes run output")
 	}
-	if err := config.validateForModelCommand("test", false); err == nil {
-		t.Fatal("test JSON output directories should remain unsupported until the command writes run output")
+	if err := config.validateForModelCommand("test", false); err != nil {
+		t.Fatalf("test JSON output directories = %v", err)
 	}
 	outDir, runDir := "cli-out", "cli-run"
 	resolveOutputDirectoryOptions(config, map[string]bool{"out-dir": true, "run-dir": true}, &outDir, &runDir)

@@ -916,6 +916,18 @@ StillZero == x = 0
 		!strings.Contains(stdout.String(), "State 1: x = 1") {
 		t.Fatalf("failing test = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
 	}
+	stdout.Reset()
+	stderr.Reset()
+	runDir := filepath.Join(dir, "test-run")
+	args = []string{"test", "--run-dir=" + runDir, path, "Before", "Increment", "StillZero"}
+	if code := run(context.Background(), args, &stdout, &stderr); code != exitCounterexample {
+		t.Fatalf("failing output test = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
+	}
+	for _, name := range []string{"run.txt", "violation.itf.json"} {
+		if _, err := os.Stat(filepath.Join(runDir, name)); err != nil {
+			t.Fatalf("test output %s: %v", name, err)
+		}
+	}
 }
 
 func TestRunCheckValidatesConfigurationFlags(t *testing.T) {

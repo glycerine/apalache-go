@@ -565,6 +565,8 @@ func runTest(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("test", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	configFile := flags.String("config-file", "", "Apalache JSON configuration file")
+	outDir := flags.String("out-dir", "", "root directory for source-namespaced run output")
+	runDir := flags.String("run-dir", "", "additional directory receiving run output directly")
 	constantInit := flags.String("cinit", "", "constant initializer operator")
 	useRows := flags.Bool("rows", false, "enable row types")
 	features := flags.String("features", "", "typechecker features: rows or no-rows")
@@ -601,6 +603,7 @@ func runTest(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 			}
 		}
 	}
+	resolveOutputDirectoryOptions(applicationConfig, visited, outDir, runDir)
 	var path, before, action, assertion string
 	switch {
 	case flags.NArg() == 4:
@@ -617,6 +620,15 @@ func runTest(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	default:
 		fmt.Fprintln(stderr, "test requires FILE BEFORE ACTION ASSERTION, or BEFORE ACTION ASSERTION with a JSON source")
 		return exitUsage
+	}
+	outputPaths, err := prepareCommandOutputPaths(*outDir, *runDir, path, "test")
+	if err != nil {
+		fmt.Fprintf(stderr, "cannot configure test output: %v\n", err)
+		return exitUsage
+	}
+	if err = outputPaths.writeRunFile("test", args); err != nil {
+		fmt.Fprintf(stderr, "cannot write test run metadata: %v\n", err)
+		return exitTool
 	}
 	rows, featureErr := resolveRowsFeature(*useRows, *features)
 	if featureErr != nil {
@@ -654,6 +666,10 @@ func runTest(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stdout, "No example found.")
 		return exitOK
 	case pal.SafetyCounterexample:
+		if err = writeTestViolationITF(outputPaths, prepared.Module, result.States); err != nil {
+			fmt.Fprintf(stderr, "cannot write test violation trace: %v\n", err)
+			return exitTool
+		}
 		fmt.Fprintf(stdout, "Assertion %s violated after %s.\n", assertion, action)
 		if err = printDecodedStates(stdout, prepared.Module, result.States); err != nil {
 			fmt.Fprintf(stderr, "cannot format test counterexample: %v\n", err)
@@ -661,6 +677,10 @@ func runTest(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		}
 		return exitCounterexample
 	case pal.SafetyDeadlock:
+		if err = writeTestViolationITF(outputPaths, prepared.Module, result.States); err != nil {
+			fmt.Fprintf(stderr, "cannot write test deadlock trace: %v\n", err)
+			return exitTool
+		}
 		fmt.Fprintf(stdout, "Action %s is disabled after %s.\n", action, before)
 		if err = printDecodedStates(stdout, prepared.Module, result.States); err != nil {
 			fmt.Fprintf(stderr, "cannot format test deadlock: %v\n", err)
@@ -671,6 +691,14 @@ func runTest(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "solver returned unknown")
 		return exitTool
 	}
+}
+
+func writeTestViolationITF(paths commandOutputPaths, module *pal.Module, states []pal.DecodedState) error {
+	if paths.runDir == "" && paths.customRunDir == "" {
+		return nil
+	}
+	_, err := writeDecodedITFPaths(paths.implicitFiles("violation.itf.json"), module, states)
+	return err
 }
 
 func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) int {
