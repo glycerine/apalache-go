@@ -130,7 +130,7 @@ func runServer(ctx context.Context, args []string, stdout, stderr io.Writer) int
 		fmt.Fprintf(stderr, "cannot listen for JSON-RPC: %v\n", err)
 		return exitTool
 	}
-	server := &http.Server{Handler: pal.NewExplorationJSONRPCHandler(), ReadHeaderTimeout: 10 * time.Second}
+	server := newExplorationHTTPServer(ctx)
 	fmt.Fprintf(stdout, "JSON-RPC explorer server running on http://localhost:%d/rpc.\n", listener.Addr().(*net.TCPAddr).Port)
 	if ctx.Err() != nil {
 		_ = listener.Close()
@@ -143,7 +143,11 @@ func runServer(ctx context.Context, args []string, stdout, stderr io.Writer) int
 		defer close(shutdownDone)
 		<-shutdownContext.Done()
 		if ctx.Err() != nil {
-			_ = server.Shutdown(context.Background())
+			graceContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if err := server.Shutdown(graceContext); err != nil {
+				_ = server.Close()
+			}
 		}
 	}()
 	err = server.Serve(listener)
@@ -154,6 +158,16 @@ func runServer(ctx context.Context, args []string, stdout, stderr io.Writer) int
 		return exitTool
 	}
 	return exitOK
+}
+
+func newExplorationHTTPServer(ctx context.Context) *http.Server {
+	return &http.Server{
+		Handler:           pal.NewExplorationJSONRPCHandler(),
+		ReadHeaderTimeout: 10 * time.Second,
+		BaseContext: func(net.Listener) context.Context {
+			return ctx
+		},
+	}
 }
 
 func runTranspile(ctx context.Context, args []string, stdout, stderr io.Writer) int {

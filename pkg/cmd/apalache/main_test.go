@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	pal "github.com/glycerine/apalache-go"
 )
@@ -112,6 +113,18 @@ func TestRunServerRejectsInvalidPORTEnvironment(t *testing.T) {
 	code := run(context.Background(), []string{"server"}, &stdout, &stderr)
 	if code != exitUsage || !strings.Contains(stderr.String(), "invalid PORT environment") {
 		t.Fatalf("server with invalid PORT = %d, stderr = %q", code, &stderr)
+	}
+}
+
+func TestExplorationHTTPServerPropagatesCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	server := newExplorationHTTPServer(ctx)
+	requestContext := server.BaseContext(nil)
+	cancel()
+	select {
+	case <-requestContext.Done():
+	case <-time.After(time.Second):
+		t.Fatal("server request context did not inherit cancellation")
 	}
 }
 
