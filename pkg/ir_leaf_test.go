@@ -130,18 +130,36 @@ func TestSourcePositionOrdering(t *testing.T) {
 func TestSourceRegionsMatchScalaSemantics(t *testing.T) {
 	root := NewSourceRegion(0, 0, 5454, 4646)
 	r15 := NewSourceRegion(15, 20, 19, 20)
+	r16 := NewSourceRegion(15, 20, 5454, 4646)
 	r24 := NewSourceRegion(15, 20, 19, 5)
+	r04 := NewSourceRegion(0, 0, 19, 5)
 	r01 := NewSourceRegion(0, 0, 15, 20)
 	r56 := NewSourceRegion(19, 20, 5454, 4646)
 
-	if root.String() != "0:0-5454:4646" || r15.String() != "15:20-19:20" {
+	if root.String() != "0:0-5454:4646" || r15.String() != "15:20-19:20" ||
+		r24.String() != "15:20-19:5" || r04.String() != "0:0-19:5" {
 		t.Fatal("region formatting differs from Scala")
 	}
-	if !r15.IsInside(root) || !root.Contains(r24) || root.IsInside(r15) {
-		t.Fatal("region containment is wrong")
+	for _, region := range []SourceRegion{r15, r16, r24, r04} {
+		if !region.IsInside(root) || !root.Contains(region) || root.IsInside(region) || region.Contains(root) {
+			t.Fatalf("region containment is wrong for %s", region)
+		}
 	}
-	if !r15.Intersects(r24) || !r01.Intersects(r15) || r01.Intersects(r56) {
+	if !r15.IsInside(r16) || !r24.IsInside(r16) || r15.Contains(r16) || r24.Contains(r16) {
+		t.Fatal("nested region containment is wrong")
+	}
+	for _, region := range []SourceRegion{r15, r16, r24, r04} {
+		if !root.Intersects(region) || !region.Intersects(root) {
+			t.Fatalf("region inclusion does not intersect for %s", region)
+		}
+	}
+	if !r15.Intersects(r16) || !r15.Intersects(r24) || !r15.Intersects(r04) ||
+		!r01.Intersects(r15) || !r01.Intersects(r16) || !r15.Intersects(r01) ||
+		!r16.Intersects(r01) || r01.Intersects(r56) {
 		t.Fatal("inclusive region intersection is wrong")
+	}
+	if root != NewSourceRegion(0, 0, 5454, 4646) || r15 == r24 || r24 == r04 {
+		t.Fatal("source region value equality is wrong")
 	}
 }
 

@@ -470,7 +470,7 @@ tlair/src/main/scala/at/forsyte/apalache/tla/lir/src/RegionTree.scala	ported	sou
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/src/SaveToStoreTransformationListener.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/src/SourceLocation.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/src/SourcePosition.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
-tlair/src/main/scala/at/forsyte/apalache/tla/lir/src/SourceRegion.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/src/SourceRegion.scala	ported	source.go;ir_leaf_test.go	inclusive start/end regions provide Scala-equivalent formatting, value equality/hashability, containment, and symmetric intersection
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/src/SourceStore.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/storage/BodyMapFactory.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/storage/ChangeListener.scala	ported	change_listener.go;change_listener_test.go;transform.go	thread-safe expression/declaration predecessor tracking, recursive descendant inheritance, specific-origin precedence, definition lookup, and transitive traceback are ported
