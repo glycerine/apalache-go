@@ -35,6 +35,12 @@ func (err *LanguagePredicateError) Error() string {
 	return fmt.Sprintf("some %s do not fit the expected language fragment", err.Subject)
 }
 
+// Unwrap exposes the canonical Scala LanguagePredError while retaining the
+// older Go watch-error fields used by callers.
+func (err *LanguagePredicateError) Unwrap() error {
+	return NewLanguagePredError(err.Error(), err.Failures)
+}
+
 func WatchExpression(predicate LanguagePredicate, expression Expr) error {
 	result := predicate.CheckExpression(expression)
 	if result.OK() {

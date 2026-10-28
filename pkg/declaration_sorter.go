@@ -9,11 +9,21 @@ import (
 type CyclicDependencyError struct {
 	Declarations []string
 	Witnesses    map[UID]struct{}
+	message      string
 }
 
 func (err *CyclicDependencyError) Error() string {
+	if err.message != "" {
+		return err.message
+	}
 	return "found a cyclic dependency among operators: " + strings.Join(err.Declarations, ", ")
 }
+
+func NewCyclicDependencyError(message string) *CyclicDependencyError {
+	return &CyclicDependencyError{message: message}
+}
+
+func (err *CyclicDependencyError) Unwrap() error { return NewLirError(err.Error()) }
 
 // SortDeclarations restores the define-before-use order of module
 // declarations. It preserves the original order whenever dependencies permit.

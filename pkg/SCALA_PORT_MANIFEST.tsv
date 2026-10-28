@@ -443,7 +443,7 @@ tlair/src/main/scala/at/forsyte/apalache/tla/lir/TypeTag.scala	ported	ir_identit
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/TypedPredefs.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/UntypedPredefs.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/convenience/convenience.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
-tlair/src/main/scala/at/forsyte/apalache/tla/lir/exceptions.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/exceptions.scala	ported	lir_errors.go;lir_errors_test.go;language_predicates.go;declaration_sorter.go	all nine Scala exception classes preserve exact hierarchy membership, messages, expression/module/UID/failure payloads, defensive failure copies, watcher interoperability, and operational cycle-error compatibility
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/formulas/Base.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/formulas/Booleans.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/formulas/EUF.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
