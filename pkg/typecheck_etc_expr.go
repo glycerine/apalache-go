@@ -212,6 +212,36 @@ func NewUniqueEtcConst(typ Type) *EtcConst  { return NewEtcConst(ExactRef{Source
 func NewBlameEtcConst(typ Type) *EtcConst   { return NewEtcConst(BlameRef{SourceID: NewUID()}, typ) }
 func NewUniqueEtcName(name string) *EtcName { return NewEtcName(ExactRef{SourceID: NewUID()}, name) }
 func NewBlameEtcName(name string) *EtcName  { return NewEtcName(BlameRef{SourceID: NewUID()}, name) }
+func NewUniqueEtcAbs(body EtcExpr, bindings ...EtcBinding) *EtcAbs {
+	return NewEtcAbs(ExactRef{SourceID: NewUID()}, body, bindings...)
+}
+func NewBlameEtcAbs(body EtcExpr, bindings ...EtcBinding) *EtcAbs {
+	return NewEtcAbs(BlameRef{SourceID: NewUID()}, body, bindings...)
+}
+func NewUniqueEtcApp(operatorTypes []Type, arguments ...EtcExpr) *EtcApp {
+	return NewEtcApp(ExactRef{SourceID: NewUID()}, operatorTypes, arguments...)
+}
+func NewBlameEtcApp(operatorTypes []Type, arguments ...EtcExpr) *EtcApp {
+	return NewEtcApp(BlameRef{SourceID: NewUID()}, operatorTypes, arguments...)
+}
+func NewUniqueEtcAppByName(name *EtcName, arguments ...EtcExpr) *EtcAppByName {
+	return NewEtcAppByName(ExactRef{SourceID: NewUID()}, name, arguments...)
+}
+func NewBlameEtcAppByName(name *EtcName, arguments ...EtcExpr) *EtcAppByName {
+	return NewEtcAppByName(BlameRef{SourceID: NewUID()}, name, arguments...)
+}
+func NewUniqueEtcLet(name string, bound, body EtcExpr) *EtcLet {
+	return NewEtcLet(ExactRef{SourceID: NewUID()}, name, bound, body)
+}
+func NewBlameEtcLet(name string, bound, body EtcExpr) *EtcLet {
+	return NewEtcLet(BlameRef{SourceID: NewUID()}, name, bound, body)
+}
+func NewUniqueEtcTypeDecl(name string, declaredType Type, scoped EtcExpr) *EtcTypeDecl {
+	return NewEtcTypeDecl(ExactRef{SourceID: NewUID()}, name, declaredType, scoped)
+}
+func NewBlameEtcTypeDecl(name string, declaredType Type, scoped EtcExpr) *EtcTypeDecl {
+	return NewEtcTypeDecl(BlameRef{SourceID: NewUID()}, name, declaredType, scoped)
+}
 
 // EqualEtcExpr compares ETC structure while deliberately ignoring source
 // references and diagnostic callbacks, matching Scala case-class equality.
