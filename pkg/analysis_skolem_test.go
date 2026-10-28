@@ -102,3 +102,80 @@ func TestMarkedPowersetExpansionFeedsUnaryUnion(t *testing.T) {
 	}
 	checkRewrittenTruth(t, rewriter, scope, result, true)
 }
+
+func TestMarkSetExpansionsScalaOracleCases(t *testing.T) {
+	intSetType := mustSet(IntT1)
+	setOfIntSetsType := mustSet(intSetType)
+	functionType := mustFun(IntT1, IntT1)
+	functionSetType := mustSet(functionType)
+	setName := func(name string) Expr { return NewNameExpr(name, Typed(intSetType)) }
+	power := func() Expr {
+		return MustOperExpr(Op("SET_POWERSET"), Typed(setOfIntSetsType), setName("S"))
+	}
+	functionSet := func() Expr {
+		return MustOperExpr(Op("FUN_SET"), Typed(functionSetType), setName("S"), setName("T"))
+	}
+	expandPower := func() Expr {
+		return MustOperExpr(Op("Apalache!Expand"), Typed(setOfIntSetsType), power())
+	}
+	expandFunctionSet := func() Expr {
+		return MustOperExpr(Op("ApalacheInternal!__CompactFunSetExpand"), Typed(functionSetType), functionSet())
+	}
+	xSet := NewNameExpr("x", Typed(intSetType))
+	xFunction := NewNameExpr("x", Typed(functionType))
+	predicate := NewNameExpr("P", Typed(BoolT1))
+	oneSet := MustOperExpr(Op("SET_ENUM"), Typed(intSetType), intLiteral(1))
+	setOfOneSet := MustOperExpr(Op("SET_ENUM"), Typed(setOfIntSetsType), oneSet)
+	emptyFunctions := MustOperExpr(Op("SET_ENUM"), Typed(functionSetType))
+	operator := NewNameExpr("Op", Typed(IntT1))
+	zero := intLiteral(0)
+
+	cases := []struct {
+		name  string
+		input Expr
+		want  Expr
+	}{
+		{"membership-powerset-unmarked",
+			MustOperExpr(Op("SET_IN"), Typed(BoolT1), xSet, power()),
+			MustOperExpr(Op("SET_IN"), Typed(BoolT1), xSet, power())},
+		{"membership-function-set-unmarked",
+			MustOperExpr(Op("SET_IN"), Typed(BoolT1), xFunction, functionSet()),
+			MustOperExpr(Op("SET_IN"), Typed(BoolT1), xFunction, functionSet())},
+		{"union-powerset-marked",
+			MustOperExpr(Op("SET_UNION2"), Typed(setOfIntSetsType), setOfOneSet, power()),
+			MustOperExpr(Op("SET_UNION2"), Typed(setOfIntSetsType), setOfOneSet, expandPower())},
+		{"union-function-set-marked",
+			MustOperExpr(Op("SET_IN"), Typed(BoolT1), xFunction,
+				MustOperExpr(Op("SET_UNION2"), Typed(functionSetType), emptyFunctions, functionSet())),
+			MustOperExpr(Op("SET_IN"), Typed(BoolT1), xFunction,
+				MustOperExpr(Op("SET_UNION2"), Typed(functionSetType), emptyFunctions, expandFunctionSet()))},
+		{"forall-powerset-marked",
+			MustOperExpr(Op("FORALL3"), Typed(BoolT1), xSet, power(), predicate),
+			MustOperExpr(Op("FORALL3"), Typed(BoolT1), xSet, expandPower(), predicate)},
+		{"exists-powerset-marked",
+			MustOperExpr(Op("EXISTS3"), Typed(BoolT1), xSet, power(), predicate),
+			MustOperExpr(Op("EXISTS3"), Typed(BoolT1), xSet, expandPower(), predicate)},
+		{"skolem-powerset-unmarked",
+			MustOperExpr(Op("Apalache!Skolem"), Typed(BoolT1),
+				MustOperExpr(Op("EXISTS3"), Typed(BoolT1), xSet, power(), predicate)),
+			MustOperExpr(Op("Apalache!Skolem"), Typed(BoolT1),
+				MustOperExpr(Op("EXISTS3"), Typed(BoolT1), xSet, power(), predicate))},
+		{"choose-powerset-unmarked",
+			MustOperExpr(Op("CHOOSE3"), Typed(intSetType), xSet, power(), predicate),
+			MustOperExpr(Op("CHOOSE3"), Typed(intSetType), xSet, power(), predicate)},
+		{"fold-powerset-marked",
+			MustOperExpr(Op("Apalache!ApaFoldSet"), Typed(IntT1), operator, zero, power()),
+			MustOperExpr(Op("Apalache!ApaFoldSet"), Typed(IntT1), operator, zero, expandPower())},
+		{"fold-function-set-marked",
+			MustOperExpr(Op("Apalache!ApaFoldSet"), Typed(IntT1), operator, zero, functionSet()),
+			MustOperExpr(Op("Apalache!ApaFoldSet"), Typed(IntT1), operator, zero, expandFunctionSet())},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			got := MarkSetExpansionsExpression(test.input, nil)
+			if !EqualTypedExpr(got, test.want) {
+				t.Fatalf("marked expression = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
