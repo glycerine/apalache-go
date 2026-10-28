@@ -52,6 +52,30 @@ func (cache *DefaultValueCache) GetOrCreate(scope RewriterScope, typ Type) (Rewr
 		cache.values[typ.String()] = function
 		return scope, function, nil
 	}
+	if recordType, ok := typ.(RecordType); ok {
+		fields := recordType.Fields()
+		keys := sortedStringKeys(fields)
+		pointers := make([]ElementPointer, len(keys))
+		for index, key := range keys {
+			var value ArenaCell
+			var err error
+			scope, value, err = cache.GetOrCreate(scope, fields[key])
+			if err != nil {
+				return scope, ArenaCell{}, fmt.Errorf("default record field %q: %w", key, err)
+			}
+			pointers[index] = FixedElementPointer{Cell: value}
+		}
+		var domain ArenaCell
+		var err error
+		scope, domain, err = cache.GetOrCreate(scope, mustSet(StrT1))
+		if err != nil {
+			return scope, ArenaCell{}, fmt.Errorf("default record domain: %w", err)
+		}
+		newArena, record := scope.Arena.AppendCellType(BasicCellType{Type: recordType})
+		scope.Arena = newArena.AppendHas(record, pointers...).SetDomain(record, domain)
+		cache.values[typ.String()] = record
+		return scope, record, nil
+	}
 	expression, err := defaultValueExpression(typ)
 	if err != nil {
 		return scope, ArenaCell{}, err

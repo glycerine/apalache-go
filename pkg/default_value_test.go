@@ -94,4 +94,56 @@ func TestDefaultValueCacheBuildsCanonicalRecordValues(t *testing.T) {
 	if !fields[1].Element().Equal(scope.Arena.FalseCell()) {
 		t.Fatalf("default Boolean field = %s", fields[1].Element())
 	}
+	domain, err := scope.Arena.Domain(record)
+	if err != nil || len(scope.Arena.GetHas(domain)) != 0 {
+		t.Fatalf("default record domain = %v, %v", domain, err)
+	}
+	domainExpression := MustOperExpr(Op("DOMAIN"), Typed(mustSet(StrT1)), record.NameExpr())
+	empty := MustOperExpr(Op("SET_ENUM"), Typed(mustSet(StrT1)))
+	scope, result, err := rewriter.Rewrite(
+		MustOperExpr(Op("EQ"), Typed(BoolT1), domainExpression, empty), scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkRewrittenTruth(t, rewriter, scope, result, true)
+}
+
+func TestDefaultValueCacheScalaRowRecordOracleAndErrors(t *testing.T) {
+	row, err := NewRowType(map[string]Type{"a": IntT1, "b": BoolT1}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recordType := NewRecordRowType(row)
+	rewriter := NewStratifiedRewriter()
+	scope, record, err := rewriter.DefaultValueCache().GetOrCreate(InitialRewriterScope(), recordType)
+	if err != nil || scope.Arena.HasDomain(record) {
+		t.Fatalf("row-record default = %v, has domain %v, error %v", record, scope.Arena.HasDomain(record), err)
+	}
+	key := func(name string) Expr { return NewValueExpr(StringValue(name), Typed(StrT1)) }
+	expected := MustOperExpr(Op("RECORD"), Typed(recordType),
+		key("a"), intLiteral(0), key("b"), NewValueExpr(BoolValue(false), Typed(BoolT1)))
+	scope, result, err := rewriter.Rewrite(
+		MustOperExpr(Op("EQ"), Typed(BoolT1), record.NameExpr(), expected), scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkRewrittenTruth(t, rewriter, scope, result, true)
+
+	tail, err := NewVarType(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	openRow, err := NewRowType(map[string]Type{"a": IntT1}, &tail)
+	if err != nil {
+		t.Fatal(err)
+	}
+	emptyRow, err := NewRowType(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, invalid := range []Type{nil, NewRecordRowType(openRow), NewVariantType(openRow), NewVariantType(emptyRow)} {
+		if _, _, err := NewStratifiedRewriter().DefaultValueCache().GetOrCreate(InitialRewriterScope(), invalid); err == nil {
+			t.Fatalf("default value was created for unsupported type %v", invalid)
+		}
+	}
 }
