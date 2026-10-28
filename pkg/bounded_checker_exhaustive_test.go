@@ -419,3 +419,101 @@ func TestBoundedSafetyMatchesExhaustiveNestedMachines(t *testing.T) {
 			`[items |-> <<1, 2>>, choice |-> Variant("B", TRUE)]`,
 		}, 0x0e57ed, "Variants")
 }
+
+func TestBoundedSafetyMatchesOperatorRichIntegerMachines(t *testing.T) {
+	type transitionTemplate struct {
+		expression string
+		next       func(int) []int
+	}
+	templates := []transitionTemplate{
+		{"x' = (x + 1) % 4", func(x int) []int { return []int{(x + 1) % 4} }},
+		{"x' = IF x < 3 THEN x + 1 ELSE 0", func(x int) []int { return []int{(x + 1) % 4} }},
+		{"x' = 3 - x", func(x int) []int { return []int{3 - x} }},
+		{"x' = x", func(x int) []int { return []int{x} }},
+		{"x' = x \\/ x' = (x + 1) % 4", func(x int) []int { return []int{x, (x + 1) % 4} }},
+		{"x < 3 /\\ x' = x + 1", func(x int) []int {
+			if x < 3 {
+				return []int{x + 1}
+			}
+			return nil
+		}},
+		{"x > 0 /\\ x' = x - 1", func(x int) []int {
+			if x > 0 {
+				return []int{x - 1}
+			}
+			return nil
+		}},
+		{"x' = (x * 3 + 1) % 4", func(x int) []int { return []int{(x*3 + 1) % 4} }},
+	}
+	values := []string{"0", "1", "2", "3"}
+	random := rand.New(rand.NewSource(0x0fe7a70))
+	for number := 0; number < 24; number++ {
+		template := templates[number%len(templates)]
+		init := uint64(random.Intn(15) + 1)
+		invariant := uint64(random.Intn(16))
+		bound := random.Intn(4)
+		edges := uint64(0)
+		for from := range values {
+			for _, to := range template.next(from) {
+				edges |= 1 << (from*len(values) + to)
+			}
+		}
+		name := fmt.Sprintf("OperatorInteger%d", number)
+		source := fmt.Sprintf(`---- MODULE %s ----
+EXTENDS Integers
+\* @type: Int;
+VARIABLE x
+Init == %s
+Next == %s
+Inv == %s
+====`, name, valueMaskPredicate("x", values, init, false), template.expression,
+			valueMaskPredicate("x", values, invariant, false))
+		checkExhaustiveMachine(t, name, source, init, edges, invariant, len(values), bound)
+	}
+}
+
+func TestBoundedSafetyMatchesOperatorRichSetMachines(t *testing.T) {
+	type transitionTemplate struct {
+		expression string
+		next       func(int) []int
+	}
+	templates := []transitionTemplate{
+		{"s' = s \\union {1}", func(s int) []int { return []int{s | 1} }},
+		{"s' = s \\union {2}", func(s int) []int { return []int{s | 2} }},
+		{"s' = s \\ {1}", func(s int) []int { return []int{s & 2} }},
+		{"s' = IF 1 \\in s THEN s \\ {1} ELSE s \\union {1}", func(s int) []int { return []int{s ^ 1} }},
+		{"s' = s \\union {1} \\/ s' = s \\union {2}", func(s int) []int { return []int{s | 1, s | 2} }},
+		{"1 \\notin s /\\ s' = s \\union {1}", func(s int) []int {
+			if s&1 == 0 {
+				return []int{s | 1}
+			}
+			return nil
+		}},
+		{"s' = {1, 2} \\ s", func(s int) []int { return []int{3 &^ s} }},
+		{"s' = s \\intersect {1}", func(s int) []int { return []int{s & 1} }},
+	}
+	values := []string{"{}", "{1}", "{2}", "{1, 2}"}
+	random := rand.New(rand.NewSource(0x5e70fe7a70))
+	for number := 0; number < 24; number++ {
+		template := templates[number%len(templates)]
+		init := uint64(random.Intn(15) + 1)
+		invariant := uint64(random.Intn(16))
+		bound := random.Intn(4)
+		edges := uint64(0)
+		for from := range values {
+			for _, to := range template.next(from) {
+				edges |= 1 << (from*len(values) + to)
+			}
+		}
+		name := fmt.Sprintf("OperatorSet%d", number)
+		source := fmt.Sprintf(`---- MODULE %s ----
+\* @type: Set(Int);
+VARIABLE s
+Init == %s
+Next == %s
+Inv == %s
+====`, name, valueMaskPredicate("s", values, init, false), template.expression,
+			valueMaskPredicate("s", values, invariant, false))
+		checkExhaustiveMachine(t, name, source, init, edges, invariant, len(values), bound)
+	}
+}
