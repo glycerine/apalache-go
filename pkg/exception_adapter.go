@@ -101,6 +101,10 @@ func (adapter CheckerExceptionAdapter) location(id UID) string {
 }
 
 func (adapter CheckerExceptionAdapter) Adapt(err error) (ErrorMessage, bool) {
+	var tlcConfiguration *TLCConfigurationError
+	if errors.As(err, &tlcConfiguration) {
+		return NormalErrorMessage{Text: "Configuration error (see the manual): " + tlcConfiguration.Error()}, true
+	}
 	var configuration *ConfigurationError
 	if errors.As(err, &configuration) {
 		return NormalErrorMessage{Text: "Configuration error (see the manual): " + configuration.Error()}, true
@@ -108,6 +112,18 @@ func (adapter CheckerExceptionAdapter) Adapt(err error) (ErrorMessage, bool) {
 	var override *OverrideError
 	if errors.As(err, &override) {
 		return NormalErrorMessage{Text: "Configuration error (see the manual): " + override.Error()}, true
+	}
+	var overriding *OverridingError
+	if errors.As(err, &overriding) {
+		return NormalErrorMessage{Text: "Configuration error (see the manual): " + overriding.Error()}, true
+	}
+	var tlaInput *TlaInputError
+	if errors.As(err, &tlaInput) {
+		location := ""
+		if tlaInput.SourceID != nil {
+			location = adapter.location(*tlaInput.SourceID) + ": "
+		}
+		return NormalErrorMessage{Text: location + "Input error (see the manual): " + tlaInput.Error()}, true
 	}
 	var assignment *AssignmentError
 	if errors.As(err, &assignment) {
@@ -136,6 +152,10 @@ func (adapter CheckerExceptionAdapter) Adapt(err error) (ErrorMessage, bool) {
 	var itfError *ITFError
 	if errors.As(err, &itfError) {
 		return NormalErrorMessage{Text: "Error in ITF deserialization. Perhaps the file is malformed?: " + itfError.Error() + "."}, true
+	}
+	var notInKera *NotInKeraError
+	if errors.As(err, &notInKera) {
+		return NormalErrorMessage{Text: adapter.location(notInKera.CauseExpr().ID()) + ": Input error (see the manual): " + notInKera.Error()}, true
 	}
 	var malformed *MalformedTlaError
 	if errors.As(err, &malformed) {
@@ -168,6 +188,14 @@ func (adapter CheckerExceptionAdapter) Adapt(err error) (ErrorMessage, bool) {
 	var specification *MalformedSepecificationError
 	if errors.As(err, &specification) {
 		return NormalErrorMessage{Text: "The specification is malformed: " + specification.Error()}, true
+	}
+	var preprocessing *IrrecoverablePreprocessingError
+	if errors.As(err, &preprocessing) {
+		return FailureMessage{Text: "Irrecoverable preprocessing error: " + preprocessing.Error() + ". Report an issue at [https://github.com/apalache-mc/apalache/issues]"}, true
+	}
+	var quint *QuintUnsupportedError
+	if errors.As(err, &quint) {
+		return FailureMessage{Text: quint.Error()}, true
 	}
 	var checker *CheckerException
 	if errors.As(err, &checker) {

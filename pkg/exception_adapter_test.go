@@ -115,7 +115,11 @@ func TestCheckerExceptionAdapterMatchesScalaClassification(t *testing.T) {
 		stackTrace bool
 	}{
 		{"configuration", &ConfigurationError{Message: "missing INIT"}, "Configuration error (see the manual): missing INIT", false},
+		{"TLC configuration", &TLCConfigurationError{Message: "bad cfg"}, "Configuration error (see the manual): bad cfg", false},
 		{"override", &OverrideError{Message: "bad override"}, "Configuration error (see the manual): bad override", false},
+		{"overriding", NewOverridingError("wrong arity", transformed), "Configuration error (see the manual): wrong arity", false},
+		{"TLA input", NewTlaInputError("recursive annotation", transformed.ID()), "Spec.tla:3:4-3:8: Input error (see the manual): recursive annotation", false},
+		{"TLA input unknown", NewTlaInputError("missing annotation"), "Input error (see the manual): missing annotation", false},
 		{"assignment", &AssignmentError{Message: "x is unassigned"}, "Assignment error: x is unassigned", false},
 		{"outdated", NewOutdatedAnnotationsError("old annotation", transformed), "Spec.tla:3:4-3:8: rewriter error: old annotation", false},
 		{"language", NewLanguagePredError("bad fragment", nil), "Unexpected expressions in the specification (see the error messages)", false},
@@ -124,6 +128,7 @@ func TestCheckerExceptionAdapterMatchesScalaClassification(t *testing.T) {
 		{"JSON", NewJSONDeserializationError("bad JSON", errors.New("syntax")), "Error in JSON deserialization. Perhaps the file is malformed?: bad JSON.", false},
 		{"ITF", &ITFFormatError{ITFError: &ITFError{Kind: "ITF format error", Message: "bad state"}}, "Error in ITF deserialization. Perhaps the file is malformed?: ITF format error: bad state.", false},
 		{"malformed TLA", NewMalformedTlaError("bad node", transformed), "Spec.tla:3:4-3:8: unexpected TLA+ expression: bad node", true},
+		{"not in Kera", NewNotInKeraError("higher order", transformed), "Spec.tla:3:4-3:8: Input error (see the manual): higher order", false},
 		{"no rule", NewNoRuleException("missing EQ", transformed), "Spec.tla:3:4-3:8: no rule to rewrite a TLA+ expression: missing EQ", true},
 		{"known limitation", NewRewriterKnownLimitationError("infinite set", transformed), "Spec.tla:3:4-3:8: known limitation: infinite set", false},
 		{"rewriter", NewRewriterException("bad state", transformed), "Spec.tla:3:4-3:8: rewriter error: bad state", true},
@@ -132,6 +137,8 @@ func TestCheckerExceptionAdapterMatchesScalaClassification(t *testing.T) {
 		{"internal checker", NewInternalCheckerError("broken invariant", transformed), "Spec.tla:3:4-3:8: internal error: broken invariant", true},
 		{"checker", NewCheckerException("generic", transformed), "Spec.tla:3:4-3:8: checker error: generic", true},
 		{"malformed specification", NewMalformedSepecificationError("no behavior"), "The specification is malformed: no behavior", false},
+		{"irrecoverable preprocessing", &IrrecoverablePreprocessingError{Message: "broken rewrite"}, "Irrecoverable preprocessing error: broken rewrite. Report an issue at [https://github.com/apalache-mc/apalache/issues]", true},
+		{"unsupported Quint", NewQuintUnsupportedError("lambda"), "Unsupported quint input: lambda", true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
