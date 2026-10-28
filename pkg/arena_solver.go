@@ -53,6 +53,17 @@ func (adapter *ArenaSolverAdapter) PureArena() *PureArena { return adapter.arena
 func (adapter *ArenaSolverAdapter) Encoder() *G3GroundEncoder {
 	return adapter.encoder
 }
+
+// SetSolver returns an adapter over the same persistent arena and a fresh
+// solver context. Like Scala's setSolver, it does not replay declarations.
+func (adapter *ArenaSolverAdapter) SetSolver(solver *G3SolverContext) (*ArenaSolverAdapter, error) {
+	encoder, err := NewG3GroundEncoder(solver)
+	if err != nil {
+		return nil, err
+	}
+	return &ArenaSolverAdapter{arena: adapter.arena, encoder: encoder}, nil
+}
+
 func (adapter *ArenaSolverAdapter) CellCount() int     { return adapter.arena.CellCount() }
 func (adapter *ArenaSolverAdapter) TopCell() ArenaCell { return adapter.arena.TopCell() }
 func (adapter *ArenaSolverAdapter) FalseCell() ArenaCell {
@@ -64,6 +75,14 @@ func (adapter *ArenaSolverAdapter) BooleanSetCell() ArenaCell {
 }
 func (adapter *ArenaSolverAdapter) NatSetCell() ArenaCell { return adapter.arena.NatSetCell() }
 func (adapter *ArenaSolverAdapter) IntSetCell() ArenaCell { return adapter.arena.IntSetCell() }
+
+func (adapter *ArenaSolverAdapter) FindCellByName(name string) (ArenaCell, error) {
+	return adapter.arena.FindCellByName(name)
+}
+
+func (adapter *ArenaSolverAdapter) FindCellByNameExpr(expression Expr) (ArenaCell, error) {
+	return adapter.arena.FindCellByNameExpr(expression)
+}
 
 func (adapter *ArenaSolverAdapter) AppendCellType(cellType CellType, unconstrained ...bool) (*ArenaSolverAdapter, ArenaCell, error) {
 	newArena, cell := adapter.arena.AppendCellType(cellType, unconstrained...)
@@ -145,6 +164,22 @@ func (adapter *ArenaSolverAdapter) Domain(function ArenaCell) (ArenaCell, error)
 
 func (adapter *ArenaSolverAdapter) Codomain(function ArenaCell) (ArenaCell, error) {
 	return adapter.arena.Codomain(function)
+}
+
+func (adapter *ArenaSolverAdapter) HasDomain(cell ArenaCell) bool {
+	return adapter.arena.HasDomain(cell)
+}
+
+func (adapter *ArenaSolverAdapter) HasCodomain(cell ArenaCell) bool {
+	return adapter.arena.HasCodomain(cell)
+}
+
+func (adapter *ArenaSolverAdapter) IsLinkedViaHas(source, destination ArenaCell) bool {
+	return adapter.arena.IsLinkedViaHas(source, destination)
+}
+
+func (adapter *ArenaSolverAdapter) FindCellsByType(cellType CellType) []ArenaCell {
+	return adapter.arena.FindCellsByType(cellType)
 }
 
 func (adapter *ArenaSolverAdapter) Assert(expression Expr) error {

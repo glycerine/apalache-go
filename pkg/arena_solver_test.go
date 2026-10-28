@@ -94,3 +94,51 @@ func TestArenaSolverAdapterNoSMTVariantsStayExplicit(t *testing.T) {
 		t.Fatal("no-SMT cell/edge unexpectedly became encodable")
 	}
 }
+
+func TestArenaSolverAdapterForwardsPureArenaQueriesAndReplacesSolver(t *testing.T) {
+	adapter, err := NewArenaSolverAdapter(newTestG3Solver(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found, err := adapter.FindCellByName("$C$1"); err != nil || !found.Equal(adapter.TrueCell()) {
+		t.Fatalf("find by name = %v, %v", found, err)
+	}
+	if found, err := adapter.FindCellByNameExpr(NewNameExpr("$C$2", Untyped())); err != nil || !found.Equal(adapter.BooleanSetCell()) {
+		t.Fatalf("find by name expression = %v, %v", found, err)
+	}
+	if _, err := adapter.FindCellByNameExpr(NewNameExpr("x", Untyped())); err == nil {
+		t.Fatal("non-cell name expression was accepted")
+	}
+	if !adapter.IsLinkedViaHas(adapter.BooleanSetCell(), adapter.FalseCell()) ||
+		!adapter.IsLinkedViaHas(adapter.BooleanSetCell(), adapter.TrueCell()) {
+		t.Fatal("canonical BOOLEAN membership edges are missing")
+	}
+	boolCells := adapter.FindCellsByType(BasicCellType{Type: BoolT1})
+	if len(boolCells) != 2 || boolCells[0].ID != 0 || boolCells[1].ID != 1 {
+		t.Fatalf("Boolean cells = %#v", boolCells)
+	}
+
+	withFunction, function, err := adapter.AppendTLAType(mustFun(IntT1, IntT1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	withDomain, err := withFunction.SetDomain(function, adapter.IntSetCell())
+	if err != nil {
+		t.Fatal(err)
+	}
+	withBoth, err := withDomain.SetCodomain(function, adapter.IntSetCell())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !withBoth.HasDomain(function) || !withBoth.HasCodomain(function) || withFunction.HasDomain(function) {
+		t.Fatal("domain/codomain query did not preserve arena persistence")
+	}
+
+	replaced, err := withBoth.SetSolver(newTestG3Solver(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replaced.PureArena() != withBoth.PureArena() || replaced.Encoder() == withBoth.Encoder() {
+		t.Fatal("solver replacement changed the arena or retained the old encoder")
+	}
+}
