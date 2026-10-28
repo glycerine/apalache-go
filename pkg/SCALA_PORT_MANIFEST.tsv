@@ -525,7 +525,7 @@ tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/signatures/VariantOperSign
 tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/subbuilder/ActionBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/subbuilder/ApalacheBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/subbuilder/ApalacheInternalBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
-tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/subbuilder/ArithmeticBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/subbuilder/ArithmeticBuilder.scala	ported	arithmetic_builder.go;arithmetic_builder_test.go	scope-safe Plus, Minus, UMinus, Mult, Div, Mod, Exp, DotDot, Lt, Gt, Le, and Ge compose delayed instructions and enforce signature and free-name constraints
 tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/subbuilder/BaseBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/subbuilder/BoolBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/subbuilder/ControlBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
@@ -540,7 +540,7 @@ tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/unsafe/ProtoBuilder.scala	
 tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/unsafe/UnsafeActionBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/unsafe/UnsafeApalacheBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/unsafe/UnsafeApalacheInternalBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
-tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/unsafe/UnsafeArithmeticBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/unsafe/UnsafeArithmeticBuilder.scala	ported	arithmetic_builder.go;arithmetic_builder_test.go	typed direct builders cover all twelve arithmetic and comparison operators through signature inference with structured errors for ill-typed operands
 tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/unsafe/UnsafeBaseBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/unsafe/UnsafeBoolBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/unsafe/UnsafeControlBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
