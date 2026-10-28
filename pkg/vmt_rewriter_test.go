@@ -34,21 +34,30 @@ func rewriteVMTText(t *testing.T, rewriter *VMTRewriter, expression Expr) string
 
 func TestVMTRewriterValuesAndDeclarations(t *testing.T) {
 	rewriter, typ, _ := newTestVMTRewriter(t)
+	aType := mustNamedConst(t, "A")
+	bType := mustNamedConst(t, "B")
 	cases := []struct {
+		name       string
 		expression Expr
 		want       string
 	}{
-		{NewValueExpr(Int64Value(-3), Typed(IntT1)), "-3"},
-		{NewValueExpr(BoolValue(true), Typed(BoolT1)), "true"},
-		{NewValueExpr(StringValue("plain"), Typed(StrT1)), "plain_Str"},
-		{NewValueExpr(StringValue("alice_OF_SSORT"), Typed(typ)), "alice_SSORT"},
-		{NewNameExpr("x", Typed(typ)), "x"},
-		{MustOperExpr(Op("PRIME"), Typed(typ), NewNameExpr("x", Typed(typ))), "x^"},
+		{"integer-literal", NewValueExpr(Int64Value(1), Typed(IntT1)), "1"},
+		{"integer-variable", NewNameExpr("x", Typed(IntT1)), "x"},
+		{"Boolean-literal", NewValueExpr(BoolValue(true), Typed(BoolT1)), "true"},
+		{"Boolean-variable", NewNameExpr("p", Typed(BoolT1)), "p"},
+		{"model-value", NewValueExpr(StringValue("1_OF_A"), Typed(aType)), "1_A"},
+		{"uninterpreted-variable", NewNameExpr("v", Typed(bType)), "v"},
+		{"string-literal", NewValueExpr(StringValue("string"), Typed(StrT1)), "string_Str"},
+		{"negative-integer", NewValueExpr(Int64Value(-3), Typed(IntT1)), "-3"},
+		{"model-value-ssort", NewValueExpr(StringValue("alice_OF_SSORT"), Typed(typ)), "alice_SSORT"},
+		{"prime", MustOperExpr(Op("PRIME"), Typed(typ), NewNameExpr("x", Typed(typ))), "x^"},
 	}
 	for _, test := range cases {
-		if got := rewriteVMTText(t, rewriter, test.expression); got != test.want {
-			t.Errorf("rewrite %T = %q, want %q", test.expression, got, test.want)
-		}
+		t.Run(test.name, func(t *testing.T) {
+			if got := rewriteVMTText(t, rewriter, test.expression); got != test.want {
+				t.Errorf("rewrite %T = %q, want %q", test.expression, got, test.want)
+			}
+		})
 	}
 	declarations := rewriter.Declarations()
 	if _, ok := declarations.UninterpretedSorts["Str"]; !ok {
