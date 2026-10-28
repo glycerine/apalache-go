@@ -28,6 +28,29 @@ func TestOperAppToLetInDefSelectionAndNaming(t *testing.T) {
 	}
 }
 
+func TestOperAppToLetInDefLeavesNonApplicationsAndMalformedCalleesAlone(t *testing.T) {
+	wrapper := NewOperAppToLetInDef(nil, nil)
+	x := NewNameExpr("x", Typed(IntT1))
+	nonApplications := []Expr{
+		MustOperExpr(Op("PLUS"), Typed(IntT1), intLiteral(1), intLiteral(2)),
+		MustOperExpr(Op("TUPLE"), Typed(mustTuple(IntT1, IntT1)), x, intLiteral(2)),
+		MustOperExpr(Op("EXISTS3"), Typed(BoolT1), x,
+			MustOperExpr(Op("SET_ENUM"), Typed(mustSet(IntT1)), intLiteral(1)), temporalBool(true)),
+	}
+	for _, expression := range nonApplications {
+		got, err := wrapper.Wrap(expression, map[string]struct{}{})
+		if err != nil || got != expression {
+			t.Fatalf("non-application changed: %#v, %v", got, err)
+		}
+	}
+
+	malformed := MustOperExpr(Op("OPER_APP"), Typed(IntT1), intLiteral(1), intLiteral(2))
+	got, err := wrapper.Wrap(malformed, map[string]struct{}{"A": {}})
+	if err != nil || got != malformed {
+		t.Fatalf("non-name callee = %#v, %v", got, err)
+	}
+}
+
 func TestOperAppToLetInDefMixedAndNestedArguments(t *testing.T) {
 	opType := mustOperator([]Type{IntT1}, IntT1)
 	app := func(name string, argument Expr) Expr {
@@ -76,5 +99,26 @@ func TestOperAppToLetInDefAddsLocalNamesInDependencyOrder(t *testing.T) {
 	}
 	if _, ok := let.Body().(*LetInExpr); !ok {
 		t.Fatalf("body local call not wrapped: %v", let.Body())
+	}
+}
+
+func TestOperAppToLetInDefModuleMatchesScalaIdentityAndProperties(t *testing.T) {
+	opType := mustOperator([]Type{IntT1}, IntT1)
+	application := MustOperExpr(Op("OPER_APP"), Typed(IntT1),
+		NewNameExpr("A", Typed(opType)), intLiteral(1))
+	operator := NewOperDecl("Use", nil, application, Typed(mustOperator(nil, IntT1)))
+	variable := NewVarDecl("x", Typed(IntT1))
+	module := NewModule("M", []Decl{variable, operator})
+	module.AddProperty(PropertyTypeChecked)
+	got, err := NewOperAppToLetInDef(nil, nil).Module(module, map[string]struct{}{"A": {}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == module || got.VarDeclarations()[0] != variable || got.OperDeclarations()[0] == operator ||
+		got.HasProperty(PropertyTypeChecked) {
+		t.Fatalf("module identity/properties = %#v", got)
+	}
+	if _, wrapped := got.OperDeclarations()[0].Body().(*LetInExpr); !wrapped {
+		t.Fatalf("module operator application was not wrapped: %#v", got.OperDeclarations()[0].Body())
 	}
 }

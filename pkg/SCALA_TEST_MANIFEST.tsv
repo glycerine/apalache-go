@@ -145,7 +145,7 @@ tla-pp/src/test/scala/at/forsyte/apalache/tla/pp/TestKeramelizer.scala	partial	p
 tla-pp/src/test/scala/at/forsyte/apalache/tla/pp/TestLetInOptimizer.scala	partial	preprocess_*_test.go;temporal_*_test.go;retla*_test.go	remaining preprocessing cases are open
 tla-pp/src/test/scala/at/forsyte/apalache/tla/pp/TestLoopEncoder.scala	partial	preprocess_*_test.go;temporal_*_test.go;retla*_test.go	remaining preprocessing cases are open
 tla-pp/src/test/scala/at/forsyte/apalache/tla/pp/TestNormalizer.scala	partial	preprocess_*_test.go;temporal_*_test.go;retla*_test.go	remaining preprocessing cases are open
-tla-pp/src/test/scala/at/forsyte/apalache/tla/pp/TestOperAppToLetInDef.scala	partial	preprocess_*_test.go;temporal_*_test.go;retla*_test.go	remaining preprocessing cases are open
+tla-pp/src/test/scala/at/forsyte/apalache/tla/pp/TestOperAppToLetInDef.scala	ported	preprocess_app_wrap_test.go	exact no-application, selected/unselected single application, mixed application, fresh naming, nested argument, and LET dependency-order cases are mapped
 tla-pp/src/test/scala/at/forsyte/apalache/tla/pp/TestParameterNormalizer.scala	partial	preprocess_*_test.go;temporal_*_test.go;retla*_test.go	remaining preprocessing cases are open
 tla-pp/src/test/scala/at/forsyte/apalache/tla/pp/TestQuantificationOptimizer.scala	partial	preprocess_*_test.go;temporal_*_test.go;retla*_test.go	remaining preprocessing cases are open
 tla-pp/src/test/scala/at/forsyte/apalache/tla/pp/TestSetMembershipSimplifier.scala	partial	preprocess_*_test.go;temporal_*_test.go;retla*_test.go	remaining preprocessing cases are open

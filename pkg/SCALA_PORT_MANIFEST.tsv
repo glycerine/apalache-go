@@ -396,7 +396,7 @@ tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/Keramelizer.scala	partial	prepr
 tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/LetInOptimizer.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
 tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/NormalizedNames.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
 tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/Normalizer.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
-tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/OperAppToLetInDef.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
+tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/OperAppToLetInDef.scala	ported	preprocess_app_wrap.go;preprocess_app_wrap_test.go	selected named applications with arguments become fresh nullary LET definitions, nested/local calls are handled in dependency order, malformed callees fall through, and module transformation matches Scala identity semantics
 tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/ParameterNormalizer.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
 tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/SetMembershipSimplifier.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
 tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/TlaConstInliner.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open

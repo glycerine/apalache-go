@@ -34,8 +34,11 @@ func (wrapper *OperAppToLetInDef) Wrap(expression Expr, wrappable map[string]str
 			arguments := typed.Arguments()
 			if typed.Operator().Name() == "OPER_APP" && len(arguments) > 1 {
 				operatorName, named := arguments[0].(*NameExpr)
-				_, selected := names[operatorName.Name()]
-				if named && selected {
+				selected := false
+				if named {
+					_, selected = names[operatorName.Name()]
+				}
+				if selected {
 					resultType, ok := typed.Tag().Type()
 					if !ok {
 						return nil, fmt.Errorf("expected typed operator application %s", typed.ID())
@@ -125,6 +128,5 @@ func (wrapper *OperAppToLetInDef) Module(module *Module, wrappable map[string]st
 		declarations[index] = copy
 	}
 	result := NewModule(module.Name(), declarations)
-	result.properties = cloneMap(module.properties)
 	return result, nil
 }
