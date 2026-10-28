@@ -71,6 +71,9 @@ func TestParseTLCConfigNextBeforeInitAndSpecification(t *testing.T) {
 	if config.Behavior != (InitNextSpec{Init: "Start", Next: "Step"}) {
 		t.Fatalf("behavior = %#v", config.Behavior)
 	}
+	if config.CheckDeadlock != nil {
+		t.Fatalf("missing CHECK_DEADLOCK was recorded as %v", *config.CheckDeadlock)
+	}
 	config, err = ParseTLCConfig("SPECIFICATION Spec")
 	if err != nil {
 		t.Fatal(err)
