@@ -71,7 +71,133 @@ func (decoder ValidatedIRJSONDecoder) SingleModule(value JSONRepresentation) (*M
 // ValidateTypedIRExpression checks the invariants enforced while Scala's
 // ScopedBuilder executes a JSON expression.
 func ValidateTypedIRExpression(expression Expr) error {
+	if err := validateIRBinderScopes(expression, make(map[string]struct{})); err != nil {
+		return err
+	}
 	return validateTypedIRExpression(expression, make(map[string]Type))
+}
+
+func validateIRBinderScopes(expression Expr, bound map[string]struct{}) error {
+	if expression == nil || expression == NullExpr() {
+		return nil
+	}
+	switch typed := expression.(type) {
+	case *OperExpr:
+		arguments := typed.Arguments()
+		switch typed.Operator().Name() {
+		case "CHOOSE3", "FORALL3", "EXISTS3", "SET_FILTER":
+			return validateIRBoundOperator(arguments[0], []Expr{arguments[1]}, arguments[2], bound)
+		case "CHOOSE2", "FORALL2", "EXISTS2", "TEMPORAL_EXISTS", "TEMPORAL_FORALL":
+			return validateIRBoundOperator(arguments[0], nil, arguments[1], bound)
+		case "SET_MAP", "FUN_CTOR":
+			variables := make([]Expr, 0, (len(arguments)-1)/2)
+			domains := make([]Expr, 0, (len(arguments)-1)/2)
+			for index := 1; index < len(arguments); index += 2 {
+				variables = append(variables, arguments[index])
+				domains = append(domains, arguments[index+1])
+			}
+			return validateIRVariadicBinder(variables, domains, arguments[0], bound)
+		default:
+			for _, argument := range arguments {
+				if err := validateIRBinderScopes(argument, bound); err != nil {
+					return err
+				}
+			}
+		}
+	case *LetInExpr:
+		for _, declaration := range typed.Declarations() {
+			if err := validateIRBinderScopes(declaration.Body(), bound); err != nil {
+				return err
+			}
+		}
+		return validateIRBinderScopes(typed.Body(), bound)
+	}
+	return nil
+}
+
+func validateIRBoundOperator(variable Expr, domains []Expr, body Expr, bound map[string]struct{}) error {
+	names, err := boundVariableNames(variable)
+	if err != nil {
+		return err
+	}
+	for name := range names {
+		if _, shadowed := bound[name]; shadowed {
+			return &ScopeError{Message: fmt.Sprintf("variable shadowing: %s", name)}
+		}
+	}
+	for _, domain := range domains {
+		occurrences := irExpressionNames(domain)
+		for name := range names {
+			if _, used := occurrences[name]; used {
+				return &ScopeError{Message: fmt.Sprintf("variable %s is used in its own domain", name)}
+			}
+		}
+		if err = validateIRBinderScopes(domain, bound); err != nil {
+			return err
+		}
+	}
+	inner := cloneNameSet(bound)
+	for name := range names {
+		inner[name] = struct{}{}
+	}
+	return validateIRBinderScopes(body, inner)
+}
+
+func validateIRVariadicBinder(variables, domains []Expr, body Expr, bound map[string]struct{}) error {
+	allNames := make(map[string]struct{})
+	for _, variable := range variables {
+		names, err := boundVariableNames(variable)
+		if err != nil {
+			return err
+		}
+		for name := range names {
+			if _, duplicate := allNames[name]; duplicate {
+				return &ScopeError{Message: fmt.Sprintf("duplicate bound variable %s", name)}
+			}
+			if _, shadowed := bound[name]; shadowed {
+				return &ScopeError{Message: fmt.Sprintf("variable shadowing: %s", name)}
+			}
+			allNames[name] = struct{}{}
+		}
+	}
+	for _, domain := range domains {
+		occurrences := irExpressionNames(domain)
+		for name := range allNames {
+			if _, used := occurrences[name]; used {
+				return &ScopeError{Message: fmt.Sprintf("variable %s is used in a binder domain", name)}
+			}
+		}
+		if err := validateIRBinderScopes(domain, bound); err != nil {
+			return err
+		}
+	}
+	inner := cloneNameSet(bound)
+	for name := range allNames {
+		inner[name] = struct{}{}
+	}
+	return validateIRBinderScopes(body, inner)
+}
+
+func irExpressionNames(expression Expr) map[string]struct{} {
+	result := make(map[string]struct{})
+	var visit func(Expr)
+	visit = func(current Expr) {
+		switch typed := current.(type) {
+		case *NameExpr:
+			result[typed.Name()] = struct{}{}
+		case *OperExpr:
+			for _, argument := range typed.Arguments() {
+				visit(argument)
+			}
+		case *LetInExpr:
+			for _, declaration := range typed.Declarations() {
+				visit(declaration.Body())
+			}
+			visit(typed.Body())
+		}
+	}
+	visit(expression)
+	return result
 }
 
 func validateTypedIRExpression(expression Expr, names map[string]Type) error {
@@ -318,6 +444,11 @@ func requireEqualIRType(actual, expected Type) error {
 }
 
 func ValidateTypedIRDeclaration(declaration Decl) error {
+	if operator, ok := declaration.(*OperDecl); ok {
+		if err := validateIRBinderScopes(operator.Body(), make(map[string]struct{})); err != nil {
+			return err
+		}
+	}
 	return validateTypedIRDeclaration(declaration, make(map[string]Type))
 }
 

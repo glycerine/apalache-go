@@ -105,3 +105,32 @@ func TestValidatedIRJSONDecoderValueDependentOperators(t *testing.T) {
 		}
 	}
 }
+
+func TestValidatedIRJSONDecoderRejectsBinderShadowing(t *testing.T) {
+	setInt := newSetTypeUnchecked(IntT1)
+	x := func() Expr { return NewNameExpr("x", Typed(IntT1)) }
+	domain := MustOperExpr(Op("SET_ENUM"), Typed(setInt), intLiteral(1))
+	inner := MustOperExpr(Op("EXISTS3"), Typed(BoolT1), x(), domain, boolExpr(true))
+	invalid := []Expr{
+		MustOperExpr(Op("EXISTS3"), Typed(BoolT1), x(), domain, inner),
+		MustOperExpr(Op("EXISTS3"), Typed(BoolT1), x(),
+			MustOperExpr(Op("SET_ENUM"), Typed(setInt), x()), boolExpr(true)),
+		MustOperExpr(Op("SET_MAP"), Typed(setInt), x(), x(), domain, x(), domain),
+	}
+	encoder := IRJSONEncoder{}
+	decoder := ValidatedIRJSONDecoder{}
+	for _, expression := range invalid {
+		encoded, err := encoder.Expression(expression)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = decoder.Expression(encoded); err == nil {
+			t.Fatalf("accepted shadowed binder %s", expression.(*OperExpr).Operator())
+		} else {
+			var scopeErr *ScopeError
+			if !errors.As(err, &scopeErr) {
+				t.Fatalf("binder error = %T %v", err, err)
+			}
+		}
+	}
+}
