@@ -15,6 +15,7 @@ const (
 	ITFVarsField           = "vars"
 	ITFParamsField         = "params"
 	ITFStatesField         = "states"
+	ITFIndexField          = "index"
 	ITFBigIntField         = "#bigint"
 	ITFTupleField          = "#tup"
 	ITFSetField            = "#set"
@@ -168,7 +169,7 @@ func cloneTraceState(state TraceState) TraceState {
 	return result
 }
 func encodeITFState(state TraceState, index int) (map[string]any, error) {
-	result := map[string]any{ITFMetaField: map[string]any{"index": index}}
+	result := map[string]any{ITFMetaField: map[string]any{ITFIndexField: index}}
 	names := make([]string, 0, len(state))
 	for name := range state {
 		names = append(names, name)
