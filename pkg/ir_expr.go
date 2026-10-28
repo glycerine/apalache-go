@@ -112,16 +112,8 @@ func NewOperExpr(operator Operator, tag TypeTag, args ...Expr) (*OperExpr, error
 			return nil, fmt.Errorf("nil argument %d in %s", index, operator.Name())
 		}
 	}
-	if operator.Name() == "LABEL" {
-		for _, arg := range args[1:] {
-			valueExpr, ok := arg.(*ValueExpr)
-			if !ok {
-				return nil, fmt.Errorf("the invariant of LABEL is violated by its arguments")
-			}
-			if _, ok := valueExpr.Value().(StringValue); !ok {
-				return nil, fmt.Errorf("the invariant of LABEL is violated by its arguments")
-			}
-		}
+	if !operator.PermitsArgs(args) {
+		return nil, fmt.Errorf("the invariant of %s is violated by its arguments", operator.Name())
 	}
 	return &OperExpr{exprIdentity: newExprIdentity(tag), operator: operator, args: append([]Expr(nil), args...)}, nil
 }

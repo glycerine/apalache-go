@@ -85,6 +85,59 @@ func (o Operator) IsCorrectArity(count int) bool  { return o.valid().arity.Accep
 func (o Operator) Constructible() bool            { return o.valid().constructible }
 func (o Operator) Equal(other Operator) bool      { return o.Name() == other.Name() }
 
+// PermitsArgs implements operator-specific structural invariants. Scala's
+// default accepts every argument list; LABEL additionally requires every
+// argument after its decorated expression to be a string literal.
+func (o Operator) PermitsArgs(args []Expr) bool {
+	if o.Name() != "LABEL" {
+		return true
+	}
+	if len(args) == 0 {
+		return true
+	}
+	for _, arg := range args[1:] {
+		value, ok := arg.(*ValueExpr)
+		if !ok {
+			return false
+		}
+		if _, ok := value.Value().(StringValue); !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// DeinterleaveExpressions splits an even-length argument list into its
+// even- and odd-indexed elements, matching TlaOper.deinterleave.
+func DeinterleaveExpressions(args []Expr) ([]Expr, []Expr) {
+	if len(args)%2 != 0 {
+		panic("DeinterleaveExpressions requires an even-length argument list")
+	}
+	even := make([]Expr, 0, len(args)/2)
+	odd := make([]Expr, 0, len(args)/2)
+	for index, arg := range args {
+		if index%2 == 0 {
+			even = append(even, arg)
+		} else {
+			odd = append(odd, arg)
+		}
+	}
+	return even, odd
+}
+
+// InterleaveExpressions alternates two equal-length lists, starting with an
+// element from even, matching TlaOper.interleave.
+func InterleaveExpressions(even, odd []Expr) []Expr {
+	if len(even) != len(odd) {
+		panic("InterleaveExpressions requires equal-length argument lists")
+	}
+	result := make([]Expr, 0, len(even)+len(odd))
+	for index := range even {
+		result = append(result, even[index], odd[index])
+	}
+	return result
+}
+
 var builtinOperators = make(map[string]*operatorDefinition)
 
 func defineOperator(name string, interpretation Interpretation, category OperatorCategory, arity Arity, low, high int) Operator {
@@ -151,12 +204,15 @@ func init() {
 		low, high int
 	}{
 		{"EQ", fixed(2), 50, 50}, {"NE", fixed(2), 50, 50}, {"OPER_APP", positive, 160, 160},
-		{"CHOOSE3", fixed(3), 0, 0}, {"CHOOSE2", fixed(2), 0, 0}, {"LABEL", MinimalArity(2), 0, 0},
+		{"CHOOSE3", fixed(3), 0, 0}, {"CHOOSE2", fixed(2), 0, 0}, {"LABEL", MinimalArity(2), 160, 160},
 		{"AND", any, 30, 30}, {"OR", any, 30, 30}, {"NOT", fixed(1), 40, 40},
 		{"IMPLIES", fixed(2), 10, 10}, {"EQUIV", fixed(2), 20, 20}, {"FORALL3", fixed(3), 0, 0},
 		{"FORALL2", fixed(2), 0, 0}, {"EXISTS3", fixed(3), 0, 0}, {"EXISTS2", fixed(2), 0, 0},
 	} {
 		category := CategoryBase
+		if spec.name == "LABEL" {
+			category = CategoryControl
+		}
 		if spec.name == "AND" || spec.name == "OR" || spec.name == "NOT" || spec.name == "IMPLIES" || spec.name == "EQUIV" || spec.name == "FORALL3" || spec.name == "FORALL2" || spec.name == "EXISTS3" || spec.name == "EXISTS2" {
 			category = CategoryBoolean
 		}

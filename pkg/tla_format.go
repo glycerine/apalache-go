@@ -424,7 +424,10 @@ func formatTLAOperator(parent Precedence, expression *OperExpr) (string, error) 
 		if len(extra) > 0 {
 			label += "(" + strings.Join(extra, ", ") + ")"
 		}
-		return wrapTLA(parent, operator.Precedence(), label+" :: "+body), nil
+		// Scala declares LABEL at precedence (160, 160), but its concrete
+		// syntax is an undelimited construct that must be grouped whenever it
+		// is nested. Keep that printer rule separate from operator metadata.
+		return wrapTLA(parent, Precedence{}, label+" :: "+body), nil
 	case "Variants!Variant":
 		items, err := formatTLAArgs(arguments, operator.Precedence())
 		if err != nil {
