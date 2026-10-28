@@ -2095,6 +2095,41 @@ func TestStratifiedFiniteFunctionsThroughG3(t *testing.T) {
 	}
 }
 
+func TestStratifiedFunctionDomainUsesStoredDomainWithArrays(t *testing.T) {
+	setType := mustSet(IntT1)
+	functionType := mustFun(IntT1, IntT1)
+	domainBinder := NewNameExpr("d", Typed(IntT1))
+	candidates := MustOperExpr(Op("SET_ENUM"), Typed(setType), intLiteral(1), intLiteral(2))
+	domain := MustOperExpr(Op("SET_FILTER"), Typed(setType), domainBinder, candidates,
+		MustOperExpr(Op("EQ"), Typed(BoolT1), domainBinder, intLiteral(1)))
+	functionBinder := NewNameExpr("x", Typed(IntT1))
+	function := MustOperExpr(Op("FUN_CTOR"), Typed(functionType), functionBinder, functionBinder, domain)
+	functionDomain := MustOperExpr(Op("DOMAIN"), Typed(setType), function)
+	claim := MustOperExpr(Op("AND"), Typed(BoolT1),
+		MustOperExpr(Op("SET_IN"), Typed(BoolT1), intLiteral(1), functionDomain),
+		MustOperExpr(Op("SET_NOT_IN"), Typed(BoolT1), intLiteral(2), functionDomain))
+	for _, encoding := range []SMTEncoding{SMTEncodingArrays, SMTEncodingFunArrays} {
+		t.Run(string(encoding), func(t *testing.T) {
+			rewriter := NewStratifiedRewriterWithOptions(StratifiedRewriterOptions{SMTEncoding: encoding})
+			scope, result, err := rewriter.Rewrite(claim, InitialRewriterScope())
+			if err != nil {
+				t.Fatal(err)
+			}
+			solver := newTestG3Solver(t)
+			encoder, err := EncodeRewriterScopeWithEncoding(solver, scope, rewriter.Constraints(), encoding)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = encoder.Assert(MustOperExpr(Op("NOT"), Typed(BoolT1), result.NameExpr())); err != nil {
+				t.Fatal(err)
+			}
+			if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTUnsatisfiable {
+				t.Fatalf("stored function domain under %s = %v, %v", encoding, status, checkErr)
+			}
+		})
+	}
+}
+
 func TestStratifiedFunctionConstructorTypeErrorsDoNotMutateArena(t *testing.T) {
 	functionType := mustFun(IntT1, IntT1)
 	setType := mustSet(IntT1)
