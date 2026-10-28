@@ -367,6 +367,55 @@ func TestCherryPickerScalaFunctionCase(t *testing.T) {
 	})
 }
 
+func TestCherryPickerConstrainsNativeFunctionArray(t *testing.T) {
+	functionType := mustFun(IntT1, IntT1)
+	function := func(offset int64) Expr {
+		binder := NewNameExpr("x", Typed(IntT1))
+		return MustOperExpr(Op("FUN_CTOR"), Typed(functionType),
+			MustOperExpr(Op("PLUS"), Typed(IntT1), binder, intLiteral(offset)),
+			binder, cherrySet(IntT1, intLiteral(1)))
+	}
+	for _, encoding := range []SMTEncoding{SMTEncodingArrays, SMTEncodingFunArrays} {
+		t.Run(string(encoding), func(t *testing.T) {
+			rewriter := NewStratifiedRewriterWithOptions(StratifiedRewriterOptions{SMTEncoding: encoding})
+			scope, first, err := rewriter.Rewrite(function(10), InitialRewriterScope())
+			if err != nil {
+				t.Fatal(err)
+			}
+			scope, second, err := rewriter.Rewrite(function(20), scope)
+			if err != nil {
+				t.Fatal(err)
+			}
+			scope, oracle, err := CreateIntOracle(scope, 2)
+			if err != nil {
+				t.Fatal(err)
+			}
+			scope, picked, err := NewCherryPicker(rewriter).Pick(scope, oracle, []ArenaCell{first, second})
+			if err != nil {
+				t.Fatal(err)
+			}
+			chooseFirst, err := oracle.Chosen(scope, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			solver := newTestG3Solver(t)
+			encoder, err := EncodeRewriterScopeWithEncoding(solver, scope,
+				append(rewriter.Constraints(), chooseFirst), encoding)
+			if err != nil {
+				t.Fatal(err)
+			}
+			differentArrays := MustOperExpr(Op("NOT"), Typed(BoolT1),
+				MustOperExpr(Op("EQ"), Typed(BoolT1), picked.NameExpr(), first.NameExpr()))
+			if err = encoder.Assert(differentArrays); err != nil {
+				t.Fatal(err)
+			}
+			if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTUnsatisfiable {
+				t.Fatalf("selected native function array under %s = %v, %v", encoding, status, checkErr)
+			}
+		})
+	}
+}
+
 func TestCherryPickerRejectsInvalidRequests(t *testing.T) {
 	rewriter := NewStratifiedRewriter()
 	scope := InitialRewriterScope()

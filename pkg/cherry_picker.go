@@ -92,6 +92,20 @@ func (picker *CherryPicker) pickFunction(scope RewriterScope, oracle ChoiceOracl
 	}
 	newArena, function := scope.Arena.AppendCellType(cells[0].Type, true)
 	scope.Arena = newArena.SetDomain(function, domain).SetCodomain(function, relation)
+	if picker.rewriter.smtEncoding == SMTEncodingArrays || picker.rewriter.smtEncoding == SMTEncodingFunArrays {
+		assertions := make([]Expr, oracle.Size())
+		for index := range assertions {
+			assertions[index] = boolExpr(true)
+		}
+		for index, cell := range cells {
+			assertions[index] = MustOperExpr(Op("EQ"), Typed(BoolT1), function.NameExpr(), cell.NameExpr())
+		}
+		constraint, constraintErr := oracle.Cases(scope, assertions, nil)
+		if constraintErr != nil {
+			return scope, ArenaCell{}, constraintErr
+		}
+		picker.rewriter.assert(constraint)
+	}
 	return scope, function, nil
 }
 
