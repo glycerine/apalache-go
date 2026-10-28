@@ -14,6 +14,30 @@ type ModulePass interface {
 	Execute(*Module) (*Module, error)
 }
 
+// ToolModule is the mode-specific, ordered pass catalog corresponding to the
+// Scala ToolModule boundary. Concrete Go modules construct their dependencies
+// normally and expose only the resulting execution order.
+type ToolModule interface {
+	Passes() []ModulePass
+}
+
+type StaticToolModule struct{ passes []ModulePass }
+
+func NewToolModule(passes ...ModulePass) StaticToolModule {
+	return StaticToolModule{passes: append([]ModulePass(nil), passes...)}
+}
+
+func (module StaticToolModule) Passes() []ModulePass {
+	return append([]ModulePass(nil), module.passes...)
+}
+
+func NewToolModuleExecutor(module ToolModule, adapter ExceptionAdapter, logger PassLogger) (*PassChainExecutor, error) {
+	if module == nil {
+		return nil, fmt.Errorf("cannot execute a nil tool module")
+	}
+	return NewPassChainExecutorWithRuntime(adapter, logger, module.Passes()...), nil
+}
+
 // ModulePassFunc adapts a function and its property metadata to ModulePass.
 type ModulePassFunc struct {
 	PassName  string

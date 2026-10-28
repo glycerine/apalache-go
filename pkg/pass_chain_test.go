@@ -91,3 +91,30 @@ func TestPassChainExecutorLogsPassLifecycle(t *testing.T) {
 		}
 	}
 }
+
+func TestToolModuleExposesImmutableOrderedPassSequence(t *testing.T) {
+	first := testModulePass("First", nil, []ModuleProperty{PropertyInlined}, successfulTestPass)
+	second := testModulePass("Second", []ModuleProperty{PropertyInlined}, nil, successfulTestPass)
+	input := []ModulePass{first, second}
+	module := NewToolModule(input...)
+	input[0] = nil
+	exposed := module.Passes()
+	if len(exposed) != 2 || exposed[0].Name() != "First" || exposed[1].Name() != "Second" {
+		t.Fatalf("tool module passes = %#v", exposed)
+	}
+	exposed[0] = nil
+	if module.Passes()[0].Name() != "First" {
+		t.Fatal("Passes exposed mutable module storage")
+	}
+	executor, err := NewToolModuleExecutor(module, DefaultExceptionAdapter{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := executor.Run()
+	if err != nil || !result.HasProperty(PropertyInlined) {
+		t.Fatalf("tool module execution = %v, %v", result, err)
+	}
+	if _, err = NewToolModuleExecutor(nil, nil, nil); err == nil {
+		t.Fatal("nil tool module accepted")
+	}
+}
