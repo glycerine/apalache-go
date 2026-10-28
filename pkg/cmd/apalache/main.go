@@ -661,6 +661,8 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	backend := addCheckerBackendFlags(flags)
 	length := flags.Int("length", 10, "maximum number of Next steps")
 	maxRun := flags.Int("max-run", 100, "maximum number of independent symbolic simulation runs")
+	maxErrors := flags.Int("max-error", 1, "produce at most this many distinct invariant errors")
+	viewName := flags.String("view", "", "state view used to distinguish multiple errors")
 	timeoutSMT := flags.Int("timeout-smt", 0, "limit each SMT query to this many seconds (0 is unlimited)")
 	configFile := flags.String("config-file", "", "Apalache JSON configuration file")
 	configPath := flags.String("config", "", "TLC configuration file")
@@ -671,9 +673,12 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	useRows := flags.Bool("rows", false, "enable row types")
 	features := flags.String("features", "", "typechecker features: rows or no-rows")
 	disablePolytypes := flags.Bool("no-polytypes", false, "disable let-polymorphism")
+	var invariants, temporalProperties csvStringList
 	var libraryPaths stringList
 	checkerTuning := pal.CheckerTuning{}
 	flags.Var(&libraryPaths, "I", "add a TLA+ module search directory (repeatable)")
+	flags.Var(&invariants, "inv", "state invariant operator (repeatable)")
+	flags.Var(&temporalProperties, "temporal", "temporal property operator (repeatable or comma-separated)")
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
 	}
@@ -692,7 +697,8 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 		if err = applyJSONModelDefaults(applicationConfig, visited, jsonModelConfigTargets{
 			backend: backend, length: length, timeoutSMT: timeoutSMT, TLCConfig: configPath,
 			constantInit: constantInit, init: initName, next: nextName, useRows: useRows,
-			disablePolytypes: disablePolytypes,
+			disablePolytypes: disablePolytypes, invariants: &invariants,
+			temporalProperties: &temporalProperties, maxErrors: maxErrors, view: viewName,
 		}); err != nil {
 			fmt.Fprintln(stderr, err)
 			return exitUsage
@@ -736,6 +742,14 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 		fmt.Fprintln(stderr, "simulate max-run must be positive")
 		return exitUsage
 	}
+	if *maxErrors <= 0 {
+		fmt.Fprintln(stderr, "simulate max-error must be positive")
+		return exitUsage
+	}
+	if *maxErrors > 1 && *viewName == "" {
+		fmt.Fprintf(stderr, "checker.max-error=%d requires checker.view\n", *maxErrors)
+		return exitUsage
+	}
 	configuredMaxRun := false
 	if applicationConfig.Checker.Tuning != nil {
 		_, configuredMaxRun = (*applicationConfig.Checker.Tuning)["search.simulation.maxRun"]
@@ -759,7 +773,10 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 		fmt.Fprintln(stderr, featureErr)
 		return exitUsage
 	}
-	configuration := pal.SpecificationConfiguration{ConstantInit: *constantInit}
+	configuration := pal.SpecificationConfiguration{
+		ConstantInit: *constantInit, Invariants: append([]string(nil), invariants...),
+		TemporalProperties: append([]string(nil), temporalProperties...), View: *viewName,
+	}
 	if *configPath != "" {
 		contents, err := os.ReadFile(*configPath)
 		if err != nil {
@@ -800,12 +817,30 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 		fmt.Fprintf(stderr, "cannot prepare simulation: %v\n", err)
 		return exitTool
 	}
-	results, err := pal.SimulateBehaviorsWithOptions(ctx, prepared.Module, prepared.Predicates,
-		pal.SimulationOptions{MaxSteps: *length, MaxRuns: *maxRun, Tuning: checkerTuning})
+	report, err := pal.SimulateAndCheckWithOptions(ctx, prepared.Module, prepared.Predicates,
+		pal.SimulationOptions{MaxSteps: *length, MaxRuns: *maxRun, MaxErrors: *maxErrors, Tuning: checkerTuning})
 	if err != nil {
 		fmt.Fprintf(stderr, "simulation failed: %v\n", err)
 		return exitTool
 	}
+	if len(report.Counterexamples) != 0 {
+		for index, counterexample := range report.Counterexamples {
+			kind := "Invariant"
+			if counterexample.TraceInvariant {
+				kind = "Trace invariant"
+			} else if counterexample.ActionInvariant {
+				kind = "Action invariant"
+			}
+			fmt.Fprintf(stdout, "Simulation counterexample %d: %s %s violated at depth %d.\n",
+				index+1, kind, counterexample.Invariant, counterexample.Depth)
+			if err = printDecodedStates(stdout, prepared.Module, counterexample.States); err != nil {
+				fmt.Fprintf(stderr, "cannot format simulation counterexample: %v\n", err)
+				return exitTool
+			}
+		}
+		return exitCounterexample
+	}
+	results := report.Runs
 	for run, result := range results {
 		if result.Outcome == pal.SimulationUnknown {
 			fmt.Fprintf(stderr, "solver returned unknown in simulation run %d\n", run+1)

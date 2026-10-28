@@ -123,3 +123,49 @@ func TestSimulateBehaviorsStopsRunsAfterDeadlock(t *testing.T) {
 		t.Fatalf("deadlocking runs = %#v", results)
 	}
 }
+
+func TestSimulateAndCheckStopsAtInvariantErrorBudget(t *testing.T) {
+	frontend := ParseAndTypeCheckSource(context.Background(), "SimInv.tla", `---- MODULE SimInv ----
+EXTENDS Integers, FiniteSets
+\* @type: Int;
+VARIABLE x
+Init == x \in {1, 2, 3}
+Next == x' = x
+Inv == x = 0
+View == x
+====
+`, FrontendOptions{}, TypeCheckOptions{})
+	if !frontend.OK() {
+		t.Fatalf("frontend diagnostics = %v", frontend.Diagnostics)
+	}
+	prepared, err := PrepareSafetyTransitions(frontend.Native, SafetyPipelineOptions{
+		Specification: SpecificationConfiguration{
+			Behavior: InitNextSpec{Init: "Init", Next: "Next"}, Invariants: []string{"Inv"}, View: "View",
+		}, Sources: frontend.Sources,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := SimulateAndCheckWithOptions(context.Background(), prepared.Module, prepared.Predicates,
+		SimulationOptions{MaxSteps: 0, MaxRuns: 20, MaxErrors: 2, RandomSeed: 17})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Runs) != 1 || len(report.Counterexamples) != 2 {
+		t.Fatalf("simulation report = %#v", report)
+	}
+	views := make(map[string]struct{})
+	for _, counterexample := range report.Counterexamples {
+		if counterexample.Invariant != "Inv" || len(counterexample.View) != 1 {
+			t.Fatalf("simulation counterexample = %#v", counterexample)
+		}
+		formatted, formatErr := FormatTLAExpression(counterexample.View[0])
+		if formatErr != nil {
+			t.Fatal(formatErr)
+		}
+		views[formatted] = struct{}{}
+	}
+	if len(views) != 2 {
+		t.Fatalf("simulation distinct views = %v", views)
+	}
+}

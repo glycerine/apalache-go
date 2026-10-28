@@ -26,6 +26,11 @@ type SimulationResult struct {
 	States          []DecodedState
 }
 
+type SimulationReport struct {
+	Runs            []SimulationResult
+	Counterexamples []BoundedCounterexample
+}
+
 // SimulateBehavior finds one satisfiable behavior through maxSteps
 // applications of Next. It stops early when the selected behavior deadlocks.
 func SimulateBehavior(
@@ -43,6 +48,7 @@ type SimulationOptions struct {
 	Randomize  bool
 	RandomSeed int64
 	Tuning     CheckerTuning
+	MaxErrors  int
 }
 
 // SimulateBehaviorWithOptions finds one behavior while honoring the same
@@ -94,6 +100,55 @@ func SimulateBehaviorsWithOptions(
 		}
 	}
 	return results, nil
+}
+
+// SimulateAndCheckWithOptions performs randomized symbolic runs and checks
+// every selected path with the same state, action, and trace invariant engine
+// used by exhaustive checking.
+func SimulateAndCheckWithOptions(
+	ctx context.Context,
+	module *Module,
+	predicates DerivedPredicates,
+	options SimulationOptions,
+) (SimulationReport, error) {
+	if options.MaxRuns <= 0 {
+		return SimulationReport{}, fmt.Errorf("maximum simulation run count must be positive")
+	}
+	if options.MaxErrors <= 0 {
+		options.MaxErrors = 1
+	}
+	seed := options.RandomSeed
+	if seed == 0 {
+		seed = time.Now().UnixNano()
+	}
+	random := rand.New(rand.NewSource(seed))
+	report := SimulationReport{Runs: make([]SimulationResult, 0, options.MaxRuns)}
+	options.Randomize = true
+	for run := 0; run < options.MaxRuns; run++ {
+		result, err := simulateBehavior(ctx, module, predicates, options, random)
+		if err != nil {
+			return SimulationReport{}, fmt.Errorf("simulation run %d: %w", run+1, err)
+		}
+		report.Runs = append(report.Runs, result)
+		if result.Outcome != SimulationUnknown && len(predicates.Invariants) != 0 {
+			remaining := options.MaxErrors - len(report.Counterexamples)
+			checked, checkErr := CheckBoundedSafetyWithOptions(ctx, module, predicates, BoundedSafetyOptions{
+				MaxSteps: len(result.NextTransitions), CheckDeadlocks: false, MaxErrors: remaining,
+				Tuning: options.Tuning.withExactTransitionPath(result.InitTransition, result.NextTransitions),
+			})
+			if checkErr != nil {
+				return SimulationReport{}, fmt.Errorf("check simulation run %d: %w", run+1, checkErr)
+			}
+			report.Counterexamples = append(report.Counterexamples, checked.Counterexamples...)
+			if len(report.Counterexamples) >= options.MaxErrors {
+				break
+			}
+		}
+		if result.Outcome != SimulationCompleted {
+			break
+		}
+	}
+	return report, nil
 }
 
 func simulateBehavior(

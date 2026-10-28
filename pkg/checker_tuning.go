@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 )
 
 // CheckerTuning is the validated subset of Scala search tuning whose
@@ -111,6 +112,17 @@ func (tuning CheckerTuning) SimulationRuns() int {
 }
 
 func (tuning CheckerTuning) HasSimulationControls() bool { return tuning.hasSimulation }
+
+func (tuning CheckerTuning) withExactTransitionPath(init int, next []int) CheckerTuning {
+	words := make([]string, 0, len(next)+1)
+	words = append(words, fmt.Sprintf("0->%d", init))
+	for depth, number := range next {
+		words = append(words, fmt.Sprintf("%d->%d", depth+1, number))
+	}
+	copy := tuning
+	copy.transitionFilter = regexp.MustCompile("^(?:" + strings.Join(words, "|") + ")$")
+	return copy
+}
 
 func parseTuningUInt(key, value string) (uint32, error) {
 	parsed, err := strconv.ParseUint(value, 10, 32)

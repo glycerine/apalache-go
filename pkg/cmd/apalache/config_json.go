@@ -408,8 +408,8 @@ func (config jsonCommandConfig) validateForModelCommand(command string, checkSpe
 			return fmt.Errorf("JSON simulation tuning is currently supported only by the Go simulate command")
 		}
 	}
-	if !checkSpecific && (config.Checker.MaxError != nil || config.Checker.View != nil) {
-		return fmt.Errorf("JSON checker.max-error and checker.view are currently supported only by the Go check command")
+	if command == "test" && (config.Checker.MaxError != nil || config.Checker.View != nil) {
+		return fmt.Errorf("JSON checker.max-error and checker.view are not supported by the Go test command")
 	}
 	if config.Features != nil {
 		for _, feature := range *config.Features {
