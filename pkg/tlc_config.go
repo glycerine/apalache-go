@@ -5,7 +5,8 @@ import (
 	"io"
 	"math/big"
 	"regexp"
-	"unicode"
+	"sort"
+	"strings"
 )
 
 type ConfigConstExpr interface{ configConstExpr() }
@@ -84,10 +85,20 @@ type BehaviorSpec interface{ behaviorSpec() }
 type InitNextSpec struct{ Init, Next string }
 
 func (InitNextSpec) behaviorSpec() {}
+func (spec InitNextSpec) String() string {
+	return fmt.Sprintf("InitNextSpec(%s,%s)", spec.Init, spec.Next)
+}
 
 type TemporalSpec struct{ Name string }
 
-func (TemporalSpec) behaviorSpec() {}
+func (TemporalSpec) behaviorSpec()       {}
+func (spec TemporalSpec) String() string { return fmt.Sprintf("TemporalSpec(%s)", spec.Name) }
+
+// NullSpec represents an unspecified TLC behavior.
+type NullSpec struct{}
+
+func (NullSpec) behaviorSpec()  {}
+func (NullSpec) String() string { return "NullSpec()" }
 
 type TLCConfig struct {
 	ConstAssignments      map[string]ConfigConstExpr
@@ -102,6 +113,151 @@ type TLCConfig struct {
 	CheckDeadlock         *bool
 }
 
+func EmptyTLCConfig() TLCConfig {
+	return TLCConfig{
+		ConstAssignments: map[string]ConfigConstExpr{}, ConstReplacements: map[string]string{},
+		StateConstraints: []string{}, ActionConstraints: []string{}, Invariants: []string{},
+		TemporalProperties: []string{}, Behavior: NullSpec{},
+	}
+}
+
+func (config TLCConfig) AddConstAssignments(more map[string]ConfigConstExpr) TLCConfig {
+	result := cloneTLCConfig(config)
+	if result.ConstAssignments == nil {
+		result.ConstAssignments = make(map[string]ConfigConstExpr)
+	}
+	keys := sortedConfigKeys(more)
+	for _, key := range keys {
+		if _, exists := result.ConstAssignments[key]; !exists {
+			result.ConstAssignmentOrder = append(result.ConstAssignmentOrder, key)
+		}
+		result.ConstAssignments[key] = cloneConfigConstExpr(more[key])
+	}
+	return result
+}
+
+func (config TLCConfig) AddConstReplacements(more map[string]string) TLCConfig {
+	result := cloneTLCConfig(config)
+	if result.ConstReplacements == nil {
+		result.ConstReplacements = make(map[string]string)
+	}
+	keys := sortedConfigKeys(more)
+	for _, key := range keys {
+		if _, exists := result.ConstReplacements[key]; !exists {
+			result.ConstReplacementOrder = append(result.ConstReplacementOrder, key)
+		}
+		result.ConstReplacements[key] = more[key]
+	}
+	return result
+}
+
+func (config TLCConfig) AddStateConstraints(more []string) TLCConfig {
+	result := cloneTLCConfig(config)
+	result.StateConstraints = append(result.StateConstraints, more...)
+	return result
+}
+
+func (config TLCConfig) AddActionConstraints(more []string) TLCConfig {
+	result := cloneTLCConfig(config)
+	result.ActionConstraints = append(result.ActionConstraints, more...)
+	return result
+}
+
+func (config TLCConfig) AddInvariants(more []string) TLCConfig {
+	result := cloneTLCConfig(config)
+	result.Invariants = append(result.Invariants, more...)
+	return result
+}
+
+func (config TLCConfig) AddTemporalProperties(more []string) TLCConfig {
+	result := cloneTLCConfig(config)
+	result.TemporalProperties = append(result.TemporalProperties, more...)
+	return result
+}
+
+func (config TLCConfig) SetBehaviorSpecUnlessNull(spec BehaviorSpec) (TLCConfig, error) {
+	result := cloneTLCConfig(config)
+	if spec == nil {
+		spec = NullSpec{}
+	}
+	if result.Behavior == nil {
+		result.Behavior = NullSpec{}
+	}
+	_, currentNull := result.Behavior.(NullSpec)
+	_, nextNull := spec.(NullSpec)
+	if !currentNull && !nextNull {
+		return TLCConfig{}, &TLCConfigParseError{Message: fmt.Sprintf("Found several behavior specifications: %v and %v", result.Behavior, spec)}
+	}
+	if !nextNull {
+		result.Behavior = spec
+	}
+	return result, nil
+}
+
+func (config TLCConfig) SetCheckDeadlockUnlessUnset(setting *bool) (TLCConfig, error) {
+	result := cloneTLCConfig(config)
+	if result.CheckDeadlock != nil && setting != nil && *result.CheckDeadlock != *setting {
+		return TLCConfig{}, &TLCConfigParseError{Message: fmt.Sprintf(
+			"Found conflicting CHECK_DEADLOCK declarations: %t and %t", *result.CheckDeadlock, *setting)}
+	}
+	if result.CheckDeadlock == nil && setting != nil {
+		result.CheckDeadlock = clonePointer(setting)
+	}
+	return result, nil
+}
+
+func (config TLCConfig) Join(other TLCConfig) (TLCConfig, error) {
+	result := config.AddConstReplacementsInOrder(other.ConstReplacements, other.ConstReplacementOrder)
+	result = result.AddConstAssignmentsInOrder(other.ConstAssignments, other.ConstAssignmentOrder)
+	result = result.AddStateConstraints(other.StateConstraints)
+	result = result.AddActionConstraints(other.ActionConstraints)
+	result = result.AddInvariants(other.Invariants)
+	result = result.AddTemporalProperties(other.TemporalProperties)
+	var err error
+	result, err = result.SetBehaviorSpecUnlessNull(other.Behavior)
+	if err != nil {
+		return TLCConfig{}, err
+	}
+	return result.SetCheckDeadlockUnlessUnset(other.CheckDeadlock)
+}
+
+func (config TLCConfig) AddConstAssignmentsInOrder(more map[string]ConfigConstExpr, preferred []string) TLCConfig {
+	result := cloneTLCConfig(config)
+	if result.ConstAssignments == nil {
+		result.ConstAssignments = make(map[string]ConfigConstExpr)
+	}
+	for _, key := range orderedConfigKeys(more, preferred) {
+		if _, exists := result.ConstAssignments[key]; !exists {
+			result.ConstAssignmentOrder = append(result.ConstAssignmentOrder, key)
+		}
+		result.ConstAssignments[key] = cloneConfigConstExpr(more[key])
+	}
+	return result
+}
+
+func (config TLCConfig) AddConstReplacementsInOrder(more map[string]string, preferred []string) TLCConfig {
+	result := cloneTLCConfig(config)
+	if result.ConstReplacements == nil {
+		result.ConstReplacements = make(map[string]string)
+	}
+	for _, key := range orderedConfigKeys(more, preferred) {
+		if _, exists := result.ConstReplacements[key]; !exists {
+			result.ConstReplacementOrder = append(result.ConstReplacementOrder, key)
+		}
+		result.ConstReplacements[key] = more[key]
+	}
+	return result
+}
+
+func sortedConfigKeys[V any](values map[string]V) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 type TLCConfigParseError struct {
 	Line, Column int
 	Message      string
@@ -114,6 +270,23 @@ func (err *TLCConfigParseError) Error() string {
 type tlcToken struct {
 	kind, text   string
 	line, column int
+}
+
+func (token tlcToken) String() string {
+	switch token.kind {
+	case "ident":
+		return fmt.Sprintf("identifier '%s'", token.text)
+	case "string":
+		return fmt.Sprintf("string \"%s\"", token.text)
+	case "number":
+		return fmt.Sprintf("number '%s'", token.text)
+	case "boolean":
+		return fmt.Sprintf("boolean '%s'", token.text)
+	case "eof":
+		return "end of input"
+	default:
+		return token.text
+	}
 }
 
 func ParseTLCConfig(text string) (TLCConfig, error) {
@@ -148,7 +321,7 @@ func lexTLCConfig(text string) ([]tlcToken, error) {
 	}
 	for i := 0; i < len(text); {
 		ch := text[i]
-		if unicode.IsSpace(rune(ch)) {
+		if ch == ' ' || ch == '\t' || ch == '\r' || ch == '\f' || ch == '\n' {
 			advance(ch)
 			i++
 			continue
@@ -201,6 +374,9 @@ func lexTLCConfig(text string) ([]tlcToken, error) {
 			advance(ch)
 			start := i
 			for i < len(text) && text[i] != '"' && text[i] != '\n' {
+				if !isTLCConfigStringByte(text[i]) {
+					return nil, &TLCConfigParseError{startLine, startColumn, "unexpected character"}
+				}
 				i++
 				advance(text[i-1])
 			}
@@ -228,9 +404,9 @@ func lexTLCConfig(text string) ([]tlcToken, error) {
 			tokens = append(tokens, tlcToken{"number", text[start:i], startLine, startColumn})
 			continue
 		}
-		if ch == '_' || unicode.IsLetter(rune(ch)) {
+		if ch == '_' || isASCIIAlpha(ch) {
 			start := i
-			for i < len(text) && (text[i] == '_' || unicode.IsLetter(rune(text[i])) || unicode.IsDigit(rune(text[i]))) {
+			for i < len(text) && (text[i] == '_' || isASCIIAlpha(text[i]) || isASCIIDigit(text[i])) {
 				advance(text[i])
 				i++
 			}
@@ -248,6 +424,15 @@ func lexTLCConfig(text string) ([]tlcToken, error) {
 	}
 	tokens = append(tokens, tlcToken{"eof", "", line, column})
 	return tokens, nil
+}
+
+func isASCIIDigit(ch byte) bool { return ch >= '0' && ch <= '9' }
+
+func isTLCConfigStringByte(ch byte) bool {
+	if isASCIIAlpha(ch) || isASCIIDigit(ch) || ch == ' ' || ch == '_' {
+		return true
+	}
+	return strings.ContainsRune("~!@#$%^&*\\-+=|(){}[],:;`'<>.?/", rune(ch))
 }
 
 func tlcKeyword(word string) string {
@@ -287,7 +472,7 @@ func (p *tlcConfigParser) fail(token tlcToken, message string) error {
 	return &TLCConfigParseError{token.line, token.column, message}
 }
 func (p *tlcConfigParser) parse() (TLCConfig, error) {
-	p.config = TLCConfig{ConstAssignments: map[string]ConfigConstExpr{}, ConstReplacements: map[string]string{}}
+	p.config = EmptyTLCConfig()
 	options := 0
 	for p.current().kind != "eof" {
 		options++
@@ -455,7 +640,7 @@ func (p *tlcConfigParser) parseInitNext() error {
 	return p.setBehavior(spec, first)
 }
 func (p *tlcConfigParser) setBehavior(spec BehaviorSpec, token tlcToken) error {
-	if p.config.Behavior != nil {
+	if _, empty := p.config.Behavior.(NullSpec); !empty {
 		return p.fail(token, fmt.Sprintf("found several behavior specifications: %v and %v", p.config.Behavior, spec))
 	}
 	p.config.Behavior = spec

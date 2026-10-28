@@ -1,5 +1,7 @@
 package apalache
 
+import "math/big"
+
 // ConfigParseResult stores expected configuration failures as values. The
 // contained value is intentionally private so success cannot be inferred from
 // a zero value of T.
@@ -254,7 +256,11 @@ func cloneStringPointer(value *string) *string {
 }
 
 func cloneTLCConfig(config TLCConfig) TLCConfig {
-	config.ConstAssignments = cloneMap(config.ConstAssignments)
+	assignments := make(map[string]ConfigConstExpr, len(config.ConstAssignments))
+	for name, value := range config.ConstAssignments {
+		assignments[name] = cloneConfigConstExpr(value)
+	}
+	config.ConstAssignments = assignments
 	config.ConstAssignmentOrder = append([]string(nil), config.ConstAssignmentOrder...)
 	config.ConstReplacements = cloneMap(config.ConstReplacements)
 	config.ConstReplacementOrder = append([]string(nil), config.ConstReplacementOrder...)
@@ -267,4 +273,22 @@ func cloneTLCConfig(config TLCConfig) TLCConfig {
 		config.CheckDeadlock = &value
 	}
 	return config
+}
+
+func cloneConfigConstExpr(value ConfigConstExpr) ConfigConstExpr {
+	switch typed := value.(type) {
+	case ConfigIntValue:
+		if typed.Value != nil {
+			typed.Value = new(big.Int).Set(typed.Value)
+		}
+		return typed
+	case ConfigSetValue:
+		typed.Elements = append([]ConfigConstExpr(nil), typed.Elements...)
+		for index, element := range typed.Elements {
+			typed.Elements[index] = cloneConfigConstExpr(element)
+		}
+		return typed
+	default:
+		return value
+	}
 }
