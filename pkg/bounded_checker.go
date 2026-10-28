@@ -21,11 +21,13 @@ type BoundedSafetyOptions struct {
 	InvariantMinimumDepth int
 	Tuning                CheckerTuning
 	MaxErrors             int
+	Listeners             []ModelCheckerListener
 }
 
 type BoundedCounterexample struct {
 	Depth           int
 	Invariant       string
+	Deadlock        bool
 	ActionInvariant bool
 	TraceInvariant  bool
 	InitTransition  int
@@ -179,6 +181,7 @@ func CheckBoundedSafetyWithOptions(
 		stateConstraints:      stateConstraints, actionConstraints: actionConstraints,
 		tuning: options.Tuning,
 		view:   view, maxErrors: options.MaxErrors,
+		listeners: append([]ModelCheckerListener(nil), options.Listeners...),
 	}
 	queue := make([]boundedPath, 0, len(initTransitions))
 	for initNumber := range initTransitions {
@@ -303,6 +306,7 @@ type modulePathInputs struct {
 	tuning                CheckerTuning
 	view                  Expr
 	maxErrors             int
+	listeners             []ModelCheckerListener
 }
 
 func searchSafetyPath(
@@ -347,10 +351,12 @@ func searchSafetyPath(
 				if status != SMTSatisfiable {
 					break
 				}
-				recordSafetyCounterexample(result, BoundedCounterexample{
+				if err = recordSafetyCounterexample(result, BoundedCounterexample{
 					Depth: len(path.next), Invariant: invariant.name, InitTransition: path.init,
 					NextTransitions: append([]int(nil), path.next...), States: states, View: views,
-				})
+				}, inputs.listeners); err != nil {
+					return false, err
+				}
 				if len(result.Counterexamples) >= inputs.maxErrors {
 					return true, nil
 				}
@@ -373,11 +379,13 @@ func searchSafetyPath(
 				if status != SMTSatisfiable {
 					break
 				}
-				recordSafetyCounterexample(result, BoundedCounterexample{
+				if err = recordSafetyCounterexample(result, BoundedCounterexample{
 					Depth: len(path.next), Invariant: invariant.name, TraceInvariant: true,
 					InitTransition: path.init, NextTransitions: append([]int(nil), path.next...),
 					States: states, View: views,
-				})
+				}, inputs.listeners); err != nil {
+					return false, err
+				}
 				if len(result.Counterexamples) >= inputs.maxErrors {
 					return true, nil
 				}
@@ -395,6 +403,9 @@ func searchSafetyPath(
 		}
 		if status == SMTSatisfiable {
 			result.ExampleStates = states
+			if err = notifyExampleListeners(inputs.listeners, states, 1); err != nil {
+				return false, err
+			}
 		}
 	}
 	if len(path.next) == inputs.maxSteps && !inputs.checkDeadlocks {
@@ -440,11 +451,13 @@ func searchSafetyPath(
 				if status != SMTSatisfiable {
 					break
 				}
-				recordSafetyCounterexample(result, BoundedCounterexample{
+				if err = recordSafetyCounterexample(result, BoundedCounterexample{
 					Depth: len(child.next), Invariant: invariant.name, ActionInvariant: true,
 					InitTransition: child.init, NextTransitions: append([]int(nil), child.next...),
 					States: states, View: views,
-				})
+				}, inputs.listeners); err != nil {
+					return false, err
+				}
 				if len(result.Counterexamples) >= inputs.maxErrors {
 					return true, nil
 				}
@@ -472,6 +485,13 @@ func searchSafetyPath(
 		result.InitTransition = path.init
 		result.NextTransitions = append([]int(nil), path.next...)
 		result.States = states
+		deadlock := BoundedCounterexample{
+			Depth: len(path.next), Deadlock: true, InitTransition: path.init,
+			NextTransitions: append([]int(nil), path.next...), States: states,
+		}
+		if err = notifyCounterexampleListeners(inputs.listeners, deadlock, 0); err != nil {
+			return false, err
+		}
 		return true, nil
 	}
 	return false, nil
@@ -487,19 +507,54 @@ func safetyExcludedViews(result *BoundedSafetyResult) [][]Expr {
 	return views
 }
 
-func recordSafetyCounterexample(result *BoundedSafetyResult, counterexample BoundedCounterexample) {
+func recordSafetyCounterexample(
+	result *BoundedSafetyResult,
+	counterexample BoundedCounterexample,
+	listeners []ModelCheckerListener,
+) error {
 	result.Counterexamples = append(result.Counterexamples, counterexample)
 	result.Outcome = SafetyCounterexample
-	if len(result.Counterexamples) != 1 {
-		return
+	if len(result.Counterexamples) == 1 {
+		result.Depth = counterexample.Depth
+		result.Invariant = counterexample.Invariant
+		result.ActionInvariant = counterexample.ActionInvariant
+		result.TraceInvariant = counterexample.TraceInvariant
+		result.InitTransition = counterexample.InitTransition
+		result.NextTransitions = append([]int(nil), counterexample.NextTransitions...)
+		result.States = counterexample.States
 	}
-	result.Depth = counterexample.Depth
-	result.Invariant = counterexample.Invariant
-	result.ActionInvariant = counterexample.ActionInvariant
-	result.TraceInvariant = counterexample.TraceInvariant
-	result.InitTransition = counterexample.InitTransition
-	result.NextTransitions = append([]int(nil), counterexample.NextTransitions...)
-	result.States = counterexample.States
+	if err := notifyCounterexampleListeners(listeners, counterexample, len(result.Counterexamples)); err != nil {
+		return err
+	}
+	return nil
+}
+
+func notifyCounterexampleListeners(
+	listeners []ModelCheckerListener,
+	counterexample BoundedCounterexample,
+	index int,
+) error {
+	for _, listener := range listeners {
+		if listener == nil {
+			continue
+		}
+		if err := listener.OnCounterexample(cloneBoundedCounterexample(counterexample), index); err != nil {
+			return fmt.Errorf("notify counterexample listener: %w", err)
+		}
+	}
+	return nil
+}
+
+func notifyExampleListeners(listeners []ModelCheckerListener, states []DecodedState, index int) error {
+	for _, listener := range listeners {
+		if listener == nil {
+			continue
+		}
+		if err := listener.OnExample(cloneDecodedStates(states), index); err != nil {
+			return fmt.Errorf("notify example listener: %w", err)
+		}
+	}
+	return nil
 }
 
 func stopOnUnknown(result *BoundedSafetyResult) bool {
