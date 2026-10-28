@@ -160,6 +160,46 @@ func TestStratifiedVariantFilterAndDefaultThroughG3(t *testing.T) {
 	}
 }
 
+func TestStratifiedVariantOperationsRejectInvalidInputs(t *testing.T) {
+	variantType := testVariantType(t)
+	variant := testVariantExpression(variantType, "A", NewValueExpr(Int64Value(1), Typed(IntT1)))
+	tag := NewValueExpr(StringValue("A"), Typed(StrT1))
+	missingTag := NewValueExpr(StringValue("Missing"), Typed(StrT1))
+	setOfVariants := MustOperExpr(Op("SET_ENUM"), Typed(mustSet(variantType)), variant)
+	tests := []struct {
+		name       string
+		expression Expr
+	}{
+		{"constructor tag is not literal", MustOperExpr(Op("Variants!Variant"), Typed(variantType),
+			NewNameExpr("tag", Typed(StrT1)), NewValueExpr(Int64Value(1), Typed(IntT1)))},
+		{"constructor result is not variant", MustOperExpr(Op("Variants!Variant"), Typed(IntT1),
+			tag, NewValueExpr(Int64Value(1), Typed(IntT1)))},
+		{"constructor option is absent", MustOperExpr(Op("Variants!Variant"), Typed(variantType),
+			missingTag, NewValueExpr(Int64Value(1), Typed(IntT1)))},
+		{"constructor value has wrong type", MustOperExpr(Op("Variants!Variant"), Typed(variantType),
+			tag, NewValueExpr(BoolValue(true), Typed(BoolT1)))},
+		{"tag operand is not variant", MustOperExpr(Op("Variants!VariantTag"), Typed(StrT1),
+			NewValueExpr(Int64Value(1), Typed(IntT1)))},
+		{"unsafe option is absent", MustOperExpr(Op("Variants!VariantGetUnsafe"), Typed(IntT1),
+			missingTag, variant)},
+		{"default has wrong type", MustOperExpr(Op("Variants!VariantGetOrElse"), Typed(IntT1),
+			tag, variant, NewValueExpr(BoolValue(false), Typed(BoolT1)))},
+		{"filter operand is not set", MustOperExpr(Op("Variants!VariantFilter"), Typed(mustSet(IntT1)),
+			tag, variant)},
+		{"filter elements are not variants", MustOperExpr(Op("Variants!VariantFilter"), Typed(mustSet(IntT1)),
+			tag, MustOperExpr(Op("SET_ENUM"), Typed(mustSet(IntT1)), NewValueExpr(Int64Value(1), Typed(IntT1))))},
+		{"filter option is absent", MustOperExpr(Op("Variants!VariantFilter"), Typed(mustSet(IntT1)),
+			missingTag, setOfVariants)},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if _, _, err := NewStratifiedRewriter().Rewrite(test.expression, InitialRewriterScope()); err == nil {
+				t.Fatal("invalid variant operation was accepted")
+			}
+		})
+	}
+}
+
 func TestCherryPickerPreservesVariantCorrelationThroughG3(t *testing.T) {
 	variantType := testVariantType(t)
 	rewriter := NewStratifiedRewriter()
