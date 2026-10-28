@@ -5,6 +5,8 @@ import (
 	"math"
 	"math/big"
 	"sort"
+	"strconv"
+	"strings"
 )
 
 // SimplifyConstants recursively applies the Scala ConstSimplifier rules.
@@ -116,6 +118,13 @@ func simplifyConstantShallow(expression Expr) (Expr, error) {
 		return known && empty
 	}
 	empty := func(tag TypeTag) Expr { return MustOperExpr(Op("SET_ENUM"), tag) }
+	expressionText := func(expression Expr) string {
+		formatted, err := FormatTLAExpression(expression)
+		if err != nil {
+			return fmt.Sprint(expression)
+		}
+		return formatted
+	}
 
 	if name == "NOT" {
 		if value, literal := boolAt(0); literal {
@@ -188,7 +197,7 @@ func simplifyConstantShallow(expression Expr) (Expr, error) {
 		}
 	case "DIV":
 		if rightInt && right.Sign() == 0 {
-			return nil, fmt.Errorf("division by zero")
+			return nil, NewTlaInputError("Division by zero at " + expressionText(op))
 		}
 		if leftInt && rightInt {
 			return intEx(new(big.Int).Quo(left, right)), nil
@@ -204,7 +213,7 @@ func simplifyConstantShallow(expression Expr) (Expr, error) {
 		}
 	case "MOD":
 		if rightInt && right.Sign() == 0 {
-			return nil, fmt.Errorf("mod by zero")
+			return nil, NewTlaInputError("Mod by zero at " + expressionText(op))
 		}
 		if leftInt && rightInt {
 			return intEx(new(big.Int).Rem(left, right)), nil
@@ -215,17 +224,19 @@ func simplifyConstantShallow(expression Expr) (Expr, error) {
 	case "POW":
 		if leftInt && rightInt {
 			if left.Sign() == 0 && right.Sign() == 0 {
-				return nil, fmt.Errorf("0 ^ 0 is undefined")
+				return nil, NewTlaInputError("0 ^ 0 is undefined")
 			}
 			if right.Sign() < 0 {
-				return nil, fmt.Errorf("negative power")
+				return nil, NewTlaInputError("Negative power at " + expressionText(op))
 			}
 			if !right.IsInt64() || right.Int64() > math.MaxInt32 {
-				return nil, fmt.Errorf("power exceeds the limit of %d", math.MaxInt32)
+				return nil, NewTlaInputError(fmt.Sprintf("The power at %s exceedes the limit of %d", expressionText(op), math.MaxInt32))
 			}
 			baseFloat, _ := new(big.Float).SetInt(left).Float64()
-			if math.IsInf(math.Pow(math.Abs(baseFloat), float64(right.Int64())), 0) {
-				return nil, fmt.Errorf("power result exceeds floating-point safety limit")
+			estimatedPower := math.Pow(baseFloat, float64(right.Int64()))
+			if estimatedPower < math.SmallestNonzeroFloat64 || estimatedPower > math.MaxFloat64 {
+				limit := strings.Replace(strconv.FormatFloat(math.MaxFloat64, 'E', -1, 64), "E+", "E", 1)
+				return nil, NewTlaInputError(fmt.Sprintf("The result of %s exceedes the limit of %s", expressionText(op), limit))
 			}
 			return intEx(new(big.Int).Exp(left, right, nil)), nil
 		}

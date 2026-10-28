@@ -1,6 +1,7 @@
 package apalache
 
 import (
+	"errors"
 	"math/big"
 	"strings"
 	"testing"
@@ -50,7 +51,7 @@ func TestSimplifyConstantsBigIntegersAndErrors(t *testing.T) {
 	}
 	zero := NewValueExpr(Int64Value(0), Typed(IntT1))
 	one := NewValueExpr(Int64Value(1), Typed(IntT1))
-	for _, test := range []struct{ operator, message string }{{"DIV", "division by zero"}, {"MOD", "mod by zero"}, {"POW", "0 ^ 0"}} {
+	for _, test := range []struct{ operator, message string }{{"DIV", "Division by zero at"}, {"MOD", "Mod by zero at"}, {"POW", "0 ^ 0"}} {
 		_, err := SimplifyConstants(MustOperExpr(Op(test.operator), Typed(IntT1), one, zero), nil)
 		if test.operator == "POW" {
 			_, err = SimplifyConstants(MustOperExpr(Op(test.operator), Typed(IntT1), zero, zero), nil)
@@ -58,6 +59,28 @@ func TestSimplifyConstantsBigIntegersAndErrors(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), test.message) {
 			t.Fatalf("%s error = %v", test.operator, err)
 		}
+		var inputError *TlaInputError
+		if !errors.As(err, &inputError) {
+			t.Fatalf("%s error type = %T, want *TlaInputError", test.operator, err)
+		}
+	}
+
+	tooLargePower := new(big.Int).Add(big.NewInt(2147483647), big.NewInt(1000))
+	_, err = SimplifyConstants(MustOperExpr(Op("POW"), Typed(IntT1),
+		NewValueExpr(Int64Value(8888888), Typed(IntT1)),
+		NewValueExpr(NewIntValue(tooLargePower), Typed(IntT1))), nil)
+	if err == nil || err.Error() != "The power at 8888888 ^ 2147484647 exceedes the limit of 2147483647" {
+		t.Fatalf("large power error = %v", err)
+	}
+	_, err = SimplifyConstants(MustOperExpr(Op("POW"), Typed(IntT1),
+		NewValueExpr(Int64Value(2147483647), Typed(IntT1)),
+		NewValueExpr(Int64Value(2103446789), Typed(IntT1))), nil)
+	if err == nil || err.Error() != "The result of 2147483647 ^ 2103446789 exceedes the limit of 1.7976931348623157E308" {
+		t.Fatalf("oversized result error = %v", err)
+	}
+	_, err = SimplifyConstants(MustOperExpr(Op("POW"), Typed(IntT1), one, NewValueExpr(Int64Value(-1), Typed(IntT1))), nil)
+	if err == nil || err.Error() != "Negative power at 1 ^ (-1)" {
+		t.Fatalf("negative power error = %v", err)
 	}
 }
 
@@ -111,6 +134,88 @@ func TestSimplifyConstantsLiteralSetsQuantifiersAndCardinality(t *testing.T) {
 				t.Fatalf("SimplifyConstants() = %v, %v; want %v", got, simplifyErr, test.want)
 			}
 		})
+	}
+}
+
+func TestSimplifyConstantsScalaLiteralOrderingAndSetIdentities(t *testing.T) {
+	b := func(value bool) Expr { return NewValueExpr(BoolValue(value), Typed(BoolT1)) }
+	s := func(value string) Expr { return NewValueExpr(StringValue(value), Typed(StrT1)) }
+	mixedType := mustSet(IntT1)
+	// The IR permits mixed literal values here for exercising Scala Literal's
+	// total ordering: Bool < String < Int. The output tag is carried unchanged.
+	set := func(values ...Expr) Expr { return MustOperExpr(Op("SET_ENUM"), Typed(mixedType), values...) }
+	left := set(i(2), s("b"), b(true), s("a"), b(false), i(1), i(2))
+	right := set(s("c"), b(true), i(3))
+	union, err := SimplifyConstants(MustOperExpr(Op("SET_UNION2"), Typed(mixedType), left, right), nil)
+	wantUnion := set(b(false), b(true), s("a"), s("b"), s("c"), i(1), i(2), i(3))
+	if err != nil || !EqualTypedExpr(union, wantUnion) {
+		t.Fatalf("mixed literal union = %v, %v; want %v", union, err, wantUnion)
+	}
+	difference, err := SimplifyConstants(MustOperExpr(Op("SET_MINUS"), Typed(mixedType), left, right), nil)
+	wantDifference := set(b(false), s("a"), s("b"), i(1), i(2))
+	if err != nil || !EqualTypedExpr(difference, wantDifference) {
+		t.Fatalf("mixed literal difference = %v, %v; want %v", difference, err, wantDifference)
+	}
+	intersection, err := SimplifyConstants(MustOperExpr(Op("SET_INTERSECT"), Typed(mixedType), left, right), nil)
+	wantIntersection := set(b(true))
+	if err != nil || !EqualTypedExpr(intersection, wantIntersection) {
+		t.Fatalf("mixed literal intersection = %v, %v; want %v", intersection, err, wantIntersection)
+	}
+
+	symbolic := NewNameExpr("S", Typed(mixedType))
+	empty := set()
+	identityCases := []struct{ input, want Expr }{
+		{MustOperExpr(Op("SET_IN"), Typed(BoolT1), i(1), empty), b(false)},
+		{MustOperExpr(Op("SET_SUBSET_EQ"), Typed(BoolT1), empty, symbolic), b(true)},
+		{MustOperExpr(Op("SET_SUBSET_EQ"), Typed(BoolT1), symbolic, symbolic), b(true)},
+		{MustOperExpr(Op("SET_UNION2"), Typed(mixedType), empty, symbolic), symbolic},
+		{MustOperExpr(Op("SET_INTERSECT"), Typed(mixedType), symbolic, empty), empty},
+		{MustOperExpr(Op("SET_MINUS"), Typed(mixedType), symbolic, empty), symbolic},
+		{MustOperExpr(Op("SET_MINUS"), Typed(mixedType), symbolic, symbolic), empty},
+	}
+	for _, test := range identityCases {
+		got, simplifyErr := SimplifyConstants(test.input, nil)
+		if simplifyErr != nil || !EqualTypedExpr(got, test.want) {
+			t.Errorf("set identity %v = %v, %v; want %v", test.input, got, simplifyErr, test.want)
+		}
+	}
+}
+
+func TestSimplifyConstantsScalaBooleanAndSymbolicQuantifierRules(t *testing.T) {
+	b := func(value bool) Expr { return NewValueExpr(BoolValue(value), Typed(BoolT1)) }
+	p := NewNameExpr("p", Typed(BoolT1))
+	q := NewNameExpr("q", Typed(BoolT1))
+	booleanCases := []struct{ input, want Expr }{
+		{MustOperExpr(Op("IMPLIES"), Typed(BoolT1), b(false), p), b(true)},
+		{MustOperExpr(Op("IMPLIES"), Typed(BoolT1), p, b(true)), b(true)},
+		{MustOperExpr(Op("IF_THEN_ELSE"), Typed(BoolT1), p, b(false), q), MustOperExpr(Op("AND"), Typed(BoolT1), MustOperExpr(Op("NOT"), Typed(BoolT1), p), q)},
+		{MustOperExpr(Op("IF_THEN_ELSE"), Typed(BoolT1), p, b(true), q), MustOperExpr(Op("OR"), Typed(BoolT1), p, q)},
+	}
+	for _, test := range booleanCases {
+		got, err := SimplifyConstants(test.input, nil)
+		if err != nil || !EqualTypedExpr(got, test.want) {
+			t.Errorf("Boolean simplification %v = %v, %v; want %v", test.input, got, err, test.want)
+		}
+	}
+
+	setType := mustSet(IntT1)
+	domain := NewNameExpr("S", Typed(setType))
+	x := NewNameExpr("x", Typed(IntT1))
+	empty := MustOperExpr(Op("SET_ENUM"), Typed(setType))
+	for _, test := range []struct {
+		operator string
+		body     bool
+		want     Expr
+	}{
+		{"EXISTS3", true, MustOperExpr(Op("NOT"), Typed(BoolT1), MustOperExpr(Op("EQ"), Typed(BoolT1), domain, empty))},
+		{"EXISTS3", false, b(false)},
+		{"FORALL3", true, b(true)},
+		{"FORALL3", false, MustOperExpr(Op("EQ"), Typed(BoolT1), domain, empty)},
+	} {
+		got, err := SimplifyConstants(MustOperExpr(Op(test.operator), Typed(BoolT1), x, domain, b(test.body)), nil)
+		if err != nil || !EqualTypedExpr(got, test.want) {
+			t.Errorf("%s symbolic %v = %v, %v; want %v", test.operator, test.body, got, err, test.want)
+		}
 	}
 }
 
