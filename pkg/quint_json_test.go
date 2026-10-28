@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -348,6 +349,76 @@ func TestConvertQuintPredefinedNamesAndLocalLets(t *testing.T) {
 	}
 	if countOperator(converted, "EXISTS3") != 1 || countOperator(converted, "Apalache!Gen") != 1 {
 		t.Fatalf("nondet generate converted to %v", converted)
+	}
+}
+
+func TestConvertQuintRejectsMalformedConstructors(t *testing.T) {
+	integer := quintJSONType{Kind: "int"}
+	stringType := quintJSONType{Kind: "str"}
+	empty := quintJSONRow{Kind: "empty"}
+	record := quintJSONType{Kind: "rec", Fields: &quintJSONRow{Kind: "row",
+		Fields: []quintJSONRecordField{{FieldName: "x", FieldType: integer}}, Other: &empty}}
+	variant := quintJSONType{Kind: "sum", Fields: &quintJSONRow{Kind: "row",
+		Fields: []quintJSONRecordField{{FieldName: "Some", FieldType: integer}}, Other: &empty}}
+	importer := quintJSONImporter{types: map[string]quintJSONScheme{
+		"1": {Type: integer}, "2": {Type: stringType}, "3": {Type: record}, "4": {Type: variant},
+	}}
+	integerExpr := quintJSONExpr{ID: json.Number("1"), Kind: "int", Value: json.RawMessage("1")}
+	stringExpr := quintJSONExpr{ID: json.Number("2"), Kind: "str", Value: json.RawMessage(`"Some"`)}
+	tests := []quintJSONExpr{
+		{ID: json.Number("3"), Kind: "app", Opcode: "Rec", Args: []quintJSONExpr{stringExpr}},
+		{ID: json.Number("3"), Kind: "app", Opcode: "Rec", Args: []quintJSONExpr{integerExpr, integerExpr}},
+		{ID: json.Number("4"), Kind: "app", Opcode: "variant", Args: []quintJSONExpr{integerExpr, integerExpr}},
+		{ID: json.Number("1"), Kind: "app", Opcode: "variant", Args: []quintJSONExpr{stringExpr, integerExpr}},
+	}
+	for _, expression := range tests {
+		if _, err := importer.expression(expression); err == nil {
+			t.Errorf("malformed %s expression was accepted: %#v", expression.Opcode, expression)
+		}
+	}
+}
+
+func TestConvertQuintSimpleOperatorSurface(t *testing.T) {
+	importer := quintJSONImporter{types: map[string]quintJSONScheme{
+		"1": {Type: quintJSONType{Kind: "int"}},
+	}}
+	opcodes := make([]string, 0, len(quintSimpleOperators))
+	for opcode := range quintSimpleOperators {
+		opcodes = append(opcodes, opcode)
+	}
+	sort.Strings(opcodes)
+	for _, opcode := range opcodes {
+		t.Run(opcode, func(t *testing.T) {
+			operatorName := quintSimpleOperators[opcode]
+			operator, found := LookupOperator(operatorName)
+			if !found {
+				t.Fatalf("mapped operator %q is not registered", operatorName)
+			}
+			arity := -1
+			for count := 0; count <= 8; count++ {
+				if operator.IsCorrectArity(count) {
+					arity = count
+					break
+				}
+			}
+			if arity < 0 {
+				t.Fatalf("could not find a small valid arity for %q", operatorName)
+			}
+			arguments := make([]quintJSONExpr, arity)
+			for index := range arguments {
+				arguments[index] = quintJSONExpr{ID: json.Number("1"), Kind: "int", Value: json.RawMessage("1")}
+			}
+			converted, err := importer.expression(quintJSONExpr{
+				ID: json.Number("1"), Kind: "app", Opcode: opcode, Args: arguments,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			application, ok := converted.(*OperExpr)
+			if !ok || application.Operator().Name() != operatorName {
+				t.Fatalf("%s converted to %v", opcode, converted)
+			}
+		})
 	}
 }
 

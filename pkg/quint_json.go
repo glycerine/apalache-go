@@ -362,7 +362,34 @@ func (importer quintJSONImporter) expression(expression quintJSONExpr) (Expr, er
 			}
 			return NewOperExpr(Op("TUPLE"), Typed(typ), arguments...)
 		case "Rec":
+			if len(arguments)%2 != 0 {
+				return nil, fmt.Errorf("Rec expects alternating field/value arguments, found %d arguments", len(arguments))
+			}
+			for index := 0; index < len(arguments); index += 2 {
+				field, ok := arguments[index].(*ValueExpr)
+				if !ok {
+					return nil, fmt.Errorf("Rec field argument %d is not a string literal", index)
+				}
+				if _, ok = field.Value().(StringValue); !ok {
+					return nil, fmt.Errorf("Rec field argument %d is not a string literal", index)
+				}
+			}
 			return NewOperExpr(Op("RECORD"), Typed(typ), arguments...)
+		case "variant":
+			if len(arguments) != 2 {
+				return nil, fmt.Errorf("variant expects two arguments, found %d", len(arguments))
+			}
+			label, ok := arguments[0].(*ValueExpr)
+			if !ok {
+				return nil, fmt.Errorf("variant label is not a string literal")
+			}
+			if _, ok = label.Value().(StringValue); !ok {
+				return nil, fmt.Errorf("variant label is not a string literal")
+			}
+			if _, ok = typ.(VariantType); !ok {
+				return nil, fmt.Errorf("variant has non-sum type %s", typ)
+			}
+			return NewOperExpr(Op("Variants!Variant"), Typed(typ), arguments...)
 		case "contains":
 			if len(arguments) != 2 {
 				return nil, fmt.Errorf("contains expects two arguments, found %d", len(arguments))
@@ -705,7 +732,6 @@ var quintSimpleOperators = map[string]string{
 	"tuples": "SET_TIMES", "field": "FUN_APP", "fieldNames": "DOMAIN", "get": "FUN_APP",
 	"keys": "DOMAIN", "setOfMaps": "FUN_SET", "orKeep": "STUTTER",
 	"mustChange": "NO_STUTTER", "then": "COMPOSE",
-	"variant":  "Variants!Variant",
 	"setToMap": "Apalache!SetAsFun",
 }
 
