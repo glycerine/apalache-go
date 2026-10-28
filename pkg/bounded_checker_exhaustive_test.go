@@ -517,3 +517,54 @@ Inv == %s
 		checkExhaustiveMachine(t, name, source, init, edges, invariant, len(values), bound)
 	}
 }
+
+func TestBoundedSafetyMatchesOperatorRichSequenceMachines(t *testing.T) {
+	type transitionTemplate struct {
+		expression string
+		next       func(int) []int
+	}
+	shiftTrue := func(q int) int { return (q&1)<<1 | 1 }
+	shiftFalse := func(q int) int { return (q & 1) << 1 }
+	templates := []transitionTemplate{
+		{"q' = Append(Tail(q), TRUE)", func(q int) []int { return []int{shiftTrue(q)} }},
+		{"q' = Append(Tail(q), FALSE)", func(q int) []int { return []int{shiftFalse(q)} }},
+		{"q' = <<q[2], q[1]>>", func(q int) []int { return []int{(q&1)<<1 | (q >> 1)} }},
+		{"q' = [q EXCEPT ![1] = TRUE]", func(q int) []int { return []int{q | 2} }},
+		{"q' = [q EXCEPT ![2] = FALSE]", func(q int) []int { return []int{q & 2} }},
+		{"q' = [q EXCEPT ![1] = ~@]", func(q int) []int { return []int{q ^ 2} }},
+		{"q' = Append(Tail(q), TRUE) \\/ q' = Append(Tail(q), FALSE)", func(q int) []int {
+			return []int{shiftTrue(q), shiftFalse(q)}
+		}},
+		{"Head(q) = FALSE /\\ q' = Append(Tail(q), TRUE)", func(q int) []int {
+			if q&2 == 0 {
+				return []int{shiftTrue(q)}
+			}
+			return nil
+		}},
+	}
+	values := []string{"<<FALSE, FALSE>>", "<<FALSE, TRUE>>", "<<TRUE, FALSE>>", "<<TRUE, TRUE>>"}
+	random := rand.New(rand.NewSource(0x5e90fe7a70))
+	for number := 0; number < 24; number++ {
+		template := templates[number%len(templates)]
+		init := uint64(random.Intn(15) + 1)
+		invariant := uint64(random.Intn(16))
+		bound := random.Intn(4)
+		edges := uint64(0)
+		for from := range values {
+			for _, to := range template.next(from) {
+				edges |= 1 << (from*len(values) + to)
+			}
+		}
+		name := fmt.Sprintf("OperatorSequence%d", number)
+		source := fmt.Sprintf(`---- MODULE %s ----
+EXTENDS Sequences
+\* @type: Seq(Bool);
+VARIABLE q
+Init == %s
+Next == %s
+Inv == %s
+====`, name, valueMaskPredicate("q", values, init, false), template.expression,
+			valueMaskPredicate("q", values, invariant, false))
+		checkExhaustiveMachine(t, name, source, init, edges, invariant, len(values), bound)
+	}
+}
