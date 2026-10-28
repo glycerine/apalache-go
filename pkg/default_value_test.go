@@ -61,3 +61,26 @@ func TestDefaultValueCacheSupportsUninterpretedConstants(t *testing.T) {
 		t.Fatalf("constant default arena count = %d", scope.Arena.CellCount())
 	}
 }
+
+func TestDefaultValueCacheBuildsCanonicalRecordValues(t *testing.T) {
+	recordType, err := NewRecordType(map[string]Type{"a": IntT1, "b": BoolT1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rewriter := NewStratifiedRewriter()
+	scope, record, err := rewriter.DefaultValueCache().GetOrCreate(InitialRewriterScope(), recordType)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields := scope.Arena.GetHas(record)
+	if len(fields) != 2 {
+		t.Fatalf("default record fields = %#v", fields)
+	}
+	integer, found := rewriter.IntegerCache().FindValue(fields[0].Element())
+	if !found || integer.Sign() != 0 {
+		t.Fatalf("default integer field = %v, found %v", integer, found)
+	}
+	if !fields[1].Element().Equal(scope.Arena.FalseCell()) {
+		t.Fatalf("default Boolean field = %s", fields[1].Element())
+	}
+}
