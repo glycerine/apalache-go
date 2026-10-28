@@ -2,6 +2,7 @@ package apalache
 
 import (
 	"fmt"
+	"os"
 	"strings"
 )
 
@@ -40,6 +41,9 @@ func SortDeclarations(module *Module) (*Module, error) {
 				names = append(names, declaration.Name())
 			}
 		}
+		if err := writeDependencyGraph("dependencies.dot", declarations, dependencies, witnesses); err != nil {
+			return nil, fmt.Errorf("write cyclic dependency graph: %w", err)
+		}
 		return nil, &CyclicDependencyError{Declarations: names, Witnesses: witnesses}
 	}
 
@@ -50,6 +54,31 @@ func SortDeclarations(module *Module) (*Module, error) {
 	result := NewModule(module.Name(), sorted)
 	result.properties = cloneMap(module.properties)
 	return result, nil
+}
+
+// writeDependencyGraph mirrors DeclarationSorter's Scala cycle diagnostic.
+// Declaration order makes the otherwise set-valued graph reproducible in Go.
+func writeDependencyGraph(filename string, declarations []Decl, dependencies map[UID]map[UID]struct{}, witnesses map[UID]struct{}) error {
+	var document strings.Builder
+	document.WriteString("digraph dependencies {\n")
+	for _, declaration := range declarations {
+		from := declaration.ID()
+		if _, found := witnesses[from]; !found {
+			continue
+		}
+		fmt.Fprintf(&document, "  n%s[label=\"%s\"];\n", from, declaration.Name())
+		for _, dependency := range declarations {
+			to := dependency.ID()
+			if _, retained := witnesses[to]; !retained {
+				continue
+			}
+			if _, found := dependencies[from][to]; found {
+				fmt.Fprintf(&document, "  n%s -> n%s;\n", from, to)
+			}
+		}
+	}
+	document.WriteString("}\n")
+	return os.WriteFile(filename, []byte(document.String()), 0o666)
 }
 
 func declarationDependencies(declarations []Decl) map[UID]map[UID]struct{} {

@@ -82,6 +82,7 @@ func TestRewriteOverridesRejectsInvalidTargets(t *testing.T) {
 }
 
 func TestRewriteOverridesReportsCyclesAsConfigurationErrors(t *testing.T) {
+	t.Chdir(t.TempDir())
 	operatorType := mustOperator(nil, IntT1)
 	original := NewOperDecl("F", nil, intLiteral(0), Typed(operatorType))
 	override := NewOperDecl("OVERRIDE_F", nil, untypedApp("G"), Typed(operatorType))
