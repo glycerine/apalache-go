@@ -67,20 +67,7 @@ func (prepro *PreproSolverContext) Assert(expression Expr) error {
 }
 
 func simplifyPreproShallow(expression Expr) (Expr, error) {
-	if name, ok := expression.(*NameExpr); ok {
-		switch name.Name() {
-		case ArenaFalseName:
-			return boolExpr(false), nil
-		case ArenaTrueName:
-			return boolExpr(true), nil
-		}
-	}
-	if operator, ok := expression.(*OperExpr); ok {
-		if _, membership := membershipPolarity(operator.Operator().Name()); membership {
-			return expression, nil
-		}
-	}
-	return simplifyConstantShallow(expression)
+	return (SMTConstantSimplifier{}).SimplifyShallow(expression)
 }
 
 func (prepro *PreproSolverContext) Evaluate(expression Expr) (Expr, error) {
