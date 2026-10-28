@@ -2403,6 +2403,31 @@ func TestStratifiedTupleAndRecordApplication(t *testing.T) {
 	}
 }
 
+func TestStratifiedApplicationTypeErrorsDoNotMutateArena(t *testing.T) {
+	functionType := mustFun(IntT1, BoolT1)
+	function := NewNameExpr("f", Typed(functionType))
+	tupleType, _ := NewTupleType(IntT1)
+	tuple := MustOperExpr(Op("TUPLE"), Typed(tupleType), intLiteral(1))
+	recordType, _ := NewRecordType(map[string]Type{"a": IntT1})
+	record := MustOperExpr(Op("RECORD"), Typed(recordType),
+		NewValueExpr(StringValue("a"), Typed(StrT1)), intLiteral(1))
+	for _, invalid := range []Expr{
+		MustOperExpr(Op("FUN_APP"), Untyped(), function, intLiteral(1)),
+		MustOperExpr(Op("FUN_APP"), Typed(BoolT1), intLiteral(1), intLiteral(1)),
+		MustOperExpr(Op("FUN_APP"), Typed(BoolT1), function, boolExpr(true)),
+		MustOperExpr(Op("FUN_APP"), Typed(IntT1), function, intLiteral(1)),
+		MustOperExpr(Op("FUN_APP"), Typed(IntT1), tuple, NewNameExpr("i", Typed(IntT1))),
+		MustOperExpr(Op("FUN_APP"), Typed(IntT1), record, NewNameExpr("key", Typed(StrT1))),
+		MustOperExpr(Op("FUN_APP"), Typed(BoolT1), record, NewValueExpr(StringValue("a"), Typed(StrT1))),
+	} {
+		base := InitialRewriterScope()
+		returned, _, err := NewStratifiedRewriter().Rewrite(invalid, base)
+		if err == nil || returned.Arena != base.Arena {
+			t.Fatalf("invalid application returned scope=%v, err=%v", returned, err)
+		}
+	}
+}
+
 func TestStratifiedRecordConstructionAndEqualityThroughG3(t *testing.T) {
 	setType := mustSet(IntT1)
 	recordType, err := NewRecordType(map[string]Type{"a": IntT1, "b": setType})

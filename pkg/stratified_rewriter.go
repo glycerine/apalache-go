@@ -1124,15 +1124,47 @@ func (rewriter *StratifiedRewriter) rewriteSetBinaryFilter(expression *OperExpr,
 	return scope, result, nil
 }
 
-func (rewriter *StratifiedRewriter) rewriteApplication(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
+func validateApplicationExpression(expression *OperExpr) error {
 	arguments := expression.Arguments()
 	if len(arguments) != 2 {
-		return scope, ArenaCell{}, fmt.Errorf("function application requires two arguments")
+		return fmt.Errorf("function application requires two arguments")
 	}
-	expectedType, typed := expression.Tag().Type()
-	if !typed {
-		return scope, ArenaCell{}, fmt.Errorf("function application must be typed")
+	expectedType, resultTyped := expression.Tag().Type()
+	collectionType, collectionTyped := arguments[0].Tag().Type()
+	argumentType, argumentTyped := arguments[1].Tag().Type()
+	if !resultTyped || !collectionTyped || !argumentTyped {
+		return fmt.Errorf("function application target, argument, and result must be typed")
 	}
+
+	from, to, ok := ApplicativeType(collectionType, arguments[1])
+	if !ok {
+		// Legacy records are deliberately imprecise. FunAppRule returns a
+		// made-up value when widening left the requested literal key outside
+		// the record's static field map.
+		if record, legacy := collectionType.(RecordType); legacy {
+			keyExpression, literal := arguments[1].(*ValueExpr)
+			if literal {
+				key, stringKey := keyExpression.Value().(StringValue)
+				_, present := record.Fields()[string(key)]
+				if stringKey && !present && CompatibleTypes(argumentType, StrT1) {
+					return nil
+				}
+			}
+		}
+		return fmt.Errorf("application requires an argument selected by applicative type %s", collectionType)
+	}
+	if !CompatibleTypes(argumentType, from) || !CompatibleTypes(expectedType, to) {
+		return fmt.Errorf("application argument/result types %s/%s do not match %s -> %s", argumentType, expectedType, from, to)
+	}
+	return nil
+}
+
+func (rewriter *StratifiedRewriter) rewriteApplication(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
+	if err := validateApplicationExpression(expression); err != nil {
+		return scope, ArenaCell{}, err
+	}
+	arguments := expression.Arguments()
+	expectedType, _ := expression.Tag().Type()
 	project := func(current RewriterScope, cell ArenaCell) (RewriterScope, ArenaCell, error) {
 		if _, residualVariable := expectedType.(VarType); residualVariable {
 			return current, cell, nil
