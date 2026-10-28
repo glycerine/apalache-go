@@ -91,16 +91,17 @@ func TestParseCheckerTuningMapsIntegerSolverOptionsToG3(t *testing.T) {
 
 func TestParseCheckerTuningSimulationControls(t *testing.T) {
 	tuning, err := ParseCheckerTuning(map[string]string{
-		"search.simulation": "true", "search.simulation.maxRun": "17",
+		"search.simulation": "true", "search.simulation.maxRun": "17", "search.outputTraces": "true",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !tuning.HasSimulationControls() || tuning.SimulationRuns() != 17 || !tuning.simulation {
+	if !tuning.HasSimulationControls() || tuning.SimulationRuns() != 17 || !tuning.simulation ||
+		!tuning.HasOutputTraces() || !tuning.OutputTraces() {
 		t.Fatalf("simulation tuning = %#v", tuning)
 	}
 	for _, values := range []map[string]string{
-		{"search.simulation": "yes"}, {"search.simulation.maxRun": "0"}, {"search.outputTraces": "true"},
+		{"search.simulation": "yes"}, {"search.simulation.maxRun": "0"}, {"search.outputTraces": "yes"},
 	} {
 		if _, err = ParseCheckerTuning(values); err == nil {
 			t.Fatalf("invalid simulation tuning accepted: %v", values)

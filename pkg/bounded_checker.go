@@ -47,6 +47,7 @@ type BoundedSafetyResult struct {
 	ExploredExecutions int
 	States             []DecodedState
 	Counterexamples    []BoundedCounterexample
+	ExampleStates      []DecodedState
 }
 
 // CheckBoundedSafety checks every normalized transition path through maxSteps
@@ -381,6 +382,19 @@ func searchSafetyPath(
 					return true, nil
 				}
 			}
+		}
+	}
+	if inputs.tuning.OutputTraces() && len(path.next) == inputs.maxSteps && result.ExampleStates == nil {
+		truth := NewValueExpr(BoolValue(true), Typed(BoolT1))
+		status, states, decodeErr := executor.CheckAndDecode(ctx, truth)
+		if decodeErr != nil {
+			return false, decodeErr
+		}
+		if status == SMTUnknown {
+			return stopOnUnknown(result), nil
+		}
+		if status == SMTSatisfiable {
+			result.ExampleStates = states
 		}
 	}
 	if len(path.next) == inputs.maxSteps && !inputs.checkDeadlocks {

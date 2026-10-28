@@ -172,6 +172,7 @@ func TestCmdExecutorRejectsUnsafeAndMalformedRequests(t *testing.T) {
 		`{"output":"result.json"}`,
 		`{"checker":{"config":"M.cfg"}}`,
 		`{"checker":{"tuning":{"z3.trace":"true"}}}`,
+		`{"checker":{"tuning":{"search.outputTraces":"true"}}}`,
 	} {
 		if _, err := service.Run(ctx, &cmd.CmdRequest{Cmd: cmd.Cmd_PARSE, Config: configuration}); status.Code(err) != codes.InvalidArgument {
 			t.Fatalf("unsafe config %s = %v", configuration, err)

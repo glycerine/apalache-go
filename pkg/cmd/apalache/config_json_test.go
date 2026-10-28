@@ -68,6 +68,7 @@ func TestJSONModelConfigValidatesSupportedSearchTuning(t *testing.T) {
 		"z3.smt.random_seed":      "9",
 		"z3.smt.mbqi":             "true",
 		"z3.sat.random_freq":      "0.25",
+		"search.outputTraces":     "true",
 	}
 	if err := (jsonCommandConfig{Checker: jsonCheckerConfig{Tuning: &supported}}).validateForCheck(); err != nil {
 		t.Fatalf("supported tuning = %v", err)

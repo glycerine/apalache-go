@@ -670,6 +670,7 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	nextName := flags.String("next", "", "next-state operator")
 	constantInit := flags.String("cinit", "", "constant initializer operator")
 	itfPath := flags.String("itf", "", "write the simulated trace as ITF JSON")
+	outputTraces := flags.Bool("output-traces", false, "save an ITF example for each symbolic run")
 	useRows := flags.Bool("rows", false, "enable row types")
 	features := flags.String("features", "", "typechecker features: rows or no-rows")
 	disablePolytypes := flags.Bool("no-polytypes", false, "disable let-polymorphism")
@@ -711,6 +712,9 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 			}
 			if !visited["max-run"] {
 				*maxRun = checkerTuning.SimulationRuns()
+			}
+			if !visited["output-traces"] && checkerTuning.HasOutputTraces() {
+				*outputTraces = checkerTuning.OutputTraces()
 			}
 		}
 	}
@@ -825,6 +829,14 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	}
 	if len(report.Counterexamples) != 0 {
 		for index, counterexample := range report.Counterexamples {
+			if *outputTraces {
+				outputPath := traceITFPath("", "violation", index+1, len(report.Counterexamples))
+				if writeErr := writeDecodedITF(outputPath, prepared.Module, counterexample.States); writeErr != nil {
+					fmt.Fprintf(stderr, "cannot write ITF simulation counterexample: %v\n", writeErr)
+					return exitTool
+				}
+				fmt.Fprintf(stdout, "Wrote ITF trace to %s.\n", outputPath)
+			}
 			kind := "Invariant"
 			if counterexample.TraceInvariant {
 				kind = "Trace invariant"
@@ -846,14 +858,9 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 			fmt.Fprintf(stderr, "solver returned unknown in simulation run %d\n", run+1)
 			return exitTool
 		}
-		if *itfPath != "" {
-			outputPath := simulationITFPath(*itfPath, run+1, len(results))
-			data, encodeErr := pal.MarshalDecodedTraceITF(prepared.Module, result.States, pal.ITFOptions{})
-			if encodeErr != nil {
-				fmt.Fprintf(stderr, "cannot encode ITF simulation: %v\n", encodeErr)
-				return exitTool
-			}
-			if writeErr := os.WriteFile(outputPath, append(data, '\n'), 0o644); writeErr != nil {
+		if *itfPath != "" || *outputTraces {
+			outputPath := traceITFPath(*itfPath, "example", run+1, len(results))
+			if writeErr := writeDecodedITF(outputPath, prepared.Module, result.States); writeErr != nil {
 				fmt.Fprintf(stderr, "cannot write ITF simulation: %v\n", writeErr)
 				return exitTool
 			}
@@ -883,6 +890,24 @@ func simulationITFPath(path string, run, total int) string {
 	return strings.TrimSuffix(path, extension) + fmt.Sprintf("-run-%d", run) + extension
 }
 
+func traceITFPath(explicitPath, prefix string, index, total int) string {
+	if explicitPath != "" {
+		return simulationITFPath(explicitPath, index, total)
+	}
+	if total <= 1 {
+		return prefix + ".itf.json"
+	}
+	return fmt.Sprintf("%s%d.itf.json", prefix, index)
+}
+
+func writeDecodedITF(path string, module *pal.Module, states []pal.DecodedState) error {
+	data, err := pal.MarshalDecodedTraceITF(module, states, pal.ITFOptions{})
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(data, '\n'), 0o644)
+}
+
 func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("check", flag.ContinueOnError)
 	flags.SetOutput(stderr)
@@ -899,6 +924,7 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	deadlockFlag := flags.String("deadlock", "", "check deadlocks: true or false (default true)")
 	noDeadlock := flags.Bool("no-deadlock", false, "disable deadlock checking (Scala-compatible alias)")
 	itfPath := flags.String("itf", "", "write a counterexample trace as ITF JSON")
+	outputTraces := flags.Bool("output-traces", false, "save an ITF example symbolic run")
 	useRows := flags.Bool("rows", false, "enable row types")
 	features := flags.String("features", "", "typechecker features: rows or no-rows")
 	disablePolytypes := flags.Bool("no-polytypes", false, "disable let-polymorphism")
@@ -937,6 +963,9 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 			if err != nil {
 				fmt.Fprintln(stderr, err)
 				return exitUsage
+			}
+			if !visited["output-traces"] && checkerTuning.HasOutputTraces() {
+				*outputTraces = checkerTuning.OutputTraces()
 			}
 		}
 	}
@@ -1060,6 +1089,7 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		fmt.Fprintln(stderr, "check requires at least one invariant when deadlock checking is disabled")
 		return exitUsage
 	}
+	checkerTuning = checkerTuning.WithOutputTraces(*outputTraces)
 	result, err := pal.CheckBoundedSafetyWithOptions(ctx, prepared.Module, prepared.Predicates, pal.BoundedSafetyOptions{
 		MaxSteps: *length, CheckDeadlocks: checkDeadlocks, Tuning: checkerTuning, MaxErrors: *maxErrors,
 	})
@@ -1067,17 +1097,27 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		fmt.Fprintf(stderr, "bounded safety check failed: %v\n", err)
 		return exitTool
 	}
-	if *itfPath != "" && (result.Outcome == pal.SafetyCounterexample || result.Outcome == pal.SafetyDeadlock) {
-		data, encodeErr := pal.MarshalDecodedTraceITF(prepared.Module, result.States, pal.ITFOptions{})
-		if encodeErr != nil {
-			fmt.Fprintf(stderr, "cannot encode ITF counterexample: %v\n", encodeErr)
-			return exitTool
+	traceStates := [][]pal.DecodedState(nil)
+	tracePrefix := "example"
+	if result.Outcome == pal.SafetyCounterexample {
+		tracePrefix = "violation"
+		for _, counterexample := range result.Counterexamples {
+			traceStates = append(traceStates, counterexample.States)
 		}
-		if writeErr := os.WriteFile(*itfPath, append(data, '\n'), 0o644); writeErr != nil {
-			fmt.Fprintf(stderr, "cannot write ITF counterexample: %v\n", writeErr)
-			return exitTool
+	} else if result.Outcome == pal.SafetyDeadlock {
+		tracePrefix, traceStates = "violation", append(traceStates, result.States)
+	} else if result.Outcome == pal.SafetyNoCounterexample && *outputTraces && len(result.ExampleStates) != 0 {
+		traceStates = append(traceStates, result.ExampleStates)
+	}
+	if *itfPath != "" || *outputTraces {
+		for index, states := range traceStates {
+			outputPath := traceITFPath(*itfPath, tracePrefix, index+1, len(traceStates))
+			if writeErr := writeDecodedITF(outputPath, prepared.Module, states); writeErr != nil {
+				fmt.Fprintf(stderr, "cannot write ITF trace: %v\n", writeErr)
+				return exitTool
+			}
+			fmt.Fprintf(stdout, "Wrote ITF trace to %s.\n", outputPath)
 		}
-		fmt.Fprintf(stdout, "Wrote ITF trace to %s.\n", *itfPath)
 	}
 	switch result.Outcome {
 	case pal.SafetyCounterexample:

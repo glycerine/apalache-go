@@ -20,6 +20,8 @@ type CheckerTuning struct {
 	invariantMode     string
 	solverUIntOptions map[string]uint32
 	solverTextOptions map[string]string
+	outputTraces      bool
+	hasOutputTraces   bool
 	simulation        bool
 	simulationRuns    int
 	hasSimulation     bool
@@ -77,6 +79,13 @@ func ParseCheckerTuning(values map[string]string) (CheckerTuning, error) {
 			}
 			result.simulationRuns = parsed
 			result.hasSimulation = true
+		case "search.outputTraces":
+			parsed, err := parseTuningBool(key, value)
+			if err != nil {
+				return CheckerTuning{}, err
+			}
+			result.outputTraces = parsed
+			result.hasOutputTraces = true
 		case "smt.randomSeed":
 			parsed, err := parseTuningUInt(key, value)
 			if err != nil {
@@ -128,6 +137,16 @@ func (tuning CheckerTuning) SimulationRuns() int {
 }
 
 func (tuning CheckerTuning) HasSimulationControls() bool { return tuning.hasSimulation }
+
+func (tuning CheckerTuning) OutputTraces() bool { return tuning.outputTraces }
+
+func (tuning CheckerTuning) HasOutputTraces() bool { return tuning.hasOutputTraces }
+
+func (tuning CheckerTuning) WithOutputTraces(enabled bool) CheckerTuning {
+	tuning.outputTraces = enabled
+	tuning.hasOutputTraces = true
+	return tuning
+}
 
 func (tuning CheckerTuning) withExactTransitionPath(init int, next []int) CheckerTuning {
 	words := make([]string, 0, len(next)+1)

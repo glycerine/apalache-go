@@ -16,7 +16,8 @@ import (
 )
 
 var shaiFileWritingTuningKeys = map[string]struct{}{
-	"z3.dot_proof_file": {}, "z3.trace": {}, "z3.trace_file_name": {},
+	"search.outputTraces": {},
+	"z3.dot_proof_file":   {}, "z3.trace": {}, "z3.trace_file_name": {},
 	"z3.sat.drat.file": {}, "z3.sat.inprocess.out": {}, "z3.solver.axioms2files": {},
 	"z3.solver.cancel_backup_file": {}, "z3.solver.proof.log": {}, "z3.solver.smtlib2_log": {},
 	"z3.opt.dump_benchmarks": {}, "z3.opt.solution_prefix": {}, "z3.smt.arith.dump_lemmas": {},

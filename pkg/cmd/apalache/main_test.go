@@ -593,6 +593,18 @@ Inv == x < 2
 	if !strings.Contains(stdout.String(), "No counterexample found through depth 1") {
 		t.Fatalf("safe output = %q", &stdout)
 	}
+	safeTracePath := filepath.Join(dir, "example.itf.json")
+	stdout.Reset()
+	stderr.Reset()
+	safeTraceArgs := append([]string{"check", "--output-traces", "--itf=" + safeTracePath}, direct[1:]...)
+	if code := run(context.Background(), safeTraceArgs, &stdout, &stderr); code != exitOK {
+		t.Fatalf("safe trace check = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
+	}
+	if data, err := os.ReadFile(safeTracePath); err != nil {
+		t.Fatal(err)
+	} else if states, decodeErr := pal.UnmarshalITFTrace(data); decodeErr != nil || len(states) != 2 {
+		t.Fatalf("safe example trace = %d states, %v", len(states), decodeErr)
+	}
 	jsonPath := filepath.Join(dir, "Counter.json")
 	stdout.Reset()
 	stderr.Reset()
