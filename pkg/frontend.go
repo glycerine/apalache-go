@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
+	"regexp"
 
 	"github.com/glycerine/tlago"
 )
@@ -40,22 +40,109 @@ func (r FrontendResult) OK() bool { return !hasErrors(r.Diagnostics) }
 // ParseFile reads either canonical Apalache IR JSON or parses and semantically
 // checks a TLA+ module using tlago.
 func ParseFile(ctx context.Context, filename string, opts FrontendOptions) FrontendResult {
+	source, err := NewFileInputSource(filename)
+	if err != nil {
+		return FrontendResult{Diagnostics: []Diagnostic{{Code: "E-IO", Severity: SeverityError, Message: err.Error(), Position: Position{Filename: filename}}}}
+	}
+	return ParseInputSource(ctx, source, opts)
+}
+
+// ParseInputSource implements the parser-pass format dispatch for file and
+// in-memory sources. Specification ITF is deliberately unsupported.
+func ParseInputSource(ctx context.Context, input InputSource, opts FrontendOptions) FrontendResult {
 	if err := contextError(ctx); err != nil {
 		return canceledResult(err)
 	}
-	source, err := os.ReadFile(filename)
+	if input == nil {
+		return FrontendResult{Diagnostics: []Diagnostic{{Code: "E-IO", Severity: SeverityError, Message: "cannot parse a nil input source"}}}
+	}
+	source, err := input.ReadUTF8()
 	if err != nil {
 		return FrontendResult{Diagnostics: []Diagnostic{{
 			Code:     "E-IO",
 			Severity: SeverityError,
 			Message:  err.Error(),
-			Position: Position{Filename: filename},
+			Position: Position{Filename: input.String()},
 		}}}
 	}
-	if strings.EqualFold(filepath.Ext(filename), ".json") {
-		return parseIRJSONFile(ctx, filename, source)
+	switch input.Format() {
+	case InputFormatITF:
+		return FrontendResult{Diagnostics: []Diagnostic{{Code: "E-SPEC-PARSE", Severity: SeverityError,
+			Message: "Parsing the ITF format is not supported", Position: Position{Filename: input.String()}}}}
+	case InputFormatJSON:
+		return sortFrontendModule(parseIRJSONFile(ctx, input.String(), []byte(source)))
+	case InputFormatQuint:
+		module, parseErr := ParseQuintJSON([]byte(source))
+		if parseErr != nil {
+			return FrontendResult{Diagnostics: []Diagnostic{{Code: "E-SPEC-PARSE", Severity: SeverityError,
+				Message: parseErr.Error(), Position: Position{Filename: input.String()}}}}
+		}
+		ir, marshalErr := MarshalSingleModuleIRJSON(module, IRJSONOptions{})
+		if marshalErr != nil {
+			return FrontendResult{Diagnostics: []Diagnostic{{Code: "E-IR-CONVERSION", Severity: SeverityError, Message: marshalErr.Error()}}}
+		}
+		return sortFrontendModule(FrontendResult{Module: module.Name(), IR: ir, Native: module, Sources: NewSourceStore()})
+	case InputFormatTLA:
+		filename := input.String()
+		var memory *StringInputSource
+		switch typed := input.(type) {
+		case StringInputSource:
+			memory = &typed
+		case *StringInputSource:
+			memory = typed
+		}
+		if memory != nil {
+			filename = tlaSourceFilename(memory.Content)
+			if len(memory.Auxiliary) != 0 {
+				directory, tempErr := os.MkdirTemp("", "apalache-aux-")
+				if tempErr != nil {
+					return FrontendResult{Diagnostics: []Diagnostic{{Code: "E-IO", Severity: SeverityError, Message: tempErr.Error()}}}
+				}
+				defer os.RemoveAll(directory)
+				for _, auxiliary := range memory.Auxiliary {
+					path := filepath.Join(directory, tlaSourceFilename(auxiliary))
+					if writeErr := os.WriteFile(path, []byte(auxiliary), 0o600); writeErr != nil {
+						return FrontendResult{Diagnostics: []Diagnostic{{Code: "E-IO", Severity: SeverityError, Message: writeErr.Error()}}}
+					}
+				}
+				opts.LibraryPaths = append(append([]string(nil), opts.LibraryPaths...), directory)
+			}
+		}
+		return ParseSource(ctx, filename, source, opts)
+	default:
+		return FrontendResult{Diagnostics: []Diagnostic{{Code: "E-SPEC-PARSE", Severity: SeverityError,
+			Message: fmt.Sprintf("unsupported source format: %s", input.Format())}}}
 	}
-	return ParseSource(ctx, filename, string(source), opts)
+}
+
+func sortFrontendModule(result FrontendResult) FrontendResult {
+	if !result.OK() || result.Native == nil {
+		return result
+	}
+	sorted, err := SortDeclarations(result.Native)
+	if err != nil {
+		result.Native = nil
+		result.IR = nil
+		result.Diagnostics = append(result.Diagnostics, Diagnostic{Code: "E-SPEC-PARSE", Severity: SeverityError,
+			Message: fmt.Sprintf("cannot sort declarations: %v", err)})
+		return result
+	}
+	encoded, err := MarshalSingleModuleIRJSON(sorted, IRJSONOptions{SourceStore: result.Sources})
+	if err == nil {
+		result.IR = encoded
+	}
+	result.Native = sorted
+	return result
+}
+
+var tlaSourceModulePattern = regexp.MustCompile(`(?m)\bMODULE[ \t]+([A-Za-z_][A-Za-z0-9_]*)`)
+
+func tlaSourceFilename(source string) string {
+	match := tlaSourceModulePattern.FindStringSubmatch(source)
+	if len(match) == 2 {
+		return match[1] + ".tla"
+	}
+	return "Source.tla"
 }
 
 func parseIRJSONFile(ctx context.Context, filename string, data []byte) FrontendResult {
@@ -169,7 +256,7 @@ func ParseSource(ctx context.Context, filename, source string, opts FrontendOpti
 			result.Diagnostics = append(result.Diagnostics, *diagnostic)
 		}
 	}
-	return result
+	return sortFrontendModule(result)
 }
 
 // ParseAndTypeCheckSource runs the native Go type checker using @type and
@@ -295,14 +382,18 @@ func ParseAndTypeCheckFile(ctx context.Context, filename string, frontendOptions
 	if err := contextError(ctx); err != nil {
 		return canceledResult(err)
 	}
+	input, err := NewFileInputSource(filename)
+	if err != nil {
+		return FrontendResult{Diagnostics: []Diagnostic{{Code: "E-IO", Severity: SeverityError, Message: err.Error(), Position: Position{Filename: filename}}}}
+	}
 	source, err := os.ReadFile(filename)
 	if err != nil {
 		return FrontendResult{Diagnostics: []Diagnostic{{
 			Code: "E-IO", Severity: SeverityError, Message: err.Error(), Position: Position{Filename: filename},
 		}}}
 	}
-	if strings.EqualFold(filepath.Ext(filename), ".json") {
-		result := parseIRJSONFile(ctx, filename, source)
+	if input.Format() != InputFormatTLA {
+		result := ParseInputSource(ctx, input, frontendOptions)
 		if !result.OK() {
 			return result
 		}

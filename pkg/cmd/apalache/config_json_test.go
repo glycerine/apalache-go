@@ -35,6 +35,23 @@ func TestLoadCommandConfigIsStrict(t *testing.T) {
 	}
 }
 
+func TestMaterializeSpecificationPreservesQuintFormat(t *testing.T) {
+	kind, format, content := "string", "qnt", `{"modules":[],"types":{}}`
+	source := &jsonInputSource{Kind: &kind, Format: &format, Content: &content}
+	path, cleanup, err := source.materializeSpecification()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	if !strings.HasSuffix(path, ".qnt.json") {
+		t.Fatalf("materialized Quint path = %q", path)
+	}
+	data, readErr := os.ReadFile(path)
+	if readErr != nil || string(data) != content {
+		t.Fatalf("materialized Quint content = %q, %v", data, readErr)
+	}
+}
+
 func TestJSONModelConfigAcceptsBothDisabledTransitionStrategies(t *testing.T) {
 	for _, command := range []struct{ name string }{
 		{"check"}, {"simulate"}, {"test"},

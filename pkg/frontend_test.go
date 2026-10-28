@@ -56,6 +56,68 @@ func TestParseFileAcceptsEmptyModuleAndRejectsBlankFile(t *testing.T) {
 	}
 }
 
+func TestParseInputSourceDispatchesAllSpecificationFormats(t *testing.T) {
+	quintPath := "../json-rpc/src/test/resources/jsonrpc-bigint.qnt.json"
+	quint := ParseFile(context.Background(), quintPath, FrontendOptions{})
+	if !quint.OK() || quint.Module != "t" || quint.Native == nil || !quint.Native.HasProperty(PropertyTypeChecked) || len(quint.IR) == 0 {
+		t.Fatalf("Quint ParseFile() = module %q, native %#v, diagnostics %v", quint.Module, quint.Native, quint.Diagnostics)
+	}
+	typedQuint := ParseAndTypeCheckFile(context.Background(), quintPath, FrontendOptions{}, TypeCheckOptions{})
+	if !typedQuint.OK() || typedQuint.Native == nil || !typedQuint.Native.HasProperty(PropertyTypeChecked) {
+		t.Fatalf("Quint ParseAndTypeCheckFile() = %+v", typedQuint)
+	}
+
+	itf := ParseInputSource(context.Background(), NewStringInputSource(`{"vars":[]}`, nil, InputFormatITF), FrontendOptions{})
+	if itf.OK() || len(itf.Diagnostics) != 1 || itf.Diagnostics[0].Message != "Parsing the ITF format is not supported" {
+		t.Fatalf("ITF specification result = %+v", itf)
+	}
+
+	invalidQuint := ParseInputSource(context.Background(), NewStringInputSource(`{`, nil, InputFormatQuint), FrontendOptions{})
+	if invalidQuint.OK() || len(invalidQuint.Diagnostics) != 1 || invalidQuint.Diagnostics[0].Code != "E-SPEC-PARSE" {
+		t.Fatalf("invalid Quint result = %+v", invalidQuint)
+	}
+}
+
+func TestParseInputSourceLoadsInMemoryAuxiliaryModules(t *testing.T) {
+	root := `---- MODULE Root ----
+EXTENDS Aux
+Use == AuxValue
+====
+`
+	auxiliary := `---- MODULE Aux ----
+AuxValue == TRUE
+====
+`
+	result := ParseInputSource(context.Background(), NewStringInputSource(root, []string{auxiliary}, InputFormatTLA), FrontendOptions{})
+	if !result.OK() {
+		t.Fatalf("ParseInputSource() diagnostics = %v", result.Diagnostics)
+	}
+	if _, found := declarationNamed(result.Native, "AuxValue"); !found {
+		t.Fatalf("auxiliary declarations = %v", declarationNames(result.Native))
+	}
+}
+
+func TestParseInputSourceSortsDeclarationsBeforeReturning(t *testing.T) {
+	definedLater := NewOperDecl("DefinedLater", nil, tlaBool(true), Untyped())
+	use := NewOperDecl("Use", nil, tlaName("DefinedLater"), Untyped())
+	encoded, err := MarshalSingleModuleIRJSON(NewModule("Sorted", []Decl{use, definedLater}), IRJSONOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := ParseInputSource(context.Background(), NewStringInputSource(string(encoded), nil, InputFormatJSON), FrontendOptions{})
+	if !result.OK() {
+		t.Fatalf("ParseInputSource() diagnostics = %v", result.Diagnostics)
+	}
+	declarations := result.Native.Declarations()
+	if len(declarations) != 2 || declarations[0].Name() != "DefinedLater" || declarations[1].Name() != "Use" {
+		t.Fatalf("sorted declarations = %v", declarationNames(result.Native))
+	}
+	decoded, err := UnmarshalSingleModuleIRJSON(result.IR, NewSourceStore())
+	if err != nil || decoded.Declarations()[0].Name() != "DefinedLater" {
+		t.Fatalf("sorted IR = %v, %v", decoded, err)
+	}
+}
+
 func TestParseSourceDoesNotSearchProcessDirectory(t *testing.T) {
 	const helperEnvironment = "APALACHE_TEST_CWD_IMPORT_HELPER"
 	if os.Getenv(helperEnvironment) == "1" {

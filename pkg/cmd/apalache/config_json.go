@@ -141,7 +141,7 @@ func (source *jsonInputSource) materializeSpecification() (string, func(), error
 		if format == "" {
 			return "", noCleanup, fmt.Errorf("cannot infer source format from %q", path)
 		}
-		if format != "tla" && format != "json" {
+		if format != "tla" && format != "json" && format != "qnt" {
 			return "", noCleanup, fmt.Errorf("Go specification commands do not support %s sources", format)
 		}
 		if inferSourceFormat(path) == format {
@@ -164,7 +164,7 @@ func (source *jsonInputSource) materializeSpecification() (string, func(), error
 	if format == "" {
 		format = "tla"
 	}
-	if format != "tla" && format != "json" {
+	if format != "tla" && format != "json" && format != "qnt" {
 		return "", noCleanup, fmt.Errorf("Go specification commands do not support %s sources", format)
 	}
 	aux := []string(nil)
@@ -273,6 +273,9 @@ func materializeSourceFiles(content string, aux []string, format string) (string
 	cleanup := func() { _ = os.RemoveAll(directory) }
 	extension := ".json"
 	name := "source"
+	if format == "qnt" {
+		extension = ".qnt.json"
+	}
 	if format == "tla" {
 		extension = ".tla"
 		name, err = tlaModuleName(content)
