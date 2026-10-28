@@ -33,6 +33,24 @@ func TestNormalizeNNFBooleanConnectivesAndImplication(t *testing.T) {
 	}
 }
 
+func TestNormalizeNNFEquivalenceAndEquality(t *testing.T) {
+	x := NewNameExpr("x", Typed(BoolT1))
+	y := NewNameExpr("y", Typed(BoolT1))
+	for _, test := range []struct {
+		input Expr
+		want  string
+	}{
+		{MustOperExpr(Op("EQUIV"), Typed(BoolT1), x, y), "EQ"},
+		{MustOperExpr(Op("NOT"), Typed(BoolT1), MustOperExpr(Op("EQUIV"), Typed(BoolT1), x, y)), "NE"},
+		{MustOperExpr(Op("NOT"), Typed(BoolT1), MustOperExpr(Op("NE"), Typed(BoolT1), x, y)), "EQ"},
+	} {
+		got, err := NormalizeNNF(test.input, nil)
+		if err != nil || got.(*OperExpr).Operator().Name() != test.want {
+			t.Errorf("normalization %v = %v, %v; want %s", test.input, got, err, test.want)
+		}
+	}
+}
+
 func TestNormalizeNNFQuantifiersRelationsAndMembership(t *testing.T) {
 	x := NewNameExpr("x", Typed(IntT1))
 	set := NewNameExpr("S", Typed(mustSet(IntT1)))
@@ -94,6 +112,13 @@ func TestNormalizeNNFConditionalTemporalAndLabels(t *testing.T) {
 	if err != nil || got.(*OperExpr).Operator().Name() != "NOT" || got.(*OperExpr).Arguments()[0] != lead {
 		t.Fatalf("negated leads-to changed = %v, %v", got, err)
 	}
+	for _, operator := range []string{"GUARANTEES", "WEAK_FAIRNESS", "STRONG_FAIRNESS"} {
+		expression := MustOperExpr(Op(operator), Typed(BoolT1), x, y)
+		got, err = NormalizeNNF(MustOperExpr(Op("NOT"), Typed(BoolT1), expression), nil)
+		if err != nil || got.(*OperExpr).Operator().Name() != "NOT" || got.(*OperExpr).Arguments()[0] != expression {
+			t.Errorf("negated %s changed = %v, %v", operator, got, err)
+		}
+	}
 }
 
 func TestNormalizeNNFLetDefinitions(t *testing.T) {
@@ -134,5 +159,21 @@ func TestNormalizeNNFIntroducesNegatedLocalOperator(t *testing.T) {
 	negatedDefinitionBody := let.Declarations()[1].Body().(*OperExpr)
 	if negatedDefinitionBody.Operator().Name() != "NOT" {
 		t.Fatalf("negated definition body = %v", negatedDefinitionBody)
+	}
+}
+
+func TestNormalizeNNFTracksNegatedLocalOperatorReplacement(t *testing.T) {
+	operatorType := mustOperator(nil, BoolT1)
+	declaration := NewOperDecl("X", nil, NewNameExpr("P", Typed(BoolT1)), Typed(operatorType))
+	call := MustOperExpr(Op("OPER_APP"), Typed(BoolT1), NewNameExpr("X", Typed(operatorType)))
+	root := MustOperExpr(Op("NOT"), Typed(BoolT1), NewLetInExpr(call, Typed(BoolT1), declaration))
+	changes := NewChangeListener()
+	got, err := NormalizeNNF(root, NewListenerTracker(changes))
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacement := got.(*LetInExpr).Body()
+	if changes.TraceBack(replacement.ID()) != call.ID() {
+		t.Fatalf("negated local replacement traces to %s, want %s", changes.TraceBack(replacement.ID()), call.ID())
 	}
 }

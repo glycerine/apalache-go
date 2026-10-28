@@ -51,7 +51,7 @@ func NormalizeNNF(expression Expr, tracker TransformationTracker) (Expr, error) 
 				return nil, err
 			}
 			if negated {
-				body, declarations, err = normalizeNegatedLet(body, declarations, nnf)
+				body, declarations, err = normalizeNegatedLet(body, declarations, nnf, tracker)
 				if err != nil {
 					return nil, err
 				}
@@ -236,7 +236,7 @@ func NormalizeNNF(expression Expr, tracker TransformationTracker) (Expr, error) 
 	return nnf(expression, false)
 }
 
-func normalizeNegatedLet(body Expr, declarations []*OperDecl, nnf func(Expr, bool) (Expr, error)) (Expr, []*OperDecl, error) {
+func normalizeNegatedLet(body Expr, declarations []*OperDecl, nnf func(Expr, bool) (Expr, error), tracker TransformationTracker) (Expr, []*OperDecl, error) {
 	negatedNames := make(map[string]struct{})
 	var find func(Expr)
 	find = func(expression Expr) {
@@ -267,7 +267,7 @@ func normalizeNegatedLet(body Expr, declarations []*OperDecl, nnf func(Expr, boo
 		replacement := func() Expr {
 			return MustOperExpr(Op("OPER_APP"), Typed(BoolT1), NewNameExpr(newName, Typed(mustOperator(nil, BoolT1))))
 		}
-		body = ReplaceEqual(IdleTracker{}, pattern, replacement)(body)
+		body = ReplaceEqual(tracker, pattern, replacement)(body)
 	}
 	additional := make([]*OperDecl, 0)
 	for _, declaration := range declarations {
