@@ -385,7 +385,7 @@ tla-parser/src/main/scala/at/forsyte/apalache/tla/imp/package.scala	dependency	f
 tla-parser/src/main/scala/at/forsyte/apalache/tla/imp/src/SourceLocation.scala	dependency	frontend*.go;tlago-v0.1.9	exact parser diagnostic parity remains
 tla-parser/src/main/scala/at/forsyte/apalache/tla/imp/utils.scala	dependency	frontend*.go;tlago-v0.1.9	exact parser diagnostic parity remains
 tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/AbstractTransformer.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
-tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/ConstAndDefRewriter.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
+tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/ConstAndDefRewriter.scala	ported	preprocess_overrides.go;preprocess_overrides_test.go	constant/operator overrides validate arity and types, replace constant references with calls, preserve recursive overrides and Go pass properties, remove override declarations, stably sort results, and adapt cycles to configuration errors
 tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/ConstSimplifier.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
 tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/ConstSimplifierBase.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
 tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/Desugarer.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open

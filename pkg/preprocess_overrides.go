@@ -1,6 +1,7 @@
 package apalache
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -67,6 +68,10 @@ func RewriteOverrides(module *Module, tracker TransformationTracker) (*Module, e
 	}
 	result, err := SortDeclarations(NewModule(module.Name(), transformed))
 	if err != nil {
+		var cycle *CyclicDependencyError
+		if errors.As(err, &cycle) {
+			return nil, &ConfigurationError{Message: cycle.Error()}
+		}
 		return nil, err
 	}
 	for name, tag := range replacedConstants {
@@ -78,6 +83,9 @@ func RewriteOverrides(module *Module, tracker TransformationTracker) (*Module, e
 		}, func() Expr { return MustOperExpr(Op("OPER_APP"), tag, NewNameExpr(name, Typed(operatorType))) })
 		result = transformAllModuleExpressions(result, transform, tracker)
 	}
+	// Module properties are Go's pass-order contract and have no Scala IR
+	// counterpart. Configuration still requires the input's TypeChecked marker
+	// after applying overrides, so preserve these adaptation-level properties.
 	result.properties = cloneMap(module.properties)
 	return result, nil
 }

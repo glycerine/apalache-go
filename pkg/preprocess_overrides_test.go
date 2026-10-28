@@ -80,3 +80,15 @@ func TestRewriteOverridesRejectsInvalidTargets(t *testing.T) {
 		}
 	}
 }
+
+func TestRewriteOverridesReportsCyclesAsConfigurationErrors(t *testing.T) {
+	operatorType := mustOperator(nil, IntT1)
+	original := NewOperDecl("F", nil, intLiteral(0), Typed(operatorType))
+	override := NewOperDecl("OVERRIDE_F", nil, untypedApp("G"), Typed(operatorType))
+	g := NewOperDecl("G", nil, untypedApp("F"), Typed(operatorType))
+	_, err := RewriteOverrides(NewModule("M", []Decl{original, override, g}), nil)
+	var configurationError *ConfigurationError
+	if !errors.As(err, &configurationError) || !strings.Contains(err.Error(), "cyclic dependency") {
+		t.Fatalf("cycle error = %T %v", err, err)
+	}
+}
