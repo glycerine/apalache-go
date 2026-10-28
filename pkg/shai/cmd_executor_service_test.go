@@ -185,3 +185,53 @@ func TestCmdExecutorRejectsUnsafeAndMalformedRequests(t *testing.T) {
 		t.Fatalf("unknown config = %v", err)
 	}
 }
+
+func TestRemoteConfigValidatorMatchesScalaFilesystemBoundary(t *testing.T) {
+	unsafe := map[string]string{
+		"$.config-file":    `{"config-file":"config.json"}`,
+		"$.out-dir":        `{"out-dir":"out"}`,
+		"$.run-dir":        `{"run-dir":"run"}`,
+		"$.output":         `{"output":"output.tla"}`,
+		"$.source":         `{"source":"input.tla"}`,
+		"$.checker.config": `{"checker":{"config":"M.cfg"}}`,
+		"$.tracee.trace":   `{"tracee":{"trace":"trace.itf.json"}}`,
+	}
+	for path, document := range unsafe {
+		t.Run(path, func(t *testing.T) {
+			if _, err := parseRemoteCommandConfig(document); err == nil || !strings.Contains(err.Error(), path) {
+				t.Fatalf("unsafe configuration error = %v, want path %s", err, path)
+			}
+		})
+	}
+	for key := range shaiFileWritingTuningKeys {
+		document, err := json.Marshal(map[string]any{"checker": map[string]any{
+			"tuning": map[string]string{key: "true"},
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = parseRemoteCommandConfig(string(document)); err == nil || !strings.Contains(err.Error(), key) {
+			t.Fatalf("file-writing tuning %s error = %v", key, err)
+		}
+	}
+}
+
+func TestRemoteConfigValidatorAcceptsMemorySourceAndRejectsLegacyShape(t *testing.T) {
+	document := `{"source":{"kind":"string","content":"---- MODULE M ----\n====","aux":[],"format":"tla"},` +
+		`"checker":{"length":3,"tuning":{"search.invariant.mode":"before"}}}`
+	config, err := parseRemoteCommandConfig(document)
+	if err != nil || config.parsedSource == nil || config.parsedSource.content() != "---- MODULE M ----\n====" ||
+		config.Checker.Length == nil || *config.Checker.Length != 3 {
+		t.Fatalf("in-memory remote configuration = %#v, %v", config, err)
+	}
+	for _, legacy := range []struct {
+		document, field string
+	}{
+		{`{"input":{"source":{"type":"string","content":"module M {}","format":"qnt"}}}`, "input"},
+		{`{"checker":{"temporal-props":["q::temporalProps"]}}`, "temporal-props"},
+	} {
+		if _, err = parseRemoteCommandConfig(legacy.document); err == nil || !strings.Contains(err.Error(), legacy.field) {
+			t.Fatalf("legacy field %s error = %v", legacy.field, err)
+		}
+	}
+}
