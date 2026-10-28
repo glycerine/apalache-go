@@ -173,7 +173,7 @@ tlair/src/test/scala/at/forsyte/apalache/tla/lir/TestSourcePosition.scala	ported
 tlair/src/test/scala/at/forsyte/apalache/tla/lir/TestSourceRegion.scala	partial	ir_*_test.go;types_*_test.go;operator_test.go;transform_*_test.go	case-by-case Scala assertion mapping remains
 tlair/src/test/scala/at/forsyte/apalache/tla/lir/TestTlaExpr.scala	partial	ir_*_test.go;types_*_test.go;operator_test.go;transform_*_test.go	case-by-case Scala assertion mapping remains
 tlair/src/test/scala/at/forsyte/apalache/tla/lir/TestTlaLevelFinder.scala	partial	ir_*_test.go;types_*_test.go;operator_test.go;transform_*_test.go	case-by-case Scala assertion mapping remains
-tlair/src/test/scala/at/forsyte/apalache/tla/lir/TestTlaType1.scala	partial	ir_*_test.go;types_*_test.go;operator_test.go;transform_*_test.go	case-by-case Scala assertion mapping remains
+tlair/src/test/scala/at/forsyte/apalache/tla/lir/TestTlaType1.scala	ported	ir_type_test.go	all canonical Type System 1 and ADR-014 string cases are mapped exactly: primitives, constants, numbered/named variables, sets, sequences, functions, tuples, sorted records, operators, open/closed rows, row records, and sorted open/closed variants
 tlair/src/test/scala/at/forsyte/apalache/tla/lir/TestTransformations.scala	partial	ir_*_test.go;types_*_test.go;operator_test.go;transform_*_test.go	case-by-case Scala assertion mapping remains
 tlair/src/test/scala/at/forsyte/apalache/tla/lir/TlaType1Gen.scala	partial	ir_*_test.go;types_*_test.go;operator_test.go;transform_*_test.go	case-by-case Scala assertion mapping remains
 tlair/src/test/scala/at/forsyte/apalache/tla/lir/src/TestRegionTree.scala	partial	ir_*_test.go;types_*_test.go;operator_test.go;transform_*_test.go	case-by-case Scala assertion mapping remains
