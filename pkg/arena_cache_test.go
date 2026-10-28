@@ -28,6 +28,46 @@ func TestIntValueCacheStoresValuesAndConstraints(t *testing.T) {
 	}
 }
 
+func TestIntValueCacheScalaOracleCases(t *testing.T) {
+	cache := NewIntValueCache()
+	arena := EmptyPureArena()
+	if _, found := cache.Get(big.NewInt(42)); found {
+		t.Fatal("uncached integer 42 was found")
+	}
+	firstArena, fortyTwo, err := cache.GetOrCreate(arena, big.NewInt(42))
+	if err != nil || firstArena == arena {
+		t.Fatalf("first insertion = arena %p, cell %v, error %v", firstArena, fortyTwo, err)
+	}
+	secondArena, same, err := cache.GetOrCreate(firstArena, big.NewInt(42))
+	if err != nil || secondArena != firstArena || !same.Equal(fortyTwo) {
+		t.Fatalf("repeated insertion = arena %p, cell %v, error %v", secondArena, same, err)
+	}
+	finalArena, zero, err := cache.GetOrCreate(secondArena, big.NewInt(0))
+	if err != nil || finalArena == secondArena {
+		t.Fatalf("second value insertion = arena %p, cell %v, error %v", finalArena, zero, err)
+	}
+	constraints := cache.Constraints()
+	if len(constraints) != 2 {
+		t.Fatalf("integer constraints = %v", constraints)
+	}
+	for _, test := range []struct {
+		cell ArenaCell
+		want int64
+	}{{fortyTwo, 42}, {zero, 0}} {
+		found := false
+		for _, constraint := range constraints {
+			arguments := constraint.(*OperExpr).Arguments()
+			if arguments[0].(*NameExpr).Name() == test.cell.NameExpr().Name() &&
+				arguments[1].(*ValueExpr).Value().(IntValue).BigInt().Int64() == test.want {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("missing equality for %v = %d", test.cell, test.want)
+		}
+	}
+}
+
 func TestArenaCacheStackDiscipline(t *testing.T) {
 	cache := NewIntValueCache()
 	arena := EmptyPureArena()
@@ -121,6 +161,53 @@ func TestIntRangeCacheBuildsAndReusesArenaSets(t *testing.T) {
 	emptyArena, empty, err := cache.GetOrCreate(arena, 10, 2)
 	if err != nil || len(empty.Elements) != 0 || emptyArena.CellCount() != arena.CellCount()+1 {
 		t.Fatalf("empty range = %#v, %v", empty, err)
+	}
+}
+
+func TestIntRangeCacheScalaOracleCases(t *testing.T) {
+	integers := NewIntValueCache()
+	cache := NewIntRangeCache(integers)
+	base := EmptyPureArena()
+	if _, found := cache.Get(1, 5); found {
+		t.Fatal("uncached range 1..5 was found")
+	}
+	arena, oneToFive, err := cache.GetOrCreate(base, 1, 5)
+	if err != nil || len(oneToFive.Elements) != 5 || arena == base {
+		t.Fatalf("range 1..5 = %#v, arena %p, error %v", oneToFive, arena, err)
+	}
+	sameArena, same, err := cache.GetOrCreate(arena, 1, 5)
+	if err != nil || sameArena != arena || !same.Set.Equal(oneToFive.Set) {
+		t.Fatalf("reused range = %#v, arena %p, error %v", same, sameArena, err)
+	}
+
+	emptyArena, empty, err := cache.GetOrCreate(base, 5, 1)
+	if err != nil || len(empty.Elements) != 0 {
+		t.Fatalf("empty 5..1 = %#v, %v", empty, err)
+	}
+	otherEmptyArena, otherEmpty, err := cache.GetOrCreate(base, 1203134, -221)
+	if err != nil || len(otherEmpty.Elements) != 0 || !otherEmpty.Set.Equal(empty.Set) ||
+		otherEmptyArena.CellCount() != emptyArena.CellCount() {
+		t.Fatalf("second empty range = %#v, count %d, error %v", otherEmpty, otherEmptyArena.CellCount(), err)
+	}
+
+	constraintInts := NewIntValueCache()
+	constraintCache := NewIntRangeCache(constraintInts)
+	a1, r1, _ := constraintCache.GetOrCreate(base, 0, 10)
+	constraintCache.GetOrCreate(base, 0, 10)
+	a2, r2, _ := constraintCache.GetOrCreate(a1, 3, 7)
+	constraintCache.GetOrCreate(a1, 3, 7)
+	_, r3, _ := constraintCache.GetOrCreate(a2, 100, 0)
+	constraints := constraintCache.Constraints()
+	if len(constraints) != len(r1.Elements)+len(r2.Elements)+len(r3.Elements) || len(constraints) != 16 {
+		t.Fatalf("range constraints = %d, want 16", len(constraints))
+	}
+	if len(constraintInts.Constraints()) != 11 {
+		t.Fatalf("dependent integer constraints = %d, want 11 when discharged separately", len(constraintInts.Constraints()))
+	}
+	for _, constraint := range constraints {
+		if constraint.(*OperExpr).Operator().Name() != "SET_IN" {
+			t.Fatalf("range constraint = %v", constraint)
+		}
 	}
 }
 
