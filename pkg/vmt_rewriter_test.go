@@ -66,10 +66,22 @@ func TestVMTRewriterBooleanAndQuantifierRules(t *testing.T) {
 	rewriter, typ, _ := newTestVMTRewriter(t)
 	p := NewNameExpr("p", Typed(BoolT1))
 	q := NewNameExpr("q", Typed(BoolT1))
-	and := MustOperExpr(Op("AND"), Typed(BoolT1), p,
-		MustOperExpr(Op("NOT"), Typed(BoolT1), q))
-	if got := rewriteVMTText(t, rewriter, and); got != "(and p (not q))" {
-		t.Fatalf("Boolean rewrite = %q", got)
+	booleanCases := []struct {
+		name       string
+		expression Expr
+		want       string
+	}{
+		{"and", MustOperExpr(Op("AND"), Typed(BoolT1), p, q), "(and p q)"},
+		{"not", MustOperExpr(Op("NOT"), Typed(BoolT1), p), "(not p)"},
+		{"or-implies", MustOperExpr(Op("OR"), Typed(BoolT1),
+			MustOperExpr(Op("IMPLIES"), Typed(BoolT1), p, q), p), "(or (=> p q) p)"},
+	}
+	for _, test := range booleanCases {
+		t.Run(test.name, func(t *testing.T) {
+			if got := rewriteVMTText(t, rewriter, test.expression); got != test.want {
+				t.Fatalf("Boolean rewrite = %q, want %q", got, test.want)
+			}
+		})
 	}
 
 	x := NewNameExpr("x", Typed(typ))
