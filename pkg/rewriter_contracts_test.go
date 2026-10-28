@@ -89,3 +89,17 @@ func TestExistingCachesImplementRecoverable(t *testing.T) {
 	var _ Recoverable[ExpressionCacheSnapshot] = (*ExpressionCache)(nil)
 	var _ Recoverable[EqualityCacheSnapshot] = (*EqualityCache)(nil)
 }
+
+func TestStratifiedRewriterImplementsRewriterContract(t *testing.T) {
+	var rewriter Rewriter = NewStratifiedRewriter()
+	constraint := NewValueExpr(BoolValue(true), Typed(BoolT1))
+	rewriter.Assert(constraint)
+	concrete := rewriter.(*StratifiedRewriter)
+	if got := concrete.Constraints(); len(got) != 1 || got[0] != constraint {
+		t.Fatalf("asserted constraints = %+v", got)
+	}
+	scope, cell, err := rewriter.Rewrite(NewValueExpr(Int64Value(1), Typed(IntT1)), InitialRewriterScope())
+	if err != nil || scope.Arena == nil || cell.ID < 0 {
+		t.Fatalf("rewrite = scope %+v, cell %v, error %v", scope, cell, err)
+	}
+}

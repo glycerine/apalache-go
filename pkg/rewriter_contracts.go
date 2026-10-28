@@ -86,3 +86,9 @@ type SymbolicStateRewriterListener interface {
 	OnRewrite(translated Expr, metricsDelta SolverContextMetrics)
 	Dispose()
 }
+
+// Rewriter is the solver-independent stratified rewriting boundary.
+type Rewriter interface {
+	Rewrite(expression Expr, startingScope RewriterScope) (RewriterScope, ArenaCell, error)
+	Assert(expression Expr)
+}

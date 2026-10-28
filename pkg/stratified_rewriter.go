@@ -71,6 +71,9 @@ func (rewriter *StratifiedRewriter) assert(expression Expr) {
 	rewriter.constraints = append(rewriter.constraints, expression)
 }
 
+// Assert records one Boolean constraint as a rewriter side effect.
+func (rewriter *StratifiedRewriter) Assert(expression Expr) { rewriter.assert(expression) }
+
 func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
 	if expression == nil || scope.Arena == nil {
 		return scope, ArenaCell{}, fmt.Errorf("stratified rewriting requires an expression and arena")
