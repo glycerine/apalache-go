@@ -2392,4 +2392,24 @@ func TestStratifiedLetRuleSequentialScopeShadowingAndParameterizedRejection(t *t
 	if err == nil || returned.Arena != base.Arena {
 		t.Fatalf("parameterized LET returned scope=%v, err=%v", returned, err)
 	}
+
+	residualCalls := []struct {
+		name       string
+		expression Expr
+	}{
+		{"parameterized", MustOperExpr(Op("OPER_APP"), Typed(IntT1),
+			NewNameExpr("F", Typed(parameterizedType)), intLiteral(1))},
+		{"non-name callee", MustOperExpr(Op("OPER_APP"), Typed(IntT1),
+			NewValueExpr(Int64Value(1), Typed(parameterizedType)))},
+		{"unbound", MustOperExpr(Op("OPER_APP"), Typed(IntT1),
+			NewNameExpr("missing", Typed(nullaryInt)))},
+	}
+	for _, test := range residualCalls {
+		t.Run(test.name, func(t *testing.T) {
+			returned, _, err := NewStratifiedRewriter().Rewrite(test.expression, base)
+			if err == nil || returned.Arena != base.Arena {
+				t.Fatalf("invalid residual call returned scope=%v, err=%v", returned, err)
+			}
+		})
+	}
 }
