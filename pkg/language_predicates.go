@@ -293,6 +293,115 @@ func checkKeraInContext(context map[string]struct{}, expression Expr) PredicateR
 	return PredicateFail(expression.ID(), formatted)
 }
 
+type KeramelizerInputLanguagePredicate struct{}
+
+func (KeramelizerInputLanguagePredicate) LanguagePredicateName() string {
+	return "KeramelizerInputLanguagePred"
+}
+
+var keramelizerNameFirstOperators = nameSet("EXISTS3", "FORALL3", "CHOOSE3", "SET_FILTER", "OPER_APP")
+
+func (KeramelizerInputLanguagePredicate) CheckExpression(expression Expr) PredicateResult {
+	return (FlatLanguagePredicate{}).CheckExpression(expression).
+		And(checkKeramelizerInputInContext(make(map[string]struct{}), expression))
+}
+
+func (predicate KeramelizerInputLanguagePredicate) CheckModule(module *Module) PredicateResult {
+	result := PredicateOK()
+	for _, declaration := range module.OperDeclarations() {
+		result = result.And(predicate.CheckExpression(declaration.Body()))
+	}
+	return result
+}
+
+func keramelizerSetTypeResult(owner Expr, set Expr) PredicateResult {
+	typ, typed := set.Tag().Type()
+	if typed {
+		if _, isSet := typ.(SetType); isSet {
+			return PredicateOK()
+		}
+	}
+	return PredicateFail(owner.ID(), fmt.Sprintf("Expected a set, found: %s", set.Tag()))
+}
+
+func checkKeramelizerInputInContext(context map[string]struct{}, expression Expr) PredicateResult {
+	setArgumentsTyped := PredicateOK()
+	if operatorExpression, ok := expression.(*OperExpr); ok {
+		arguments := operatorExpression.Arguments()
+		switch operatorExpression.Operator().Name() {
+		case "SET_INTERSECT", "SET_MINUS":
+			setArgumentsTyped = keramelizerSetTypeResult(expression, arguments[0])
+		case "RECORD_SET":
+			setArgumentsTyped = keramelizerSetTypeResult(expression, expression)
+			for index := 1; index < len(arguments); index += 2 {
+				setArgumentsTyped = setArgumentsTyped.And(keramelizerSetTypeResult(expression, arguments[index]))
+			}
+		case "SET_TIMES":
+			for _, set := range arguments {
+				setArgumentsTyped = setArgumentsTyped.And(keramelizerSetTypeResult(expression, set))
+			}
+		case "SET_IN":
+			if len(arguments) == 2 {
+				if prime, ok := arguments[0].(*OperExpr); ok && prime.Operator().Name() == "PRIME" {
+					primeArguments := prime.Arguments()
+					if len(primeArguments) == 1 {
+						if _, isName := primeArguments[0].(*NameExpr); isName {
+							setArgumentsTyped = keramelizerSetTypeResult(expression, arguments[1])
+						}
+					}
+				}
+			}
+		}
+	}
+
+	validInput := PredicateOK()
+	switch typed := expression.(type) {
+	case *OperExpr:
+		name := typed.Operator().Name()
+		arguments := typed.Arguments()
+		if _, requiresName := keramelizerNameFirstOperators[name]; requiresName && len(arguments) > 0 {
+			if _, isName := arguments[0].(*NameExpr); !isName {
+				argumentText, argumentErr := FormatUTFExpression(arguments[0])
+				if argumentErr != nil {
+					argumentText = fmt.Sprintf("%T", arguments[0])
+				}
+				expressionText, expressionErr := FormatUTFExpression(expression)
+				if expressionErr != nil {
+					expressionText = fmt.Sprintf("%T", expression)
+				}
+				validInput = PredicateFail(expression.ID(), fmt.Sprintf("first argument not a name: %s of %s", argumentText, expressionText))
+			} else {
+				validInput = checkKeramelizerInputArguments(context, arguments[1:])
+			}
+		} else if name == "Sequences!Seq" {
+			validInput = PredicateFail(expression.ID(), "Seq(_) produces an infinite set of unbounded sequences. See: "+keraSequenceManualLink)
+		} else {
+			validInput = checkKeramelizerInputArguments(context, arguments)
+		}
+	case *LetInExpr:
+		definitionsResult := PredicateOK()
+		definitionContext := cloneMap(context)
+		for _, declaration := range typed.Declarations() {
+			definitionsResult = definitionsResult.And(checkKeramelizerInputInContext(definitionContext, declaration.Body()))
+			definitionContext[declaration.Name()] = struct{}{}
+		}
+		bodyContext := cloneMap(context)
+		for _, declaration := range typed.Declarations() {
+			bodyContext[declaration.Name()] = struct{}{}
+		}
+		validInput = definitionsResult.And(checkKeramelizerInputInContext(bodyContext, typed.Body()))
+	}
+	return setArgumentsTyped.And(validInput)
+}
+
+func checkKeramelizerInputArguments(context map[string]struct{}, arguments []Expr) PredicateResult {
+	result := PredicateOK()
+	for _, argument := range arguments {
+		result = result.And(checkKeramelizerInputInContext(context, argument))
+	}
+	return result
+}
+
 // ReTLALanguagePredicate accepts the restricted expression language consumed
 // by the transition disassembler and VMT backend. User operators must already
 // be inlined, except for nullary operators introduced by a surrounding LET-IN.
