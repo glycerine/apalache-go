@@ -47,6 +47,16 @@ func (rewriter *StratifiedRewriter) rewriteIntegerRange(expression *OperExpr, sc
 	if len(arguments) != 2 {
 		return scope, ArenaCell{}, fmt.Errorf("integer range requires two bounds")
 	}
+	resultType, typed := expression.Tag().Type()
+	if !typed || !EqualTypes(resultType, mustSet(IntT1)) {
+		return scope, ArenaCell{}, fmt.Errorf("integer range must have type Set(Int), found %v", resultType)
+	}
+	for _, argument := range arguments {
+		argumentType, argumentTyped := argument.Tag().Type()
+		if !argumentTyped || !EqualTypes(argumentType, IntT1) {
+			return scope, ArenaCell{}, fmt.Errorf("integer range bounds must have type Int, found %v", argumentType)
+		}
+	}
 	left, leftOK := constantInteger(arguments[0])
 	right, rightOK := constantInteger(arguments[1])
 	if !leftOK || !rightOK {

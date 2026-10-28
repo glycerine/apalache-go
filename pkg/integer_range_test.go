@@ -1,6 +1,9 @@
 package apalache
 
-import "testing"
+import (
+	"math/big"
+	"testing"
+)
 
 func TestStratifiedIntegerRangesThroughG3(t *testing.T) {
 	intValue := func(value int64) Expr { return NewValueExpr(Int64Value(value), Typed(IntT1)) }
@@ -138,4 +141,22 @@ func TestStratifiedEmptySymbolicIntegerRangeChoiceUsesDefault(t *testing.T) {
 		t.Fatal(err)
 	}
 	checkRewrittenTruth(t, rewriter, scope, result, true)
+}
+
+func TestStratifiedIntegerRangeRejectsInvalidTypesAndOversizedBounds(t *testing.T) {
+	setType := mustSet(IntT1)
+	huge := new(big.Int).Lsh(big.NewInt(1), 100)
+	invalid := []Expr{
+		MustOperExpr(Op("INT_RANGE"), Typed(IntT1), intLiteral(1), intLiteral(2)),
+		MustOperExpr(Op("INT_RANGE"), Typed(setType), boolExpr(true), intLiteral(2)),
+		MustOperExpr(Op("INT_RANGE"), Typed(setType),
+			NewValueExpr(NewIntValue(huge), Typed(IntT1)), intLiteral(2)),
+	}
+	for _, expression := range invalid {
+		base := InitialRewriterScope()
+		returned, _, err := NewStratifiedRewriter().Rewrite(expression, base)
+		if err == nil || returned.Arena != base.Arena {
+			t.Fatalf("invalid integer range returned scope=%v, err=%v", returned, err)
+		}
+	}
 }
