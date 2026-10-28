@@ -63,8 +63,8 @@ tla-assignments/src/main/scala/at/forsyte/apalache/tla/assignments/AssignmentOpe
 tla-assignments/src/main/scala/at/forsyte/apalache/tla/assignments/ModuleAdapter.scala	partial	assignments*.go	remaining assignment suite mapping is open
 tla-assignments/src/main/scala/at/forsyte/apalache/tla/assignments/SmtFreeSymbolicTransitionExtractor.scala	partial	assignments*.go	remaining assignment suite mapping is open
 tla-assignments/src/main/scala/at/forsyte/apalache/tla/assignments/SymbTransGenerator.scala	partial	assignments*.go	remaining assignment suite mapping is open
-tla-assignments/src/main/scala/at/forsyte/apalache/tla/assignments/exceptions.scala	partial	assignments*.go	remaining assignment suite mapping is open
-tla-assignments/src/main/scala/at/forsyte/apalache/tla/assignments/package.scala	partial	assignments*.go	remaining assignment suite mapping is open
+tla-assignments/src/main/scala/at/forsyte/apalache/tla/assignments/exceptions.scala	ported	assignments.go;assignments_contracts_test.go;assignments_strategy_test.go	typed assignment exception preserves its diagnostic verbatim and classifies every strategy/transition failure through errors.As
+tla-assignments/src/main/scala/at/forsyte/apalache/tla/assignments/package.scala	ported	assignments.go;assignments_contracts_test.go;assignments_transitions.go	variable, ordered UID strategy/assignment, and symbolic-transition pair aliases map directly to the Go implementation with identity and order preserved
 tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/Arena.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
 tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/Binding.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
 tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/Checker.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain

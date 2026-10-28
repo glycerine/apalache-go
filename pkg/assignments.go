@@ -7,12 +7,22 @@ import (
 
 type AssignmentStrategy []UID
 
+// Scala package-object compatibility aliases. AssignmentStrategy is the
+// idiomatic Go name used by the implementation.
+type Var = string
+type StrategyType = AssignmentStrategy
+type AssignmentType = AssignmentStrategy
+
 type SymbolicTransition struct {
 	Assignments AssignmentStrategy
 	Expression  Expr
 }
 
+type SymbTrans = SymbolicTransition
+
 type AssignmentError struct{ Message string }
+
+type AssignmentException = AssignmentError
 
 func (err *AssignmentError) Error() string { return err.Message }
 
