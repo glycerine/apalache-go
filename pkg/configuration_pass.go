@@ -31,6 +31,46 @@ type DerivedPredicates struct {
 	Persistent         []string
 }
 
+// Configure atomically replaces the cross-pass predicate catalog. Empty
+// cinit and view strings represent Scala's None values.
+func (predicates *DerivedPredicates) Configure(
+	init, next, cinit, view string,
+	invariants, temporalProperties, persistent []string,
+) {
+	if predicates == nil {
+		return
+	}
+	predicates.Init = init
+	predicates.Next = next
+	predicates.ConstantInit = cinit
+	predicates.View = view
+	predicates.Invariants = append([]string(nil), invariants...)
+	predicates.TemporalProperties = append([]string(nil), temporalProperties...)
+	predicates.Persistent = append([]string(nil), persistent...)
+	// These are Go extensions to Scala's catalog and must not leak from a
+	// previous specification when the shared catalog is reconfigured.
+	predicates.StateConstraints = nil
+	predicates.ActionConstraints = nil
+}
+
+func (predicates *DerivedPredicates) SetConstantInit(name string) {
+	if predicates != nil {
+		predicates.ConstantInit = name
+	}
+}
+
+func (predicates *DerivedPredicates) AddInvariants(names ...string) {
+	if predicates != nil {
+		predicates.Invariants = append(predicates.Invariants, names...)
+	}
+}
+
+func (predicates *DerivedPredicates) AddPersistent(names ...string) {
+	if predicates != nil {
+		predicates.Persistent = append(predicates.Persistent, names...)
+	}
+}
+
 func (predicates DerivedPredicates) OperatorNames() []string {
 	result := []string{predicates.Init, predicates.Next}
 	for _, name := range []string{predicates.ConstantInit, predicates.View} {

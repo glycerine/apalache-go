@@ -16,6 +16,29 @@ func boolDefinition(name string, body Expr) *OperDecl {
 	return NewOperDecl(name, nil, body, Typed(mustOperator(nil, BoolT1)))
 }
 
+func TestDerivedPredicatesConfigurableContract(t *testing.T) {
+	invariants := []string{"Inv"}
+	temporal := []string{"Live"}
+	persistent := []string{"Keep"}
+	predicates := DerivedPredicates{StateConstraints: []string{"OldState"}, ActionConstraints: []string{"OldAction"}}
+	predicates.Configure("Init", "Next", "", "View", invariants, temporal, persistent)
+	invariants[0], temporal[0], persistent[0] = "mutated", "mutated", "mutated"
+	if got := predicates.OperatorNames(); strings.Join(got, ",") != "Init,Next,View,Inv,Live,Keep" {
+		t.Fatalf("operator names = %v", got)
+	}
+	if len(predicates.StateConstraints) != 0 || len(predicates.ActionConstraints) != 0 {
+		t.Fatalf("reconfiguration retained Go extensions: %#v", predicates)
+	}
+	predicates.SetConstantInit("CInit")
+	predicates.AddInvariants("GeneratedInv1", "GeneratedInv2")
+	predicates.AddPersistent("GeneratedHelper")
+	if predicates.ConstantInit != "CInit" ||
+		strings.Join(predicates.Invariants, ",") != "Inv,GeneratedInv1,GeneratedInv2" ||
+		strings.Join(predicates.Persistent, ",") != "Keep,GeneratedHelper" {
+		t.Fatalf("extended predicates = %#v", predicates)
+	}
+}
+
 func TestConfigureModuleWithoutTLCConfig(t *testing.T) {
 	truth := NewValueExpr(BoolValue(true), Typed(BoolT1))
 	module := configuredTestModule(
