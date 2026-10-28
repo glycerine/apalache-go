@@ -165,6 +165,54 @@ func TestParseSourcePopulatesNativeSourceLocations(t *testing.T) {
 	}
 }
 
+func TestParseSourcePopulatesAllDeclarationAndNestedDefinitionLocations(t *testing.T) {
+	result := ParseSource(context.Background(), "DefinitionSources.tla", `---- MODULE DefinitionSources ----
+CONSTANT C
+VARIABLE x
+Outer(a) == LET Inner(b) == b IN Inner(a)
+ASSUME C = C
+THEOREM Outer(C) = C
+====
+`, FrontendOptions{IncludeSource: true})
+	if !result.OK() {
+		t.Fatalf("ParseSource() diagnostics = %v", result.Diagnostics)
+	}
+	if result.Native == nil || result.Sources == nil {
+		t.Fatalf("missing native frontend result: %#v", result)
+	}
+	var checkNestedDefinitions func(Expr)
+	checkNestedDefinitions = func(expression Expr) {
+		switch typed := expression.(type) {
+		case *LetInExpr:
+			checkNestedDefinitions(typed.Body())
+			for _, declaration := range typed.Declarations() {
+				if _, found := result.Sources.Find(declaration.ID()); !found {
+					t.Errorf("nested declaration %s has no source location", declaration.Name())
+				}
+				if _, found := result.Sources.Find(declaration.Body().ID()); !found {
+					t.Errorf("nested declaration %s body has no source location", declaration.Name())
+				}
+				checkNestedDefinitions(declaration.Body())
+			}
+		case *OperExpr:
+			for _, argument := range typed.Arguments() {
+				checkNestedDefinitions(argument)
+			}
+		}
+	}
+	for _, declaration := range result.Native.Declarations() {
+		if _, found := result.Sources.Find(declaration.ID()); !found {
+			t.Errorf("declaration %s has no source location", declaration.Name())
+		}
+		if operator, ok := declaration.(*OperDecl); ok {
+			if _, found := result.Sources.Find(operator.Body().ID()); !found {
+				t.Errorf("operator %s body has no source location", operator.Name())
+			}
+			checkNestedDefinitions(operator.Body())
+		}
+	}
+}
+
 func TestParseSourceAcceptsApalacheAssignmentSyntax(t *testing.T) {
 	result := ParseSource(context.Background(), "Assignments.tla", `---- MODULE Assignments ----
 EXTENDS Apalache
