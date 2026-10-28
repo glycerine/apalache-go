@@ -223,7 +223,7 @@ func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope
 		case "Apalache!Gen":
 			return rewriter.rewriteGenerate(typed, scope)
 		case "Apalache!ConstCardinality":
-			return rewriter.rewriteTransparentUnary(typed, scope, "ConstCardinality")
+			return rewriter.rewriteConstCardinality(typed, scope)
 		case "PRIME":
 			return rewriter.rewritePrime(typed, scope)
 		case "OPER_APP":
@@ -290,6 +290,40 @@ func (rewriter *StratifiedRewriter) rewriteTransparentUnary(
 		return scope, ArenaCell{}, fmt.Errorf("%s requires one operand", name)
 	}
 	return rewriter.Rewrite(arguments[0], scope)
+}
+
+func (rewriter *StratifiedRewriter) rewriteConstCardinality(
+	expression *OperExpr, scope RewriterScope,
+) (RewriterScope, ArenaCell, error) {
+	arguments := expression.Arguments()
+	resultType, resultTyped := expression.Tag().Type()
+	if len(arguments) != 1 || !resultTyped || !EqualTypes(resultType, BoolT1) {
+		return scope, ArenaCell{}, fmt.Errorf("ConstCardinality must be a typed Boolean wrapper with one operand")
+	}
+	comparison, ok := arguments[0].(*OperExpr)
+	if !ok || comparison.Operator().Name() != "GE" || len(comparison.Arguments()) != 2 {
+		return scope, ArenaCell{}, fmt.Errorf("ConstCardinality requires Cardinality(S) >= integer")
+	}
+	comparisonType, comparisonTyped := comparison.Tag().Type()
+	comparisonArguments := comparison.Arguments()
+	cardinality, cardinalityOK := comparisonArguments[0].(*OperExpr)
+	threshold, thresholdOK := comparisonArguments[1].(*ValueExpr)
+	if !comparisonTyped || !EqualTypes(comparisonType, BoolT1) || !cardinalityOK ||
+		cardinality.Operator().Name() != "FiniteSets!Cardinality" || len(cardinality.Arguments()) != 1 || !thresholdOK {
+		return scope, ArenaCell{}, fmt.Errorf("ConstCardinality requires Cardinality(S) >= integer")
+	}
+	cardinalityType, cardinalityTyped := cardinality.Tag().Type()
+	setType, setTyped := cardinality.Arguments()[0].Tag().Type()
+	thresholdType, thresholdTyped := threshold.Tag().Type()
+	_, setOK := setType.(SetType)
+	_, integerOK := threshold.Value().(IntValue)
+	if !cardinalityTyped || !EqualTypes(cardinalityType, IntT1) || !setTyped || !setOK ||
+		!thresholdTyped || !EqualTypes(thresholdType, IntT1) || !integerOK {
+		return scope, ArenaCell{}, fmt.Errorf("ConstCardinality requires a typed finite-set cardinality and integer threshold")
+	}
+	// The ordinary cardinality encoding already supplies the same witnesses:
+	// active, structurally distinct elements contribute exactly one to its sum.
+	return rewriter.Rewrite(comparison, scope)
 }
 
 func (rewriter *StratifiedRewriter) rewritePrime(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {

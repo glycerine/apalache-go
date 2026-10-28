@@ -557,6 +557,28 @@ func TestStratifiedPrimeAndConstCardinalityWrapper(t *testing.T) {
 	checkRewrittenTruth(t, rewriter, scope, result, true)
 }
 
+func TestStratifiedConstCardinalityTypeErrorsDoNotMutateArena(t *testing.T) {
+	setType := mustSet(IntT1)
+	set := MustOperExpr(Op("SET_ENUM"), Typed(setType), intLiteral(1))
+	cardinality := MustOperExpr(Op("FiniteSets!Cardinality"), Typed(IntT1), set)
+	comparison := MustOperExpr(Op("GE"), Typed(BoolT1), cardinality, intLiteral(1))
+	for _, invalid := range []Expr{
+		MustOperExpr(Op("Apalache!ConstCardinality"), Untyped(), comparison),
+		MustOperExpr(Op("Apalache!ConstCardinality"), Typed(IntT1), comparison),
+		MustOperExpr(Op("Apalache!ConstCardinality"), Typed(BoolT1), boolExpr(true)),
+		MustOperExpr(Op("Apalache!ConstCardinality"), Typed(BoolT1),
+			MustOperExpr(Op("GE"), Typed(BoolT1), cardinality, NewNameExpr("n", Typed(IntT1)))),
+		MustOperExpr(Op("Apalache!ConstCardinality"), Typed(BoolT1),
+			MustOperExpr(Op("GE"), Typed(BoolT1), intLiteral(1), intLiteral(1))),
+	} {
+		base := InitialRewriterScope()
+		returned, _, err := NewStratifiedRewriter().Rewrite(invalid, base)
+		if err == nil || returned.Arena != base.Arena {
+			t.Fatalf("invalid ConstCardinality returned scope=%v, err=%v", returned, err)
+		}
+	}
+}
+
 func TestStratifiedPrimeRejectsArenaCells(t *testing.T) {
 	rewriter := NewStratifiedRewriter()
 	scope := InitialRewriterScope()
