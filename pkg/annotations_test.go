@@ -3,7 +3,10 @@ package apalache
 import (
 	"errors"
 	"math/big"
+	"math/rand"
 	"reflect"
+	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -67,5 +70,81 @@ func TestAnnotationRendering(t *testing.T) {
 	annotation := Annotation{Name: "sweet", Arguments: []AnnotationArg{AnnotationBoolean{Value: false}, AnnotationInteger{Value: big.NewInt(-2)}}}
 	if annotation.String() != "@sweet(false, -2)" || annotation.PrettyString() != annotation.String() {
 		t.Fatalf("rendered %q / %q", annotation.String(), annotation.PrettyString())
+	}
+}
+
+func TestParseAnnotationMatchesScalaRegressionCases(t *testing.T) {
+	variant := "@typeAlias: MESSAGE =\n  Req({ ask: Int })\n  | Ack({ success: Bool });"
+	parsed, err := ParseAnnotation(variant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "MESSAGE =\n Req({ ask: Int })\n | Ack({ success: Bool })"
+	if parsed.Name != "typeAlias" || parsed.Arguments[0].(AnnotationString).Text != want {
+		t.Fatalf("variant alias = %#v", parsed)
+	}
+	for _, input := range []string{
+		"\\* junk @greet(\"hello\", 2021, true) trailing",
+		"\n  @type: ACTION\n",
+		"@require(ConstInit)\n@ensure(Init)",
+	} {
+		if parsed, parseErr := ParseAnnotation(input); parseErr == nil {
+			t.Errorf("accepted regression input %q as %#v", input, parsed)
+		}
+	}
+}
+
+func TestParseAnnotationGeneratedGoodInputs(t *testing.T) {
+	random := rand.New(rand.NewSource(0xa6607))
+	for iteration := 0; iteration < 200; iteration++ {
+		name := generatedAnnotationWord(random, 1+random.Intn(12))
+		argumentCount := random.Intn(8)
+		var arguments []AnnotationArg
+		if argumentCount > 0 {
+			arguments = make([]AnnotationArg, argumentCount)
+		}
+		for index := range arguments {
+			switch random.Intn(4) {
+			case 0:
+				arguments[index] = AnnotationString{Text: generatedAnnotationAlphaNumeric(random, random.Intn(20))}
+			case 1:
+				arguments[index] = AnnotationInteger{Value: big.NewInt(int64(random.Int31()) - int64(1<<30))}
+			case 2:
+				arguments[index] = AnnotationBoolean{Value: random.Intn(2) == 0}
+			default:
+				arguments[index] = AnnotationIdentifier{Name: generatedAnnotationWord(random, 1+random.Intn(12))}
+			}
+		}
+		annotation := Annotation{Name: name, Arguments: arguments}
+		parsed, err := ParseAnnotation(annotation.String())
+		if err != nil || !reflect.DeepEqual(parsed, annotation) {
+			t.Fatalf("iteration %d parse(%q) = %#v, %v; want %#v", iteration, annotation.String(), parsed, err, annotation)
+		}
+	}
+}
+
+func generatedAnnotationWord(random *rand.Rand, length int) string {
+	letters := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_"
+	continuation := letters + "0123456789"
+	var result strings.Builder
+	result.WriteByte(letters[random.Intn(len(letters))])
+	for index := 1; index < length; index++ {
+		result.WriteByte(continuation[random.Intn(len(continuation))])
+	}
+	return result.String()
+}
+
+func generatedAnnotationAlphaNumeric(random *rand.Rand, length int) string {
+	const alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	buffer := make([]byte, length)
+	for index := range buffer {
+		buffer[index] = alphabet[random.Intn(len(alphabet))]
+	}
+	return string(buffer)
+}
+
+func TestParseAnnotationGeneratedBadInputsDoNotPanic(t *testing.T) {
+	for index := 0; index < 300; index++ {
+		_, _ = ParseAnnotation(strconv.Itoa(index) + "not-an-annotation")
 	}
 }

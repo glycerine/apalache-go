@@ -131,6 +131,87 @@ type annotationParser struct {
 }
 
 func ParseAnnotation(text string) (Annotation, error) {
+	tokens, err := LexAnnotation(text)
+	if err != nil {
+		return Annotation{}, err
+	}
+	return parseAnnotationTokens(tokens)
+}
+
+func parseAnnotationTokens(tokens []AnnotationToken) (Annotation, error) {
+	at := 0
+	fail := func(message string) (Annotation, error) {
+		return Annotation{}, &AnnotationParseError{Offset: at, Message: message}
+	}
+	if len(tokens) == 0 || tokens[0].Kind != AnnotationAtIdentifierToken {
+		return fail("expected @identifier")
+	}
+	result := Annotation{Name: tokens[0].Text}
+	at = 1
+	if at == len(tokens) {
+		return result, nil
+	}
+	if tokens[at].Kind == AnnotationInlineStringToken {
+		result.Arguments = []AnnotationArg{AnnotationString{Text: tokens[at].Text}}
+		at++
+		if at != len(tokens) {
+			return fail("unexpected trailing input")
+		}
+		return result, nil
+	}
+	if tokens[at].Kind != AnnotationLeftParenToken {
+		return fail("expected annotation arguments")
+	}
+	at++
+	if at < len(tokens) && tokens[at].Kind == AnnotationRightParenToken {
+		at++
+		if at != len(tokens) {
+			return fail("unexpected trailing input")
+		}
+		return result, nil
+	}
+	for {
+		if at >= len(tokens) {
+			return fail("expected argument")
+		}
+		token := tokens[at]
+		var argument AnnotationArg
+		switch token.Kind {
+		case AnnotationStringToken:
+			argument = AnnotationString{Text: token.Text}
+		case AnnotationIdentifierToken:
+			argument = AnnotationIdentifier{Name: token.Text}
+		case AnnotationNumberToken:
+			argument = AnnotationInteger{Value: new(big.Int).Set(token.Number)}
+		case AnnotationBooleanToken:
+			argument = AnnotationBoolean{Value: token.Boolean}
+		default:
+			return fail("expected string, integer, Boolean, or identifier")
+		}
+		result.Arguments = append(result.Arguments, argument)
+		at++
+		if at < len(tokens) && tokens[at].Kind == AnnotationRightParenToken {
+			at++
+			break
+		}
+		for at < len(tokens) && tokens[at].Kind == AnnotationNewlineToken {
+			at++
+		}
+		if at >= len(tokens) || tokens[at].Kind != AnnotationCommaToken {
+			return fail("expected ',' or ')'")
+		}
+		at++
+		for at < len(tokens) && tokens[at].Kind == AnnotationNewlineToken {
+			at++
+		}
+	}
+	if at != len(tokens) {
+		return fail("unexpected trailing input")
+	}
+	return result, nil
+}
+
+func parseAnnotationDirect(text string) (Annotation, error) {
 	p := annotationParser{text: text}
 	p.space(false)
 	if !p.consume('@') {
