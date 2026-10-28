@@ -337,6 +337,62 @@ func (importer quintJSONImporter) expression(expression quintJSONExpr) (Expr, er
 			return NewOperExpr(Op("NOT"), Typed(typ), arguments...)
 		case "matchVariant":
 			return convertQuintMatchVariant(arguments, typ)
+		case "Map":
+			functionType, ok := typ.(FunType)
+			if !ok {
+				return nil, fmt.Errorf("Map has non-function type %s", typ)
+			}
+			pairType := mustTuple(functionType.Argument(), functionType.Result())
+			pairs := MustOperExpr(Op("SET_ENUM"), Typed(mustSet(pairType)), arguments...)
+			return NewOperExpr(Op("Apalache!SetAsFun"), Typed(typ), pairs)
+		case "fold", "foldl":
+			if len(arguments) != 3 {
+				return nil, fmt.Errorf("%s expects three arguments, found %d", expression.Opcode, len(arguments))
+			}
+			operator := "Apalache!ApaFoldSet"
+			if expression.Opcode == "foldl" {
+				operator = "Apalache!ApaFoldSeqLeft"
+			}
+			return NewOperExpr(Op(operator), Typed(typ), arguments[2], arguments[1], arguments[0])
+		case "nth":
+			if len(arguments) != 2 {
+				return nil, fmt.Errorf("nth expects two arguments, found %d", len(arguments))
+			}
+			index := MustOperExpr(Op("PLUS"), Typed(IntT1), arguments[1], NewValueExpr(Int64Value(1), Typed(IntT1)))
+			return NewOperExpr(Op("FUN_APP"), Typed(typ), arguments[0], index)
+		case "replaceAt", "slice":
+			if len(arguments) != 3 {
+				return nil, fmt.Errorf("%s expects three arguments, found %d", expression.Opcode, len(arguments))
+			}
+			from := MustOperExpr(Op("PLUS"), Typed(IntT1), arguments[1], NewValueExpr(Int64Value(1), Typed(IntT1)))
+			if expression.Opcode == "slice" {
+				return NewOperExpr(Op("Sequences!SubSeq"), Typed(typ), arguments[0], from, arguments[2])
+			}
+			path := MustOperExpr(Op("TUPLE"), Typed(mustTuple(IntT1)), from)
+			return NewOperExpr(Op("EXCEPT"), Typed(typ), arguments[0], path, arguments[2])
+		case "set", "with":
+			if len(arguments) != 3 {
+				return nil, fmt.Errorf("%s expects three arguments, found %d", expression.Opcode, len(arguments))
+			}
+			keyType := mustTagType(arguments[1].Tag())
+			path := MustOperExpr(Op("TUPLE"), Typed(mustTuple(keyType)), arguments[1])
+			return NewOperExpr(Op("EXCEPT"), Typed(typ), arguments[0], path, arguments[2])
+		case "setBy":
+			if len(arguments) != 3 {
+				return nil, fmt.Errorf("setBy expects three arguments, found %d", len(arguments))
+			}
+			functionType, ok := typ.(FunType)
+			if !ok {
+				return nil, fmt.Errorf("setBy has non-function type %s", typ)
+			}
+			keyType := mustTagType(arguments[1].Tag())
+			path := MustOperExpr(Op("TUPLE"), Typed(mustTuple(keyType)), arguments[1])
+			valueType := functionType.Result()
+			oldValue := MustOperExpr(Op("FUN_APP"), Typed(valueType), arguments[0], arguments[1])
+			newValue := MustOperExpr(Op("OPER_APP"), Typed(valueType), arguments[2], oldValue)
+			return NewOperExpr(Op("EXCEPT"), Typed(typ), arguments[0], path, newValue)
+		case "oneOf", "chooseSome", "indices", "put", "range", "select":
+			return nil, fmt.Errorf("unsupported Quint builtin opcode %q", expression.Opcode)
 		}
 		operator, found := quintSimpleOperators[expression.Opcode]
 		if !found {
@@ -448,7 +504,8 @@ var quintSimpleOperators = map[string]string{
 	"tuples": "SET_TIMES", "field": "FUN_APP", "fieldNames": "DOMAIN", "get": "FUN_APP",
 	"keys": "DOMAIN", "setOfMaps": "FUN_SET", "orKeep": "STUTTER",
 	"mustChange": "NO_STUTTER", "then": "COMPOSE",
-	"variant": "Variants!Variant",
+	"variant":  "Variants!Variant",
+	"setToMap": "Apalache!SetAsFun",
 }
 
 func convertQuintMatchVariant(arguments []Expr, resultType Type) (Expr, error) {
