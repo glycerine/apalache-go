@@ -3,6 +3,7 @@ package apalache
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -270,6 +271,140 @@ Value == Inc(1)
 	}
 	if _, found := OperatorBody(result.Native, "Inc"); !found {
 		t.Fatal("LOCAL INSTANCE definition Inc was omitted")
+	}
+}
+
+func TestParseSourcePreservesInstanceLookupOrder(t *testing.T) {
+	result := ParseSource(context.Background(), "InstanceLookup.tla", `---- MODULE InstanceLookup ----
+---- MODULE M ----
+a == {}
+b == a
+====
+a(self) == {self}
+I == INSTANCE M
+c == a(1)
+====
+`, FrontendOptions{})
+	if !result.OK() {
+		t.Fatalf("ParseSource() diagnostics = %v", result.Diagnostics)
+	}
+	instanceA, found := OperatorBody(result.Native, "I!a")
+	if !found || countOperator(instanceA, "SET_ENUM") != 1 {
+		t.Fatalf("I!a body = %#v", instanceA)
+	}
+	instanceB, found := OperatorBody(result.Native, "I!b")
+	if !found || countNamed(instanceB, "I!a") != 1 || countNamed(instanceB, "a") != 0 {
+		t.Fatalf("I!b body = %#v", instanceB)
+	}
+	rootC, found := OperatorBody(result.Native, "c")
+	if !found || countNamed(rootC, "a") != 1 || countNamed(rootC, "I!a") != 0 {
+		t.Fatalf("root c body = %#v", rootC)
+	}
+}
+
+func TestParseSourceKeepsInstantiatedLocalOperatorScoped(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		instance   string
+		exported   string
+		local      string
+		rootAccess string
+	}{
+		{name: "named", instance: "I == INSTANCE M", exported: "I!b", local: "I!a", rootAccess: "I!b"},
+		{name: "unqualified", instance: "INSTANCE M", exported: "b", local: "a", rootAccess: "b"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			source := fmt.Sprintf(`---- MODULE InstanceLocal ----
+---- MODULE M ----
+LOCAL a == {}
+b == a
+====
+%s
+c == %s
+====
+`, test.instance, test.rootAccess)
+			result := ParseSource(context.Background(), "InstanceLocal.tla", source, FrontendOptions{IncludeSource: true})
+			if !result.OK() {
+				t.Fatalf("ParseSource() diagnostics = %v", result.Diagnostics)
+			}
+			if _, found := declarationNamed(result.Native, test.local); found {
+				t.Fatalf("LOCAL instance operator %s leaked into root declarations", test.local)
+			}
+			declaration, found := declarationNamed(result.Native, test.exported)
+			operator, ok := declaration.(*OperDecl)
+			if !found || !ok {
+				t.Fatalf("%s declaration = %#v; declarations = %v", test.exported, declaration, declarationNames(result.Native))
+			}
+			let, ok := operator.Body().(*LetInExpr)
+			if !ok || len(let.Declarations()) != 1 || countOperator(let.Declarations()[0].Body(), "SET_ENUM") != 1 {
+				t.Fatalf("%s local body = %#v; declarations = %v", test.exported, operator.Body(), declarationNames(result.Native))
+			}
+			if result.Sources == nil {
+				t.Fatal("instance parse omitted source store")
+			}
+			if _, found := result.Sources.Find(let.Body().ID()); !found {
+				t.Fatal("instance LET body has no source location")
+			}
+			if _, found := result.Sources.Find(let.Declarations()[0].Body().ID()); !found {
+				t.Fatal("instance LOCAL definition has no source location")
+			}
+		})
+	}
+}
+
+func TestParseAndTypeCheckSourceRetainsInstantiatedLocalOperatorAnnotation(t *testing.T) {
+	result := ParseAndTypeCheckSource(context.Background(), "InstanceLocalTyped.tla", `---- MODULE InstanceLocalTyped ----
+---- MODULE M ----
+\* @type: Set(Int);
+LOCAL a == {}
+\* @type: Set(Int);
+b == a
+====
+I == INSTANCE M
+Test == I!b = {}
+====
+`, FrontendOptions{}, TypeCheckOptions{})
+	if !result.OK() {
+		t.Fatalf("ParseAndTypeCheckSource() diagnostics = %v", result.Diagnostics)
+	}
+	declaration, found := declarationNamed(result.Native, "I!b")
+	operator, ok := declaration.(*OperDecl)
+	if !found || !ok {
+		t.Fatalf("I!b declaration = %#v", declaration)
+	}
+	let, ok := operator.Body().(*LetInExpr)
+	if !ok || len(let.Declarations()) != 1 {
+		t.Fatalf("typed I!b body = %#v", operator.Body())
+	}
+	localType, typed := let.Declarations()[0].Tag().Type()
+	if !typed || !EqualTypes(localType, mustOperator(nil, mustSet(IntT1))) {
+		t.Fatalf("typed instance LOCAL declaration = %v, %v", localType, typed)
+	}
+}
+
+func TestParseSourceScopesLocalsForRepeatedInstances(t *testing.T) {
+	result := ParseSource(context.Background(), "RepeatedLocalInstances.tla", `---- MODULE RepeatedLocalInstances ----
+---- MODULE M ----
+LOCAL a == {}
+b == a
+====
+I == INSTANCE M
+J == INSTANCE M
+Both == I!b = J!b
+====
+`, FrontendOptions{})
+	if !result.OK() {
+		t.Fatalf("ParseSource() diagnostics = %v", result.Diagnostics)
+	}
+	for _, prefix := range []string{"I!", "J!"} {
+		if _, found := declarationNamed(result.Native, prefix+"a"); found {
+			t.Fatalf("%sa leaked into root declarations", prefix)
+		}
+		body, found := OperatorBody(result.Native, prefix+"b")
+		let, ok := body.(*LetInExpr)
+		if !found || !ok || len(let.Declarations()) != 1 || let.Declarations()[0].Name() != "LOCAL$"+prefix+"a" {
+			t.Fatalf("%sb body = %#v", prefix, body)
+		}
 	}
 }
 

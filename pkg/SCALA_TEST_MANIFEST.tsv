@@ -134,7 +134,7 @@ tla-parser/src/test/scala/at/forsyte/apalache/tla/imp/SanyImporterTestBase.scala
 tla-parser/src/test/scala/at/forsyte/apalache/tla/imp/TestPrettyWriterPrecedence.scala	partial	frontend*_test.go;frontend_corpus_integration_test.go	parser resource and diagnostic mapping remains
 tla-parser/src/test/scala/at/forsyte/apalache/tla/imp/TestSanyImporter.scala	partial	frontend*_test.go;frontend_corpus_integration_test.go	parser resource and diagnostic mapping remains
 tla-parser/src/test/scala/at/forsyte/apalache/tla/imp/TestSanyImporterAnnotations.scala	partial	frontend*_test.go;frontend_corpus_integration_test.go	parser resource and diagnostic mapping remains
-tla-parser/src/test/scala/at/forsyte/apalache/tla/imp/TestSanyImporterInstances.scala	partial	frontend*_test.go;frontend_corpus_integration_test.go	parser resource and diagnostic mapping remains
+tla-parser/src/test/scala/at/forsyte/apalache/tla/imp/TestSanyImporterInstances.scala	partial	frontend_test.go;frontend_corpus_integration_test.go	qualified lookup order, named/unqualified LOCAL LET scoping with source/type annotations, recursive calls, higher-order annotations, and standard instances are mapped; substitution-chain cases remain
 tla-parser/src/test/scala/at/forsyte/apalache/tla/imp/TestSanyImporterStandardModules.scala	partial	frontend*_test.go;frontend_corpus_integration_test.go	parser resource and diagnostic mapping remains
 tla-pp/src/test/scala/at/forsyte/apalache/tla/pp/TestConstAndDefRewriter.scala	partial	preprocess_*_test.go;temporal_*_test.go;retla*_test.go	remaining preprocessing cases are open
 tla-pp/src/test/scala/at/forsyte/apalache/tla/pp/TestConstSimplifier.scala	partial	preprocess_*_test.go;temporal_*_test.go;retla*_test.go	remaining preprocessing cases are open

@@ -117,6 +117,7 @@ func ParseSource(ctx context.Context, filename, source string, opts FrontendOpti
 	}
 
 	normalizeTlagoRootLocalInstances(spec)
+	instantiatedLocals := exposeTlagoInstantiatedLocalDefinitions(spec)
 	normalizeTlagoLambdas(spec)
 	binderLayouts := normalizeTlagoApalacheAssignments(spec)
 	apalacheInstancePrefixes := tlagoApalacheInstancePrefixes(spec)
@@ -137,8 +138,9 @@ func ParseSource(ctx context.Context, filename, source string, opts FrontendOpti
 		result.Native = removeTlagoNativeVariantDeclarations(result.Native, result.Sources, variantsImported)
 		result.Native = normalizeTlagoTLCCalls(result.Native, result.Sources, tlcImported)
 		result.Native = normalizeTlagoApalacheBuiltinCalls(result.Native, result.Sources, apalacheInstancePrefixes)
-		result.Native = normalizeTlagoLocalDeclarationTags(result.Native, result.Sources)
 		result.Native = normalizeTlagoInstantiatedOperatorCalls(result.Native, result.Sources, instantiatedScopes)
+		result.Native = normalizeTlagoInstantiatedLocalDefinitions(result.Native, result.Sources, instantiatedLocals)
+		result.Native = normalizeTlagoLocalDeclarationTags(result.Native, result.Sources)
 		result.Native = normalizeTlagoRecursiveOperators(result.Native, result.Sources, recursiveScopes)
 		result.Native = normalizeTlagoVariantUnit(result.Native, result.Sources, variantsImported)
 		result.Native = normalizeTlagoTupleBinders(result.Native, result.Sources, binderLayouts)

@@ -341,7 +341,11 @@ func mergeTlagoImportedAnnotations(result *TypeAnnotationResult, module *Module,
 				return nil, false
 			}
 			for _, local := range let.Declarations() {
-				localType, annotated := imported.types[prefix+local.Name()]
+				annotationName := prefix + local.Name()
+				if strings.HasPrefix(local.Name(), "LOCAL$") {
+					annotationName = strings.TrimPrefix(local.Name(), "LOCAL$")
+				}
+				localType, annotated := imported.types[annotationName]
 				if !annotated {
 					continue
 				}

@@ -340,6 +340,221 @@ func normalizeTlagoRootLocalInstances(spec *tlago.Spec) {
 	}
 }
 
+type tlagoInstantiatedLocalScope struct {
+	names   []string
+	exports map[string]struct{}
+}
+
+// exposeTlagoInstantiatedLocalDefinitions asks tlago's flattened IR exporter
+// to include LOCAL definitions needed by INSTANCE exports. They are
+// folded back into scoped LET-IN declarations after IR conversion.
+func exposeTlagoInstantiatedLocalDefinitions(spec *tlago.Spec) []tlagoInstantiatedLocalScope {
+	if spec == nil || spec.Root == nil {
+		return nil
+	}
+	localsByModule := make(map[string]map[string]struct{})
+	for name, module := range spec.Modules {
+		locals := make(map[string]struct{})
+		for _, definition := range module.Definitions {
+			if definition.Local {
+				locals[definition.Name] = struct{}{}
+			}
+		}
+		localsByModule[name] = locals
+	}
+	targets := make(map[string]struct{})
+	var scopes []tlagoInstantiatedLocalScope
+	for _, instance := range spec.Root.Instances {
+		target := spec.Modules[instance.Module]
+		if target == nil {
+			continue
+		}
+		targets[instance.Module] = struct{}{}
+		prefix := ""
+		if instance.Name != "" {
+			prefix = instance.Name + "!"
+		}
+		scope := tlagoInstantiatedLocalScope{exports: make(map[string]struct{})}
+		for _, definition := range target.Definitions {
+			name := prefix + definition.Name
+			if _, local := localsByModule[instance.Module][definition.Name]; !local {
+				scope.exports[name] = struct{}{}
+				continue
+			}
+			scope.names = append(scope.names, name)
+		}
+		if len(scope.names) != 0 {
+			scopes = append(scopes, scope)
+		}
+	}
+	for moduleName := range targets {
+		for index := range spec.Modules[moduleName].Definitions {
+			if _, local := localsByModule[moduleName][spec.Modules[moduleName].Definitions[index].Name]; local {
+				spec.Modules[moduleName].Definitions[index].Local = false
+			}
+		}
+	}
+	return scopes
+}
+
+func expressionReferencesAnyName(expression Expr, names map[string]struct{}) bool {
+	switch typed := expression.(type) {
+	case *NameExpr:
+		_, found := names[typed.Name()]
+		return found
+	case *OperExpr:
+		for _, argument := range typed.Arguments() {
+			if expressionReferencesAnyName(argument, names) {
+				return true
+			}
+		}
+	case *LetInExpr:
+		if expressionReferencesAnyName(typed.Body(), names) {
+			return true
+		}
+		for _, declaration := range typed.Declarations() {
+			if expressionReferencesAnyName(declaration.Body(), names) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func rewriteTlagoLocalReferences(
+	expression Expr,
+	renames map[string]string,
+	arities map[string]int,
+	tracker TransformationTracker,
+) Expr {
+	var rewrite func(Expr, bool) Expr
+	rewrite = func(current Expr, operatorPosition bool) Expr {
+		if name, ok := current.(*NameExpr); ok {
+			renamed, found := renames[name.Name()]
+			if !found {
+				return current
+			}
+			result := tracker.TrackExpression(func(Expr) Expr { return NewNameExpr(renamed, name.Tag()) })(current)
+			if arities[name.Name()] == 0 && !operatorPosition {
+				return tracker.TrackExpression(func(Expr) Expr {
+					return MustOperExpr(Op("OPER_APP"), name.Tag(), result)
+				})(current)
+			}
+			return result
+		}
+		switch typed := current.(type) {
+		case *OperExpr:
+			arguments := typed.Arguments()
+			for index := range arguments {
+				arguments[index] = rewrite(arguments[index], typed.Operator().Name() == "OPER_APP" && index == 0)
+			}
+			result := MustOperExpr(typed.Operator(), typed.Tag(), arguments...)
+			return tracker.TrackExpression(func(Expr) Expr { return result })(current)
+		case *LetInExpr:
+			declarations := typed.Declarations()
+			for index, declaration := range declarations {
+				copy := declaration.copyWithTag(declaration.Tag())
+				copy.SetBody(rewrite(declaration.Body(), false))
+				declarations[index] = tracker.TrackOperatorDeclaration(func(*OperDecl) *OperDecl { return copy })(declaration)
+			}
+			result := NewLetInExpr(rewrite(typed.Body(), false), typed.Tag(), declarations...)
+			return tracker.TrackExpression(func(Expr) Expr { return result })(current)
+		default:
+			return current
+		}
+	}
+	return rewrite(expression, false)
+}
+
+// normalizeTlagoInstantiatedLocalDefinitions restores the scope erased by
+// tlago's flattened IR export. Exposed LOCAL definitions are removed from the
+// root and embedded into each imported operator that depends on them.
+func normalizeTlagoInstantiatedLocalDefinitions(
+	module *Module,
+	sources *SourceStore,
+	scopes []tlagoInstantiatedLocalScope,
+) *Module {
+	if module == nil || len(scopes) == 0 {
+		return module
+	}
+	localNames := make(map[string]struct{})
+	localDeclarations := make(map[string]*OperDecl)
+	for _, scope := range scopes {
+		for _, name := range scope.names {
+			localNames[name] = struct{}{}
+		}
+	}
+	for _, declaration := range module.OperDeclarations() {
+		if _, local := localNames[declaration.Name()]; local {
+			localDeclarations[declaration.Name()] = declaration
+		}
+	}
+	if len(localDeclarations) == 0 {
+		return module
+	}
+	var tracker TransformationTracker = IdleTracker{}
+	if sources != nil {
+		tracker = NewListenerTracker(sources)
+	}
+	declarations := module.Declarations()
+	kept := make([]Decl, 0, len(declarations)-len(localDeclarations))
+	for _, declaration := range declarations {
+		if _, local := localNames[declaration.Name()]; local {
+			continue
+		}
+		operator, ok := declaration.(*OperDecl)
+		if !ok {
+			kept = append(kept, declaration)
+			continue
+		}
+		var embedded []*OperDecl
+		body := operator.Body()
+		for _, scope := range scopes {
+			if _, exported := scope.exports[operator.Name()]; !exported {
+				continue
+			}
+			scopeNames := make(map[string]struct{}, len(scope.names))
+			for _, name := range scope.names {
+				scopeNames[name] = struct{}{}
+			}
+			if !expressionReferencesAnyName(body, scopeNames) {
+				continue
+			}
+			renames := make(map[string]string, len(scope.names))
+			arities := make(map[string]int, len(scope.names))
+			for _, name := range scope.names {
+				renames[name] = "LOCAL$" + name
+				if local, found := localDeclarations[name]; found {
+					arities[name] = len(local.FormalParams())
+				}
+			}
+			for _, name := range scope.names {
+				if local, found := localDeclarations[name]; found {
+					copy := NewOperDecl(renames[name], local.FormalParams(),
+						rewriteTlagoLocalReferences(local.Body(), renames, arities, tracker), local.Tag())
+					copy.SetRecursive(local.IsRecursive())
+					embedded = append(embedded,
+						tracker.TrackOperatorDeclaration(func(*OperDecl) *OperDecl { return copy })(local))
+				}
+			}
+			body = rewriteTlagoLocalReferences(body, renames, arities, tracker)
+		}
+		if len(embedded) == 0 {
+			kept = append(kept, declaration)
+			continue
+		}
+		let := tracker.TrackExpression(func(Expr) Expr {
+			return NewLetInExpr(body, body.Tag(), embedded...)
+		})(body)
+		copy := operator.copyWithTag(operator.Tag())
+		copy.SetBody(let)
+		kept = append(kept, tracker.TrackOperatorDeclaration(func(*OperDecl) *OperDecl { return copy })(operator))
+	}
+	result := NewModule(module.Name(), kept)
+	result.properties = cloneMap(module.properties)
+	return result
+}
+
 // normalizeTlagoInstanceExtendedDefinitions supplies definitions inherited by
 // a root INSTANCE target. tlago v0.1.9 exports only the target's direct
 // definitions, although those definitions may refer to operators from EXTENDS.
