@@ -58,6 +58,14 @@ func cherrySet(elementType Type, elements ...Expr) Expr {
 	return MustOperExpr(Op("SET_ENUM"), Typed(mustSet(elementType)), elements...)
 }
 
+func cherryRecord(typ Type, fields ...Expr) Expr {
+	return MustOperExpr(Op("RECORD"), Typed(typ), fields...)
+}
+
+func cherryKey(name string) Expr {
+	return NewValueExpr(StringValue(name), Typed(StrT1))
+}
+
 func TestCherryPickerPreservesTupleCorrelationThroughG3(t *testing.T) {
 	tupleType, _ := NewTupleType(IntT1, IntT1)
 	tag := Typed(tupleType)
@@ -219,5 +227,37 @@ func TestCherryPickerScalaSetCases(t *testing.T) {
 	assertCherryPickerCandidates(t, "nested sets", []Expr{
 		cherrySet(mustSet(IntT1), set(1, 2), set(3, 4)),
 		cherrySet(mustSet(IntT1), set(5, 6)),
+	})
+}
+
+func TestCherryPickerScalaRecordCases(t *testing.T) {
+	legacyType, err := NewRecordType(map[string]Type{"a": IntT1, "b": IntT1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := func(typ Type, a, b int64) Expr {
+		return cherryRecord(typ,
+			cherryKey("a"), cherryInt(a),
+			cherryKey("b"), cherryInt(b))
+	}
+	assertCherryPickerCandidates(t, "legacy records", []Expr{
+		record(legacyType, 1, 2), record(legacyType, 3, 4),
+	})
+
+	row, err := NewRowType(map[string]Type{"a": IntT1, "b": IntT1}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rowType := NewRecordRowType(row)
+	assertCherryPickerCandidates(t, "row records", []Expr{
+		record(rowType, 1, 2), record(rowType, 3, 4),
+	})
+}
+
+func TestCherryPickerScalaVariantCase(t *testing.T) {
+	variantType := testVariantType(t)
+	assertCherryPickerCandidates(t, "variants", []Expr{
+		testVariantExpression(variantType, "A", cherryInt(33)),
+		testVariantExpression(variantType, "B", NewValueExpr(BoolValue(false), Typed(BoolT1))),
 	})
 }
