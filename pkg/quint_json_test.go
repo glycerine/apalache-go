@@ -165,3 +165,72 @@ func TestConvertAllQuintOracleTypes(t *testing.T) {
 		})
 	}
 }
+
+func TestConvertQuintCollectionExpressions(t *testing.T) {
+	types := map[string]quintJSONScheme{
+		"1": {Type: quintJSONType{Kind: "int"}},
+		"2": {Type: quintJSONType{Kind: "int"}},
+		"3": {Type: quintJSONType{Kind: "set", Elem: &quintJSONType{Kind: "int"}}},
+		"4": {Type: quintJSONType{Kind: "bool"}},
+		"5": {Type: quintJSONType{Kind: "list", Elem: &quintJSONType{Kind: "int"}}},
+		"6": {Type: quintJSONType{Kind: "tup", Fields: &quintJSONRow{Kind: "empty"}}},
+	}
+	importer := quintJSONImporter{types: types}
+	integer := func(id string, value int) quintJSONExpr {
+		return quintJSONExpr{ID: json.Number(id), Kind: "int", Value: json.RawMessage(fmt.Sprintf("%d", value))}
+	}
+	application := func(id, opcode string, args ...quintJSONExpr) *OperExpr {
+		expression, err := importer.expression(quintJSONExpr{ID: json.Number(id), Kind: "app", Opcode: opcode, Args: args})
+		if err != nil {
+			t.Fatalf("%s: %v", opcode, err)
+		}
+		operator, ok := expression.(*OperExpr)
+		if !ok {
+			t.Fatalf("%s converted to %T", opcode, expression)
+		}
+		return operator
+	}
+
+	set := application("3", "Set", integer("1", 1), integer("2", 2))
+	if set.Operator().Name() != "SET_ENUM" {
+		t.Fatalf("Set converted to %s", set.Operator().Name())
+	}
+	list := application("5", "List", integer("1", 1), integer("2", 2))
+	if list.Operator().Name() != "TUPLE" {
+		t.Fatalf("List converted to %s", list.Operator().Name())
+	}
+	unit := application("6", "Tup")
+	if unit.Operator().Name() != "RECORD" || len(unit.Arguments()) != 2 {
+		t.Fatalf("empty Tup converted to %s with %d arguments", unit.Operator().Name(), len(unit.Arguments()))
+	}
+	contains := application("4", "contains",
+		quintJSONExpr{ID: json.Number("3"), Kind: "app", Opcode: "Set", Args: []quintJSONExpr{integer("1", 1)}},
+		integer("2", 1))
+	if contains.Operator().Name() != "SET_IN" || contains.Arguments()[0].(*ValueExpr).Value().(IntValue).BigInt().Int64() != 1 {
+		t.Fatalf("contains converted to %v", contains)
+	}
+	for _, test := range []struct {
+		opcode string
+		want   string
+		id     string
+		args   []quintJSONExpr
+	}{
+		{"union", "SET_UNION2", "3", []quintJSONExpr{setExpr("3", integer("1", 1)), setExpr("3", integer("2", 2))}},
+		{"powerset", "SET_POWERSET", "3", []quintJSONExpr{setExpr("3", integer("1", 1))}},
+		{"append", "Sequences!Append", "5", []quintJSONExpr{listExpr("5", integer("1", 1)), integer("2", 2)}},
+		{"length", "Sequences!Len", "1", []quintJSONExpr{listExpr("5", integer("1", 1))}},
+		{"setOfMaps", "FUN_SET", "3", []quintJSONExpr{setExpr("3", integer("1", 1)), setExpr("3", integer("2", 2))}},
+	} {
+		if got := application(test.id, test.opcode, test.args...).Operator().Name(); got != test.want {
+			t.Errorf("%s converted to %s, want %s", test.opcode, got, test.want)
+		}
+	}
+}
+
+func setExpr(id string, arguments ...quintJSONExpr) quintJSONExpr {
+	return quintJSONExpr{ID: json.Number(id), Kind: "app", Opcode: "Set", Args: arguments}
+}
+
+func listExpr(id string, arguments ...quintJSONExpr) quintJSONExpr {
+	return quintJSONExpr{ID: json.Number(id), Kind: "app", Opcode: "List", Args: arguments}
+}

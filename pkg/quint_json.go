@@ -205,6 +205,42 @@ func (importer quintJSONImporter) expression(expression quintJSONExpr) (Expr, er
 			prime := MustOperExpr(Op("PRIME"), arguments[0].Tag(), arguments[0])
 			return MustOperExpr(Op("Apalache!:="), Typed(BoolT1), prime, arguments[1]), nil
 		}
+		switch expression.Opcode {
+		case "Set":
+			return NewOperExpr(Op("SET_ENUM"), Typed(typ), arguments...)
+		case "List":
+			return NewOperExpr(Op("TUPLE"), Typed(typ), arguments...)
+		case "Tup":
+			if len(arguments) == 0 {
+				return NewOperExpr(Op("RECORD"), Typed(typ),
+					NewValueExpr(StringValue("tag"), Typed(StrT1)),
+					NewValueExpr(StringValue("UNIT"), Typed(StrT1)))
+			}
+			return NewOperExpr(Op("TUPLE"), Typed(typ), arguments...)
+		case "Rec":
+			return NewOperExpr(Op("RECORD"), Typed(typ), arguments...)
+		case "contains":
+			if len(arguments) != 2 {
+				return nil, fmt.Errorf("contains expects two arguments, found %d", len(arguments))
+			}
+			return NewOperExpr(Op("SET_IN"), Typed(typ), arguments[1], arguments[0])
+		case "weakFair", "strongFair":
+			if len(arguments) != 2 {
+				return nil, fmt.Errorf("%s expects two arguments, found %d", expression.Opcode, len(arguments))
+			}
+			operator := "WEAK_FAIRNESS"
+			if expression.Opcode == "strongFair" {
+				operator = "STRONG_FAIRNESS"
+			}
+			return NewOperExpr(Op(operator), Typed(typ), arguments[1], arguments[0])
+		case "assert":
+			if len(arguments) != 1 {
+				return nil, fmt.Errorf("assert expects one argument, found %d", len(arguments))
+			}
+			return arguments[0], nil
+		case "fail":
+			return NewOperExpr(Op("NOT"), Typed(typ), arguments...)
+		}
 		operator, found := quintSimpleOperators[expression.Opcode]
 		if !found {
 			return nil, fmt.Errorf("unsupported Quint opcode %q", expression.Opcode)
@@ -222,6 +258,15 @@ var quintSimpleOperators = map[string]string{
 	"ilte": "LE", "igte": "GE", "iuminus": "UNARY_MINUS", "actionAll": "AND",
 	"actionAny": "OR", "next": "PRIME", "enabled": "ENABLED", "always": "GLOBALLY",
 	"eventually": "EVENTUALLY", "leadsTo": "LEADS_TO", "ite": "IF_THEN_ELSE",
+	"in": "SET_IN", "notin": "SET_NOT_IN", "union": "SET_UNION2",
+	"intersect": "SET_INTERSECT", "exclude": "SET_MINUS", "subseteq": "SET_SUBSET_EQ",
+	"powerset": "SET_POWERSET", "flatten": "SET_UNARY_UNION", "allLists": "Sequences!Seq",
+	"isFinite": "FiniteSets!IsFiniteSet", "size": "FiniteSets!Cardinality", "to": "INT_RANGE",
+	"append": "Sequences!Append", "concat": "Sequences!Concat", "head": "Sequences!Head",
+	"tail": "Sequences!Tail", "length": "Sequences!Len", "item": "FUN_APP",
+	"tuples": "SET_TIMES", "field": "FUN_APP", "fieldNames": "DOMAIN", "get": "FUN_APP",
+	"keys": "DOMAIN", "setOfMaps": "FUN_SET", "orKeep": "STUTTER",
+	"mustChange": "NO_STUTTER", "then": "COMPOSE",
 }
 
 func (importer quintJSONImporter) typeOf(id json.Number) (Type, error) {
