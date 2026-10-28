@@ -73,6 +73,13 @@ type TypeCheckerListener interface {
 	OnTypeWarning(EtcRef, string)
 }
 
+// TypeChecker computes an ETC expression type and reports discovered types and
+// diagnostics through a listener. ok=false is the Go counterpart of Scala's
+// None; err is reserved for malformed ETC and internal failures.
+type TypeChecker interface {
+	Compute(TypeCheckerListener, TypeContext, EtcExpr) (typ Type, ok bool, err error)
+}
+
 type IdleTypeCheckerListener struct{}
 
 func (IdleTypeCheckerListener) OnTypeFound(ExactRef, Type)   {}
