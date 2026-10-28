@@ -663,6 +663,61 @@ func TestStratifiedRewriteScopeDischargesThroughG3(t *testing.T) {
 	}
 }
 
+func TestStratifiedNegationRule(t *testing.T) {
+	rewriter := NewStratifiedRewriter()
+	scope := InitialRewriterScope()
+	newArena, predicate := scope.Arena.AppendCellType(BasicCellType{Type: BoolT1})
+	scope.Arena = newArena
+	scope.Binding = scope.Binding.With("p", predicate)
+	expression := MustOperExpr(Op("NOT"), Typed(BoolT1), NewNameExpr("p", Typed(BoolT1)))
+	resultScope, result, err := rewriter.Rewrite(expression, scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Equal(predicate) || !EqualCellTypes(result.Type, BasicCellType{Type: BoolT1}) || resultScope.Arena.CellCount() != scope.Arena.CellCount()+1 {
+		t.Fatalf("symbolic negation result=%v arena=%d, want fresh Bool cell", result, resultScope.Arena.CellCount())
+	}
+	wantConstraint := MustOperExpr(Op("EQ"), Typed(BoolT1), result.NameExpr(),
+		MustOperExpr(Op("NOT"), Typed(BoolT1), predicate.NameExpr()))
+	if constraints := rewriter.Constraints(); len(constraints) != 1 || !EqualTypedExpr(constraints[0], wantConstraint) {
+		t.Fatalf("negation constraints = %v, want %v", constraints, wantConstraint)
+	}
+	solver := newTestG3Solver(t)
+	encoder, err := EncodeRewriterScope(solver, resultScope, rewriter.Constraints())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := encoder.Assert(predicate.NameExpr()); err != nil {
+		t.Fatal(err)
+	}
+	if err := encoder.Assert(result.NameExpr()); err != nil {
+		t.Fatal(err)
+	}
+	if status, err := solver.Check(context.Background()); err != nil || status != SMTUnsatisfiable {
+		t.Fatalf("p /\\ ~p = %v, %v", status, err)
+	}
+
+	for _, test := range []struct {
+		value bool
+		want  func(*PureArena) ArenaCell
+	}{{true, (*PureArena).FalseCell}, {false, (*PureArena).TrueCell}} {
+		rewriter = NewStratifiedRewriter()
+		constantScope, got, rewriteErr := rewriter.Rewrite(
+			MustOperExpr(Op("NOT"), Typed(BoolT1), NewValueExpr(BoolValue(test.value), Typed(BoolT1))),
+			InitialRewriterScope())
+		if rewriteErr != nil || !got.Equal(test.want(constantScope.Arena)) || len(rewriter.Constraints()) != 0 {
+			t.Fatalf("NOT %v = %v, %v; constraints=%v", test.value, got, rewriteErr, rewriter.Constraints())
+		}
+	}
+
+	badScope := InitialRewriterScope()
+	if returned, _, err := NewStratifiedRewriter().Rewrite(
+		MustOperExpr(Op("NOT"), Typed(BoolT1), NewNameExpr("missing", Typed(BoolT1))), badScope,
+	); err == nil || returned.Arena != badScope.Arena {
+		t.Fatalf("unbound negation operand returned scope=%v, err=%v", returned, err)
+	}
+}
+
 func TestStratifiedArithmeticEqualityAndConditionalThroughG3(t *testing.T) {
 	rewriter := NewStratifiedRewriter()
 	two := NewValueExpr(Int64Value(2), Typed(IntT1))
@@ -1889,5 +1944,47 @@ func TestStratifiedLetPreservesAssignmentsFromBody(t *testing.T) {
 	}
 	if integer, ok := rewriter.IntegerCache().FindValue(assigned); !ok || integer.Int64() != 2 {
 		t.Fatalf("assigned x' = %v", assigned)
+	}
+}
+
+func TestStratifiedLetRuleSequentialScopeShadowingAndParameterizedRejection(t *testing.T) {
+	nullaryInt := mustOperator(nil, IntT1)
+	a := NewOperDecl("a", nil, intLiteral(1), Typed(nullaryInt))
+	aCall := MustOperExpr(Op("OPER_APP"), Typed(IntT1), NewNameExpr("a", Typed(nullaryInt)))
+	b := NewOperDecl("b", nil, aCall, Typed(nullaryInt))
+	bCall := MustOperExpr(Op("OPER_APP"), Typed(IntT1), NewNameExpr("b", Typed(nullaryInt)))
+	let := NewLetInExpr(bCall, Typed(IntT1), a, b)
+
+	rewriter := NewStratifiedRewriter()
+	scope := InitialRewriterScope()
+	var outer ArenaCell
+	var rewriteErr error
+	scope, outer, rewriteErr = rewriter.Rewrite(intLiteral(9), scope)
+	if rewriteErr != nil {
+		t.Fatal(rewriteErr)
+	}
+	scope.Binding = scope.Binding.With("a", outer)
+	resultScope, result, err := rewriter.Rewrite(let, scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value, ok := rewriter.IntegerCache().FindValue(result); !ok || value.Int64() != 1 {
+		t.Fatalf("sequential LET result = %v", result)
+	}
+	if restored, found := resultScope.Binding.Get("a"); !found || !restored.Equal(outer) {
+		t.Fatalf("shadowed outer binding was not restored: %v, %v", restored, found)
+	}
+	if _, leaked := resultScope.Binding.Get("b"); leaked {
+		t.Fatal("local LET binding b escaped")
+	}
+
+	parameterizedType := mustOperator([]Type{IntT1}, IntT1)
+	parameterized := NewOperDecl("F", []OperatorParam{ValueParam("x")},
+		NewNameExpr("x", Typed(IntT1)), Typed(parameterizedType))
+	bad := NewLetInExpr(intLiteral(0), Typed(IntT1), parameterized)
+	base := InitialRewriterScope()
+	returned, _, err := NewStratifiedRewriter().Rewrite(bad, base)
+	if err == nil || returned.Arena != base.Arena {
+		t.Fatalf("parameterized LET returned scope=%v, err=%v", returned, err)
 	}
 }

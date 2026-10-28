@@ -1,6 +1,9 @@
 package apalache
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 func TestStratifiedRepeatThroughG3(t *testing.T) {
 	intValue := func(value int64) Expr { return NewValueExpr(Int64Value(value), Typed(IntT1)) }
@@ -40,5 +43,18 @@ func TestStratifiedRepeatRejectsInvalidBound(t *testing.T) {
 	expression := MustOperExpr(Op("Apalache!Repeat"), Typed(IntT1), addIndex, intValue(-1), intValue(0))
 	if _, _, err := NewStratifiedRewriter().Rewrite(expression, InitialRewriterScope()); err == nil {
 		t.Fatal("Repeat accepted a negative bound")
+	}
+}
+
+func TestStratifiedRepeatValidatesOperatorTypeAtZeroIterations(t *testing.T) {
+	wrongType := mustOperator([]Type{BoolT1, IntT1}, BoolT1)
+	declaration := NewOperDecl("Wrong", []OperatorParam{ValueParam("acc"), ValueParam("index")},
+		NewNameExpr("acc", Typed(BoolT1)), Typed(wrongType))
+	embedded := NewLetInExpr(NewNameExpr("Wrong", Typed(wrongType)), Typed(wrongType), declaration)
+	expression := MustOperExpr(Op("Apalache!Repeat"), Typed(IntT1), embedded, intLiteral(0), intLiteral(7))
+	_, _, err := NewStratifiedRewriter().Rewrite(expression, InitialRewriterScope())
+	var typing *TypingException
+	if !errors.As(err, &typing) || typing.CauseExprID() != declaration.ID() {
+		t.Fatalf("zero-iteration operator type error = %T %v", err, err)
 	}
 }

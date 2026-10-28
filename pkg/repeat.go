@@ -27,6 +27,18 @@ func (rewriter *StratifiedRewriter) rewriteRepeat(expression *OperExpr, scope Re
 	if err != nil {
 		return scope, ArenaCell{}, fmt.Errorf("Repeat base cannot be widened to %s: %w", resultType, err)
 	}
+	declaration := operator.Declarations()[0]
+	expectedOperatorType := mustOperator([]Type{resultType, IntT1}, resultType)
+	actualOperatorType, operatorTyped := declaration.Tag().Type()
+	if !operatorTyped || !EqualTypes(actualOperatorType, expectedOperatorType) {
+		foundType := declaration.Tag().String()
+		if operatorTyped {
+			foundType = fmt.Sprint(actualOperatorType)
+		}
+		return scope, ArenaCell{}, NewTypingException(fmt.Sprintf(
+			"FoldSet argument %s should have the tag %s, found %s.",
+			declaration.Name(), expectedOperatorType, foundType), declaration.ID())
+	}
 	for index := 1; index <= int(bound.Int64()); index++ {
 		var indexCell ArenaCell
 		scope, indexCell, err = rewriter.Rewrite(NewValueExpr(Int64Value(int64(index)), Typed(IntT1)), scope)
