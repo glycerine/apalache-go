@@ -126,6 +126,9 @@ func TestModelValueHandling(t *testing.T) {
 		name    string
 	}{
 		{"1_OF_A", true, mustNamedConst(t, "A"), "1"},
+		{"2_OF_A", true, mustNamedConst(t, "A"), "2"},
+		{"one_OF_B", true, mustNamedConst(t, "B"), "one"},
+		{"two_OF_B", true, mustNamedConst(t, "B"), "two"},
 		{"one_two_OF_PERSON_ID", true, mustNamedConst(t, "PERSON_ID"), "one_two"},
 		{"1_OF_lowercase", false, StrT1, ""},
 		{"ordinary", false, StrT1, ""},
