@@ -12,7 +12,7 @@ type SMTEncoding string
 const (
 	SMTEncodingOOPSLA19  SMTEncoding = "oopsla19"
 	SMTEncodingArrays    SMTEncoding = "arrays"
-	SMTEncodingFunArrays SMTEncoding = "fun-arrays"
+	SMTEncodingFunArrays SMTEncoding = "funArrays"
 )
 
 func ParseSMTEncoding(value string) (SMTEncoding, error) {
@@ -20,7 +20,7 @@ func ParseSMTEncoding(value string) (SMTEncoding, error) {
 	case SMTEncodingOOPSLA19, SMTEncodingArrays, SMTEncodingFunArrays:
 		return SMTEncoding(value), nil
 	default:
-		return "", fmt.Errorf("unexpected SMT encoding: %s", value)
+		return "", fmt.Errorf("Unexpected SMT encoding: %s", value)
 	}
 }
 
@@ -38,7 +38,7 @@ func ParseSMTSolverBackend(value string) (SMTSolverBackend, error) {
 	case SMTSolverCVC5:
 		return SMTSolverCVC5, nil
 	default:
-		return "", fmt.Errorf("unexpected SMT solver backend: %s", strings.ToLower(value))
+		return "", fmt.Errorf("Unexpected SMT solver backend: %s", strings.ToLower(value))
 	}
 }
 
