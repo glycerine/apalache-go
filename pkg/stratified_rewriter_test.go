@@ -3,6 +3,7 @@ package apalache
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -312,6 +313,17 @@ func TestStratifiedPrimeAndConstCardinalityWrapper(t *testing.T) {
 		t.Fatal(err)
 	}
 	checkRewrittenTruth(t, rewriter, scope, result, true)
+}
+
+func TestStratifiedPrimeRejectsArenaCells(t *testing.T) {
+	rewriter := NewStratifiedRewriter()
+	scope := InitialRewriterScope()
+	arena, cell := scope.Arena.AppendCellType(BasicCellType{Type: IntT1})
+	scope.Arena = arena
+	prime := MustOperExpr(Op("PRIME"), Typed(IntT1), cell.NameExpr())
+	if _, _, err := rewriter.Rewrite(prime, scope); err == nil || !strings.Contains(err.Error(), "only implemented for variables") {
+		t.Fatalf("prime of arena cell error = %v", err)
+	}
 }
 
 func TestStratifiedRewriterSetConstructionUnionAndFilter(t *testing.T) {
