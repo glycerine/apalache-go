@@ -40,11 +40,16 @@ func (pass ModulePassFunc) Execute(module *Module) (*Module, error) {
 // dependencies before each pass and preserving accumulated properties.
 type PassChainExecutor struct {
 	passes   []ModulePass
+	adapter  ExceptionAdapter
 	executed bool
 }
 
 func NewPassChainExecutor(passes ...ModulePass) *PassChainExecutor {
 	return &PassChainExecutor{passes: append([]ModulePass(nil), passes...)}
+}
+
+func NewPassChainExecutorWithAdapter(adapter ExceptionAdapter, passes ...ModulePass) *PassChainExecutor {
+	return &PassChainExecutor{passes: append([]ModulePass(nil), passes...), adapter: adapter}
 }
 
 func (executor *PassChainExecutor) Run() (*Module, error) {
@@ -55,6 +60,19 @@ func (executor *PassChainExecutor) Run() (*Module, error) {
 		return nil, fmt.Errorf("PassChainExecutor can only be executed once")
 	}
 	executor.executed = true
+	module, err := executor.run()
+	if err != nil && executor.adapter != nil {
+		if message, matched := executor.adapter.Adapt(err); matched {
+			if message == nil {
+				return nil, fmt.Errorf("exception adapter matched %T but returned a nil message", err)
+			}
+			return nil, &AdaptedError{Message: message}
+		}
+	}
+	return module, err
+}
+
+func (executor *PassChainExecutor) run() (*Module, error) {
 	module := NewModule("empty", nil)
 	for _, pass := range executor.passes {
 		if pass == nil {
