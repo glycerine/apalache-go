@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strings"
 )
 
 // EqClass groups type-variable numbers that unification has made equivalent.
@@ -101,6 +102,31 @@ func (substitution *Substitution) Entries() []SubstitutionEntry {
 		result[index] = SubstitutionEntry{Class: entry.Class.Copy(), Type: entry.Type}
 	}
 	return result
+}
+
+func (substitution *Substitution) String() string {
+	if substitution == nil || len(substitution.entries) == 0 {
+		return "Sub{}"
+	}
+	entries := substitution.Entries()
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].Class.Representative() < entries[j].Class.Representative()
+	})
+	parts := make([]string, len(entries))
+	for index, entry := range entries {
+		variables := entry.Class.Variables()
+		names := make([]string, len(variables))
+		for variableIndex, variable := range variables {
+			typed, err := NewVarType(variable)
+			if err != nil {
+				names[variableIndex] = fmt.Sprintf("a%d", variable)
+			} else {
+				names[variableIndex] = typed.String()
+			}
+		}
+		parts[index] = fmt.Sprintf("[%s] -> %s", strings.Join(names, ", "), entry.Type)
+	}
+	return "Sub{" + strings.Join(parts, ", ") + "}"
 }
 
 // ApplyOnce recursively walks a type, replacing each encountered variable at
@@ -312,25 +338,31 @@ func EqualSubstitutions(left, right *Substitution) bool {
 type TypeVarPool struct{ next int }
 
 func NewTypeVarPool(start int) *TypeVarPool {
-	if start < 0 {
-		panic("type variable pool requires a non-negative start")
-	}
 	return &TypeVarPool{next: start}
 }
 func (pool *TypeVarPool) Size() int { return pool.next }
 func (pool *TypeVarPool) Fresh() VarType {
-	result, _ := NewVarType(pool.next)
+	result, err := NewVarType(pool.next)
+	if err != nil {
+		panic(err)
+	}
 	pool.next++
 	return result
 }
 func (pool *TypeVarPool) FreshN(count int) []VarType {
 	if count < 0 {
-		panic("cannot allocate a negative number of type variables")
+		pool.next += count
+		return []VarType{}
 	}
 	result := make([]VarType, count)
 	for index := range result {
-		result[index] = pool.Fresh()
+		variable, err := NewVarType(pool.next + index)
+		if err != nil {
+			panic(err)
+		}
+		result[index] = variable
 	}
+	pool.next += count
 	return result
 }
 
