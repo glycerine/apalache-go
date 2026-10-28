@@ -1,6 +1,9 @@
 package apalache
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 func TestDesugarerUnchangedStateAndOrdinaryExpressions(t *testing.T) {
 	x := NewNameExpr("x", Typed(IntT1))
@@ -177,6 +180,93 @@ func TestDesugarerNormalizesMultiArgumentFunction(t *testing.T) {
 	}
 }
 
+func TestDesugarerNormalizesRecursiveFunctionAndTracksTupleConstruction(t *testing.T) {
+	x := NewNameExpr("x", Typed(IntT1))
+	y := NewNameExpr("y", Typed(BoolT1))
+	intSet := NewValueExpr(IntSet, Typed(mustSet(IntT1)))
+	boolSet := NewValueExpr(BoolSet, Typed(mustSet(BoolT1)))
+	body := NewValueExpr(Int64Value(0), Typed(IntT1))
+	listener := &recordingListener{}
+	functionType := mustFun(mustTuple(IntT1, BoolT1), IntT1)
+	got, err := NewDesugarer(nil, nil, NewListenerTracker(listener), nil).Expression(
+		MustOperExpr(Op("FUN_REC_CTOR"), Typed(functionType), body, x, intSet, y, boolSet))
+	if err != nil {
+		t.Fatal(err)
+	}
+	arguments := got.(*OperExpr).Arguments()
+	if len(arguments) != 3 || arguments[1].(*NameExpr).Name() != "x_y" || arguments[2].(*OperExpr).Operator().Name() != "SET_TIMES" {
+		t.Fatalf("normalized recursive function = %v", got)
+	}
+	foundTupleHold, foundProductHold := false, false
+	for _, event := range listener.expressions {
+		if event[0] == x {
+			operation, ok := event[1].(*OperExpr)
+			foundTupleHold = foundTupleHold || ok && operation.Operator().Name() == "TUPLE"
+		}
+		if event[0] == intSet {
+			operation, ok := event[1].(*OperExpr)
+			foundProductHold = foundProductHold || ok && operation.Operator().Name() == "SET_TIMES"
+		}
+	}
+	if !foundTupleHold || !foundProductHold {
+		t.Fatalf("missing function normalization holds: tuple=%v product=%v", foundTupleHold, foundProductHold)
+	}
+}
+
+func TestDesugarerKeepsUnaryFunctionsAndTraversesGenericForms(t *testing.T) {
+	x := NewNameExpr("x", Typed(IntT1))
+	set := NewValueExpr(IntSet, Typed(mustSet(IntT1)))
+	body := MustOperExpr(Op("PLUS"), Typed(IntT1), x, NewValueExpr(Int64Value(1), Typed(IntT1)))
+	desugarer := NewDesugarer(nil, nil, nil, nil)
+	for _, operator := range []string{"FUN_CTOR", "FUN_REC_CTOR"} {
+		input := MustOperExpr(Op(operator), Typed(mustFun(IntT1, IntT1)), body, x, set)
+		got, err := desugarer.Expression(input)
+		if err != nil || !EqualTypedExpr(got, input) {
+			t.Fatalf("unary %s = %v, %v", operator, got, err)
+		}
+	}
+	operatorType := mustOperator([]Type{IntT1}, IntT1)
+	application := MustOperExpr(Op("OPER_APP"), Typed(IntT1), NewNameExpr("Foo", Typed(operatorType)), body)
+	declaration := NewOperDecl("Foo", []OperatorParam{ValueParam("arg")}, NewNameExpr("arg", Typed(IntT1)), Typed(operatorType))
+	input := NewLetInExpr(application, Typed(IntT1), declaration)
+	got, err := desugarer.Expression(input)
+	if err != nil || !EqualTypedExpr(got, input) {
+		t.Fatalf("generic operator/LET traversal = %v, %v", got, err)
+	}
+}
+
+func TestDesugarerTracksLeavesAndVisitsLetBodyFirst(t *testing.T) {
+	body := NewNameExpr("body", Typed(IntT1))
+	definitionBody := NewNameExpr("definition", Typed(IntT1))
+	declaration := NewOperDecl("D", nil, definitionBody, Typed(mustOperator(nil, IntT1)))
+	root := NewLetInExpr(body, Typed(IntT1), declaration)
+	listener := &recordingListener{}
+	got, err := NewDesugarer(nil, nil, NewListenerTracker(listener), nil).Expression(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == root || len(listener.expressions) != 3 {
+		t.Fatalf("tracked LET result=%v, events=%d", got, len(listener.expressions))
+	}
+	if listener.expressions[0][0] != body || listener.expressions[0][1] != body || listener.expressions[1][0] != definitionBody || listener.expressions[1][1] != definitionBody {
+		t.Fatalf("unexpected traversal events: %#v", listener.expressions)
+	}
+}
+
+func TestDesugarerLeadsToRetainsOperandSugarForLaterPassTraversal(t *testing.T) {
+	x := NewNameExpr("x", Typed(IntT1))
+	unchanged := MustOperExpr(Op("UNCHANGED"), Typed(BoolT1), x)
+	got, err := NewDesugarer(nil, []string{"x"}, nil, nil).Expression(
+		MustOperExpr(Op("LEADS_TO"), Typed(BoolT1), unchanged, NewValueExpr(BoolValue(true), Typed(BoolT1))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	antecedent := got.(*OperExpr).Arguments()[0].(*OperExpr).Arguments()[0]
+	if antecedent != unchanged {
+		t.Fatalf("LEADS_TO recursively transformed its antecedent: %v", antecedent)
+	}
+}
+
 func TestDesugarerKeepsSimpleExceptAndExpandsNestedExcept(t *testing.T) {
 	innerType := mustFun(StrT1, BoolT1)
 	outerType := mustFun(IntT1, innerType)
@@ -244,13 +334,15 @@ func TestDesugarerExceptValidatesAccessorsAndTypes(t *testing.T) {
 	value := NewValueExpr(Int64Value(1), Typed(IntT1))
 	badAccessor := NewNameExpr("i", Typed(IntT1))
 	_, err := NewDesugarer(nil, nil, nil, nil).Expression(MustOperExpr(Op("EXCEPT"), Typed(functionType), function, badAccessor, value))
-	if err == nil {
-		t.Fatal("accepted non-tuple EXCEPT accessor")
+	var lirError *LirError
+	if !errors.As(err, &lirError) {
+		t.Fatalf("non-tuple EXCEPT accessor error = %T %v", err, err)
 	}
 	badPath := MustOperExpr(Op("TUPLE"), Typed(mustTuple(StrT1, IntT1)), NewValueExpr(StringValue("bad"), Typed(StrT1)), value)
 	_, err = NewDesugarer(nil, nil, nil, nil).Expression(MustOperExpr(Op("EXCEPT"), Typed(functionType), function, badPath, value))
-	if err == nil {
-		t.Fatal("accepted wrong multidimensional EXCEPT key type")
+	var typingError *TypingException
+	if !errors.As(err, &typingError) || typingError.CauseExprID() != badPath.Arguments()[0].ID() {
+		t.Fatalf("wrong multidimensional EXCEPT key error = %T %v", err, err)
 	}
 }
 

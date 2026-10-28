@@ -30,7 +30,7 @@ func (desugarer *Desugarer) Expression(expression Expr) (Expr, error) {
 	var result Expr
 	switch typed := expression.(type) {
 	case *NameExpr, *ValueExpr, *nullExpr:
-		return expression, nil
+		result = expression
 	case *LetInExpr:
 		body, err := desugarer.Expression(typed.Body())
 		if err != nil {
@@ -51,27 +51,31 @@ func (desugarer *Desugarer) Expression(expression Expr) (Expr, error) {
 		arguments := typed.Arguments()
 		switch typed.Operator().Name() {
 		case "EXCEPT":
-			transformed := make([]Expr, len(arguments))
-			for index, argument := range arguments {
+			transformed := make([]Expr, len(arguments)-1)
+			for index, argument := range arguments[1:] {
 				var err error
 				transformed[index], err = desugarer.Expression(argument)
 				if err != nil {
 					return nil, err
 				}
 			}
-			accessors, values := deinterleaveExpressions(transformed[1:])
+			accessors, values := deinterleaveExpressions(transformed)
 			multidimensional := false
 			for _, accessor := range accessors {
 				tuple, ok := accessor.(*OperExpr)
 				if !ok || tuple.Operator().Name() != "TUPLE" {
-					return nil, fmt.Errorf("expected a tuple of keys as an EXCEPT accessor")
+					return nil, NewLirError(fmt.Sprintf("Expected a tuple of keys as an accessor in EXCEPT. Found: %v", accessor))
 				}
 				multidimensional = multidimensional || len(tuple.Arguments()) > 1
 			}
+			function, err := desugarer.Expression(arguments[0])
+			if err != nil {
+				return nil, err
+			}
 			if len(accessors) < 2 && !multidimensional {
-				result = MustOperExpr(Op("EXCEPT"), typed.Tag(), transformed...)
+				result = MustOperExpr(Op("EXCEPT"), typed.Tag(), append([]Expr{function}, transformed...)...)
 			} else {
-				expanded, err := desugarer.expandExcept(transformed[0], accessors, values)
+				expanded, err := desugarer.expandExcept(function, accessors, values)
 				if err != nil {
 					return nil, err
 				}
@@ -112,18 +116,17 @@ func (desugarer *Desugarer) Expression(expression Expr) (Expr, error) {
 				result = MustOperExpr(Op("AND"), Typed(BoolT1), equalities...)
 			}
 		case "STUTTER", "NO_STUTTER":
-			body, err := desugarer.Expression(arguments[0])
-			if err != nil {
-				return nil, err
-			}
-			unchanged, err := desugarer.Expression(MustOperExpr(Op("UNCHANGED"), Typed(BoolT1), arguments[1]))
-			if err != nil {
-				return nil, err
-			}
+			unchanged := MustOperExpr(Op("UNCHANGED"), Typed(BoolT1), arguments[1])
+			var expanded Expr
 			if typed.Operator().Name() == "STUTTER" {
-				result = MustOperExpr(Op("OR"), Typed(BoolT1), body, unchanged)
+				expanded = MustOperExpr(Op("OR"), Typed(BoolT1), arguments[0], unchanged)
 			} else {
-				result = MustOperExpr(Op("AND"), Typed(BoolT1), body, MustOperExpr(Op("NOT"), Typed(BoolT1), unchanged))
+				expanded = MustOperExpr(Op("AND"), Typed(BoolT1), arguments[0], MustOperExpr(Op("NOT"), Typed(BoolT1), unchanged))
+			}
+			var err error
+			result, err = desugarer.Expression(expanded)
+			if err != nil {
+				return nil, err
 			}
 		case "EQ", "NE":
 			if len(arguments) == 2 {
@@ -161,15 +164,7 @@ func (desugarer *Desugarer) Expression(expression Expr) (Expr, error) {
 				return nil, err
 			}
 		case "LEADS_TO":
-			antecedent, err := desugarer.Expression(arguments[0])
-			if err != nil {
-				return nil, err
-			}
-			consequent, err := desugarer.Expression(arguments[1])
-			if err != nil {
-				return nil, err
-			}
-			result = MustOperExpr(Op("GLOBALLY"), Typed(BoolT1), MustOperExpr(Op("IMPLIES"), Typed(BoolT1), antecedent, MustOperExpr(Op("EVENTUALLY"), Typed(BoolT1), consequent)))
+			result = MustOperExpr(Op("GLOBALLY"), Typed(BoolT1), MustOperExpr(Op("IMPLIES"), Typed(BoolT1), arguments[0], MustOperExpr(Op("EVENTUALLY"), Typed(BoolT1), arguments[1])))
 		case "SET_FILTER", "EXISTS3", "FORALL3":
 			bound, err := desugarer.Expression(arguments[0])
 			if err != nil {
@@ -226,6 +221,8 @@ func (desugarer *Desugarer) Expression(expression Expr) (Expr, error) {
 				tupleType := mustTuple(elements...)
 				tuple := MustOperExpr(Op("TUPLE"), Typed(tupleType), variables...)
 				product := MustOperExpr(Op("SET_TIMES"), Typed(mustSet(tupleType)), sets...)
+				tuple = desugarer.tracker.Hold(variables[0], tuple).(*OperExpr)
+				product = desugarer.tracker.Hold(sets[0], product).(*OperExpr)
 				bindings = []Expr{tuple, product}
 			}
 			collapsed, err := collapseTupleMap(body, bindings)
@@ -273,11 +270,11 @@ func (desugarer *Desugarer) expandExcept(function Expr, accessors, values []Expr
 func (desugarer *Desugarer) expandExceptOne(function, accessor, value Expr) ([]*OperDecl, error) {
 	tuple, ok := accessor.(*OperExpr)
 	if !ok || tuple.Operator().Name() != "TUPLE" {
-		return nil, fmt.Errorf("expected a tuple of keys as an EXCEPT accessor")
+		return nil, NewLirError(fmt.Sprintf("Expected a tuple of keys as an accessor in EXCEPT. Found: %v", accessor))
 	}
 	keys := tuple.Arguments()
 	if len(keys) == 0 {
-		return nil, fmt.Errorf("expected at least one key in EXCEPT")
+		return nil, NewLirError("Expected at least one key in EXCEPT, found none")
 	}
 	var rewrite func(Expr, []Expr) ([]*OperDecl, error)
 	rewrite = func(current Expr, remaining []Expr) ([]*OperDecl, error) {
@@ -320,12 +317,12 @@ func exceptAccessResultType(functionType Type, key Expr) (Type, error) {
 	switch function := functionType.(type) {
 	case FunType:
 		if !EqualTypes(function.Argument(), keyType) {
-			return nil, fmt.Errorf("expected EXCEPT key of type %s, found %s", function.Argument(), keyType)
+			return nil, NewTypingException(fmt.Sprintf("Expected a function argument of type %s, found %s", function.Argument(), keyType), key.ID())
 		}
 		return function.Result(), nil
 	case SeqType:
 		if !EqualTypes(keyType, IntT1) {
-			return nil, fmt.Errorf("expected integer sequence index, found %s", keyType)
+			return nil, NewTypingException(fmt.Sprintf("Expected a sequence argument to be an integer, found %s", keyType), key.ID())
 		}
 		return function.Element(), nil
 	case TupleType:
@@ -372,7 +369,7 @@ func exceptAccessResultType(functionType Type, key Expr) (Type, error) {
 		}
 		return field, nil
 	default:
-		return nil, fmt.Errorf("unexpected type %s in EXCEPT access", functionType)
+		return nil, NewTypingException(fmt.Sprintf("Unexpected type in function application: %s", key), key.ID())
 	}
 }
 
