@@ -878,6 +878,35 @@ func TestStratifiedArithmeticEqualityAndConditionalThroughG3(t *testing.T) {
 	}
 }
 
+func TestStratifiedEqualityIdentityAndTypeErrors(t *testing.T) {
+	for _, operator := range []string{"EQ", "NE"} {
+		name := NewNameExpr("unbound", Typed(IntT1))
+		expression := MustOperExpr(Op(operator), Typed(BoolT1), name, name)
+		base := InitialRewriterScope()
+		scope, result, err := NewStratifiedRewriter().Rewrite(expression, base)
+		want := base.Arena.TrueCell()
+		if operator == "NE" {
+			want = base.Arena.FalseCell()
+		}
+		if err != nil || scope.Arena != base.Arena || !result.Equal(want) {
+			t.Fatalf("%s identical names = %v, scope=%v, err=%v", operator, result, scope, err)
+		}
+	}
+
+	for _, invalid := range []Expr{
+		MustOperExpr(Op("EQ"), Typed(IntT1), intLiteral(1), intLiteral(1)),
+		MustOperExpr(Op("EQ"), Untyped(), intLiteral(1), intLiteral(1)),
+		MustOperExpr(Op("EQ"), Typed(BoolT1), NewNameExpr("x", Untyped()), NewNameExpr("x", Untyped())),
+		MustOperExpr(Op("EQ"), Typed(BoolT1), intLiteral(1), boolExpr(true)),
+	} {
+		base := InitialRewriterScope()
+		returned, _, err := NewStratifiedRewriter().Rewrite(invalid, base)
+		if err == nil || returned.Arena != base.Arena {
+			t.Fatalf("invalid equality returned scope=%v, err=%v", returned, err)
+		}
+	}
+}
+
 func TestStratifiedArithmeticPackerAndComparisonRule(t *testing.T) {
 	rewriter := NewStratifiedRewriter()
 	scope := InitialRewriterScope()

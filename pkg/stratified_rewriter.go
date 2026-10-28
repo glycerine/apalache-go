@@ -1508,6 +1508,19 @@ func (rewriter *StratifiedRewriter) rewriteBasicEquality(expression *OperExpr, s
 	if len(arguments) != 2 {
 		return scope, ArenaCell{}, fmt.Errorf("equality requires two arguments")
 	}
+	resultType, resultTyped := expression.Tag().Type()
+	if !resultTyped || !EqualTypes(resultType, BoolT1) {
+		return scope, ArenaCell{}, fmt.Errorf("equality must have type Bool, found %v", resultType)
+	}
+	leftType, leftTyped := arguments[0].Tag().Type()
+	rightType, rightTyped := arguments[1].Tag().Type()
+	if !leftTyped || !rightTyped {
+		return scope, ArenaCell{}, fmt.Errorf("equality operands must be typed, found %v and %v", leftType, rightType)
+	}
+	_, compatible, typeErr := CommonSupertype(leftType, rightType)
+	if typeErr != nil || !compatible {
+		return scope, ArenaCell{}, fmt.Errorf("equality requires compatible operands, found %s and %s", leftType, rightType)
+	}
 	if EqualExpr(arguments[0], arguments[1]) {
 		if expression.Operator().Name() == "NE" {
 			return scope, scope.Arena.FalseCell(), nil
