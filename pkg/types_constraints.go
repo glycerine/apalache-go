@@ -10,6 +10,8 @@ type TypeErrorCallback func(*Substitution, []Type)
 type TypeClause interface {
 	typeClause()
 	callbacks() (TypeFoundCallback, TypeErrorCallback)
+	SetOnTypeFound(TypeFoundCallback) TypeClause
+	SetOnTypeError(TypeErrorCallback) TypeClause
 }
 
 type EqClause struct {
@@ -23,6 +25,14 @@ func (*EqClause) typeClause() {}
 func (clause *EqClause) callbacks() (TypeFoundCallback, TypeErrorCallback) {
 	return clause.OnTypeFound, clause.OnTypeError
 }
+func (clause *EqClause) SetOnTypeFound(callback TypeFoundCallback) TypeClause {
+	clause.OnTypeFound = callback
+	return clause
+}
+func (clause *EqClause) SetOnTypeError(callback TypeErrorCallback) TypeClause {
+	clause.OnTypeError = callback
+	return clause
+}
 
 type OrClause struct {
 	Clauses     []*EqClause
@@ -33,6 +43,14 @@ type OrClause struct {
 func (*OrClause) typeClause() {}
 func (clause *OrClause) callbacks() (TypeFoundCallback, TypeErrorCallback) {
 	return clause.OnTypeFound, clause.OnTypeError
+}
+func (clause *OrClause) SetOnTypeFound(callback TypeFoundCallback) TypeClause {
+	clause.OnTypeFound = callback
+	return clause
+}
+func (clause *OrClause) SetOnTypeError(callback TypeErrorCallback) TypeClause {
+	clause.OnTypeError = callback
+	return clause
 }
 
 type reportedType struct {
