@@ -11,10 +11,13 @@ import (
 )
 
 type quintJSONOutput struct {
-	Stage   string                     `json:"stage"`
-	Modules []quintJSONModule          `json:"modules"`
-	Types   map[string]quintJSONScheme `json:"types"`
-	Table   json.RawMessage            `json:"table"`
+	Stage    string                     `json:"stage"`
+	Modules  []quintJSONModule          `json:"modules"`
+	Types    map[string]quintJSONScheme `json:"types"`
+	Table    json.RawMessage            `json:"table"`
+	Effects  json.RawMessage            `json:"effects"`
+	Warnings json.RawMessage            `json:"warnings"`
+	Errors   json.RawMessage            `json:"errors"`
 }
 
 type quintJSONModule struct {
@@ -56,20 +59,34 @@ type quintJSONDef struct {
 	ID             json.Number    `json:"id"`
 	Kind           string         `json:"kind"`
 	Name           string         `json:"name"`
+	Doc            string         `json:"doc"`
 	Qualifier      string         `json:"qualifier"`
 	Expr           *quintJSONExpr `json:"expr"`
 	Assumption     *quintJSONExpr `json:"assumption"`
+	Type           *quintJSONType `json:"type"`
 	TypeAnnotation *quintJSONType `json:"typeAnnotation"`
 	Depth          json.Number    `json:"depth"`
 }
 
 type quintJSONExpr struct {
-	ID     json.Number     `json:"id"`
-	Kind   string          `json:"kind"`
-	Name   string          `json:"name"`
-	Opcode string          `json:"opcode"`
-	Value  json.RawMessage `json:"value"`
-	Args   []quintJSONExpr `json:"args"`
+	ID        json.Number            `json:"id"`
+	Kind      string                 `json:"kind"`
+	Name      string                 `json:"name"`
+	Opcode    string                 `json:"opcode"`
+	Value     json.RawMessage        `json:"value"`
+	Args      []quintJSONExpr        `json:"args"`
+	Params    []quintJSONLambdaParam `json:"params"`
+	Qualifier string                 `json:"qualifier"`
+	Expr      *quintJSONExpr         `json:"expr"`
+	Opdef     *quintJSONDef          `json:"opdef"`
+}
+
+type quintJSONLambdaParam struct {
+	ID             json.Number    `json:"id"`
+	Name           string         `json:"name"`
+	Kind           string         `json:"kind"`
+	TypeAnnotation *quintJSONType `json:"typeAnnotation"`
+	Depth          json.Number    `json:"depth"`
 }
 
 type quintJSONImporter struct {
@@ -130,11 +147,36 @@ func (importer quintJSONImporter) declaration(definition quintJSONDef) (Decl, bo
 		if definition.Expr == nil {
 			return nil, false, fmt.Errorf("operator definition has no expression")
 		}
-		body, exprErr := importer.expression(*definition.Expr)
+		expression := *definition.Expr
+		parameters := []OperatorParam(nil)
+		declarationType := mustOperator(nil, typ)
+		if expression.Kind == "lambda" {
+			operatorType, ok := typ.(OperatorType)
+			if !ok {
+				return nil, false, fmt.Errorf("lambda definition has non-operator type %s", typ)
+			}
+			if expression.Expr == nil {
+				return nil, false, fmt.Errorf("lambda definition has no body")
+			}
+			argumentTypes := operatorType.Arguments()
+			if len(expression.Params) != len(argumentTypes) {
+				return nil, false, fmt.Errorf("lambda has %d parameters but its type has %d arguments", len(expression.Params), len(argumentTypes))
+			}
+			parameters = make([]OperatorParam, len(expression.Params))
+			for index, parameter := range expression.Params {
+				parameters[index] = ValueParam(parameter.Name)
+				if argumentType, isOperator := argumentTypes[index].(OperatorType); isOperator {
+					parameters[index].Arity = len(argumentType.Arguments())
+				}
+			}
+			expression = *expression.Expr
+			declarationType = typ
+		}
+		body, exprErr := importer.expression(expression)
 		if exprErr != nil {
 			return nil, false, exprErr
 		}
-		return NewOperDecl(definition.Name, nil, body, Typed(mustOperator(nil, typ))), true, nil
+		return NewOperDecl(definition.Name, parameters, body, Typed(declarationType)), true, nil
 	case "assume":
 		if definition.Assumption == nil {
 			return nil, false, fmt.Errorf("assumption has no expression")
@@ -190,7 +232,60 @@ func (importer quintJSONImporter) expression(expression quintJSONExpr) (Expr, er
 			return nil, fmt.Errorf("invalid integer %q", value)
 		}
 		return NewValueExpr(NewIntValue(integer), Typed(IntT1)), nil
+	case "lambda":
+		operatorType, ok := typ.(OperatorType)
+		if !ok {
+			return nil, fmt.Errorf("lambda has non-operator type %s", typ)
+		}
+		if expression.Expr == nil {
+			return nil, fmt.Errorf("lambda has no body")
+		}
+		argumentTypes := operatorType.Arguments()
+		if len(expression.Params) != len(argumentTypes) {
+			return nil, fmt.Errorf("lambda has %d parameters but its type has %d arguments", len(expression.Params), len(argumentTypes))
+		}
+		body, bodyErr := importer.expression(*expression.Expr)
+		if bodyErr != nil {
+			return nil, bodyErr
+		}
+		parameters := make([]OperatorParam, len(expression.Params))
+		for index, parameter := range expression.Params {
+			parameters[index] = ValueParam(parameter.Name)
+			if argumentType, isOperator := argumentTypes[index].(OperatorType); isOperator {
+				parameters[index].Arity = len(argumentType.Arguments())
+			}
+		}
+		name := "__QUINT_LAMBDA_" + expression.ID.String()
+		declaration := NewOperDecl(name, parameters, body, Typed(operatorType))
+		return NewLetInExpr(NewNameExpr(name, Typed(operatorType)), Typed(operatorType), declaration), nil
+	case "let":
+		if expression.Opdef == nil || expression.Expr == nil {
+			return nil, fmt.Errorf("let expression is incomplete")
+		}
+		definition := expression.Opdef
+		if definition.Qualifier != "nondet" || definition.Expr == nil || definition.Expr.Kind != "app" ||
+			definition.Expr.Opcode != "oneOf" || len(definition.Expr.Args) != 1 {
+			return nil, fmt.Errorf("unsupported Quint let definition %q with qualifier %q", definition.Name, definition.Qualifier)
+		}
+		boundType, typeErr := importer.typeOf(definition.Expr.ID)
+		if typeErr != nil {
+			return nil, typeErr
+		}
+		domain, domainErr := importer.expression(definition.Expr.Args[0])
+		if domainErr != nil {
+			return nil, domainErr
+		}
+		scope, scopeErr := importer.expression(*expression.Expr)
+		if scopeErr != nil {
+			return nil, scopeErr
+		}
+		bound := NewNameExpr(definition.Name, Typed(boundType))
+		return NewOperExpr(Op("EXISTS3"), Typed(typ), bound, domain, scope)
 	case "app":
+		if expression.Opcode == "exists" || expression.Opcode == "forall" || expression.Opcode == "filter" ||
+			expression.Opcode == "map" || expression.Opcode == "mapBy" {
+			return importer.bindingExpression(expression, typ)
+		}
 		arguments := make([]Expr, len(expression.Args))
 		for index := range expression.Args {
 			arguments[index], err = importer.expression(expression.Args[index])
@@ -240,14 +335,100 @@ func (importer quintJSONImporter) expression(expression quintJSONExpr) (Expr, er
 			return arguments[0], nil
 		case "fail":
 			return NewOperExpr(Op("NOT"), Typed(typ), arguments...)
+		case "matchVariant":
+			return convertQuintMatchVariant(arguments, typ)
 		}
 		operator, found := quintSimpleOperators[expression.Opcode]
 		if !found {
-			return nil, fmt.Errorf("unsupported Quint opcode %q", expression.Opcode)
+			argumentTypes := make([]Type, len(arguments))
+			for index, argument := range arguments {
+				argumentType, typed := argument.Tag().Type()
+				if !typed {
+					return nil, fmt.Errorf("argument %d to Quint operator %q is untyped", index, expression.Opcode)
+				}
+				argumentTypes[index] = argumentType
+			}
+			operatorType, typeErr := NewOperatorType(argumentTypes, typ)
+			if typeErr != nil {
+				return nil, typeErr
+			}
+			name := NewNameExpr(expression.Opcode, Typed(operatorType))
+			return NewOperExpr(Op("OPER_APP"), Typed(typ), append([]Expr{name}, arguments...)...)
 		}
 		return NewOperExpr(Op(operator), Typed(typ), arguments...)
 	default:
 		return nil, fmt.Errorf("unsupported expression kind %q", expression.Kind)
+	}
+}
+
+func (importer quintJSONImporter) bindingExpression(expression quintJSONExpr, typ Type) (Expr, error) {
+	if len(expression.Args) != 2 {
+		return nil, fmt.Errorf("%s expects two arguments, found %d", expression.Opcode, len(expression.Args))
+	}
+	domain, err := importer.expression(expression.Args[0])
+	if err != nil {
+		return nil, err
+	}
+	binderExpression := expression.Args[1]
+	var binders []Expr
+	var binderTypes []Type
+	var body Expr
+	if binderExpression.Kind == "lambda" && len(binderExpression.Params) > 0 && binderExpression.Expr != nil {
+		binders = make([]Expr, len(binderExpression.Params))
+		binderTypes = make([]Type, len(binderExpression.Params))
+		for index, parameter := range binderExpression.Params {
+			parameterType, typeErr := importer.typeOf(parameter.ID)
+			if typeErr != nil {
+				return nil, typeErr
+			}
+			name := parameter.Name
+			if name == "_" {
+				name = "__QUINT_UNDERSCORE_" + parameter.ID.String()
+			}
+			binderTypes[index] = parameterType
+			binders[index] = NewNameExpr(name, Typed(parameterType))
+		}
+		body, err = importer.expression(*binderExpression.Expr)
+		if err != nil {
+			return nil, err
+		}
+	} else if binderExpression.Kind == "name" {
+		binderType, typeErr := importer.typeOf(binderExpression.ID)
+		if typeErr != nil {
+			return nil, typeErr
+		}
+		operatorType, isOperator := binderType.(OperatorType)
+		if !isOperator || len(operatorType.Arguments()) == 0 {
+			return nil, fmt.Errorf("%s requires a non-nullary operator as its second argument", expression.Opcode)
+		}
+		binderTypes = operatorType.Arguments()
+		binders = make([]Expr, len(binderTypes))
+		for index, binderType := range binderTypes {
+			name := fmt.Sprintf("__QUINT_VAR_%s_%d", expression.ID, index)
+			binders[index] = NewNameExpr(name, Typed(binderType))
+		}
+		operatorName := NewNameExpr(binderExpression.Name, Typed(operatorType))
+		body = MustOperExpr(Op("OPER_APP"), Typed(operatorType.Result()), append([]Expr{operatorName}, binders...)...)
+	} else {
+		return nil, fmt.Errorf("%s requires a non-nullary lambda or operator as its second argument", expression.Opcode)
+	}
+	var binder Expr = binders[0]
+	if len(binders) > 1 {
+		binder = MustOperExpr(Op("TUPLE"), Typed(mustTuple(binderTypes...)), binders...)
+	}
+	switch expression.Opcode {
+	case "exists":
+		return NewOperExpr(Op("EXISTS3"), Typed(typ), binder, domain, body)
+	case "forall":
+		return NewOperExpr(Op("FORALL3"), Typed(typ), binder, domain, body)
+	case "filter":
+		return NewOperExpr(Op("SET_FILTER"), Typed(typ), binder, domain, body)
+	case "map":
+		return NewOperExpr(Op("SET_MAP"), Typed(typ), body, binder, domain)
+	case "mapBy":
+		return NewOperExpr(Op("FUN_CTOR"), Typed(typ), body, binder, domain)
+	default:
+		panic("unreachable Quint binding operator")
 	}
 }
 
@@ -267,6 +448,51 @@ var quintSimpleOperators = map[string]string{
 	"tuples": "SET_TIMES", "field": "FUN_APP", "fieldNames": "DOMAIN", "get": "FUN_APP",
 	"keys": "DOMAIN", "setOfMaps": "FUN_SET", "orKeep": "STUTTER",
 	"mustChange": "NO_STUTTER", "then": "COMPOSE",
+	"variant": "Variants!Variant",
+}
+
+func convertQuintMatchVariant(arguments []Expr, resultType Type) (Expr, error) {
+	if len(arguments) < 3 || len(arguments)%2 == 0 {
+		return nil, fmt.Errorf("matchVariant expects a value and label/eliminator pairs, found %d arguments", len(arguments))
+	}
+	variantType, ok := mustTagType(arguments[0].Tag()).(VariantType)
+	if !ok {
+		return nil, fmt.Errorf("matchVariant value has non-variant type %s", mustTagType(arguments[0].Tag()))
+	}
+	rowFields := variantType.Row().Fields()
+	pairs := make([]Expr, 0, len(arguments)-1)
+	var defaultCase Expr
+	for index := 1; index < len(arguments); index += 2 {
+		labelExpr := arguments[index]
+		labelValue, valueOK := labelExpr.(*ValueExpr)
+		if !valueOK {
+			return nil, fmt.Errorf("matchVariant label is not a string literal")
+		}
+		labelString, stringOK := labelValue.Value().(StringValue)
+		if !stringOK {
+			return nil, fmt.Errorf("matchVariant label is not a string literal")
+		}
+		label := labelString.Value()
+		eliminator := arguments[index+1]
+		if label == "_" {
+			empty := MustOperExpr(Op("SET_ENUM"), Typed(mustSet(IntT1)))
+			defaultCase = MustOperExpr(Op("OPER_APP"), Typed(resultType), eliminator, empty)
+			continue
+		}
+		fieldType, found := rowFields[label]
+		if !found {
+			return nil, fmt.Errorf("matchVariant label %q is absent from %s", label, variantType)
+		}
+		tag := MustOperExpr(Op("Variants!VariantTag"), Typed(StrT1), arguments[0])
+		condition := MustOperExpr(Op("EQ"), Typed(BoolT1), tag, labelExpr)
+		value := MustOperExpr(Op("Variants!VariantGetUnsafe"), Typed(fieldType), labelExpr, arguments[0])
+		applied := MustOperExpr(Op("OPER_APP"), Typed(resultType), eliminator, value)
+		pairs = append(pairs, condition, applied)
+	}
+	if defaultCase != nil {
+		return NewOperExpr(Op("CASE_OTHER"), Typed(resultType), append([]Expr{defaultCase}, pairs...)...)
+	}
+	return NewOperExpr(Op("CASE"), Typed(resultType), pairs...)
 }
 
 func (importer quintJSONImporter) typeOf(id json.Number) (Type, error) {

@@ -234,3 +234,58 @@ func setExpr(id string, arguments ...quintJSONExpr) quintJSONExpr {
 func listExpr(id string, arguments ...quintJSONExpr) quintJSONExpr {
 	return quintJSONExpr{ID: json.Number(id), Kind: "app", Opcode: "List", Args: arguments}
 }
+
+func TestConvertQuintParameterizedDefinitionAndCall(t *testing.T) {
+	integer := quintJSONType{Kind: "int"}
+	operator := quintJSONType{Kind: "oper", Args: []quintJSONType{integer}, Res: &integer}
+	importer := quintJSONImporter{types: map[string]quintJSONScheme{
+		"1": {Type: integer},
+		"2": {Type: integer},
+		"3": {Type: integer},
+		"4": {Type: operator},
+	}}
+	body := quintJSONExpr{ID: json.Number("3"), Kind: "app", Opcode: "iadd", Args: []quintJSONExpr{
+		{ID: json.Number("1"), Kind: "name", Name: "x"},
+		{ID: json.Number("2"), Kind: "int", Value: json.RawMessage("1")},
+	}}
+	lambda := quintJSONExpr{ID: json.Number("4"), Kind: "lambda",
+		Params: []quintJSONLambdaParam{{ID: json.Number("1"), Name: "x"}}, Expr: &body}
+	declaration, include, err := importer.declaration(quintJSONDef{
+		ID: json.Number("4"), Kind: "def", Name: "Inc", Qualifier: "def", Expr: &lambda,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defined := declaration.(*OperDecl)
+	if !include || len(defined.FormalParams()) != 1 || defined.FormalParams()[0] != ValueParam("x") || defined.Body().(*OperExpr).Operator().Name() != "PLUS" {
+		t.Fatalf("parameterized declaration = %#v", defined)
+	}
+
+	call, err := importer.expression(quintJSONExpr{ID: json.Number("3"), Kind: "app", Opcode: "Inc",
+		Args: []quintJSONExpr{{ID: json.Number("2"), Kind: "int", Value: json.RawMessage("41")}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	application := call.(*OperExpr)
+	callee, ok := application.Arguments()[0].(*NameExpr)
+	if application.Operator().Name() != "OPER_APP" || !ok || callee.Name() != "Inc" {
+		t.Fatalf("defined application = %v", application)
+	}
+}
+
+func TestParseQuintTicTacToeOracle(t *testing.T) {
+	data, err := os.ReadFile("../tla-io/src/test/resources/tictactoe.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	module, err := ParseQuintJSON(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(module.Declarations()) != 40 || !module.HasProperty(PropertyTypeChecked) {
+		t.Fatalf("parsed module has %d declarations and typechecked=%v", len(module.Declarations()), module.HasProperty(PropertyTypeChecked))
+	}
+	if result := (TypedLanguagePredicate{}).CheckModule(module); !result.OK() {
+		t.Fatalf("parsed module contains untyped IR: %+v", result.Failures)
+	}
+}
