@@ -1,7 +1,9 @@
 package apalache
 
 import (
+	"context"
 	"errors"
+	"os"
 	"testing"
 )
 
@@ -132,5 +134,40 @@ func TestValidatedIRJSONDecoderRejectsBinderShadowing(t *testing.T) {
 				t.Fatalf("binder error = %T %v", err, err)
 			}
 		}
+	}
+}
+
+func TestValidatedIRJSONDecoderAcceptsTypedTlagoOracleCorpus(t *testing.T) {
+	files := []string{
+		"VariantTrace.tla", "DeterministicDeadlock.tla", "ConfiguredConstraints.tla",
+		"RowRecordTrace.tla", "StructuredTrace.tla",
+	}
+	for _, filename := range files {
+		t.Run(filename, func(t *testing.T) {
+			source, err := os.ReadFile("testdata/oracle/" + filename)
+			if err != nil {
+				t.Fatal(err)
+			}
+			frontend := ParseAndTypeCheckSource(context.Background(), filename, string(source),
+				FrontendOptions{IncludeSource: true}, TypeCheckOptions{UseRows: true})
+			if !frontend.OK() {
+				t.Fatalf("frontend diagnostics: %+v", frontend.Diagnostics)
+			}
+			typedJSON, err := MarshalSingleModuleIRJSON(frontend.Native, IRJSONOptions{SourceStore: frontend.Sources})
+			if err != nil {
+				t.Fatal(err)
+			}
+			representation, err := ParseJSONRepresentation(typedJSON)
+			if err != nil {
+				t.Fatal(err)
+			}
+			module, err := (ValidatedIRJSONDecoder{SourceStore: NewSourceStore()}).SingleModule(representation)
+			if err != nil {
+				t.Fatalf("%v: %v", err, errors.Unwrap(err))
+			}
+			if module.Name() == "" || len(module.Declarations()) == 0 {
+				t.Fatalf("decoded module = %#v", module)
+			}
+		})
 	}
 }

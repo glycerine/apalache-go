@@ -328,15 +328,45 @@ func validateValueDependentIRType(expression *OperExpr, result Type, arguments [
 			}
 		}
 	case "TUPLE":
-		tuple, ok := result.(TupleType)
-		if !ok || !equalTypeSlices(tuple.Elements(), arguments) {
-			return fmt.Errorf("tuple arguments %v do not match result %s", arguments, result)
+		if tuple, ok := result.(TupleType); ok && equalTypeSlices(tuple.Elements(), arguments) {
+			return nil
 		}
-		return nil
+		if sequence, ok := result.(SeqType); ok {
+			for _, argument := range arguments {
+				if !CompatibleTypes(argument, sequence.Element()) {
+					return fmt.Errorf("sequence element %s does not match result %s", argument, result)
+				}
+			}
+			return nil
+		}
+		return fmt.Errorf("tuple arguments %v do not match result %s", arguments, result)
 	case "FUN_APP":
 		if len(arguments) == 2 {
 			if function, ok := arguments[0].(FunType); ok && CompatibleTypes(function.Argument(), arguments[1]) && EqualTypes(function.Result(), result) {
 				return nil
+			}
+			if sequence, ok := arguments[0].(SeqType); ok && EqualTypes(arguments[1], IntT1) && EqualTypes(sequence.Element(), result) {
+				return nil
+			}
+			if tuple, ok := arguments[0].(TupleType); ok && EqualTypes(arguments[1], IntT1) {
+				if index, literal := integerIRLiteral(expression.Arguments()[1]); literal && index.BigInt().IsInt64() {
+					position := index.BigInt().Int64()
+					if position >= 1 && position <= int64(len(tuple.Elements())) && EqualTypes(tuple.Elements()[position-1], result) {
+						return nil
+					}
+				}
+			}
+			if key, literal := stringIRLiteral(expression.Arguments()[1]); literal {
+				var fields map[string]Type
+				switch record := arguments[0].(type) {
+				case RecordType:
+					fields = record.Fields()
+				case RecordRowType:
+					fields = record.Row().Fields()
+				}
+				if EqualTypes(fields[key], result) {
+					return nil
+				}
 			}
 		}
 	case "DOMAIN":
@@ -429,11 +459,33 @@ func validateRecordIRType(arguments []Expr, result Type, set bool) error {
 		}
 		fields[key.Value()] = fieldType
 	}
-	expected, _ := NewRecordType(fields)
 	if set {
-		return requireEqualIRType(result, newSetTypeUnchecked(expected))
+		setResult, ok := result.(SetType)
+		if !ok {
+			return fmt.Errorf("record-set result is not a set")
+		}
+		return requireRecordFields(setResult.Element(), fields)
 	}
-	return requireEqualIRType(result, expected)
+	return requireRecordFields(result, fields)
+}
+
+func requireRecordFields(actual Type, expected map[string]Type) error {
+	var fields map[string]Type
+	switch typed := actual.(type) {
+	case RecordType:
+		fields = typed.Fields()
+	case RecordRowType:
+		if _, open := typed.Row().Other(); open {
+			return fmt.Errorf("record result %s is open", actual)
+		}
+		fields = typed.Row().Fields()
+	default:
+		return fmt.Errorf("result %s is not a record", actual)
+	}
+	if !equalStringTypeMaps(fields, expected) {
+		return fmt.Errorf("record fields %v do not match %v", fields, expected)
+	}
+	return nil
 }
 
 func requireEqualIRType(actual, expected Type) error {
