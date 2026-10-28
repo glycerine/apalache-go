@@ -294,6 +294,125 @@ func TestUninterpretedConstOracleCreation(t *testing.T) {
 	}
 }
 
+func TestUninterpretedConstOracleScalaPropertyMatrix(t *testing.T) {
+	base := InitialRewriterScope()
+	for size := -10; size <= 10; size++ {
+		cache := NewUninterpretedLiteralCache()
+		scope, oracle, constraints, err := CreateUninterpretedConstOracle(cache, base, size)
+		if size < 0 {
+			if err == nil {
+				t.Errorf("uninterpreted oracle accepted negative size %d", size)
+			}
+			continue
+		}
+		if err != nil || oracle.Size() != size {
+			t.Fatalf("uninterpreted oracle size %d = %#v, %v", size, oracle, err)
+		}
+		if len(constraints) != map[bool]int{true: 1, false: 0}[size > 0] {
+			t.Errorf("uninterpreted oracle size %d constraints = %v", size, constraints)
+		}
+		assertions := make([]Expr, size)
+		elseAssertions := make([]Expr, size)
+		for index := range assertions {
+			assertions[index] = NewNameExpr("A"+string(rune('a'+index)), Typed(BoolT1))
+			elseAssertions[index] = NewNameExpr("B"+string(rune('a'+index)), Typed(BoolT1))
+		}
+		for index := -10; index <= 10; index++ {
+			chosen, chosenErr := oracle.Chosen(scope, index)
+			if chosenErr != nil {
+				t.Fatal(chosenErr)
+			}
+			if index < 0 || index >= size {
+				if value, ok := chosen.(*ValueExpr); !ok || bool(value.Value().(BoolValue)) {
+					t.Errorf("uninterpreted oracle size %d accepted index %d: %v", size, index, chosen)
+				}
+				continue
+			}
+			arguments := chosen.(*OperExpr).Arguments()
+			if arguments[0].(*NameExpr).Name() != oracle.Cell.NameExpr().Name() ||
+				arguments[1].(*NameExpr).Name() != oracle.Values[index].NameExpr().Name() {
+				t.Errorf("uninterpreted oracle size %d choice %d = %v", size, index, chosen)
+			}
+		}
+		for _, otherwise := range [][]Expr{nil, elseAssertions} {
+			cases, caseErr := oracle.Cases(scope, assertions, otherwise)
+			if caseErr != nil {
+				t.Fatal(caseErr)
+			}
+			switch size {
+			case 0:
+				if cases.(*NameExpr).Name() != ArenaTrueName {
+					t.Errorf("zero uninterpreted cases = %v", cases)
+				}
+			case 1:
+				if cases != assertions[0] {
+					t.Errorf("singleton uninterpreted cases = %v", cases)
+				}
+			default:
+				if conjunction := cases.(*OperExpr); conjunction.Operator().Name() != "AND" || len(conjunction.Arguments()) != size {
+					t.Errorf("uninterpreted cases size %d = %v", size, cases)
+				}
+			}
+		}
+		if _, caseErr := oracle.Cases(scope, append(assertions, boolExpr(true)), nil); caseErr == nil {
+			t.Errorf("uninterpreted oracle size %d accepted wrong assertion length", size)
+		}
+	}
+}
+
+func TestUninterpretedConstOracleScalaSolverCases(t *testing.T) {
+	for selected := 0; selected < 2; selected++ {
+		cache := NewUninterpretedLiteralCache()
+		scope := InitialRewriterScope()
+		var flag ArenaCell
+		scope.Arena, flag = scope.Arena.AppendCellType(BasicCellType{Type: BoolT1})
+		scope, oracle, constraints, err := CreateUninterpretedConstOracle(cache, scope, 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cases, err := oracle.Cases(scope, []Expr{
+			flag.NameExpr(), MustOperExpr(Op("NOT"), Typed(BoolT1), flag.NameExpr()),
+		}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		choice, _ := oracle.Chosen(scope, selected)
+		constraints = append(constraints, cache.Constraints()...)
+		constraints = append(constraints, cases, choice)
+		solver := newTestG3Solver(t)
+		encoder, err := EncodeRewriterScope(solver, scope, constraints)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTSatisfiable {
+			t.Fatalf("uninterpreted oracle selection %d = %v, %v", selected, status, checkErr)
+		}
+		if decoded, decodeErr := oracle.Decode(encoder); decodeErr != nil || decoded != selected {
+			t.Fatalf("uninterpreted oracle decode %d = %d, %v", selected, decoded, decodeErr)
+		}
+		if value, evalErr := encoder.EvaluateBool(flag.NameExpr()); evalErr != nil || value != (selected == 0) {
+			t.Fatalf("uninterpreted oracle flag %d = %v, %v", selected, value, evalErr)
+		}
+	}
+
+	cache := NewUninterpretedLiteralCache()
+	scope, oracle, constraints, err := CreateUninterpretedConstOracle(cache, InitialRewriterScope(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	solver := newTestG3Solver(t)
+	encoder, err := EncodeRewriterScope(solver, scope, constraints)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTSatisfiable {
+		t.Fatalf("empty uninterpreted oracle = %v, %v", status, checkErr)
+	}
+	if decoded, decodeErr := oracle.Decode(encoder); decodeErr != nil || decoded != -1 {
+		t.Fatalf("empty uninterpreted oracle decode = %d, %v", decoded, decodeErr)
+	}
+}
+
 func TestOracleModelDecodingThroughG3(t *testing.T) {
 	scope, intOracle, err := CreateIntOracle(InitialRewriterScope(), 3)
 	if err != nil {
