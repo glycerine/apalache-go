@@ -15,8 +15,9 @@ func TestTypeAliasSubstitutionScalaCases(t *testing.T) {
 	}
 
 	camel, _ := NewConstType("$camlCase")
-	result, changed, err = NewTypeAliasSubstitution(map[string]Type{"$camlCase": IntT1}).Apply(camel)
-	if err != nil || !changed || !EqualTypes(result, IntT1) {
+	setCamel, _ := NewSetType(camel)
+	result, changed, err = NewTypeAliasSubstitution(map[string]Type{"$camlCase": IntT1}).Apply(setCamel)
+	if err != nil || !changed || !EqualTypes(result, mustSetType(t, IntT1)) {
 		t.Fatalf("camel-case Apply() = %v, %v, %v", result, changed, err)
 	}
 	missing, _ := NewConstType("$camlCaseMissing")
