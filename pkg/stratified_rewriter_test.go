@@ -631,6 +631,34 @@ func TestStratifiedRewriterSetConstructionUnionAndFilter(t *testing.T) {
 	}
 }
 
+func TestStratifiedSetConstructorPreservesFirstOccurrenceAndRewriteOrder(t *testing.T) {
+	rewriter := NewStratifiedRewriter()
+	scope := InitialRewriterScope()
+	newArena, first := scope.Arena.AppendCellType(BasicCellType{Type: IntT1})
+	newArena, second := newArena.AppendCellType(BasicCellType{Type: IntT1})
+	scope.Arena = newArena
+	scope.Binding = scope.Binding.With("first", first).With("second", second)
+	set := MustOperExpr(Op("SET_ENUM"), Typed(mustSet(IntT1)),
+		NewNameExpr("second", Typed(IntT1)),
+		NewNameExpr("first", Typed(IntT1)),
+		NewNameExpr("second", Typed(IntT1)))
+
+	resultScope, result, err := rewriter.Rewrite(set, scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pointers := resultScope.Arena.GetHas(result)
+	if len(pointers) != 2 || !pointers[0].Element().Equal(second) || !pointers[1].Element().Equal(first) {
+		t.Fatalf("constructor pointers = %#v, want [%v, %v]", pointers, second, first)
+	}
+
+	malformed := MustOperExpr(Op("SET_ENUM"), Typed(IntT1), intLiteral(41))
+	returned, _, err := rewriter.Rewrite(malformed, InitialRewriterScope())
+	if err == nil || returned.Arena.CellCount() <= InitialRewriterScope().Arena.CellCount() {
+		t.Fatalf("malformed constructor returned scope=%v, err=%v", returned, err)
+	}
+}
+
 func TestStratifiedSetUnionMergesSharedGuardedPointers(t *testing.T) {
 	intSetType := mustSet(IntT1)
 	setTag := Typed(intSetType)

@@ -2008,6 +2008,14 @@ func (rewriter *StratifiedRewriter) rewriteBoolean(expression *OperExpr, scope R
 }
 
 func (rewriter *StratifiedRewriter) rewriteSetConstructor(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
+	rewritten := make([]ArenaCell, len(expression.Arguments()))
+	var err error
+	for index, element := range expression.Arguments() {
+		scope, rewritten[index], err = rewriter.Rewrite(element, scope)
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+	}
 	cellType, err := CellTypeFromTag(expression.Tag())
 	if err != nil {
 		return scope, ArenaCell{}, err
@@ -2016,28 +2024,22 @@ func (rewriter *StratifiedRewriter) rewriteSetConstructor(expression *OperExpr, 
 	if !ok {
 		return scope, ArenaCell{}, fmt.Errorf("set constructor has non-set type %s", cellType.TLAType())
 	}
-	unique := make(map[int]ArenaCell)
-	for _, element := range expression.Arguments() {
-		var cell ArenaCell
-		scope, cell, err = rewriter.Rewrite(element, scope)
-		if err != nil {
-			return scope, ArenaCell{}, err
-		}
+	unique := make([]ArenaCell, 0, len(rewritten))
+	seen := make(map[int]struct{}, len(rewritten))
+	for _, cell := range rewritten {
 		scope, cell, err = rewriter.coerceCell(scope, cell, setType.Element())
 		if err != nil {
 			return scope, ArenaCell{}, fmt.Errorf("set element has type %s, expected %s: %w", cell.Type, setType.Element(), err)
 		}
-		unique[cell.ID] = cell
+		if _, duplicate := seen[cell.ID]; !duplicate {
+			seen[cell.ID] = struct{}{}
+			unique = append(unique, cell)
+		}
 	}
-	ids := make([]int, 0, len(unique))
-	for id := range unique {
-		ids = append(ids, id)
-	}
-	sort.Ints(ids)
 	newArena, setCell := scope.Arena.AppendCellType(cellType)
-	pointers := make([]ElementPointer, len(ids))
-	for index, id := range ids {
-		pointers[index] = FixedElementPointer{Cell: unique[id]}
+	pointers := make([]ElementPointer, len(unique))
+	for index, cell := range unique {
+		pointers[index] = FixedElementPointer{Cell: cell}
 	}
 	scope.Arena = newArena.AppendHas(setCell, pointers...)
 	rewriter.addMembershipConstraints(scope.Arena, setCell)
