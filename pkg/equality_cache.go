@@ -125,7 +125,6 @@ func (cache *EqualityCache) Recover(snapshot EqualityCacheSnapshot) {
 	for pair, value := range snapshot.entries {
 		cache.entries[pair] = equalityCacheValue{entry: value.entry, level: 0}
 	}
-	cache.level = 0
 }
 
 func (cache *EqualityCache) Dispose() {

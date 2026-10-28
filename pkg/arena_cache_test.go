@@ -98,6 +98,60 @@ func TestArenaCacheStackDiscipline(t *testing.T) {
 	}
 }
 
+func TestArenaCacheSnapshotSquashesEntriesAndRetainsReceiverLevel(t *testing.T) {
+	source := NewIntValueCache()
+	arena := EmptyPureArena()
+	source.Push()
+	arena, cell, err := source.GetOrCreate(arena, big.NewInt(9))
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := source.Snapshot()
+	source.Dispose()
+
+	target := NewIntValueCache()
+	target.Push()
+	target.Push()
+	target.Recover(snapshot)
+	if target.Level() != 2 {
+		t.Fatalf("recovery reset receiver level to %d", target.Level())
+	}
+	if got, found := target.Get(big.NewInt(9)); !found || !got.Equal(cell) {
+		t.Fatal("recovered snapshot lost its forward mapping")
+	}
+	if got, found := target.FindValue(cell); !found || got.Int64() != 9 {
+		t.Fatal("recovered snapshot lost its reverse mapping")
+	}
+	if err := target.Pop(2); err != nil {
+		t.Fatal(err)
+	}
+	if _, found := target.Get(big.NewInt(9)); !found {
+		t.Fatal("squashed level-zero entry was removed")
+	}
+
+	// Recovery copies both maps; later cache mutation cannot mutate the shot.
+	_, _, err = target.GetOrCreate(arena, big.NewInt(10))
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := NewIntValueCache()
+	other.Recover(snapshot)
+	if _, found := other.Get(big.NewInt(10)); found {
+		t.Fatal("cache mutation changed its snapshot")
+	}
+}
+
+func TestArenaCachesImplementStackableAndRecoverableContracts(t *testing.T) {
+	var _ StackableContext = (*IntValueCache)(nil)
+	var _ StackableContext = (*UninterpretedLiteralCache)(nil)
+	var _ StackableContext = (*IntRangeCache)(nil)
+	var _ StackableContext = (*RecordDomainCache)(nil)
+	var _ Recoverable[IntValueCacheSnapshot] = (*IntValueCache)(nil)
+	var _ Recoverable[UninterpretedLiteralCacheSnapshot] = (*UninterpretedLiteralCache)(nil)
+	var _ Recoverable[IntRangeCacheSnapshot] = (*IntRangeCache)(nil)
+	var _ Recoverable[RecordDomainCacheSnapshot] = (*RecordDomainCache)(nil)
+}
+
 func TestUninterpretedLiteralCacheTypesAndDistinctness(t *testing.T) {
 	cache := NewUninterpretedLiteralCache()
 	typeA, _ := NewConstType("A")

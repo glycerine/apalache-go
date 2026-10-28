@@ -118,6 +118,28 @@ func TestEqualityCacheSnapshotsAreSquashedAndIndependent(t *testing.T) {
 	}
 }
 
+func TestEqualityCacheRecoveryRetainsReceiverLevel(t *testing.T) {
+	source := NewEqualityCache()
+	first, second, _ := equalityCacheCells()
+	if err := source.Put(first, second, EqualityTrue{}); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := source.Snapshot()
+	target := NewEqualityCache()
+	target.Push()
+	target.Push()
+	target.Recover(snapshot)
+	if target.Level() != 2 {
+		t.Fatalf("recovery reset receiver level to %d", target.Level())
+	}
+	if err := target.Pop(2); err != nil {
+		t.Fatal(err)
+	}
+	if _, found := target.Get(first, second); !found {
+		t.Fatal("squashed equality entry was removed")
+	}
+}
+
 func TestEqualityCacheAcceptsCellsWithNonComparableTypes(t *testing.T) {
 	record, err := NewRecordType(map[string]Type{"x": IntT1})
 	if err != nil {

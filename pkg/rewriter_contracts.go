@@ -23,6 +23,15 @@ type Recoverable[Snapshot any] interface {
 	Recover(Snapshot)
 }
 
+// StackableContext is the common push/pop/dispose contract of SMT contexts
+// and level-aware caches. Go returns an error in place of Scala assertions.
+type StackableContext interface {
+	Level() int
+	Push()
+	Pop(...int) error
+	Dispose()
+}
+
 // SolverContextMetrics records cumulative SMT construction counts.
 type SolverContextMetrics struct {
 	NCells          int64

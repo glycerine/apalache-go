@@ -14,6 +14,13 @@ type arenaCacheEntry[S, T any] struct {
 	level  int
 }
 
+// ArenaCacheSnapshot is an immutable, level-squashed cache image. Its maps
+// remain private so recovery cannot observe caller mutation.
+type ArenaCacheSnapshot[S, T any] struct {
+	entries map[string]arenaCacheEntry[S, T]
+	reverse map[string]arenaCacheEntry[S, T]
+}
+
 // arenaCache implements the stack discipline shared by the symbolic caches.
 // Keys are explicit strings because several Scala cache keys (BigInt, Type,
 // sorted sets) are not comparable Go values.
@@ -96,12 +103,41 @@ func (cache *arenaCache[S, T]) dispose() {
 	cache.level = 0
 }
 
+func (cache *arenaCache[S, T]) snapshot() ArenaCacheSnapshot[S, T] {
+	entries := make(map[string]arenaCacheEntry[S, T], len(cache.entries))
+	for key, entry := range cache.entries {
+		entry.level = 0
+		entries[key] = entry
+	}
+	reverse := make(map[string]arenaCacheEntry[S, T], len(cache.reverse))
+	for key, entry := range cache.reverse {
+		entry.level = 0
+		reverse[key] = entry
+	}
+	return ArenaCacheSnapshot[S, T]{entries: entries, reverse: reverse}
+}
+
+func (cache *arenaCache[S, T]) recover(snapshot ArenaCacheSnapshot[S, T]) {
+	cache.entries = make(map[string]arenaCacheEntry[S, T], len(snapshot.entries))
+	for key, entry := range snapshot.entries {
+		cache.entries[key] = entry
+	}
+	cache.reverse = make(map[string]arenaCacheEntry[S, T], len(snapshot.reverse))
+	for key, entry := range snapshot.reverse {
+		cache.reverse[key] = entry
+	}
+	// Scala recovery replaces both maps but deliberately retains the receiver's
+	// current stack level.
+}
+
 func cellTargetKey(cell ArenaCell) string { return strconv.Itoa(cell.ID) }
 
 // IntValueCache maps arbitrary-precision integer literals to arena cells.
 type IntValueCache struct {
 	cache *arenaCache[*big.Int, ArenaCell]
 }
+
+type IntValueCacheSnapshot = ArenaCacheSnapshot[*big.Int, ArenaCell]
 
 func NewIntValueCache() *IntValueCache {
 	cache := &IntValueCache{}
@@ -147,7 +183,9 @@ func (cache *IntValueCache) Pop(count ...int) error {
 	}
 	return cache.cache.pop(n)
 }
-func (cache *IntValueCache) Dispose() { cache.cache.dispose() }
+func (cache *IntValueCache) Dispose()                               { cache.cache.dispose() }
+func (cache *IntValueCache) Snapshot() IntValueCacheSnapshot        { return cache.cache.snapshot() }
+func (cache *IntValueCache) Recover(snapshot IntValueCacheSnapshot) { cache.cache.recover(snapshot) }
 
 // Constraints returns equalities for entries introduced at the current stack
 // level, matching Cache.addAllConstraints in the Scala implementation.
@@ -170,6 +208,8 @@ type UninterpretedLiteral struct {
 type UninterpretedLiteralCache struct {
 	cache *arenaCache[UninterpretedLiteral, ArenaCell]
 }
+
+type UninterpretedLiteralCacheSnapshot = ArenaCacheSnapshot[UninterpretedLiteral, ArenaCell]
 
 func NewUninterpretedLiteralCache() *UninterpretedLiteralCache {
 	cache := &UninterpretedLiteralCache{}
@@ -241,6 +281,12 @@ func (cache *UninterpretedLiteralCache) Pop(count ...int) error {
 	return cache.cache.pop(n)
 }
 func (cache *UninterpretedLiteralCache) Dispose() { cache.cache.dispose() }
+func (cache *UninterpretedLiteralCache) Snapshot() UninterpretedLiteralCacheSnapshot {
+	return cache.cache.snapshot()
+}
+func (cache *UninterpretedLiteralCache) Recover(snapshot UninterpretedLiteralCacheSnapshot) {
+	cache.cache.recover(snapshot)
+}
 
 // ConstraintFor returns the distinctness constraint generated when one
 // literal is discharged individually.
@@ -300,6 +346,8 @@ type IntRangeCache struct {
 	cache     *arenaCache[[2]int, ArenaSetValue]
 	intValues *IntValueCache
 }
+
+type IntRangeCacheSnapshot = ArenaCacheSnapshot[[2]int, ArenaSetValue]
 
 func NewIntRangeCache(intValues *IntValueCache) *IntRangeCache {
 	if intValues == nil {
@@ -361,12 +409,16 @@ func (cache *IntRangeCache) Pop(count ...int) error {
 	}
 	return cache.cache.pop(n)
 }
-func (cache *IntRangeCache) Dispose() { cache.cache.dispose() }
+func (cache *IntRangeCache) Dispose()                               { cache.cache.dispose() }
+func (cache *IntRangeCache) Snapshot() IntRangeCacheSnapshot        { return cache.cache.snapshot() }
+func (cache *IntRangeCache) Recover(snapshot IntRangeCacheSnapshot) { cache.cache.recover(snapshot) }
 
 type RecordDomainCache struct {
 	cache   *arenaCache[[]string, ArenaSetValue]
 	strings *UninterpretedLiteralCache
 }
+
+type RecordDomainCacheSnapshot = ArenaCacheSnapshot[[]string, ArenaSetValue]
 
 func NewRecordDomainCache(stringsCache *UninterpretedLiteralCache) *RecordDomainCache {
 	if stringsCache == nil {
@@ -440,7 +492,11 @@ func (cache *RecordDomainCache) Pop(count ...int) error {
 	}
 	return cache.cache.pop(n)
 }
-func (cache *RecordDomainCache) Dispose() { cache.cache.dispose() }
+func (cache *RecordDomainCache) Dispose()                            { cache.cache.dispose() }
+func (cache *RecordDomainCache) Snapshot() RecordDomainCacheSnapshot { return cache.cache.snapshot() }
+func (cache *RecordDomainCache) Recover(snapshot RecordDomainCacheSnapshot) {
+	cache.cache.recover(snapshot)
+}
 
 func membershipConstraints[S any](entries []arenaCacheEntry[S, ArenaSetValue]) []Expr {
 	result := make([]Expr, 0)
