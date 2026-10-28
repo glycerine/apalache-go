@@ -345,6 +345,24 @@ Inv == x = x
 	if !strings.Contains(stdout.String(), outputPath) {
 		t.Fatalf("transpile success message = %q", &stdout)
 	}
+
+	outDir := filepath.Join(dir, "transpile-out")
+	runDir := filepath.Join(dir, "transpile-run")
+	stdout.Reset()
+	stderr.Reset()
+	code = run(context.Background(), []string{
+		"transpile", "-inv=Inv", "--out-dir=" + outDir, "--run-dir=" + runDir, sourcePath,
+	}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("directory transpile = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
+	}
+	if _, err = os.Stat(filepath.Join(runDir, "output.vmt")); err != nil {
+		t.Fatalf("custom-run VMT: %v", err)
+	}
+	generated, err := filepath.Glob(filepath.Join(outDir, filepath.Base(sourcePath), "*", "output.vmt"))
+	if err != nil || len(generated) != 1 {
+		t.Fatalf("generated-run VMT = %v, %v", generated, err)
+	}
 }
 
 func TestRunTranspileValidatesArguments(t *testing.T) {

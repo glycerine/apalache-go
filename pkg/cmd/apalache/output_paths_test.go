@@ -45,6 +45,12 @@ func TestResolveOutputDirectoryOptionsPrecedence(t *testing.T) {
 	if err := config.validateForSimulate(); err != nil {
 		t.Fatalf("simulate JSON output directories = %v", err)
 	}
+	if err := config.validateForFrontend("transpile"); err != nil {
+		t.Fatalf("transpile JSON output directories = %v", err)
+	}
+	if err := config.validateForFrontend("parse"); err == nil {
+		t.Fatal("parse JSON output directories should remain unsupported until the command writes run output")
+	}
 	if err := config.validateForModelCommand("test", false); err == nil {
 		t.Fatal("test JSON output directories should remain unsupported until the command writes run output")
 	}

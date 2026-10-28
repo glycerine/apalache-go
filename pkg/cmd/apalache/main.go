@@ -219,6 +219,8 @@ func runTranspile(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	flags := flag.NewFlagSet("transpile", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	configFile := flags.String("config-file", "", "Apalache JSON configuration file")
+	outDir := flags.String("out-dir", "", "root directory for source-namespaced run output")
+	runDir := flags.String("run-dir", "", "additional directory receiving run output directly")
 	configPath := flags.String("config", "", "TLC configuration file")
 	initName := flags.String("init", "", "initial-state operator")
 	nextName := flags.String("next", "", "next-state operator")
@@ -259,6 +261,7 @@ func runTranspile(ctx context.Context, args []string, stdout, stderr io.Writer) 
 			return exitUsage
 		}
 	}
+	resolveOutputDirectoryOptions(applicationConfig, visited, outDir, runDir)
 	if visited["init"] != visited["next"] {
 		fmt.Fprintln(stderr, "-init and -next must be provided together")
 		return exitUsage
@@ -316,6 +319,11 @@ func runTranspile(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	} else if configuration.TLCConfig == nil {
 		configuration.Behavior = pal.InitNextSpec{Init: "Init", Next: "Next"}
 	}
+	outputPaths, err := prepareCommandOutputPaths(*outDir, *runDir, sourcePath, "transpile")
+	if err != nil {
+		fmt.Fprintf(stderr, "cannot configure transpile output: %v\n", err)
+		return exitUsage
+	}
 	frontend := pal.ParseAndTypeCheckFile(ctx, sourcePath, pal.FrontendOptions{
 		LibraryPaths: libraryPaths,
 	}, pal.TypeCheckOptions{UseRows: rows, DisablePolytypes: *disablePolytypes})
@@ -345,15 +353,21 @@ func runTranspile(ctx context.Context, args []string, stdout, stderr io.Writer) 
 		}
 		return exitOK
 	}
-	if err = os.WriteFile(*outputPath, []byte(document), 0o644); err != nil {
-		fmt.Fprintf(stderr, "cannot write VMT constraints: %v\n", err)
-		return exitTool
+	outputFiles := []string{*outputPath}
+	if !visited["output"] && applicationConfig.Output == nil {
+		outputFiles = outputPaths.implicitFiles(*outputPath)
 	}
-	absolute, absoluteErr := filepath.Abs(*outputPath)
-	if absoluteErr != nil {
-		absolute = *outputPath
+	for _, path := range outputFiles {
+		if err = os.WriteFile(path, []byte(document), 0o644); err != nil {
+			fmt.Fprintf(stderr, "cannot write VMT constraints: %v\n", err)
+			return exitTool
+		}
+		absolute, absoluteErr := filepath.Abs(path)
+		if absoluteErr != nil {
+			absolute = path
+		}
+		fmt.Fprintf(stdout, "VMT constraints successfully generated at\n%s\n", absolute)
 	}
-	fmt.Fprintf(stdout, "VMT constraints successfully generated at\n%s\n", absolute)
 	return exitOK
 }
 
