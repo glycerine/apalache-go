@@ -45,9 +45,12 @@ func TestStratifiedRewriterAssignmentAndBooleanRules(t *testing.T) {
 	if _, _, err := rewriter.Rewrite(assignment, assignedScope); err == nil {
 		t.Fatal("duplicate assignment was accepted")
 	}
+	arena, booleans := assignedScope.Arena.AppendCellTypes(
+		BasicCellType{Type: BoolT1}, BasicCellType{Type: BoolT1})
+	assignedScope.Arena = arena
+	assignedScope.Binding = assignedScope.Binding.With("p", booleans[0]).With("q", booleans[1])
 	conjunction := MustOperExpr(Op("AND"), Typed(BoolT1),
-		NewValueExpr(BoolValue(true), Typed(BoolT1)),
-		NewValueExpr(BoolValue(false), Typed(BoolT1)))
+		NewNameExpr("p", Typed(BoolT1)), NewNameExpr("q", Typed(BoolT1)))
 	boolScope, boolCell, err := rewriter.Rewrite(conjunction, assignedScope)
 	if err != nil || boolScope.Arena.CellCount() != assignedScope.Arena.CellCount()+1 {
 		t.Fatalf("conjunction = %v, count %d, error %v", boolCell, boolScope.Arena.CellCount(), err)
@@ -55,6 +58,13 @@ func TestStratifiedRewriterAssignmentAndBooleanRules(t *testing.T) {
 	constraint := rewriter.Constraints()[len(rewriter.Constraints())-1].(*OperExpr)
 	if constraint.Operator().Name() != "EQ" || constraint.Arguments()[1].(*OperExpr).Operator().Name() != "AND" {
 		t.Fatalf("conjunction constraint = %#v", constraint)
+	}
+	absorbed := MustOperExpr(Op("AND"), Typed(BoolT1),
+		NewValueExpr(BoolValue(true), Typed(BoolT1)),
+		NewValueExpr(BoolValue(false), Typed(BoolT1)))
+	_, absorbedCell, err := rewriter.Rewrite(absorbed, boolScope)
+	if err != nil || !absorbedCell.Equal(boolScope.Arena.FalseCell()) {
+		t.Fatalf("absorbed conjunction = %v, %v", absorbedCell, err)
 	}
 	emptyOr := MustOperExpr(Op("OR"), Typed(BoolT1))
 	_, emptyCell, err := rewriter.Rewrite(emptyOr, boolScope)
@@ -90,6 +100,65 @@ func TestStratifiedRewriterShortCircuitsAndOrAsConditionals(t *testing.T) {
 				if !ok || conditional.Operator().Name() != "IF_THEN_ELSE" {
 					t.Fatalf("%s did not produce an IF_THEN_ELSE: %#v", operator, equality)
 				}
+			}
+		})
+	}
+}
+
+func TestStratifiedRewriterBooleanShallowSimplificationScalaOracle(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		operator   string
+		neutral    bool
+		absorbing  bool
+		absorbedID int
+	}{
+		{name: "and", operator: "AND", neutral: true, absorbing: false, absorbedID: 0},
+		{name: "or", operator: "OR", neutral: false, absorbing: true, absorbedID: 1},
+	} {
+		t.Run(test.name+" removes neutral constants", func(t *testing.T) {
+			rewriter := NewStratifiedRewriter()
+			scope := InitialRewriterScope()
+			arena, variables := scope.Arena.AppendCellTypes(
+				BasicCellType{Type: BoolT1}, BasicCellType{Type: BoolT1})
+			scope.Arena = arena
+			scope.Binding = scope.Binding.With("x", variables[0]).With("y", variables[1])
+			expression := MustOperExpr(Op(test.operator), Typed(BoolT1),
+				NewValueExpr(BoolValue(test.neutral), Typed(BoolT1)),
+				NewNameExpr("x", Typed(BoolT1)),
+				NewValueExpr(BoolValue(test.neutral), Typed(BoolT1)),
+				NewNameExpr("y", Typed(BoolT1)),
+				NewValueExpr(BoolValue(test.neutral), Typed(BoolT1)))
+			endScope, _, err := rewriter.Rewrite(expression, scope)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if endScope.Arena.CellCount() != scope.Arena.CellCount()+1 {
+				t.Fatalf("arena gained %d cells, want one", endScope.Arena.CellCount()-scope.Arena.CellCount())
+			}
+			constraints := rewriter.Constraints()
+			if len(constraints) != 1 {
+				t.Fatalf("constraints = %d, want one", len(constraints))
+			}
+			operation := constraints[0].(*OperExpr).Arguments()[1].(*OperExpr)
+			if operation.Operator().Name() != test.operator || len(operation.Arguments()) != 2 ||
+				operation.Arguments()[0].(*NameExpr).Name() != variables[0].NameExpr().Name() ||
+				operation.Arguments()[1].(*NameExpr).Name() != variables[1].NameExpr().Name() {
+				t.Fatalf("simplified operation = %#v", operation)
+			}
+		})
+
+		t.Run(test.name+" returns absorbing constant", func(t *testing.T) {
+			rewriter := NewStratifiedRewriter()
+			scope := InitialRewriterScope()
+			expression := MustOperExpr(Op(test.operator), Typed(BoolT1),
+				NewNameExpr("deliberately-unbound", Typed(BoolT1)),
+				NewValueExpr(BoolValue(test.absorbing), Typed(BoolT1)),
+				NewNameExpr("also-unbound", Typed(BoolT1)))
+			endScope, result, err := rewriter.Rewrite(expression, scope)
+			if err != nil || result.ID != test.absorbedID || endScope.Arena != scope.Arena || len(rewriter.Constraints()) != 0 {
+				t.Fatalf("absorbing rewrite = cell %v, arena changed %v, constraints %d, error %v",
+					result, endScope.Arena != scope.Arena, len(rewriter.Constraints()), err)
 			}
 		})
 	}

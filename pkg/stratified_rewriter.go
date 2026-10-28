@@ -1895,8 +1895,38 @@ func (rewriter *StratifiedRewriter) rewriteAssignment(expression *OperExpr, scop
 
 func (rewriter *StratifiedRewriter) rewriteBoolean(expression *OperExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
 	arguments := expression.Arguments()
+	operator := expression.Operator().Name()
+	if operator == "AND" || operator == "OR" {
+		// ConstSimplifierForSmt.simplifyShallow, used by both generations of
+		// Scala's AND/OR rules, removes neutral constants and returns an
+		// absorbing constant without rewriting any remaining operands.
+		neutral := BoolValue(operator == "AND")
+		absorbing := BoolValue(operator == "OR")
+		simplified := make([]Expr, 0, len(arguments))
+		for _, argument := range arguments {
+			value, literal := argument.(*ValueExpr)
+			boolean, booleanLiteral := BoolValue(false), false
+			if literal {
+				boolean, booleanLiteral = value.Value().(BoolValue)
+			}
+			if !booleanLiteral {
+				simplified = append(simplified, argument)
+				continue
+			}
+			if boolean == absorbing {
+				if bool(absorbing) {
+					return scope, scope.Arena.TrueCell(), nil
+				}
+				return scope, scope.Arena.FalseCell(), nil
+			}
+			if boolean != neutral {
+				simplified = append(simplified, argument)
+			}
+		}
+		arguments = simplified
+	}
 	if len(arguments) == 0 {
-		if expression.Operator().Name() == "AND" {
+		if operator == "AND" {
 			return scope, scope.Arena.TrueCell(), nil
 		}
 		return scope, scope.Arena.FalseCell(), nil
@@ -1904,10 +1934,10 @@ func (rewriter *StratifiedRewriter) rewriteBoolean(expression *OperExpr, scope R
 	if len(arguments) == 1 {
 		return rewriter.Rewrite(arguments[0], scope)
 	}
-	if rewriter.shortCircuit && (expression.Operator().Name() == "AND" || expression.Operator().Name() == "OR") {
+	if rewriter.shortCircuit && (operator == "AND" || operator == "OR") {
 		conditional := arguments[len(arguments)-1]
 		for index := len(arguments) - 2; index >= 0; index-- {
-			if expression.Operator().Name() == "AND" {
+			if operator == "AND" {
 				conditional = MustOperExpr(Op("IF_THEN_ELSE"), Typed(BoolT1),
 					arguments[index], conditional, scope.Arena.FalseCell().NameExpr())
 			} else {
