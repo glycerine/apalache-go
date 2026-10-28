@@ -436,8 +436,8 @@ func (config jsonCommandConfig) validateForFrontend(command string) error {
 	}{
 		{config.Command != nil, "command"},
 		{config.ConfigFile != nil, "config-file"},
-		{config.OutDir != nil && command != "transpile", "out-dir"},
-		{config.RunDir != nil && command != "transpile", "run-dir"},
+		{config.OutDir != nil && command != "transpile" && command != "tracee", "out-dir"},
+		{config.RunDir != nil && command != "transpile" && command != "tracee", "run-dir"},
 		{config.Debug != nil, "debug"},
 		{config.SMTProfile != nil, "smtprof"},
 		{config.WriteIntermediate != nil, "write-intermediate"},

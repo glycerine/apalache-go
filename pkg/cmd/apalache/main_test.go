@@ -261,6 +261,26 @@ PlusN == x + N
 	if firstPlusN != "12" || secondPlusN != "13" {
 		t.Fatalf("constant evaluation = %q, %q", firstPlusN, secondPlusN)
 	}
+
+	stdout.Reset()
+	stderr.Reset()
+	runDir := filepath.Join(dir, "tracee-run")
+	code = run(context.Background(), []string{
+		"tracee", "--run-dir=" + runDir, "-trace", tracePath, "-expressions", "Square,Even,PlusN", sourcePath,
+	}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("run-dir tracee = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
+	}
+	data, err := os.ReadFile(filepath.Join(runDir, "example.itf.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if evaluated, decodeErr := pal.UnmarshalITFTrace(data); decodeErr != nil || len(evaluated) != 2 {
+		t.Fatalf("run-dir evaluated trace = %#v, %v", evaluated, decodeErr)
+	}
+	if _, err = os.Stat(filepath.Join(runDir, "run.txt")); err != nil {
+		t.Fatalf("tracee run metadata: %v", err)
+	}
 }
 
 func TestRunTraceeAcceptsScalaPositionalInterface(t *testing.T) {

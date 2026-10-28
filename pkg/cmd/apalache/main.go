@@ -379,6 +379,8 @@ func runTracee(ctx context.Context, args []string, stdout, stderr io.Writer) int
 	flags := flag.NewFlagSet("tracee", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	configFile := flags.String("config-file", "", "Apalache JSON configuration file")
+	outDir := flags.String("out-dir", "", "root directory for source-namespaced run output")
+	runDir := flags.String("run-dir", "", "additional directory receiving run output directly")
 	tracePath := flags.String("trace", "", "input ITF trace")
 	itfPath := flags.String("itf", "", "write evaluated ITF trace to this file (default stdout)")
 	useRows := flags.Bool("rows", false, "enable row types")
@@ -448,9 +450,19 @@ func runTracee(ctx context.Context, args []string, stdout, stderr io.Writer) int
 			expressions = append(expressions[:0], (*applicationConfig.TraceEvaluation.Expressions)...)
 		}
 	}
+	resolveOutputDirectoryOptions(applicationConfig, visited, outDir, runDir)
 	if sourcePath == "" || *tracePath == "" || len(expressions) == 0 {
 		fmt.Fprintln(stderr, "tracee requires a trace and at least one expression operator")
 		return exitUsage
+	}
+	outputPaths, err := prepareCommandOutputPaths(*outDir, *runDir, sourcePath, "tracee")
+	if err != nil {
+		fmt.Fprintf(stderr, "cannot configure tracee output: %v\n", err)
+		return exitUsage
+	}
+	if err = outputPaths.writeRunFile("tracee", args); err != nil {
+		fmt.Fprintf(stderr, "cannot write tracee run metadata: %v\n", err)
+		return exitTool
 	}
 	rows, featureErr := resolveRowsFeature(*useRows, *features)
 	if featureErr != nil {
@@ -502,17 +514,23 @@ func runTracee(ctx context.Context, args []string, stdout, stderr io.Writer) int
 		return exitTool
 	}
 	data = append(data, '\n')
-	if *itfPath == "" {
+	if *itfPath == "" && outputPaths.runDir == "" && outputPaths.customRunDir == "" {
 		if _, err = stdout.Write(data); err != nil {
 			fmt.Fprintf(stderr, "cannot write evaluated trace: %v\n", err)
 			return exitTool
 		}
 	} else {
-		if err = os.WriteFile(*itfPath, data, 0o644); err != nil {
-			fmt.Fprintf(stderr, "cannot write evaluated trace: %v\n", err)
-			return exitTool
+		outputFiles := []string{*itfPath}
+		if *itfPath == "" {
+			outputFiles = outputPaths.implicitFiles("example.itf.json")
 		}
-		fmt.Fprintf(stdout, "Wrote evaluated ITF trace to %s.\n", *itfPath)
+		for _, outputPath := range outputFiles {
+			if err = os.WriteFile(outputPath, data, 0o644); err != nil {
+				fmt.Fprintf(stderr, "cannot write evaluated trace: %v\n", err)
+				return exitTool
+			}
+			fmt.Fprintf(stdout, "Wrote evaluated ITF trace to %s.\n", outputPath)
+		}
 	}
 	return exitOK
 }
