@@ -36,14 +36,26 @@ func TestStratifiedRewriterBuiltinsSubstitutionIntegersAndAssignment(t *testing.
 func TestStratifiedRewriterAssignmentAndBooleanRules(t *testing.T) {
 	rewriter := NewStratifiedRewriter()
 	scope := InitialRewriterScope()
+	arena, rhsCells := scope.Arena.AppendCellTypes(
+		BasicCellType{Type: IntT1}, BasicCellType{Type: IntT1})
+	scope.Arena = arena
+	scope.Binding = scope.Binding.With("left", rhsCells[0]).With("right", rhsCells[1])
 	prime := MustOperExpr(Op("PRIME"), Typed(IntT1), NewNameExpr("x", Typed(IntT1)))
-	assignment := MustOperExpr(Op("Apalache!:="), Typed(BoolT1), prime, NewValueExpr(Int64Value(7), Typed(IntT1)))
+	assignment := MustOperExpr(Op("Apalache!:="), Typed(BoolT1), prime, NewNameExpr("right", Typed(IntT1)))
 	assignedScope, result, err := rewriter.Rewrite(assignment, scope)
-	if err != nil || !result.Equal(assignedScope.Arena.TrueCell()) || !assignedScope.Binding.Contains("x'") {
+	assigned, found := assignedScope.Binding.Get("x'")
+	if err != nil || !result.Equal(assignedScope.Arena.TrueCell()) || !found || !assigned.Equal(rhsCells[1]) ||
+		len(rewriter.Constraints()) != 0 {
 		t.Fatalf("assignment = scope %#v, cell %v, error %v", assignedScope, result, err)
 	}
 	if _, _, err := rewriter.Rewrite(assignment, assignedScope); err == nil {
 		t.Fatal("duplicate assignment was accepted")
+	}
+	cellPrime := MustOperExpr(Op("PRIME"), Typed(BoolT1), scope.Arena.TrueCell().NameExpr())
+	cellAssignment := MustOperExpr(Op("Apalache!:="), Typed(BoolT1), cellPrime,
+		NewNameExpr("left", Typed(IntT1)))
+	if _, _, err := rewriter.Rewrite(cellAssignment, scope); err == nil {
+		t.Fatal("assignment to an arena-cell name was accepted")
 	}
 	arena, booleans := assignedScope.Arena.AppendCellTypes(
 		BasicCellType{Type: BoolT1}, BasicCellType{Type: BoolT1})
