@@ -281,6 +281,54 @@ func TestUnmarshalITFTrace(t *testing.T) {
 	}
 }
 
+func TestDecodeITFStateAcceptsPartialStatesAndAggregatesErrors(t *testing.T) {
+	raw := map[string]any{ITFMetaField: map[string]any{"index": json.Number("0")}, "x": json.Number("1")}
+	state, err := DecodeITFState(raw, map[string]Type{"x": IntT1, "y": StrT1})
+	if err != nil || len(state) != 1 || state["y"] != nil {
+		t.Fatalf("partial state = %#v, %v", state, err)
+	}
+	_, err = DecodeITFState(map[string]any{"x": "bad", "z": true}, map[string]Type{"x": IntT1})
+	var multiple *ITFMultipleErrors
+	if !errors.As(err, &multiple) || len(multiple.Errors) != 2 {
+		t.Fatalf("state errors = %T %v", err, err)
+	}
+	if _, err = DecodeITFState([]any{}, map[string]Type{}); err == nil {
+		t.Fatal("accepted array as state")
+	}
+}
+
+func TestDecodeITFNestedRecordVariantFunctionOracle(t *testing.T) {
+	optionsType, _ := NewFunType(StrT1, IntT1)
+	payloadRecordRow, _ := NewRowType(map[string]Type{"opcode": IntT1, "options": optionsType}, nil)
+	payloadRecord := NewRecordRowType(payloadRecordRow)
+	payloadVariantRow, _ := NewRowType(map[string]Type{"OACK": payloadRecord}, nil)
+	payloadVariant := NewVariantType(payloadVariantRow)
+	packetRow, _ := NewRowType(map[string]Type{"destIp": StrT1, "destPort": IntT1, "payload": payloadVariant}, nil)
+	packetType := NewRecordRowType(packetRow)
+	raw := map[string]any{
+		"destIp":   "172.20.0.10",
+		"destPort": map[string]any{ITFBigIntField: "69"},
+		"payload": map[string]any{
+			ITFTagField: "OACK",
+			ITFValueField: map[string]any{
+				"opcode":  map[string]any{ITFBigIntField: "6"},
+				"options": map[string]any{ITFMapField: []any{[]any{"timeout", map[string]any{ITFBigIntField: "1"}}}},
+			},
+		},
+	}
+	decoded, err := DecodeITFValue(raw, packetType)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reencoded, err := EncodeITFValue(decoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	left, _ := json.Marshal(raw)
+	right, _ := json.Marshal(reencoded)
+	assertJSONEqual(t, left, right)
+}
+
 func TestUnmarshalITFTraceWithSourceTypedParams(t *testing.T) {
 	input := []byte(`{
   "#meta":{"format":"ITF","varTypes":{"x":"Int"}},

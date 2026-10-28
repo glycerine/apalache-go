@@ -518,6 +518,46 @@ func unmarshalITFTrace(data []byte, parameterTypes map[string]Type) ([]TraceStat
 
 var itfIdentifier = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
+// DecodeITFState decodes every value present in one state using the supplied
+// variable types. Like the Scala parseState entry point, it accepts partial
+// states; whole-trace completeness is enforced by UnmarshalITFTrace.
+func DecodeITFState(raw any, variableTypes map[string]Type) (TraceState, error) {
+	object, ok := raw.(map[string]any)
+	if !ok {
+		return nil, itfFormat("state must be an object")
+	}
+	state := make(TraceState, len(object))
+	errorsFound := make([]error, 0)
+	names := make([]string, 0, len(object))
+	for name := range object {
+		if name != ITFMetaField {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		rawValue := object[name]
+		typ := variableTypes[name]
+		if typ == nil {
+			errorsFound = append(errorsFound, itfFormat("variable %s has no type annotation", name))
+			continue
+		}
+		value, err := DecodeITFValue(rawValue, typ)
+		if err != nil {
+			errorsFound = append(errorsFound, fmt.Errorf("variable %s: %w", name, err))
+			continue
+		}
+		state[name] = value
+	}
+	if len(errorsFound) == 1 {
+		return nil, errorsFound[0]
+	}
+	if len(errorsFound) > 1 {
+		return nil, NewITFMultipleErrors(errorsFound)
+	}
+	return state, nil
+}
+
 func DecodeITFValue(raw any, typ Type) (Expr, error) {
 	if object, ok := raw.(map[string]any); ok {
 		if len(object) == 1 {
