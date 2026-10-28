@@ -421,7 +421,6 @@ func inferCaseType(operator Operator, arguments []Type, hasOther bool) (Type, er
 		if len(arguments) == 0 {
 			return nil, signatureError(operator, arguments, "missing OTHER body")
 		}
-		bodies = append(bodies, arguments[0])
 		start = 1
 	}
 	if len(arguments)-start < 2 || (len(arguments)-start)%2 != 0 {
@@ -465,9 +464,8 @@ func inferFunctionConstructorType(operator Operator, arguments []Type) (Type, er
 func inferRepeatType(operator Operator, arguments []Type) (Type, error) {
 	if len(arguments) == 3 && EqualTypes(arguments[1], IntT1) {
 		if operation, ok := arguments[0].(OperatorType); ok && len(operation.arguments) == 2 && EqualTypes(operation.arguments[0], IntT1) {
-			common, compatible, err := CommonSequenceSupertype([]Type{operation.arguments[1], operation.result, arguments[2]})
-			if err == nil && compatible {
-				return common, nil
+			if CompatibleTypes(operation.arguments[1], operation.result) && CompatibleTypes(operation.arguments[1], arguments[2]) {
+				return operation.arguments[1], nil
 			}
 		}
 	}
