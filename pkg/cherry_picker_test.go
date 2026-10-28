@@ -254,6 +254,94 @@ func TestCherryPickerScalaRecordCases(t *testing.T) {
 	})
 }
 
+func TestCherryPickerScalaMixedShapeLegacyRecords(t *testing.T) {
+	wideType, err := NewRecordType(map[string]Type{"a": IntT1, "b": IntT1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	narrowType, err := NewRecordType(map[string]Type{"a": IntT1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidates := []Expr{
+		cherryRecord(wideType, cherryKey("a"), cherryInt(1), cherryKey("b"), cherryInt(2)),
+		cherryRecord(narrowType, cherryKey("a"), cherryInt(3)),
+	}
+	for selected := range candidates {
+		rewriter := NewStratifiedRewriter()
+		scope := InitialRewriterScope()
+		cells := make([]ArenaCell, len(candidates))
+		for index, candidate := range candidates {
+			scope, cells[index], err = rewriter.Rewrite(candidate, scope)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		scope, oracle, err := CreateIntOracle(scope, len(cells))
+		if err != nil {
+			t.Fatal(err)
+		}
+		scope, picked, err := NewCherryPicker(rewriter).Pick(scope, oracle, cells)
+		if err != nil {
+			t.Fatal(err)
+		}
+		scope, expected, err := rewriter.coerceCell(scope, cells[selected], wideType)
+		if err != nil {
+			t.Fatal(err)
+		}
+		choice, err := oracle.Chosen(scope, selected)
+		if err != nil {
+			t.Fatal(err)
+		}
+		equal, err := rewriter.equality.Equal(scope.Arena, picked, expected)
+		if err != nil {
+			t.Fatal(err)
+		}
+		solver := newTestG3Solver(t)
+		constraints := append(rewriter.Constraints(), choice,
+			MustOperExpr(Op("NOT"), Typed(BoolT1), equal))
+		if _, err := EncodeRewriterScope(solver, scope, constraints); err != nil {
+			t.Fatal(err)
+		}
+		if status, err := solver.Check(context.Background()); err != nil || status != SMTUnsatisfiable {
+			t.Fatalf("mixed-shape record position %d differs from candidate: %v, %v", selected, status, err)
+		}
+	}
+
+	rewriter := NewStratifiedRewriter()
+	setType := mustSet(wideType)
+	set := MustOperExpr(Op("SET_ENUM"), Typed(setType), candidates...)
+	guess := MustOperExpr(Op("Apalache!Guess"), Typed(wideType), set)
+	scope, picked, err := rewriter.Rewrite(guess, InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	sets := scope.Arena.FindCellsByType(BasicCellType{Type: setType})
+	if len(sets) != 1 {
+		t.Fatalf("found %d mixed-record candidate sets", len(sets))
+	}
+	pointers := scope.Arena.GetHas(sets[0])
+	if len(pointers) != 2 {
+		t.Fatalf("mixed-record candidate set has %d elements", len(pointers))
+	}
+	equalities := make([]Expr, len(pointers))
+	for index, pointer := range pointers {
+		equalities[index], err = rewriter.equality.Equal(scope.Arena, picked, pointer.Element())
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	solver := newTestG3Solver(t)
+	constraints := append(rewriter.Constraints(),
+		MustOperExpr(Op("NOT"), Typed(BoolT1), booleanOr(equalities...)))
+	if _, err := EncodeRewriterScope(solver, scope, constraints); err != nil {
+		t.Fatal(err)
+	}
+	if status, err := solver.Check(context.Background()); err != nil || status != SMTUnsatisfiable {
+		t.Fatalf("mixed-record Guess escaped candidates: %v, %v", status, err)
+	}
+}
+
 func TestCherryPickerScalaVariantCase(t *testing.T) {
 	variantType := testVariantType(t)
 	assertCherryPickerCandidates(t, "variants", []Expr{

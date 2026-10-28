@@ -18,9 +18,30 @@ func (picker *CherryPicker) Pick(scope RewriterScope, oracle ChoiceOracle, cells
 	if len(cells) == 0 || oracle.Size() < len(cells) {
 		return scope, ArenaCell{}, fmt.Errorf("oracle size %d is below %d candidate cells", oracle.Size(), len(cells))
 	}
+	commonType := cells[0].Type.TLAType()
+	requiresCoercion := false
 	for _, cell := range cells[1:] {
 		if !EqualCellTypes(cells[0].Type, cell.Type) {
-			return scope, ArenaCell{}, fmt.Errorf("cherry-pick candidates have types %s and %s", cells[0].Type, cell.Type)
+			requiresCoercion = true
+		}
+		var compatible bool
+		var err error
+		commonType, compatible, err = CommonSupertype(commonType, cell.Type.TLAType())
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+		if !compatible {
+			return scope, ArenaCell{}, fmt.Errorf("cherry-pick candidates have incompatible types %s and %s", cells[0].Type, cell.Type)
+		}
+	}
+	if requiresCoercion {
+		cells = append([]ArenaCell(nil), cells...)
+		for index, cell := range cells {
+			var err error
+			scope, cells[index], err = picker.rewriter.coerceCell(scope, cell, commonType)
+			if err != nil {
+				return scope, ArenaCell{}, fmt.Errorf("coerce cherry-pick candidate %d to %s: %w", index+1, commonType, err)
+			}
 		}
 	}
 	allSame := true
