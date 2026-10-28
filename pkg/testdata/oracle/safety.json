@@ -22,6 +22,8 @@
     {
       "name": "configured-depth-four-deadlock",
       "dir": "..",
+      "validate_behavior": true,
+      "source": "test/tla/HandshakeWithTypes.tla",
       "scala_args": ["check", "--config=test/tla/HandshakeWithTypes_deadlock.cfg", "--length=5", "test/tla/HandshakeWithTypes.tla"],
       "go_args": ["check", "-config", "test/tla/HandshakeWithTypes_deadlock.cfg", "-length", "5", "test/tla/HandshakeWithTypes.tla"]
     },
@@ -66,6 +68,8 @@
     {
       "name": "trace-invariant-violation",
       "dir": "..",
+      "validate_behavior": true,
+      "source": "test/tla/Invariants.tla",
       "scala_args": ["check", "--length=3", "--no-deadlock", "--inv=BuggyTraceInv", "test/tla/Invariants.tla"],
       "go_args": ["check", "--length=3", "--no-deadlock", "--inv=BuggyTraceInv", "test/tla/Invariants.tla"]
     },
@@ -123,6 +127,8 @@
     {
       "name": "multi-state-loop-temporal-violation",
       "dir": "..",
+      "validate_behavior": true,
+      "source": "test/tla/LongLoops.tla",
       "scala_args": ["check", "--length=3", "--no-deadlock", "--temporal=FalseLiveness", "test/tla/LongLoops.tla"],
       "go_args": ["check", "--length=3", "--no-deadlock", "--temporal=FalseLiveness", "test/tla/LongLoops.tla"]
     },

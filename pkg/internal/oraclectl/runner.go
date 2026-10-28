@@ -31,6 +31,7 @@ type Outcome struct {
 	Depth    int
 	ExitCode int
 	Trace    []string
+	RawTrace []byte
 	Stdout   string
 	Stderr   string
 }
@@ -43,11 +44,16 @@ type Command struct {
 }
 
 type Case struct {
-	Name         string   `json:"name"`
-	Dir          string   `json:"dir,omitempty"`
-	ScalaArgs    []string `json:"scala_args"`
-	GoArgs       []string `json:"go_args"`
-	CompareTrace bool     `json:"compare_trace,omitempty"`
+	Name             string   `json:"name"`
+	Dir              string   `json:"dir,omitempty"`
+	ScalaArgs        []string `json:"scala_args"`
+	GoArgs           []string `json:"go_args"`
+	CompareTrace     bool     `json:"compare_trace,omitempty"`
+	ValidateBehavior bool     `json:"validate_behavior,omitempty"`
+	Source           string   `json:"source,omitempty"`
+	Init             string   `json:"init,omitempty"`
+	Next             string   `json:"next,omitempty"`
+	Rows             bool     `json:"rows,omitempty"`
 }
 
 type Manifest struct {
@@ -78,25 +84,37 @@ func RunDifferential(ctx context.Context, scalaExecutable, goExecutable string, 
 	if err != nil {
 		return DifferentialResult{}, fmt.Errorf("run Scala oracle for %s: %w", test.Name, err)
 	}
-	if test.CompareTrace && (scala.Verdict == VerdictViolation || scala.Verdict == VerdictDeadlock) {
-		scala.Trace, err = readScalaITFTrace(scalaTraceDir)
+	if (test.CompareTrace || test.ValidateBehavior) && (scala.Verdict == VerdictViolation || scala.Verdict == VerdictDeadlock) {
+		scala.RawTrace, err = readScalaITFTraceData(scalaTraceDir)
 		if err != nil {
 			return DifferentialResult{Case: test, Scala: scala}, fmt.Errorf("read Scala trace for %s: %w", test.Name, err)
+		}
+		if test.CompareTrace {
+			scala.Trace, err = normalizeITFTrace(scala.RawTrace)
+			if err != nil {
+				return DifferentialResult{Case: test, Scala: scala}, err
+			}
 		}
 	}
 	goTracePath := filepath.Join(traceRoot, "go.itf.json")
 	goArgs := append([]string(nil), test.GoArgs...)
-	if test.CompareTrace && len(goArgs) > 0 && goArgs[0] == "check" {
+	if (test.CompareTrace || test.ValidateBehavior) && len(goArgs) > 0 && goArgs[0] == "check" {
 		goArgs = append([]string{goArgs[0], "-itf=" + goTracePath}, goArgs[1:]...)
 	}
 	goResult, err := Run(ctx, Command{Executable: goExecutable, Args: goArgs, Dir: test.Dir})
 	if err != nil {
 		return DifferentialResult{}, fmt.Errorf("run Go checker for %s: %w", test.Name, err)
 	}
-	if test.CompareTrace && (goResult.Verdict == VerdictViolation || goResult.Verdict == VerdictDeadlock) {
-		goResult.Trace, err = readITFTrace(goTracePath)
+	if (test.CompareTrace || test.ValidateBehavior) && (goResult.Verdict == VerdictViolation || goResult.Verdict == VerdictDeadlock) {
+		goResult.RawTrace, err = os.ReadFile(goTracePath)
 		if err != nil {
 			return DifferentialResult{Case: test, Scala: scala, Go: goResult}, fmt.Errorf("read Go trace for %s: %w", test.Name, err)
+		}
+		if test.CompareTrace {
+			goResult.Trace, err = normalizeITFTrace(goResult.RawTrace)
+			if err != nil {
+				return DifferentialResult{Case: test, Scala: scala, Go: goResult}, err
+			}
 		}
 	}
 	result := DifferentialResult{Case: test, Scala: scala, Go: goResult}
@@ -107,6 +125,14 @@ func RunDifferential(ctx context.Context, scalaExecutable, goExecutable string, 
 }
 
 func readScalaITFTrace(directory string) ([]string, error) {
+	data, err := readScalaITFTraceData(directory)
+	if err != nil {
+		return nil, err
+	}
+	return normalizeITFTrace(data)
+}
+
+func readScalaITFTraceData(directory string) ([]byte, error) {
 	paths, err := filepath.Glob(filepath.Join(directory, "*.itf.json"))
 	if err != nil {
 		return nil, err
@@ -115,7 +141,7 @@ func readScalaITFTrace(directory string) ([]string, error) {
 		return nil, fmt.Errorf("no ITF trace in %s", directory)
 	}
 	sort.Strings(paths)
-	return readITFTrace(paths[0])
+	return os.ReadFile(paths[0])
 }
 
 func readITFTrace(path string) ([]string, error) {
@@ -123,8 +149,12 @@ func readITFTrace(path string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	return normalizeITFTrace(data)
+}
+
+func normalizeITFTrace(data []byte) ([]string, error) {
 	var root map[string]any
-	if err = json.Unmarshal(data, &root); err != nil {
+	if err := json.Unmarshal(data, &root); err != nil {
 		return nil, err
 	}
 	rawStates, ok := root["states"].([]any)
