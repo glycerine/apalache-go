@@ -32,6 +32,14 @@ type StackableContext interface {
 	Dispose()
 }
 
+// DelayedConstraintGenerator separates arena/cache construction from SMT
+// discharge. Callers decide when to encode the returned current-level
+// constraints, matching Scala's addAllConstraints lifecycle without coupling
+// caches to a solver instance.
+type DelayedConstraintGenerator interface {
+	Constraints() []Expr
+}
+
 // SolverContextMetrics records cumulative SMT construction counts.
 type SolverContextMetrics struct {
 	NCells          int64

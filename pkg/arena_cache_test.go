@@ -150,6 +150,10 @@ func TestArenaCachesImplementStackableAndRecoverableContracts(t *testing.T) {
 	var _ Recoverable[UninterpretedLiteralCacheSnapshot] = (*UninterpretedLiteralCache)(nil)
 	var _ Recoverable[IntRangeCacheSnapshot] = (*IntRangeCache)(nil)
 	var _ Recoverable[RecordDomainCacheSnapshot] = (*RecordDomainCache)(nil)
+	var _ DelayedConstraintGenerator = (*IntValueCache)(nil)
+	var _ DelayedConstraintGenerator = (*UninterpretedLiteralCache)(nil)
+	var _ DelayedConstraintGenerator = (*IntRangeCache)(nil)
+	var _ DelayedConstraintGenerator = (*RecordDomainCache)(nil)
 }
 
 func TestUninterpretedLiteralCacheTypesAndDistinctness(t *testing.T) {
