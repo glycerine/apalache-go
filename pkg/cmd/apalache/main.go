@@ -138,7 +138,7 @@ func runServer(ctx context.Context, args []string, stdout, stderr io.Writer) int
 		return serveChecker(ctx, listener, stdout, stderr)
 	}
 	server := newExplorationHTTPServer(ctx)
-	fmt.Fprintf(stdout, "JSON-RPC explorer server running on http://localhost:%d/rpc.\n", listener.Addr().(*net.TCPAddr).Port)
+	fmt.Fprintf(stdout, "JSON-RPC explorer server running on http://localhost:%d/rpc (gzip+zstd compression enabled).\n", listener.Addr().(*net.TCPAddr).Port)
 	if ctx.Err() != nil {
 		_ = listener.Close()
 		return exitOK

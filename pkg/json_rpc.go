@@ -8,7 +8,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
+
+	"github.com/klauspost/compress/zstd"
 )
 
 const (
@@ -55,8 +58,9 @@ func NewExplorationJSONRPCHandler() http.Handler {
 type explorationCompressionHandler struct{ next http.Handler }
 
 func (handler explorationCompressionHandler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
-	if strings.EqualFold(strings.TrimSpace(request.Header.Get("Content-Encoding")), "gzip") {
-		reader, err := gzip.NewReader(request.Body)
+	contentEncoding := strings.ToLower(strings.TrimSpace(request.Header.Get("Content-Encoding")))
+	if contentEncoding == "gzip" || contentEncoding == "zstd" {
+		reader, err := newJSONRPCCompressedReader(contentEncoding, request.Body)
 		if err != nil {
 			response.Header().Set("Content-Type", "application/json")
 			writeJSONRPCResponse(response, jsonRPCFailure(nil, JSONRPCParseError, "Parse error"))
@@ -65,7 +69,8 @@ func (handler explorationCompressionHandler) ServeHTTP(response http.ResponseWri
 		defer reader.Close()
 		request.Body = reader
 	}
-	if !acceptsGzip(request.Header.Get("Accept-Encoding")) {
+	responseEncoding := acceptedJSONRPCEncoding(request.Header.Get("Accept-Encoding"))
+	if responseEncoding == "" {
 		handler.next.ServeHTTP(response, request)
 		return
 	}
@@ -77,13 +82,34 @@ func (handler explorationCompressionHandler) ServeHTTP(response http.ResponseWri
 		_, _ = response.Write(buffered.body.Bytes())
 		return
 	}
-	response.Header().Set("Content-Encoding", "gzip")
+	response.Header().Set("Content-Encoding", responseEncoding)
 	response.Header().Add("Vary", "Accept-Encoding")
 	response.Header().Del("Content-Length")
 	response.WriteHeader(buffered.status)
-	writer := gzip.NewWriter(response)
+	writer, err := newJSONRPCCompressedWriter(responseEncoding, response)
+	if err != nil {
+		return
+	}
 	_, _ = writer.Write(buffered.body.Bytes())
 	_ = writer.Close()
+}
+
+func newJSONRPCCompressedReader(encoding string, input io.Reader) (io.ReadCloser, error) {
+	if encoding == "gzip" {
+		return gzip.NewReader(input)
+	}
+	decoder, err := zstd.NewReader(input, zstd.WithDecoderConcurrency(1), zstd.WithDecoderMaxMemory(64<<20))
+	if err != nil {
+		return nil, err
+	}
+	return decoder.IOReadCloser(), nil
+}
+
+func newJSONRPCCompressedWriter(encoding string, output io.Writer) (io.WriteCloser, error) {
+	if encoding == "gzip" {
+		return gzip.NewWriter(output), nil
+	}
+	return zstd.NewWriter(output, zstd.WithEncoderConcurrency(1))
 }
 
 type bufferedJSONRPCResponse struct {
@@ -104,21 +130,32 @@ func (response *bufferedJSONRPCResponse) Write(data []byte) (int, error) {
 	return response.body.Write(data)
 }
 
-func acceptsGzip(header string) bool {
+func acceptedJSONRPCEncoding(header string) string {
+	selected := ""
+	selectedQuality := 0.0
 	for _, value := range strings.Split(header, ",") {
 		parts := strings.Split(value, ";")
-		encoding := strings.TrimSpace(parts[0])
-		if strings.EqualFold(encoding, "gzip") {
-			for _, parameter := range parts[1:] {
-				quality := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(parameter), " ", ""))
-				if quality == "q=0" || quality == "q=0.0" || quality == "q=0.00" || quality == "q=0.000" {
-					return false
+		encoding := strings.ToLower(strings.TrimSpace(parts[0]))
+		if encoding != "gzip" && encoding != "zstd" {
+			continue
+		}
+		quality := 1.0
+		for _, parameter := range parts[1:] {
+			name, raw, found := strings.Cut(strings.TrimSpace(parameter), "=")
+			if found && strings.EqualFold(strings.TrimSpace(name), "q") {
+				parsed, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+				if err != nil || parsed < 0 || parsed > 1 {
+					quality = 0
+				} else {
+					quality = parsed
 				}
 			}
-			return true
+		}
+		if quality > selectedQuality {
+			selected, selectedQuality = encoding, quality
 		}
 	}
-	return false
+	return selected
 }
 
 func copyHTTPHeaders(destination, source http.Header) {

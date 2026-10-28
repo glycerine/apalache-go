@@ -12,6 +12,7 @@ explicit review here.
 | `github.com/cespare/xxhash/v2` | `v2.3.0` | `LICENSE.txt`, MIT | Reviewed |
 | `github.com/glycerine/insdict` | `v0.14.6` | `LICENSE`, MIT | Reviewed |
 | `github.com/glycerine/rbtree` | `v0.2.2` | `LICENSE`, MIT | Reviewed |
+| `github.com/klauspost/compress` | `v1.18.5` | root `LICENSE` zstd implementation terms, BSD-3-Clause | Reviewed |
 | `golang.org/x/net` | `v0.28.0` | `LICENSE`, BSD-3-Clause | Reviewed |
 | `golang.org/x/sys` | `v0.24.0` | `LICENSE`, BSD-3-Clause | Reviewed |
 | `golang.org/x/text` | `v0.28.0` | `LICENSE`, BSD-3-Clause | Reviewed |

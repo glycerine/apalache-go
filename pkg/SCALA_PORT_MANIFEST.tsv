@@ -1,10 +1,10 @@
 scala_path	status	go_evidence	remaining
-json-rpc/src/main/scala/com/github/apalachemc/apalache/jsonrpc/CheckerSnapshotsPerSession.scala	partial	json_rpc.go;exploration_service.go	Quint and zstd compatibility remain
-json-rpc/src/main/scala/com/github/apalachemc/apalache/jsonrpc/ExplorationServiceParams.scala	partial	json_rpc.go;exploration_service.go	Quint and zstd compatibility remain
-json-rpc/src/main/scala/com/github/apalachemc/apalache/jsonrpc/ExplorationServiceResult.scala	partial	json_rpc.go;exploration_service.go	Quint and zstd compatibility remain
-json-rpc/src/main/scala/com/github/apalachemc/apalache/jsonrpc/JsonParameterParser.scala	partial	json_rpc.go;exploration_service.go	Quint and zstd compatibility remain
-json-rpc/src/main/scala/com/github/apalachemc/apalache/jsonrpc/JsonRpcCodes.scala	partial	json_rpc.go;exploration_service.go	Quint and zstd compatibility remain
-json-rpc/src/main/scala/com/github/apalachemc/apalache/jsonrpc/JsonRpcServer.scala	partial	json_rpc.go;exploration_service.go	Quint and zstd compatibility remain
+json-rpc/src/main/scala/com/github/apalachemc/apalache/jsonrpc/CheckerSnapshotsPerSession.scala	partial	json_rpc.go;exploration_service.go	Quint compatibility remains
+json-rpc/src/main/scala/com/github/apalachemc/apalache/jsonrpc/ExplorationServiceParams.scala	partial	json_rpc.go;exploration_service.go	Quint compatibility remains
+json-rpc/src/main/scala/com/github/apalachemc/apalache/jsonrpc/ExplorationServiceResult.scala	partial	json_rpc.go;exploration_service.go	Quint compatibility remains
+json-rpc/src/main/scala/com/github/apalachemc/apalache/jsonrpc/JsonParameterParser.scala	partial	json_rpc.go;exploration_service.go	Quint compatibility remains
+json-rpc/src/main/scala/com/github/apalachemc/apalache/jsonrpc/JsonRpcCodes.scala	partial	json_rpc.go;exploration_service.go	Quint compatibility remains
+json-rpc/src/main/scala/com/github/apalachemc/apalache/jsonrpc/JsonRpcServer.scala	partial	json_rpc.go;exploration_service.go	Quint compatibility remains
 mod-infra/src/main/scala/at/forsyte/apalache/infra/DefaultExceptionAdapter.scala	partial	diagnostic.go;configuration_pass.go;cmd/apalache	logging and pass-framework parity is partial
 mod-infra/src/main/scala/at/forsyte/apalache/infra/ExceptionAdapter.scala	partial	diagnostic.go;configuration_pass.go;cmd/apalache	logging and pass-framework parity is partial
 mod-infra/src/main/scala/at/forsyte/apalache/infra/ExitCodes.scala	partial	diagnostic.go;configuration_pass.go;cmd/apalache	logging and pass-framework parity is partial

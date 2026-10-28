@@ -72,6 +72,7 @@ func TestReleaseArchiveRunsWithoutSourceOrExternalRuntime(t *testing.T) {
 		"github.com/glycerine/insdict":              "v0.14.6",
 		"github.com/glycerine/rbtree":               "v0.2.2",
 		"github.com/glycerine/tlago":                "v0.1.9",
+		"github.com/klauspost/compress":             "v1.18.5",
 		"golang.org/x/net":                          "v0.28.0",
 		"golang.org/x/sys":                          "v0.24.0",
 		"golang.org/x/text":                         "v0.28.0",

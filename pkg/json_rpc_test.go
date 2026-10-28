@@ -12,6 +12,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/klauspost/compress/zstd"
 )
 
 func TestExplorationJSONRPCHealthAndErrors(t *testing.T) {
@@ -105,6 +107,73 @@ func TestExplorationJSONRPCGzipRequestAndResponse(t *testing.T) {
 	errorObject, _ := document["error"].(map[string]any)
 	if errorObject["code"] != float64(JSONRPCMethodNotFound) {
 		t.Fatalf("gzip response = %#v", document)
+	}
+}
+
+func TestExplorationJSONRPCZstdRequestResponseAndNegotiation(t *testing.T) {
+	handler := NewExplorationJSONRPCHandler()
+	var compressedRequest bytes.Buffer
+	requestWriter, err := zstd.NewWriter(&compressedRequest, zstd.WithEncoderConcurrency(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = requestWriter.Write([]byte(`{"jsonrpc":"2.0","method":"health","id":1}`))
+	if err = requestWriter.Close(); err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/rpc", &compressedRequest)
+	request.Header.Set("Content-Encoding", "zstd")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if !strings.Contains(response.Body.String(), `"status":"OK"`) {
+		t.Fatalf("zstd request response = %q", response.Body.String())
+	}
+	request = httptest.NewRequest(http.MethodPost, "/rpc", strings.NewReader(
+		`{"jsonrpc":"2.0","method":"health","id":2}`,
+	))
+	request.Header.Set("Accept-Encoding", "zstd")
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if encoding := response.Header().Get("Content-Encoding"); encoding != "" {
+		t.Fatalf("small response encoding = %q", encoding)
+	}
+
+	largeMethod := strings.Repeat("missing", 100)
+	request = httptest.NewRequest(http.MethodPost, "/rpc", strings.NewReader(fmt.Sprintf(
+		`{"jsonrpc":"2.0","method":%q,"id":3}`, largeMethod,
+	)))
+	request.Header.Set("Accept-Encoding", "gzip;q=0.5, zstd;q=1")
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Header().Get("Content-Encoding") != "zstd" {
+		t.Fatalf("large response encoding = %q", response.Header().Get("Content-Encoding"))
+	}
+	responseReader, err := zstd.NewReader(response.Body, zstd.WithDecoderConcurrency(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := io.ReadAll(responseReader)
+	responseReader.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document map[string]any
+	if err = json.Unmarshal(decoded, &document); err != nil {
+		t.Fatal(err)
+	}
+	errorObject, _ := document["error"].(map[string]any)
+	if errorObject["code"] != float64(JSONRPCMethodNotFound) {
+		t.Fatalf("zstd response = %#v", document)
+	}
+
+	request = httptest.NewRequest(http.MethodPost, "/rpc", strings.NewReader(fmt.Sprintf(
+		`{"jsonrpc":"2.0","method":%q,"id":4}`, largeMethod,
+	)))
+	request.Header.Set("Accept-Encoding", "zstd;q=0, gzip;q=0")
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if encoding := response.Header().Get("Content-Encoding"); encoding != "" {
+		t.Fatalf("zero-quality response encoding = %q", encoding)
 	}
 }
 
