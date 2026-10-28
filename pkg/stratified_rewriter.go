@@ -2123,6 +2123,9 @@ func (rewriter *StratifiedRewriter) rewriteSetFilter(expression *OperExpr, scope
 	case FiniteFunctionSetCellType, PowerSetCellType, InfiniteSetCellType:
 		return scope, ArenaCell{}, fmt.Errorf("set filter over compact set %s is not supported", setCell.Type)
 	}
+	if _, ok := setCell.Type.TLAType().(SetType); !ok {
+		return setScope, ArenaCell{}, fmt.Errorf("set filter requires a finite set, found %s", setCell.Type.TLAType())
+	}
 	baseBinding := setScope.Binding
 	pointers := setScope.Arena.GetHas(setCell)
 	restricted := make([]ElementPointer, len(pointers))
@@ -2131,6 +2134,9 @@ func (rewriter *StratifiedRewriter) rewriteSetFilter(expression *OperExpr, scope
 		predicateScope, predicateCell, rewriteErr := rewriter.Rewrite(arguments[2], predicateScope)
 		if rewriteErr != nil {
 			return scope, ArenaCell{}, rewriteErr
+		}
+		if !EqualTypes(predicateCell.Type.TLAType(), BoolT1) {
+			return predicateScope, ArenaCell{}, fmt.Errorf("set filter predicate must be Boolean, found %s", predicateCell.Type.TLAType())
 		}
 		setScope.Arena = predicateScope.Arena
 		restricted[index] = pointer.Restrict(predicateCell.NameExpr())

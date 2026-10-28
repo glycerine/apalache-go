@@ -706,6 +706,48 @@ func TestStratifiedRewriterRejectsInfiniteSetFilter(t *testing.T) {
 	}
 }
 
+func TestStratifiedSetFilterComposesGuardsAndRejectsInvalidTypes(t *testing.T) {
+	intSet := Typed(mustSet(IntT1))
+	bound := NewNameExpr("x", Typed(IntT1))
+	domain := MustOperExpr(Op("SET_ENUM"), intSet, intLiteral(1), intLiteral(2))
+	first := MustOperExpr(Op("SET_FILTER"), intSet, bound, domain,
+		MustOperExpr(Op("EQ"), Typed(BoolT1), bound, intLiteral(1)))
+	second := MustOperExpr(Op("SET_FILTER"), intSet, bound, first,
+		MustOperExpr(Op("EQ"), Typed(BoolT1), bound, intLiteral(2)))
+
+	rewriter := NewStratifiedRewriter()
+	scope := InitialRewriterScope()
+	scope.Binding = scope.Binding.With("x", scope.Arena.TrueCell())
+	resultScope, result, err := rewriter.Rewrite(second, scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outer, retained := resultScope.Binding.Get("x"); !retained || !outer.Equal(scope.Arena.TrueCell()) {
+		t.Fatalf("filter binding was not restored: %#v", resultScope.Binding.Map())
+	}
+	for _, pointer := range resultScope.Arena.GetHas(result) {
+		guard, ok := pointer.ToSMT().(*OperExpr)
+		if !ok || guard.Operator().Name() != "AND" || len(guard.Arguments()) != 2 {
+			t.Fatalf("nested filter guard = %v", pointer.ToSMT())
+		}
+	}
+	empty := MustOperExpr(Op("SET_ENUM"), intSet)
+	resultScope, equal, err := rewriter.Rewrite(MustOperExpr(Op("EQ"), Typed(BoolT1), result.NameExpr(), empty), resultScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkRewrittenTruth(t, rewriter, resultScope, equal, true)
+
+	invalidDomain := MustOperExpr(Op("SET_FILTER"), intSet, bound, intLiteral(1), boolExpr(true))
+	if _, _, err := NewStratifiedRewriter().Rewrite(invalidDomain, InitialRewriterScope()); err == nil {
+		t.Fatal("filter over non-set domain was accepted")
+	}
+	invalidPredicate := MustOperExpr(Op("SET_FILTER"), intSet, bound, domain, intLiteral(1))
+	if _, _, err := NewStratifiedRewriter().Rewrite(invalidPredicate, InitialRewriterScope()); err == nil {
+		t.Fatal("filter with non-Boolean predicate was accepted")
+	}
+}
+
 func TestStratifiedRewriteScopeDischargesThroughG3(t *testing.T) {
 	rewriter := NewStratifiedRewriter()
 	expression := MustOperExpr(Op("AND"), Typed(BoolT1),
