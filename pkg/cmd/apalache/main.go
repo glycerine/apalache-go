@@ -1299,6 +1299,8 @@ func runTypeCheck(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	flags.SetOutput(stderr)
 	output := flags.String("output", "summary", "output format (summary/json) or .tla/.json file")
 	configFile := flags.String("config-file", "", "Apalache JSON configuration file")
+	outDir := flags.String("out-dir", "", "root directory for source-namespaced run output")
+	runDir := flags.String("run-dir", "", "additional directory receiving run output directly")
 	includeSource := flags.Bool("source", false, "include source positions in JSON IR")
 	useRows := flags.Bool("rows", false, "enable row types")
 	features := flags.String("features", "", "typechecker features: rows or no-rows")
@@ -1325,6 +1327,7 @@ func runTypeCheck(ctx context.Context, args []string, stdout, stderr io.Writer) 
 			return exitUsage
 		}
 	}
+	resolveOutputDirectoryOptions(applicationConfig, visited, outDir, runDir)
 	if flags.NArg() > 1 || (flags.NArg() == 0 && applicationConfig.Source == nil) {
 		fmt.Fprintln(stderr, "typecheck requires one TLA+ file from the CLI or JSON configuration")
 		return exitUsage
@@ -1344,6 +1347,15 @@ func runTypeCheck(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	if !validModuleOutput(*output) {
 		fmt.Fprintf(stderr, "invalid output %q (want summary, json, or a .tla/.json file)\n", *output)
 		return exitUsage
+	}
+	outputPaths, err := prepareCommandOutputPaths(*outDir, *runDir, sourcePath, "typecheck")
+	if err != nil {
+		fmt.Fprintf(stderr, "cannot configure typecheck output: %v\n", err)
+		return exitUsage
+	}
+	if err = outputPaths.writeRunFile("typecheck", args); err != nil {
+		fmt.Fprintf(stderr, "cannot write typecheck run metadata: %v\n", err)
+		return exitTool
 	}
 	rows, featureErr := resolveRowsFeature(*useRows, *features)
 	if featureErr != nil {
@@ -1427,6 +1439,8 @@ func runParse(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	flags.SetOutput(stderr)
 	output := flags.String("output", "summary", "output format (summary/json) or .tla/.json file")
 	configFile := flags.String("config-file", "", "Apalache JSON configuration file")
+	outDir := flags.String("out-dir", "", "root directory for source-namespaced run output")
+	runDir := flags.String("run-dir", "", "additional directory receiving run output directly")
 	includeSource := flags.Bool("source", false, "include source positions in JSON IR")
 	features := flags.String("features", "", "typechecker features: rows or no-rows")
 	var libraryPaths stringList
@@ -1451,6 +1465,7 @@ func runParse(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 			return exitUsage
 		}
 	}
+	resolveOutputDirectoryOptions(applicationConfig, visited, outDir, runDir)
 	if flags.NArg() > 1 || (flags.NArg() == 0 && applicationConfig.Source == nil) {
 		fmt.Fprintln(stderr, "parse requires one TLA+ file from the CLI or JSON configuration")
 		return exitUsage
@@ -1470,6 +1485,15 @@ func runParse(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	if !validModuleOutput(*output) {
 		fmt.Fprintf(stderr, "invalid output %q (want summary, json, or a .tla/.json file)\n", *output)
 		return exitUsage
+	}
+	outputPaths, err := prepareCommandOutputPaths(*outDir, *runDir, sourcePath, "parse")
+	if err != nil {
+		fmt.Fprintf(stderr, "cannot configure parse output: %v\n", err)
+		return exitUsage
+	}
+	if err = outputPaths.writeRunFile("parse", args); err != nil {
+		fmt.Fprintf(stderr, "cannot write parse run metadata: %v\n", err)
+		return exitTool
 	}
 	if _, err := resolveRowsFeature(false, *features); err != nil {
 		fmt.Fprintln(stderr, err)

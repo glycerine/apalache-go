@@ -60,8 +60,11 @@ func TestResolveOutputDirectoryOptionsPrecedence(t *testing.T) {
 	if err := config.validateForTracee(); err != nil {
 		t.Fatalf("tracee JSON output directories = %v", err)
 	}
-	if err := config.validateForFrontend("parse"); err == nil {
-		t.Fatal("parse JSON output directories should remain unsupported until the command writes run output")
+	if err := config.validateForFrontend("parse"); err != nil {
+		t.Fatalf("parse JSON output directories = %v", err)
+	}
+	if err := config.validateForFrontend("typecheck"); err != nil {
+		t.Fatalf("typecheck JSON output directories = %v", err)
 	}
 	if err := config.validateForModelCommand("test", false); err != nil {
 		t.Fatalf("test JSON output directories = %v", err)

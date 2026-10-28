@@ -483,8 +483,11 @@ Value == N + 1
 				t.Fatal(err)
 			}
 			outputPath := filepath.Join(outputDir, "RoundTrip.tla")
+			runDir := filepath.Join(outputDir, "run")
 			var stdout, stderr bytes.Buffer
-			code := run(context.Background(), []string{command, "-output", outputPath, sourcePath}, &stdout, &stderr)
+			code := run(context.Background(), []string{
+				command, "--run-dir=" + runDir, "-output", outputPath, sourcePath,
+			}, &stdout, &stderr)
 			if code != exitOK {
 				t.Fatalf("%s output = %d, stderr = %q", command, code, &stderr)
 			}
@@ -498,6 +501,10 @@ Value == N + 1
 			result := pal.ParseAndTypeCheckFile(context.Background(), outputPath, pal.FrontendOptions{}, pal.TypeCheckOptions{})
 			if !result.OK() {
 				t.Fatalf("%s output did not round trip: %v\n%s", command, result.Diagnostics, contents)
+			}
+			if data, err := os.ReadFile(filepath.Join(runDir, "run.txt")); err != nil ||
+				!strings.Contains(string(data), command+" --run-dir=") {
+				t.Fatalf("%s run metadata = %q, %v", command, data, err)
 			}
 		})
 	}
