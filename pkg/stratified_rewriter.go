@@ -1400,6 +1400,14 @@ func (rewriter *StratifiedRewriter) rewriteApplication(expression *OperExpr, sco
 			rewriter.assert(MustOperExpr(Op("EQ"), Typed(BoolT1), result.NameExpr(), selection))
 			return project(scope, result)
 		}
+		constrainNativeSelection := func(value ArenaCell) {
+			if rewriter.smtEncoding != SMTEncodingArrays && rewriter.smtEncoding != SMTEncodingFunArrays {
+				return
+			}
+			selection := MustOperExpr(Op("Apalache!SelectInFun"), Typed(functionType.Result()),
+				argument.NameExpr(), collection.NameExpr())
+			rewriter.assert(MustOperExpr(Op("EQ"), Typed(BoolT1), value.NameExpr(), selection))
+		}
 		relation, err := scope.Arena.Codomain(collection)
 		if err != nil {
 			return scope, ArenaCell{}, err
@@ -1439,6 +1447,7 @@ func (rewriter *StratifiedRewriter) rewriteApplication(expression *OperExpr, sco
 		// Guarded edges must retain the first-match oracle: a different arena
 		// cell may denote the same key and deactivate this exact-cell edge.
 		if exactMatch >= 0 {
+			constrainNativeSelection(results[exactMatch])
 			return project(scope, results[exactMatch])
 		}
 		scope, oracle, err := CreateIntOracle(scope, len(results)+1)
@@ -1468,6 +1477,7 @@ func (rewriter *StratifiedRewriter) rewriteApplication(expression *OperExpr, sco
 			}
 		}
 		rewriter.assert(booleanAnd(booleanOr(rangeConditions...), matchConstraint))
+		constrainNativeSelection(picked)
 		return project(scope, picked)
 	}
 	return scope, ArenaCell{}, fmt.Errorf("application is not yet implemented for %s", collection.Type)

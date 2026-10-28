@@ -94,24 +94,23 @@ func (encoder *G3GroundEncoder) DeclareCell(cell ArenaCell) error {
 }
 
 func (encoder *G3GroundEncoder) declareFunctionArray(cell ArenaCell, functionType FunType) (SMTTerm, error) {
-	argumentSort, argumentSortID, err := smtScalarSortForType(functionType.Argument())
+	argumentSpec, err := smtSortSpecForType(functionType.Argument(), encoder.encoding)
 	if err != nil {
 		return SMTTerm{}, err
 	}
-	resultSort, resultSortID, err := smtScalarSortForType(functionType.Result())
+	resultSpec, err := smtSortSpecForType(functionType.Result(), encoder.encoding)
 	if err != nil {
 		return SMTTerm{}, err
 	}
-	array, err := encoder.solver.DeclareArrayWithSortIDs(
-		cell.String(), argumentSort, argumentSortID, resultSort, resultSortID)
+	array, err := encoder.solver.declareArrayWithSpecs(cell.String(), argumentSpec, resultSpec)
 	if err != nil || cell.Unconstrained {
 		return array, err
 	}
-	defaultValue, err := encoder.defaultValue(functionType.Result(), resultSortID)
+	defaultValue, err := encoder.defaultValue(functionType.Result(), resultSpec)
 	if err != nil {
 		return SMTTerm{}, err
 	}
-	constant, err := encoder.solver.ConstantArray(argumentSort, argumentSortID, defaultValue)
+	constant, err := encoder.solver.constantArrayWithIndexSpec(argumentSpec, defaultValue)
 	if err != nil {
 		return SMTTerm{}, err
 	}
@@ -125,17 +124,37 @@ func (encoder *G3GroundEncoder) declareFunctionArray(cell ArenaCell, functionTyp
 	return array, nil
 }
 
-func (encoder *G3GroundEncoder) defaultValue(typ Type, sortID string) (SMTTerm, error) {
+func (encoder *G3GroundEncoder) defaultValue(typ Type, spec *smtSortSpec) (SMTTerm, error) {
 	if EqualTypes(typ, BoolT1) {
 		return encoder.solver.Bool(false)
 	}
 	if EqualTypes(typ, IntT1) {
 		return encoder.solver.Int(0)
 	}
+	sortID := spec.sortID()
 	if value, found := encoder.defaultValues[sortID]; found {
 		return value, nil
 	}
-	value, err := encoder.solver.DeclareUninterpreted("$Default$"+sortID, sortID)
+	var value SMTTerm
+	var err error
+	if spec.kind == SMTArray {
+		var valueType Type
+		switch typed := typ.(type) {
+		case SetType:
+			valueType = BoolT1
+		case FunType:
+			valueType = typed.Result()
+		default:
+			return SMTTerm{}, fmt.Errorf("array sort %s has non-array TLA type %s", sortID, typ)
+		}
+		var nestedDefault SMTTerm
+		nestedDefault, err = encoder.defaultValue(valueType, spec.value)
+		if err == nil {
+			value, err = encoder.solver.constantArrayWithIndexSpec(spec.index, nestedDefault)
+		}
+	} else {
+		value, err = encoder.solver.DeclareUninterpreted("$Default$"+sortID, sortID)
+	}
 	if err != nil {
 		return SMTTerm{}, err
 	}
@@ -144,12 +163,12 @@ func (encoder *G3GroundEncoder) defaultValue(typ Type, sortID string) (SMTTerm, 
 }
 
 func (encoder *G3GroundEncoder) declareSetArray(cell ArenaCell, elementType Type) (SMTTerm, error) {
-	elementSort, elementSortID, err := smtScalarSortForType(elementType)
+	elementSpec, err := smtSortSpecForType(elementType, encoder.encoding)
 	if err != nil {
 		return SMTTerm{}, err
 	}
-	array, err := encoder.solver.DeclareArrayWithSortIDs(
-		cell.String(), elementSort, elementSortID, SMTBool, "")
+	array, err := encoder.solver.declareArrayWithSpecs(
+		cell.String(), elementSpec, scalarSMTSortSpec(SMTBool, ""))
 	if err != nil || cell.Unconstrained {
 		return array, err
 	}
@@ -163,7 +182,7 @@ func (encoder *G3GroundEncoder) declareSetArray(cell ArenaCell, elementType Type
 	if err != nil {
 		return SMTTerm{}, err
 	}
-	constant, err := encoder.solver.ConstantArray(elementSort, elementSortID, defaultValue)
+	constant, err := encoder.solver.constantArrayWithIndexSpec(elementSpec, defaultValue)
 	if err != nil {
 		return SMTTerm{}, err
 	}
@@ -177,18 +196,37 @@ func (encoder *G3GroundEncoder) declareSetArray(cell ArenaCell, elementType Type
 	return array, nil
 }
 
-func smtScalarSortForType(typ Type) (SMTSort, string, error) {
+func smtSortSpecForType(typ Type, encoding SMTEncoding) (*smtSortSpec, error) {
 	if EqualTypes(typ, BoolT1) {
-		return SMTBool, "", nil
+		return scalarSMTSortSpec(SMTBool, ""), nil
 	}
 	if EqualTypes(typ, IntT1) {
-		return SMTInt, "", nil
+		return scalarSMTSortSpec(SMTInt, ""), nil
+	}
+	if setType, ok := typ.(SetType); ok && encoding == SMTEncodingArrays {
+		elementSpec, err := smtSortSpecForType(setType.Element(), encoding)
+		if err != nil {
+			return nil, err
+		}
+		return arraySMTSortSpec(elementSpec, scalarSMTSortSpec(SMTBool, "")), nil
+	}
+	if functionType, ok := typ.(FunType); ok &&
+		(encoding == SMTEncodingArrays || encoding == SMTEncodingFunArrays) {
+		argumentSpec, err := smtSortSpecForType(functionType.Argument(), encoding)
+		if err != nil {
+			return nil, err
+		}
+		resultSpec, err := smtSortSpecForType(functionType.Result(), encoding)
+		if err != nil {
+			return nil, err
+		}
+		return arraySMTSortSpec(argumentSpec, resultSpec), nil
 	}
 	cellType, err := CellTypeFromType(typ)
 	if err != nil {
-		return 0, "", err
+		return nil, err
 	}
-	return SMTUninterpreted, smtCellSortName(cellType), nil
+	return scalarSMTSortSpec(SMTUninterpreted, smtCellSortName(cellType)), nil
 }
 
 func smtCellSortName(cellType CellType) string {

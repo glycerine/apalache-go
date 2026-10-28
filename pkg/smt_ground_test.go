@@ -388,6 +388,44 @@ func TestEncodeRewriterScopeUsesNativeFunctionArrays(t *testing.T) {
 	}
 }
 
+func TestEncodeRewriterScopeUsesNestedFunctionResult(t *testing.T) {
+	setType := mustSet(IntT1)
+	functionType, err := NewFunType(IntT1, setType)
+	if err != nil {
+		t.Fatal(err)
+	}
+	binder := NewNameExpr("x", Typed(IntT1))
+	domain := MustOperExpr(Op("SET_ENUM"), Typed(setType), intLiteral(1))
+	body := MustOperExpr(Op("SET_ENUM"), Typed(setType), binder,
+		MustOperExpr(Op("PLUS"), Typed(IntT1), binder, intLiteral(1)))
+	function := MustOperExpr(Op("FUN_CTOR"), Typed(functionType), body, binder, domain)
+	application := MustOperExpr(Op("FUN_APP"), Typed(setType), function, intLiteral(1))
+	claim := MustOperExpr(Op("SET_IN"), Typed(BoolT1), intLiteral(2), application)
+	for _, encoding := range []SMTEncoding{SMTEncodingArrays, SMTEncodingFunArrays} {
+		t.Run(string(encoding), func(t *testing.T) {
+			rewriter := NewStratifiedRewriterWithOptions(StratifiedRewriterOptions{SMTEncoding: encoding})
+			scope, result, rewriteErr := rewriter.Rewrite(claim, InitialRewriterScope())
+			if rewriteErr != nil {
+				t.Fatal(rewriteErr)
+			}
+			solver := newTestG3Solver(t)
+			encoder, encodeErr := EncodeRewriterScopeWithEncoding(solver, scope, rewriter.Constraints(), encoding)
+			if encodeErr != nil {
+				t.Fatal(encodeErr)
+			}
+			if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTSatisfiable {
+				t.Fatalf("nested function result scope = %v, %v", status, checkErr)
+			}
+			if assertErr := encoder.Assert(MustOperExpr(Op("NOT"), Typed(BoolT1), result.NameExpr())); assertErr != nil {
+				t.Fatal(assertErr)
+			}
+			if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTUnsatisfiable {
+				t.Fatalf("nested function result = %v, %v", status, checkErr)
+			}
+		})
+	}
+}
+
 func TestG3GroundEncoderArraySSAStoresAndUnconstraining(t *testing.T) {
 	t.Run("set store", func(t *testing.T) {
 		solver := newTestG3Solver(t)
@@ -509,4 +547,72 @@ func TestG3GroundEncoderBooleanArrayMaps(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestG3GroundEncoderNestedArrayTypes(t *testing.T) {
+	t.Run("set of sets", func(t *testing.T) {
+		solver := newTestG3Solver(t)
+		encoder, err := NewG3GroundEncoderWithEncoding(solver, SMTEncodingArrays)
+		if err != nil {
+			t.Fatal(err)
+		}
+		element := NewArenaCell(0, BasicCellType{Type: IntT1})
+		inner := NewArenaCell(1, BasicCellType{Type: mustSet(IntT1)})
+		outer := NewArenaCell(2, BasicCellType{Type: mustSet(mustSet(IntT1))})
+		for _, cell := range []ArenaCell{element, inner, outer} {
+			if err = encoder.DeclareCell(cell); err != nil {
+				t.Fatal(err)
+			}
+		}
+		for _, store := range []Expr{
+			MustOperExpr(Op("Apalache!StoreInSet"), Typed(BoolT1), element.NameExpr(), inner.NameExpr()),
+			MustOperExpr(Op("Apalache!StoreInSet"), Typed(BoolT1), inner.NameExpr(), outer.NameExpr()),
+		} {
+			if err = encoder.Assert(store); err != nil {
+				t.Fatal(err)
+			}
+		}
+		selected := MustOperExpr(Op("Apalache!SelectInSet"), Typed(BoolT1), inner.NameExpr(), outer.NameExpr())
+		if err = encoder.Assert(MustOperExpr(Op("NOT"), Typed(BoolT1), selected)); err != nil {
+			t.Fatal(err)
+		}
+		if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTUnsatisfiable {
+			t.Fatalf("nested set array = %v, %v", status, checkErr)
+		}
+	})
+
+	t.Run("function returning set", func(t *testing.T) {
+		solver := newTestG3Solver(t)
+		encoder, err := NewG3GroundEncoderWithEncoding(solver, SMTEncodingArrays)
+		if err != nil {
+			t.Fatal(err)
+		}
+		argument := NewArenaCell(0, BasicCellType{Type: IntT1})
+		resultSet := NewArenaCell(1, BasicCellType{Type: mustSet(IntT1)})
+		functionType, _ := NewFunType(IntT1, mustSet(IntT1))
+		function := NewArenaCell(2, BasicCellType{Type: functionType})
+		for _, cell := range []ArenaCell{argument, resultSet, function} {
+			if err = encoder.DeclareCell(cell); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err = encoder.Assert(MustOperExpr(Op("Apalache!StoreInSet"), Typed(BoolT1),
+			argument.NameExpr(), resultSet.NameExpr())); err != nil {
+			t.Fatal(err)
+		}
+		if err = encoder.Assert(MustOperExpr(Op("Apalache!StoreInSet"), Typed(BoolT1),
+			resultSet.NameExpr(), function.NameExpr(), argument.NameExpr())); err != nil {
+			t.Fatal(err)
+		}
+		application := MustOperExpr(Op("Apalache!SelectInFun"), Typed(mustSet(IntT1)),
+			argument.NameExpr(), function.NameExpr())
+		membership := MustOperExpr(Op("Apalache!SelectInSet"), Typed(BoolT1),
+			argument.NameExpr(), application)
+		if err = encoder.Assert(MustOperExpr(Op("NOT"), Typed(BoolT1), membership)); err != nil {
+			t.Fatal(err)
+		}
+		if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTUnsatisfiable {
+			t.Fatalf("nested function result = %v, %v", status, checkErr)
+		}
+	})
 }
