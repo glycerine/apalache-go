@@ -71,6 +71,30 @@ func TestTypeWatchdogTransformationListener(t *testing.T) {
 	})
 }
 
+func TestTransformationTrackerProviderReturnsSharedComposedTracker(t *testing.T) {
+	changes := NewChangeListener()
+	provider := NewTransformationTrackerProvider(changes)
+	first, second := provider.Get(), provider.Get()
+	if first != second {
+		t.Fatal("transformation tracker provider did not return its singleton")
+	}
+
+	original := NewNameExpr("x", Typed(IntT1))
+	transformed := NewNameExpr("y", Typed(IntT1))
+	if got := first.Hold(original, transformed); got != transformed {
+		t.Fatal("shared tracker changed the transformation result")
+	}
+	if !changes.IsDefinedAt(transformed.ID()) || changes.TraceBack(transformed.ID()) != original.ID() {
+		t.Fatal("shared tracker did not notify the change listener")
+	}
+
+	untyped := transformed.WithTag(Untyped())
+	assertTypingPanic(t, untyped.ID(), "A typed expression "+original.ID().String()+
+		" was transformed to an untyped expression "+untyped.ID().String(), func() {
+		provider.Get().Hold(original, untyped)
+	})
+}
+
 func assertTypingPanic(t *testing.T, cause UID, message string, action func()) {
 	t.Helper()
 	defer func() {

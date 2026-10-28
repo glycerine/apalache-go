@@ -66,6 +66,27 @@ type ListenerTracker struct{ listeners []TransformationListener }
 func NewListenerTracker(listeners ...TransformationListener) *ListenerTracker {
 	return &ListenerTracker{listeners: append([]TransformationListener(nil), listeners...)}
 }
+
+// TransformationTrackerProvider owns the shared listener tracker used by a
+// tool pipeline. It mirrors Scala's singleton provider: every Get call returns
+// the same tracker, with type preservation checked before changes are recorded.
+type TransformationTrackerProvider struct {
+	tracker *ListenerTracker
+}
+
+func NewTransformationTrackerProvider(changes *ChangeListener) *TransformationTrackerProvider {
+	if changes == nil {
+		changes = NewChangeListener()
+	}
+	return &TransformationTrackerProvider{
+		tracker: NewListenerTracker(TypeWatchdogTransformationListener{}, changes),
+	}
+}
+
+func (provider *TransformationTrackerProvider) Get() TransformationTracker {
+	return provider.tracker
+}
+
 func (tracker *ListenerTracker) TrackExpression(transform ExprTransform) ExprTransform {
 	return func(original Expr) Expr {
 		transformed := transform(original)
