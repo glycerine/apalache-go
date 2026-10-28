@@ -71,6 +71,7 @@ type TransitionExecutor struct {
 	picked             bool
 	solverUIntOptions  map[string]uint32
 	solverTextOptions  map[string]string
+	smtEncoding        SMTEncoding
 }
 
 func NewTransitionExecutor(constants, variables []string) *TransitionExecutor {
@@ -81,6 +82,14 @@ func newTransitionExecutorWithSolverOptions(
 	constants, variables []string, solverUIntOptions map[string]uint32, solverTextOptions map[string]string,
 	shortCircuit bool,
 ) *TransitionExecutor {
+	return newTransitionExecutorWithEncodingAndSolverOptions(
+		constants, variables, solverUIntOptions, solverTextOptions, shortCircuit, SMTEncodingOOPSLA19)
+}
+
+func newTransitionExecutorWithEncodingAndSolverOptions(
+	constants, variables []string, solverUIntOptions map[string]uint32, solverTextOptions map[string]string,
+	shortCircuit bool, smtEncoding SMTEncoding,
+) *TransitionExecutor {
 	return &TransitionExecutor{
 		constants:         stringSet(constants),
 		variables:         stringSet(variables),
@@ -89,6 +98,7 @@ func newTransitionExecutorWithSolverOptions(
 		prepared:          make(map[int]EncodedTransition),
 		solverUIntOptions: solverUIntOptions,
 		solverTextOptions: solverTextOptions,
+		smtEncoding:       smtEncoding,
 	}
 }
 
@@ -790,7 +800,8 @@ func (executor *TransitionExecutor) solve(ctx context.Context, temporary []Expr)
 	if err != nil {
 		return nil, nil, SMTUnknown, err
 	}
-	encoder, err := EncodeRewriterScope(solver, executor.scope, executor.rewriter.Constraints())
+	encoder, err := EncodeRewriterScopeWithEncoding(
+		solver, executor.scope, executor.rewriter.Constraints(), executor.smtEncoding)
 	if err != nil {
 		_ = solver.Close()
 		return nil, nil, SMTUnknown, err

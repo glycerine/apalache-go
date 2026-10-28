@@ -168,6 +168,53 @@ func TestG3GroundEncoderArraySetDeclarationsAndSelection(t *testing.T) {
 	}
 }
 
+func TestG3GroundEncoderArrayBooleanUniverse(t *testing.T) {
+	solver := newTestG3Solver(t)
+	encoder, err := NewG3GroundEncoderWithEncoding(solver, SMTEncodingArrays)
+	if err != nil {
+		t.Fatal(err)
+	}
+	arena := InitialPureArena()
+	declareArenaForEncoder(t, encoder, arena)
+	for _, element := range []ArenaCell{arena.FalseCell(), arena.TrueCell()} {
+		membership := MustOperExpr(Op("SET_IN"), Typed(BoolT1), element.NameExpr(), arena.BooleanSetCell().NameExpr())
+		if err = encoder.Assert(MustOperExpr(Op("NOT"), Typed(BoolT1), membership)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTUnsatisfiable {
+		t.Fatalf("Boolean universe arrays = %v, %v", status, checkErr)
+	}
+}
+
+func TestEncodeRewriterScopeUsesNativeEmptySetArray(t *testing.T) {
+	setType := mustSet(IntT1)
+	set := MustOperExpr(Op("SET_ENUM"), Typed(setType))
+	membership := MustOperExpr(Op("SET_NOT_IN"), Typed(BoolT1), intLiteral(1), set)
+	rewriter := NewStratifiedRewriter()
+	scope, result, err := rewriter.Rewrite(membership, InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	solver := newTestG3Solver(t)
+	encoder, err := EncodeRewriterScopeWithEncoding(solver, scope, rewriter.Constraints(), SMTEncodingArrays)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(encoder.memberships) != 0 {
+		t.Fatalf("full-array scope declared OOPSLA membership predicates: %v", encoder.memberships)
+	}
+	if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTSatisfiable {
+		t.Fatalf("native empty-set array = %v, %v", status, checkErr)
+	}
+	if err = encoder.Assert(MustOperExpr(Op("NOT"), Typed(BoolT1), result.NameExpr())); err != nil {
+		t.Fatal(err)
+	}
+	if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTUnsatisfiable {
+		t.Fatalf("contradictory native empty-set membership = %v, %v", status, checkErr)
+	}
+}
+
 func TestG3GroundEncoderArraySSAStoresAndUnconstraining(t *testing.T) {
 	t.Run("set store", func(t *testing.T) {
 		solver := newTestG3Solver(t)

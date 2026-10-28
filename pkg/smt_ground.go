@@ -154,7 +154,9 @@ func (encoder *G3GroundEncoder) declareSetArray(cell ArenaCell, elementType Type
 		return array, err
 	}
 	defaultMembership := false
-	if _, infinite := cell.Type.(InfiniteSetCellType); infinite {
+	if cell.String() == ArenaBooleanSet {
+		defaultMembership = true
+	} else if _, infinite := cell.Type.(InfiniteSetCellType); infinite {
 		defaultMembership = true
 	}
 	defaultValue, err := encoder.solver.Bool(defaultMembership)
@@ -198,6 +200,9 @@ func MembershipPredicateName(set, element ArenaCell) string {
 }
 
 func (encoder *G3GroundEncoder) DeclareMembership(set, element ArenaCell) error {
+	if encoder.encoding == SMTEncodingArrays {
+		return nil
+	}
 	key := [2]int{set.ID, element.ID}
 	if _, found := encoder.memberships[key]; found {
 		return nil
@@ -278,8 +283,16 @@ func (encoder *G3GroundEncoder) Encode(expression Expr) (SMTTerm, error) {
 
 func (encoder *G3GroundEncoder) encodeOperator(expression *OperExpr) (SMTTerm, error) {
 	arguments := expression.Arguments()
-	if expression.Operator().Name() == "Apalache!SelectInSet" && encoder.encoding == SMTEncodingArrays {
+	if (expression.Operator().Name() == "SET_IN" || expression.Operator().Name() == "Apalache!SelectInSet") &&
+		encoder.encoding == SMTEncodingArrays {
 		return encoder.encodeArraySelect(arguments)
+	}
+	if expression.Operator().Name() == "SET_NOT_IN" && encoder.encoding == SMTEncodingArrays {
+		membership, err := encoder.encodeArraySelect(arguments)
+		if err != nil {
+			return SMTTerm{}, err
+		}
+		return encoder.solver.Not(membership)
 	}
 	if expression.Operator().Name() == "Apalache!SelectInFun" &&
 		(encoder.encoding == SMTEncodingArrays || encoder.encoding == SMTEncodingFunArrays) {
@@ -543,10 +556,21 @@ func (encoder *G3GroundEncoder) EvaluateInt(expression Expr) (*big.Int, error) {
 // EncodeRewriterScope declares a completed solver-free rewrite scope and
 // discharges its collected constraints into a fresh solver encoder.
 func EncodeRewriterScope(solver *G3SolverContext, scope RewriterScope, constraints []Expr) (*G3GroundEncoder, error) {
+	return EncodeRewriterScopeWithEncoding(solver, scope, constraints, SMTEncodingOOPSLA19)
+}
+
+// EncodeRewriterScopeWithEncoding is EncodeRewriterScope with an explicit
+// encoding selection. The default wrapper retains OOPSLA19 compatibility.
+func EncodeRewriterScopeWithEncoding(
+	solver *G3SolverContext,
+	scope RewriterScope,
+	constraints []Expr,
+	encoding SMTEncoding,
+) (*G3GroundEncoder, error) {
 	if scope.Arena == nil {
 		return nil, fmt.Errorf("cannot encode a rewrite scope without an arena")
 	}
-	encoder, err := NewG3GroundEncoder(solver)
+	encoder, err := NewG3GroundEncoderWithEncoding(solver, encoding)
 	if err != nil {
 		return nil, err
 	}

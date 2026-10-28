@@ -186,6 +186,30 @@ func TestTransitionExecutorCheckStateIsTemporary(t *testing.T) {
 	}
 }
 
+func TestTransitionExecutorSolvesEmptySetMembershipWithNativeArrays(t *testing.T) {
+	executor := newTransitionExecutorWithEncodingAndSolverOptions(
+		nil, nil, nil, nil, false, SMTEncodingArrays)
+	set := MustOperExpr(Op("SET_ENUM"), Typed(mustSet(IntT1)))
+	membership := MustOperExpr(Op("SET_NOT_IN"), Typed(BoolT1), intLiteral(1), set)
+	if err := executor.AssertState(membership); err != nil {
+		t.Fatal(err)
+	}
+	solver, encoder, status, err := executor.solve(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer solver.Close()
+	if status != SMTSatisfiable || encoder.encoding != SMTEncodingArrays || len(encoder.memberships) != 0 {
+		t.Fatalf("native array solve = %v, encoding=%s, memberships=%v", status, encoder.encoding, encoder.memberships)
+	}
+	if err = executor.AssertState(MustOperExpr(Op("NOT"), Typed(BoolT1), membership)); err != nil {
+		t.Fatal(err)
+	}
+	if status, checkErr := executor.Check(context.Background()); checkErr != nil || status != SMTUnsatisfiable {
+		t.Fatalf("contradictory native membership = %v, %v", status, checkErr)
+	}
+}
+
 func TestTransitionExecutorSnapshotRecoversPickedPathAndIsReusable(t *testing.T) {
 	executor := NewTransitionExecutor(nil, []string{"x"})
 	prime := MustOperExpr(Op("PRIME"), Typed(IntT1), NewNameExpr("x", Typed(IntT1)))
