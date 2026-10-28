@@ -292,6 +292,68 @@ func TestTransitionExecutorMayChangeAssertionMatchesScala(t *testing.T) {
 	}
 }
 
+func TestTransitionExecutorPickTransitionPreservesSparseChoiceAndBinding(t *testing.T) {
+	executor := NewTransitionExecutor(nil, []string{"x"})
+	prime := MustOperExpr(Op("PRIME"), Typed(IntT1), NewNameExpr("x", Typed(IntT1)))
+	assign := func(value int64) Expr {
+		return MustOperExpr(Op("Apalache!:="), Typed(BoolT1), prime, intLiteral(value))
+	}
+	for number, value := range map[int]int64{2: 10, 7: 20} {
+		if enabled, err := executor.PrepareTransition(number, assign(value)); err != nil || !enabled {
+			t.Fatalf("prepare %d = %v, %v", number, enabled, err)
+		}
+	}
+	oracle, err := executor.PickTransition()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sparse, ok := oracle.(*SparseOracle)
+	if !ok || !reflect.DeepEqual(sparse.Values, []int{2, 7}) {
+		t.Fatalf("pick oracle = %#v", oracle)
+	}
+	forceSeven := MustOperExpr(Op("EQ"), Typed(BoolT1), NewNameExpr("x'", Typed(IntT1)), intLiteral(20))
+	if err := executor.AssertState(forceSeven); err != nil {
+		t.Fatal(err)
+	}
+	status, pending, err := executor.CheckPendingAndDecode(context.Background(), boolExpr(true))
+	if err != nil || status != SMTSatisfiable || len(pending) != 1 || pending[0].TransitionNumber != 7 ||
+		pending[0].Values["x"].(*ValueExpr).Value().(IntValue).BigInt().Int64() != 20 {
+		t.Fatalf("pending sparse choice = %v, %#v, %v", status, pending, err)
+	}
+	if err := executor.NextState(); err != nil {
+		t.Fatal(err)
+	}
+	status, execution, err := executor.CheckDecodedExecution(context.Background(), boolExpr(true))
+	if err != nil || status != SMTSatisfiable || len(execution.Path) != 1 || execution.Path[0].TransitionNumber != 7 {
+		t.Fatalf("committed sparse choice = %v, %#v, %v", status, execution, err)
+	}
+}
+
+func TestTransitionExecutorPickTransitionEmptyAndSingleton(t *testing.T) {
+	empty := NewTransitionExecutor(nil, nil)
+	if _, err := empty.PickTransition(); err == nil {
+		t.Fatal("empty transition set was picked")
+	}
+	single := NewTransitionExecutor(nil, nil)
+	if enabled, err := single.PrepareTransition(9, boolExpr(true)); err != nil || !enabled {
+		t.Fatalf("prepare singleton = %v, %v", enabled, err)
+	}
+	oracle, err := single.PickTransition()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fixed, ok := oracle.(*MockOracle); !ok || fixed.Fixed != 9 {
+		t.Fatalf("singleton oracle = %#v", oracle)
+	}
+	if _, err := single.PickTransition(); err == nil {
+		t.Fatal("second transition pick was accepted")
+	}
+	status, states, err := single.CheckPendingAndDecode(context.Background(), boolExpr(true))
+	if err != nil || status != SMTSatisfiable || len(states) != 1 || states[0].TransitionNumber != 9 {
+		t.Fatalf("singleton decoded pick = %v, %#v, %v", status, states, err)
+	}
+}
+
 func TestTransitionExecutorEvaluatesCurrentModel(t *testing.T) {
 	executor := NewTransitionExecutor(nil, []string{"x"})
 	prime := MustOperExpr(Op("PRIME"), Typed(IntT1), NewNameExpr("x", Typed(IntT1)))

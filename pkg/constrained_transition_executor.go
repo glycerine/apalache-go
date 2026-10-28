@@ -38,6 +38,17 @@ func (executor *ConstrainedTransitionExecutor) AssumeTransition(number int) erro
 	return executor.AssertPathConstraints()
 }
 
+func (executor *ConstrainedTransitionExecutor) PickTransition() (ChoiceOracle, error) {
+	oracle, err := executor.TransitionExecutor.PickTransition()
+	if err != nil {
+		return nil, err
+	}
+	if err := executor.AssertPathConstraints(); err != nil {
+		return nil, err
+	}
+	return oracle, nil
+}
+
 func (executor *ConstrainedTransitionExecutor) AssertPathConstraints() error {
 	length := len(executor.states) + 1 // parameter head plus committed states
 	if executor.picked {

@@ -45,7 +45,9 @@ type TransitionExecutorSnapshot struct {
 	PreparedTransitions map[int]EncodedTransition
 	States              []Binding
 	TransitionNumbers   []int
+	TransitionOracles   []ChoiceOracle
 	SelectedTransition  int
+	SelectedOracle      ChoiceOracle
 	Step                int
 	Rewriter            StratifiedRewriterSnapshot
 }
@@ -62,7 +64,9 @@ type TransitionExecutor struct {
 	prepared           map[int]EncodedTransition
 	states             []Binding
 	transitionNumbers  []int
+	transitionOracles  []ChoiceOracle
 	selectedTransition int
+	selectedOracle     ChoiceOracle
 	step               int
 	picked             bool
 	solverUIntOptions  map[string]uint32
@@ -190,8 +194,10 @@ func (executor *TransitionExecutor) Snapshot() TransitionExecutorSnapshot {
 		PreparedTransitions: cloneEncodedTransitions(executor.prepared),
 		States:              append([]Binding(nil), executor.states...),
 		TransitionNumbers:   append([]int(nil), executor.transitionNumbers...),
+		TransitionOracles:   append([]ChoiceOracle(nil), executor.transitionOracles...),
 		SelectedTransition:  executor.selectedTransition, Step: executor.step,
-		Rewriter: executor.rewriter.Snapshot(),
+		SelectedOracle: executor.selectedOracle,
+		Rewriter:       executor.rewriter.Snapshot(),
 	}
 }
 
@@ -212,12 +218,18 @@ func (executor *TransitionExecutor) RecoverChecked(snapshot TransitionExecutorSn
 		return fmt.Errorf("transition executor snapshot has %d states but %d transition numbers",
 			len(snapshot.States), len(snapshot.TransitionNumbers))
 	}
+	if len(snapshot.TransitionOracles) != 0 && len(snapshot.TransitionOracles) != len(snapshot.States) {
+		return fmt.Errorf("transition executor snapshot has %d states but %d transition oracles",
+			len(snapshot.States), len(snapshot.TransitionOracles))
+	}
 	executor.scope = snapshot.Scope
 	executor.asserted = append([]Expr(nil), snapshot.Assertions...)
 	executor.prepared = cloneEncodedTransitions(snapshot.PreparedTransitions)
 	executor.states = append([]Binding(nil), snapshot.States...)
 	executor.transitionNumbers = append([]int(nil), snapshot.TransitionNumbers...)
+	executor.transitionOracles = append([]ChoiceOracle(nil), snapshot.TransitionOracles...)
 	executor.selectedTransition = snapshot.SelectedTransition
+	executor.selectedOracle = snapshot.SelectedOracle
 	executor.step = snapshot.Step
 	executor.picked = snapshot.ControlState == ExecutorPicked
 	executor.rewriter.Recover(snapshot.Rewriter)
@@ -337,8 +349,85 @@ func (executor *TransitionExecutor) AssumeTransition(number int) error {
 	executor.asserted = append(executor.asserted, transition.Trigger.NameExpr())
 	executor.scope.Binding = transition.Binding
 	executor.selectedTransition = number
+	executor.selectedOracle = &MockOracle{Fixed: number}
 	executor.picked = true
 	return nil
+}
+
+// PickTransition symbolically selects one prepared transition. A single
+// transition uses a fixed oracle; multiple transitions share one oracle across
+// the trigger and every primed variable, preserving their correlation.
+func (executor *TransitionExecutor) PickTransition() (ChoiceOracle, error) {
+	if executor.picked {
+		return nil, fmt.Errorf("a transition has already been selected at step %d", executor.step)
+	}
+	numbers := executor.PreparedTransitionNumbers()
+	if len(numbers) == 0 {
+		return nil, fmt.Errorf("unable to pick transitions from an empty set")
+	}
+	if len(numbers) == 1 {
+		if err := executor.AssumeTransition(numbers[0]); err != nil {
+			return nil, err
+		}
+		return executor.selectedOracle, nil
+	}
+
+	scope, oracle, constraints, err := NewOracleFactory(executor.rewriter.literals).NewDefault(executor.scope, len(numbers))
+	if err != nil {
+		return nil, err
+	}
+	executor.scope = scope
+	for _, constraint := range constraints {
+		executor.rewriter.assert(constraint)
+	}
+	triggers := make([]Expr, len(numbers))
+	for index, number := range numbers {
+		triggers[index] = executor.prepared[number].Trigger.NameExpr()
+	}
+	enabledChoice, err := oracle.Cases(executor.scope, triggers, nil)
+	if err != nil {
+		return nil, err
+	}
+	executor.asserted = append(executor.asserted, enabledChoice)
+
+	first := executor.prepared[numbers[0]].Binding
+	primed := make([]string, 0)
+	for name := range first.Map() {
+		if len(name) > 0 && name[len(name)-1] == '\'' {
+			primed = append(primed, name)
+		}
+	}
+	sort.Strings(primed)
+	final := make(map[string]ArenaCell, len(primed)+len(executor.constants))
+	picker := NewCherryPicker(executor.rewriter)
+	for _, name := range primed {
+		candidates := make([]ArenaCell, len(numbers))
+		for index, number := range numbers {
+			cell, found := executor.prepared[number].Binding.Get(name)
+			if !found {
+				return nil, fmt.Errorf("prepared transition %d has no binding for %s", number, name)
+			}
+			candidates[index] = cell
+		}
+		executor.scope, final[name], err = picker.Pick(executor.scope, oracle, candidates)
+		if err != nil {
+			return nil, fmt.Errorf("pick transition value for %s: %w", name, err)
+		}
+	}
+	for name := range executor.constants {
+		if cell, found := executor.scope.Binding.Get(name); found {
+			final[name] = cell
+		}
+	}
+	sparse, err := NewSparseOracle(oracle, numbers)
+	if err != nil {
+		return nil, err
+	}
+	executor.scope.Binding = NewBinding(final)
+	executor.selectedTransition = -1
+	executor.selectedOracle = sparse
+	executor.picked = true
+	return sparse, nil
 }
 
 // AssertState rewrites and asserts a Boolean state or action expression.
@@ -393,9 +482,11 @@ func (executor *TransitionExecutor) NextState() error {
 	executor.scope.Binding = executor.scope.Binding.Shift(executor.constants)
 	executor.states = append(executor.states, executor.scope.Binding)
 	executor.transitionNumbers = append(executor.transitionNumbers, executor.selectedTransition)
+	executor.transitionOracles = append(executor.transitionOracles, executor.selectedOracle)
 	executor.prepared = make(map[int]EncodedTransition)
 	executor.picked = false
 	executor.selectedTransition = 0
+	executor.selectedOracle = nil
 	executor.step++
 	return nil
 }
@@ -580,9 +671,11 @@ func (executor *TransitionExecutor) checkAndDecode(
 		if decodeErr != nil {
 			return SMTUnknown, nil, fmt.Errorf("decode state %d: %w", index, decodeErr)
 		}
-		states[index] = DecodedState{
-			Values: values, TransitionNumber: executor.decodedTransitionNumber(index, len(bindings)),
+		transitionNumber, decodeErr := executor.decodedTransitionNumber(encoder, index, len(bindings))
+		if decodeErr != nil {
+			return SMTUnknown, nil, fmt.Errorf("decode transition at state %d: %w", index, decodeErr)
 		}
+		states[index] = DecodedState{Values: values, TransitionNumber: transitionNumber}
 	}
 	return status, states, nil
 }
@@ -651,9 +744,11 @@ func (executor *TransitionExecutor) checkAndDecodeDistinctView(
 		if decodeErr != nil {
 			return SMTUnknown, nil, nil, fmt.Errorf("decode state %d: %w", index, decodeErr)
 		}
-		states[index] = DecodedState{
-			Values: values, TransitionNumber: executor.decodedTransitionNumber(index, len(bindings)),
+		transitionNumber, decodeErr := executor.decodedTransitionNumber(encoder, index, len(bindings))
+		if decodeErr != nil {
+			return SMTUnknown, nil, nil, fmt.Errorf("decode transition at state %d: %w", index, decodeErr)
 		}
+		states[index] = DecodedState{Values: values, TransitionNumber: transitionNumber}
 		views[index], decodeErr = decoder.DecodeCell(executor.scope.Arena, viewCells[index])
 		if decodeErr != nil {
 			return SMTUnknown, nil, nil, fmt.Errorf("decode state view %d: %w", index, decodeErr)
@@ -667,14 +762,27 @@ type DecodedState struct {
 	TransitionNumber int
 }
 
-func (executor *TransitionExecutor) decodedTransitionNumber(index, stateCount int) int {
+func (executor *TransitionExecutor) decodedTransitionNumber(
+	encoder *G3GroundEncoder, index, stateCount int,
+) (int, error) {
+	var oracle ChoiceOracle
+	if index < len(executor.transitionOracles) {
+		oracle = executor.transitionOracles[index]
+	} else if executor.picked && stateCount == len(executor.transitionNumbers)+1 && index == len(executor.transitionNumbers) {
+		oracle = executor.selectedOracle
+	}
+	if decoder, ok := oracle.(interface {
+		Decode(*G3GroundEncoder) (int, error)
+	}); ok {
+		return decoder.Decode(encoder)
+	}
 	if index < len(executor.transitionNumbers) {
-		return executor.transitionNumbers[index]
+		return executor.transitionNumbers[index], nil
 	}
-	if executor.picked && stateCount == len(executor.transitionNumbers)+1 && index == len(executor.transitionNumbers) {
-		return executor.selectedTransition
+	if executor.picked && index == len(executor.transitionNumbers) {
+		return executor.selectedTransition, nil
 	}
-	return 0
+	return 0, nil
 }
 
 func (executor *TransitionExecutor) solve(ctx context.Context, temporary []Expr) (*G3SolverContext, *G3GroundEncoder, SMTStatus, error) {
