@@ -450,7 +450,7 @@ func TestStratifiedStringLiteralsAndEqualityThroughG3(t *testing.T) {
 			name: "same literal", left: "alpha", right: "alpha",
 			contradict: func(result Expr) Expr { return MustOperExpr(Op("NOT"), Typed(BoolT1), result) },
 		},
-		{name: "distinct literals", left: "alpha", right: "beta", contradict: func(result Expr) Expr { return result }},
+		{name: "distinct literals", left: "red", right: "blue", contradict: func(result Expr) Expr { return result }},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
