@@ -2,6 +2,7 @@ package apalache
 
 import (
 	"fmt"
+	"io"
 	"math/big"
 	"regexp"
 	"unicode"
@@ -107,7 +108,7 @@ type TLCConfigParseError struct {
 }
 
 func (err *TLCConfigParseError) Error() string {
-	return fmt.Sprintf("config parse error at %d:%d: %s", err.Line, err.Column, err.Message)
+	return fmt.Sprintf("Config parse error at %d.%d: %s", err.Line, err.Column, err.Message)
 }
 
 type tlcToken struct {
@@ -122,6 +123,16 @@ func ParseTLCConfig(text string) (TLCConfig, error) {
 	}
 	p := tlcConfigParser{tokens: tokens}
 	return p.parse()
+}
+
+// ParseTLCConfigReader is the streaming-input entry point corresponding to
+// Scala's TlcConfigParser.apply(Reader).
+func ParseTLCConfigReader(reader io.Reader) (TLCConfig, error) {
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return TLCConfig{}, err
+	}
+	return ParseTLCConfig(string(data))
 }
 
 func lexTLCConfig(text string) ([]tlcToken, error) {
