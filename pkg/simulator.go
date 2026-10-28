@@ -43,12 +43,13 @@ func SimulateBehavior(
 }
 
 type SimulationOptions struct {
-	MaxSteps   int
-	MaxRuns    int
-	Randomize  bool
-	RandomSeed int64
-	Tuning     CheckerTuning
-	MaxErrors  int
+	MaxSteps    int
+	MaxRuns     int
+	Randomize   bool
+	RandomSeed  int64
+	SMTEncoding SMTEncoding
+	Tuning      CheckerTuning
+	MaxErrors   int
 }
 
 // SimulateBehaviorWithOptions finds one behavior while honoring the same
@@ -134,7 +135,8 @@ func SimulateAndCheckWithOptions(
 			remaining := options.MaxErrors - len(report.Counterexamples)
 			checked, checkErr := CheckBoundedSafetyWithOptions(ctx, module, predicates, BoundedSafetyOptions{
 				MaxSteps: len(result.NextTransitions), CheckDeadlocks: false, MaxErrors: remaining,
-				Tuning: options.Tuning.withExactTransitionPath(result.InitTransition, result.NextTransitions),
+				SMTEncoding: options.SMTEncoding,
+				Tuning:      options.Tuning.withExactTransitionPath(result.InitTransition, result.NextTransitions),
 			})
 			if checkErr != nil {
 				return SimulationReport{}, fmt.Errorf("check simulation run %d: %w", run+1, checkErr)
@@ -168,6 +170,13 @@ func simulateBehavior(
 	if maxSteps < 0 {
 		return SimulationResult{}, fmt.Errorf("maximum step count cannot be negative")
 	}
+	smtEncoding := options.SMTEncoding
+	if smtEncoding == "" {
+		smtEncoding = SMTEncodingOOPSLA19
+	}
+	if smtEncoding != SMTEncodingOOPSLA19 && smtEncoding != SMTEncodingArrays && smtEncoding != SMTEncodingFunArrays {
+		return SimulationResult{}, fmt.Errorf("unsupported simulator SMT encoding %s", smtEncoding)
+	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -188,7 +197,8 @@ func simulateBehavior(
 		initTransitions:  TransitionsFromModule(module, NormalizedInitPrefix),
 		nextTransitions:  TransitionsFromModule(module, NormalizedNextPrefix),
 		stateConstraints: stateConstraints, actionConstraints: actionConstraints,
-		tuning: options.Tuning,
+		smtEncoding: smtEncoding,
+		tuning:      options.Tuning,
 	}
 	if len(inputs.initTransitions) == 0 {
 		return SimulationResult{}, fmt.Errorf("module has no normalized initial transitions")

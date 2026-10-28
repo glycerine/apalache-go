@@ -27,6 +27,54 @@ func TestSimulateBehaviorSelectsFirstSatisfiablePath(t *testing.T) {
 	}
 }
 
+func TestSimulateAndCheckRunsNativeArrayEncodings(t *testing.T) {
+	x := NewNameExpr("x", Typed(IntT1))
+	prime := MustOperExpr(Op("PRIME"), Typed(IntT1), NewNameExpr("x", Typed(IntT1)))
+	set := MustOperExpr(Op("SET_ENUM"), Typed(mustSet(IntT1)), intLiteral(0))
+	init := MustOperExpr(Op("AND"), Typed(BoolT1),
+		MustOperExpr(Op("EQ"), Typed(BoolT1), x, intLiteral(0)),
+		MustOperExpr(Op("SET_IN"), Typed(BoolT1), intLiteral(0), set))
+	functionType, err := NewFunType(IntT1, IntT1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	binder := NewNameExpr("i", Typed(IntT1))
+	function := MustOperExpr(Op("FUN_CTOR"), Typed(functionType),
+		MustOperExpr(Op("PLUS"), Typed(IntT1), binder, intLiteral(1)), binder,
+		MustOperExpr(Op("SET_ENUM"), Typed(mustSet(IntT1)), intLiteral(1)))
+	invariant := MustOperExpr(Op("EQ"), Typed(BoolT1),
+		MustOperExpr(Op("FUN_APP"), Typed(IntT1), function, intLiteral(1)), intLiteral(2))
+	module := configuredTestModule(
+		NewVarDecl("x", Typed(IntT1)),
+		boolDefinition("Init", init),
+		boolDefinition("Next", MustOperExpr(Op("EQ"), Typed(BoolT1), prime, x)),
+		boolDefinition("Inv", invariant),
+	)
+	prepared, err := PrepareSafetyTransitions(module, SafetyPipelineOptions{Specification: SpecificationConfiguration{
+		Behavior: InitNextSpec{Init: "Init", Next: "Next"}, Invariants: []string{"Inv"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, encoding := range []SMTEncoding{SMTEncodingArrays, SMTEncodingFunArrays} {
+		t.Run(string(encoding), func(t *testing.T) {
+			report, simulateErr := SimulateAndCheckWithOptions(context.Background(), prepared.Module, prepared.Predicates,
+				SimulationOptions{MaxSteps: 1, MaxRuns: 1, RandomSeed: 1, SMTEncoding: encoding})
+			if simulateErr != nil {
+				t.Fatal(simulateErr)
+			}
+			if len(report.Runs) != 1 || report.Runs[0].Outcome != SimulationCompleted ||
+				len(report.Counterexamples) != 0 {
+				t.Fatalf("native %s simulation report = %#v", encoding, report)
+			}
+		})
+	}
+	if _, simulateErr := SimulateBehaviorWithOptions(context.Background(), prepared.Module, prepared.Predicates,
+		SimulationOptions{SMTEncoding: SMTEncoding("unknown")}); simulateErr == nil {
+		t.Fatal("unknown simulator SMT encoding was accepted")
+	}
+}
+
 func TestSimulateBehaviorReportsDeadlock(t *testing.T) {
 	x := NewNameExpr("x", Typed(IntT1))
 	constantInit := boolDefinition("CInit", NewValueExpr(BoolValue(true), Typed(BoolT1)))
