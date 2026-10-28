@@ -44,18 +44,34 @@ func (substitutor *TypeSubstitutor) Expression(expression Expr) (Expr, error) {
 	case *nullExpr:
 		return expression, nil
 	case *ValueExpr:
-		result = NewValueExpr(typed.Value(), tag)
+		if typed.Tag().Equal(tag) {
+			result = typed
+		} else {
+			result = typed.WithTag(tag)
+		}
 	case *NameExpr:
-		result = NewNameExpr(typed.Name(), tag)
+		if typed.Tag().Equal(tag) {
+			result = typed
+		} else {
+			result = typed.WithTag(tag)
+		}
 	case *OperExpr:
 		arguments := typed.Arguments()
+		changed := false
 		for index, argument := range arguments {
 			arguments[index], err = substitutor.Expression(argument)
 			if err != nil {
 				return nil, err
 			}
+			changed = changed || arguments[index].ID() != argument.ID()
 		}
-		result = MustOperExpr(typed.Operator(), tag, arguments...)
+		result = typed
+		if changed {
+			result = substitutor.tracker.Hold(typed, MustOperExpr(typed.Operator(), typed.Tag(), arguments...))
+		}
+		if !result.Tag().Equal(tag) {
+			result = result.WithTag(tag)
+		}
 	case *LetInExpr:
 		body, bodyErr := substitutor.Expression(typed.Body())
 		if bodyErr != nil {
