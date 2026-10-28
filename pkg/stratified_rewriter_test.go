@@ -108,6 +108,24 @@ func TestStratifiedRewriterAssignmentAndBooleanRules(t *testing.T) {
 	if _, _, err := rewriter.Rewrite(cellAssignment, scope); err == nil {
 		t.Fatal("assignment to an arena-cell name was accepted")
 	}
+	for name, lhs := range map[string]Expr{
+		"unprimed": NewNameExpr("x", Typed(IntT1)),
+		"non-name": MustOperExpr(Op("PRIME"), Typed(IntT1), intLiteral(1)),
+	} {
+		t.Run("invalid assignment "+name, func(t *testing.T) {
+			invalid := MustOperExpr(Op("Apalache!:="), Typed(BoolT1), lhs, intLiteral(1))
+			if _, _, rewriteErr := rewriter.Rewrite(invalid, scope); rewriteErr == nil {
+				t.Fatal("invalid assignment left-hand side was accepted")
+			}
+		})
+	}
+	failing := MustOperExpr(Op("Apalache!:="), Typed(BoolT1),
+		MustOperExpr(Op("PRIME"), Typed(IntT1), NewNameExpr("y", Typed(IntT1))),
+		NewNameExpr("missing-rhs", Typed(IntT1)))
+	failedScope, _, err := rewriter.Rewrite(failing, scope)
+	if err == nil || failedScope.Arena != scope.Arena || failedScope.Binding.Contains("y'") {
+		t.Fatalf("failed assignment = scope %#v, error %v", failedScope, err)
+	}
 	arena, booleans := assignedScope.Arena.AppendCellTypes(
 		BasicCellType{Type: BoolT1}, BasicCellType{Type: BoolT1})
 	assignedScope.Arena = arena
