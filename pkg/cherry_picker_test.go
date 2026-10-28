@@ -54,6 +54,10 @@ func cherryTuple(typ Type, elements ...Expr) Expr {
 	return MustOperExpr(Op("TUPLE"), Typed(typ), elements...)
 }
 
+func cherrySet(elementType Type, elements ...Expr) Expr {
+	return MustOperExpr(Op("SET_ENUM"), Typed(mustSet(elementType)), elements...)
+}
+
 func TestCherryPickerPreservesTupleCorrelationThroughG3(t *testing.T) {
 	tupleType, _ := NewTupleType(IntT1, IntT1)
 	tag := Typed(tupleType)
@@ -192,5 +196,28 @@ func TestCherryPickerScalaSequenceCases(t *testing.T) {
 	})
 	assertCherryPickerCandidates(t, "differing-length sequences", []Expr{
 		sequence(1, 2), sequence(3, 4, 5), sequence(),
+	})
+}
+
+func TestCherryPickerScalaSetCases(t *testing.T) {
+	set := func(values ...int64) Expr {
+		elements := make([]Expr, len(values))
+		for index, value := range values {
+			elements[index] = cherryInt(value)
+		}
+		return cherrySet(IntT1, elements...)
+	}
+	assertCherryPickerCandidates(t, "nonempty sets", []Expr{
+		set(1, 2), set(3, 4),
+	})
+	assertCherryPickerCandidates(t, "nonempty and empty sets", []Expr{
+		set(1, 2), set(),
+	})
+	assertCherryPickerCandidates(t, "singleton empty-set choice", []Expr{
+		set(),
+	})
+	assertCherryPickerCandidates(t, "nested sets", []Expr{
+		cherrySet(mustSet(IntT1), set(1, 2), set(3, 4)),
+		cherrySet(mustSet(IntT1), set(5, 6)),
 	})
 }
