@@ -322,3 +322,21 @@ func TestStratifiedGuessFromPowerSetAndBuiltins(t *testing.T) {
 		t.Fatalf("negative natural Guess = %v, %v", status, err)
 	}
 }
+
+func TestStratifiedFunctionSetTypeErrorsDoNotMutateArena(t *testing.T) {
+	intSet := MustOperExpr(Op("SET_ENUM"), Typed(mustSet(IntT1)), intLiteral(1))
+	boolSet := MustOperExpr(Op("SET_ENUM"), Typed(mustSet(BoolT1)), boolExpr(true))
+	functionSetType := mustSet(mustFun(IntT1, BoolT1))
+	for _, invalid := range []Expr{
+		MustOperExpr(Op("FUN_SET"), Untyped(), intSet, boolSet),
+		MustOperExpr(Op("FUN_SET"), Typed(IntT1), intSet, boolSet),
+		MustOperExpr(Op("FUN_SET"), Typed(functionSetType), intLiteral(1), boolSet),
+		MustOperExpr(Op("FUN_SET"), Typed(functionSetType), intSet, intSet),
+	} {
+		base := InitialRewriterScope()
+		returned, _, err := NewStratifiedRewriter().Rewrite(invalid, base)
+		if err == nil || returned.Arena != base.Arena {
+			t.Fatalf("invalid function set returned scope=%v, err=%v", returned, err)
+		}
+	}
+}

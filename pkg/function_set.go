@@ -113,6 +113,25 @@ func (rewriter *StratifiedRewriter) rewriteFunctionSet(expression *OperExpr, sco
 	if len(arguments) != 2 {
 		return scope, ArenaCell{}, fmt.Errorf("function set requires a domain and codomain")
 	}
+	typ, typed := expression.Tag().Type()
+	if !typed {
+		return scope, ArenaCell{}, fmt.Errorf("function set must be typed")
+	}
+	argumentTypes := make([]Type, len(arguments))
+	for index, argument := range arguments {
+		argumentType, argumentTyped := argument.Tag().Type()
+		if !argumentTyped {
+			return scope, ArenaCell{}, fmt.Errorf("function set argument %d must be typed", index+1)
+		}
+		argumentTypes[index] = argumentType
+	}
+	inferred, err := InferOperatorType(expression.Operator(), argumentTypes)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	if !CompatibleTypes(inferred, typ) {
+		return scope, ArenaCell{}, fmt.Errorf("function set has type %s, incompatible with %s", typ, inferred)
+	}
 	scope, domain, err := rewriter.Rewrite(arguments[0], scope)
 	if err != nil {
 		return scope, ArenaCell{}, err
@@ -120,10 +139,6 @@ func (rewriter *StratifiedRewriter) rewriteFunctionSet(expression *OperExpr, sco
 	scope, codomain, err := rewriter.Rewrite(arguments[1], scope)
 	if err != nil {
 		return scope, ArenaCell{}, err
-	}
-	typ, typed := expression.Tag().Type()
-	if !typed {
-		return scope, ArenaCell{}, fmt.Errorf("function set must be typed")
 	}
 	setType, ok := typ.(SetType)
 	if !ok {
