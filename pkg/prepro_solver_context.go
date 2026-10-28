@@ -49,8 +49,9 @@ func (prepro *PreproSolverContext) CheckWithTimeout(ctx context.Context, seconds
 func (prepro *PreproSolverContext) CheckConsistency(arena *PureArena) error {
 	return prepro.context.CheckConsistency(arena)
 }
-func (prepro *PreproSolverContext) Log(message string) { prepro.context.Log(message) }
-func (prepro *PreproSolverContext) Logs() []string     { return prepro.context.Logs() }
+func (prepro *PreproSolverContext) SMTLib2() (string, error) { return prepro.context.SMTLib2() }
+func (prepro *PreproSolverContext) Log(message string)       { prepro.context.Log(message) }
+func (prepro *PreproSolverContext) Logs() []string           { return prepro.context.Logs() }
 
 func (prepro *PreproSolverContext) Assert(expression Expr) error {
 	simplified, err := simplifyPreproShallow(expression)

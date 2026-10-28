@@ -83,6 +83,8 @@ func (context *RecordingSolverContext) CheckConsistency(arena *PureArena) error 
 	return context.solver.CheckConsistency(arena)
 }
 
+func (context *RecordingSolverContext) SMTLib2() (string, error) { return context.solver.SMTLib2() }
+
 func (context *RecordingSolverContext) Log(message string) { context.solver.Log(message) }
 func (context *RecordingSolverContext) Logs() []string     { return context.solver.Logs() }
 

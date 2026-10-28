@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	"sort"
 	"strconv"
@@ -119,9 +120,11 @@ func (term SMTTerm) Sort() SMTSort { return term.sort }
 // is the quantifier-free integer/Boolean/array fragment used by the active
 // encoding; explicit-logic contexts also expose the quantified adapter path.
 type G3SolverContext struct {
-	context *cmd_context.Context
-	manager *ast.ASTManager
-	closed  bool
+	context         *cmd_context.Context
+	manager         *ast.ASTManager
+	assertions      []ast.ASTHandle
+	assertionScopes []int
+	closed          bool
 }
 
 func NewG3SolverContext() (*G3SolverContext, error) {
@@ -780,21 +783,70 @@ func (solver *G3SolverContext) Assert(formula SMTTerm) error {
 	if err := solver.validateTerm(formula, SMTBool); err != nil {
 		return err
 	}
-	return solver.context.Assert(formula.handle, "")
+	if err := solver.context.Assert(formula.handle, ""); err != nil {
+		return err
+	}
+	solver.assertions = append(solver.assertions, formula.handle)
+	return nil
 }
 
 func (solver *G3SolverContext) Push() error {
 	if err := solver.validate(); err != nil {
 		return err
 	}
-	return solver.context.Push(1)
+	if err := solver.context.Push(1); err != nil {
+		return err
+	}
+	solver.assertionScopes = append(solver.assertionScopes, len(solver.assertions))
+	return nil
 }
 
 func (solver *G3SolverContext) Pop() error {
 	if err := solver.validate(); err != nil {
 		return err
 	}
-	return solver.context.Pop(1)
+	if len(solver.assertionScopes) == 0 {
+		return fmt.Errorf("cannot pop the base SMT scope")
+	}
+	if err := solver.context.Pop(1); err != nil {
+		return err
+	}
+	last := len(solver.assertionScopes) - 1
+	solver.assertions = solver.assertions[:solver.assertionScopes[last]]
+	solver.assertionScopes = solver.assertionScopes[:last]
+	return nil
+}
+
+// WriteSMTLib2 writes the active solver assertions and every declaration they
+// reference in SMT-LIB2 form. Declarations that are not reachable from an
+// active assertion are intentionally omitted, matching g3's solver display.
+func (solver *G3SolverContext) WriteSMTLib2(out io.Writer) error {
+	if err := solver.validate(); err != nil {
+		return err
+	}
+	if out == nil {
+		return fmt.Errorf("SMT-LIB2 output writer cannot be nil")
+	}
+	printer, err := ast.NewASTPPUtil(solver.manager)
+	if err != nil {
+		return err
+	}
+	if err = printer.CollectAll(solver.assertions); err != nil {
+		return err
+	}
+	if err = printer.DisplayDeclarations(out); err != nil {
+		return err
+	}
+	return printer.DisplayAssertions(out, solver.assertions, true)
+}
+
+// SMTLib2 returns the active solver state in SMT-LIB2 form.
+func (solver *G3SolverContext) SMTLib2() (string, error) {
+	var output bytes.Buffer
+	if err := solver.WriteSMTLib2(&output); err != nil {
+		return "", err
+	}
+	return output.String(), nil
 }
 
 func (solver *G3SolverContext) Check(ctx context.Context) (SMTStatus, error) {

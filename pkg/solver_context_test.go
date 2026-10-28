@@ -3,6 +3,7 @@ package apalache
 import (
 	"context"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -42,6 +43,14 @@ func TestSolverContextFactoryRunsArenaExpressionsAndMetrics(t *testing.T) {
 	}
 	if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTSatisfiable {
 		t.Fatalf("check = %v, %v", status, checkErr)
+	}
+	dump, err := solver.SMTLib2()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(dump, "(declare-fun $C$0 () Int)") ||
+		!strings.Contains(dump, "(assert (= $C$0 7))") {
+		t.Fatalf("solver SMT-LIB2:\n%s", dump)
 	}
 	decoded, err := solver.Evaluate(x.NameExpr())
 	if err != nil {

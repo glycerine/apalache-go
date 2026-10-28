@@ -3,6 +3,7 @@ package apalache
 import (
 	"context"
 	"math/big"
+	"strings"
 	"testing"
 )
 
@@ -438,4 +439,81 @@ func TestG3SolverQuantifiers(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestG3SolverSMTLib2TracksActiveScopes(t *testing.T) {
+	solver := newTestG3Solver(t)
+	x, err := solver.Declare("x", SMTInt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	one, _ := solver.Int(1)
+	four, _ := solver.Int(4)
+	lower, err := solver.Greater(x, one)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = solver.Assert(lower); err != nil {
+		t.Fatal(err)
+	}
+	if err = solver.Push(); err != nil {
+		t.Fatal(err)
+	}
+	upper, err := solver.Less(x, four)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = solver.Assert(upper); err != nil {
+		t.Fatal(err)
+	}
+	nested, err := solver.SMTLib2()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, fragment := range []string{"(declare-fun x () Int)", "(assert (> x 1))", "(assert (< x 4))"} {
+		if !strings.Contains(nested, fragment) {
+			t.Fatalf("nested SMT-LIB2 lacks %q:\n%s", fragment, nested)
+		}
+	}
+	if err = solver.Pop(); err != nil {
+		t.Fatal(err)
+	}
+	base, err := solver.SMTLib2()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(base, "(assert (> x 1))") || strings.Contains(base, "(< x 4)") {
+		t.Fatalf("base SMT-LIB2 has wrong active assertions:\n%s", base)
+	}
+	if err = solver.Pop(); err == nil || !strings.Contains(err.Error(), "base SMT scope") {
+		t.Fatalf("base-scope pop error = %v", err)
+	}
+}
+
+func TestG3SolverSMTLib2RendersNestedArraySorts(t *testing.T) {
+	solver := newTestG3Solver(t)
+	inner := arraySMTSortSpec(scalarSMTSortSpec(SMTInt, ""), scalarSMTSortSpec(SMTBool, ""))
+	array, err := solver.declareArrayWithSpecs("nested", scalarSMTSortSpec(SMTInt, ""), inner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = solver.Assert(mustSMTEqual(t, solver, array, array)); err != nil {
+		t.Fatal(err)
+	}
+	dump, err := solver.SMTLib2()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(dump, "(declare-fun nested () (Array Int (Array Int Bool)))") {
+		t.Fatalf("nested-array SMT-LIB2:\n%s", dump)
+	}
+}
+
+func mustSMTEqual(t *testing.T, solver *G3SolverContext, left, right SMTTerm) SMTTerm {
+	t.Helper()
+	equal, err := solver.Equal(left, right)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return equal
 }

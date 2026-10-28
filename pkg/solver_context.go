@@ -3,6 +3,7 @@ package apalache
 import (
 	"context"
 	"fmt"
+	"io"
 	"sort"
 	"time"
 )
@@ -19,6 +20,7 @@ type GroundSolverContext interface {
 	Check(context.Context) (SMTStatus, error)
 	CheckWithTimeout(context.Context, int) (SMTStatus, error)
 	CheckConsistency(*PureArena) error
+	SMTLib2() (string, error)
 	Log(string)
 	Logs() []string
 	Push() error
@@ -191,6 +193,20 @@ func (solver *SolverContext) CheckConsistency(arena *PureArena) error {
 		}
 	}
 	return nil
+}
+
+func (solver *SolverContext) WriteSMTLib2(out io.Writer) error {
+	if solver == nil || solver.solver == nil {
+		return fmt.Errorf("solver context is not initialized")
+	}
+	return solver.solver.WriteSMTLib2(out)
+}
+
+func (solver *SolverContext) SMTLib2() (string, error) {
+	if solver == nil || solver.solver == nil {
+		return "", fmt.Errorf("solver context is not initialized")
+	}
+	return solver.solver.SMTLib2()
 }
 
 func (solver *SolverContext) Log(message string) {
