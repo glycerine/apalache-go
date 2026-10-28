@@ -100,6 +100,9 @@ func PrepareSafetyTransitions(module *Module, options SafetyPipelineOptions) (Sa
 	for _, name := range configured.Predicates.Persistent {
 		persistent[name] = struct{}{}
 	}
+	if configured.Predicates.View != "" {
+		persistent[configured.Predicates.View] = struct{}{}
+	}
 	for _, name := range append(append([]string(nil), configured.Predicates.StateConstraints...), configured.Predicates.ActionConstraints...) {
 		persistent[name] = struct{}{}
 	}

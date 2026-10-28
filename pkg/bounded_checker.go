@@ -20,6 +20,18 @@ type BoundedSafetyOptions struct {
 	CheckDeadlocks        bool
 	InvariantMinimumDepth int
 	Tuning                CheckerTuning
+	MaxErrors             int
+}
+
+type BoundedCounterexample struct {
+	Depth           int
+	Invariant       string
+	ActionInvariant bool
+	TraceInvariant  bool
+	InitTransition  int
+	NextTransitions []int
+	States          []DecodedState
+	View            []Expr
 }
 
 // BoundedSafetyResult describes either a completed bounded search or the
@@ -34,6 +46,7 @@ type BoundedSafetyResult struct {
 	NextTransitions    []int
 	ExploredExecutions int
 	States             []DecodedState
+	Counterexamples    []BoundedCounterexample
 }
 
 // CheckBoundedSafety checks every normalized transition path through maxSteps
@@ -66,6 +79,15 @@ func CheckBoundedSafetyWithOptions(
 	}
 	if options.InvariantMinimumDepth < 0 {
 		return BoundedSafetyResult{}, fmt.Errorf("invariant minimum depth cannot be negative")
+	}
+	if options.MaxErrors < 0 {
+		return BoundedSafetyResult{}, fmt.Errorf("maximum error count cannot be negative")
+	}
+	if options.MaxErrors == 0 {
+		options.MaxErrors = 1
+	}
+	if options.MaxErrors > 1 && predicates.View == "" {
+		return BoundedSafetyResult{}, fmt.Errorf("maximum error count greater than one requires a state view")
 	}
 	if ctx == nil {
 		ctx = context.Background()
@@ -135,6 +157,14 @@ func CheckBoundedSafetyWithOptions(
 	variableDeclarations := module.VarDeclarations()
 	constantInit, hasConstantInit := OperatorBody(module, NormalizedConstInit)
 	assumptions := module.AssumeDeclarations()
+	var view Expr
+	if predicates.View != "" {
+		var found bool
+		view, found = OperatorBody(module, predicates.View)
+		if !found {
+			return BoundedSafetyResult{}, fmt.Errorf("state view %s was not found", predicates.View)
+		}
+	}
 
 	result := BoundedSafetyResult{Outcome: SafetyNoCounterexample, Depth: -1, InitTransition: -1}
 	inputs := modulePathInputs{
@@ -147,6 +177,7 @@ func CheckBoundedSafetyWithOptions(
 		invariantMinimumDepth: options.InvariantMinimumDepth,
 		stateConstraints:      stateConstraints, actionConstraints: actionConstraints,
 		tuning: options.Tuning,
+		view:   view, maxErrors: options.MaxErrors,
 	}
 	queue := make([]boundedPath, 0, len(initTransitions))
 	for initNumber := range initTransitions {
@@ -269,6 +300,8 @@ type modulePathInputs struct {
 	checkDeadlocks        bool
 	invariantMinimumDepth int
 	tuning                CheckerTuning
+	view                  Expr
+	maxErrors             int
 }
 
 func searchSafetyPath(
@@ -291,8 +324,7 @@ func searchSafetyPath(
 		return false, err
 	}
 	if status == SMTUnknown {
-		result.Outcome = SafetyUnknown
-		return true, nil
+		return stopOnUnknown(result), nil
 	}
 	if status == SMTUnsatisfiable {
 		return false, nil
@@ -302,48 +334,52 @@ func searchSafetyPath(
 			if !inputs.tuning.allowsInvariant(len(path.next), "state", invariantNumber) {
 				continue
 			}
-			var states []DecodedState
-			status, states, err = executor.CheckAndDecode(ctx, invariant.expression)
-			if err != nil {
-				return false, fmt.Errorf("check invariant %s at depth %d: %w", invariant.name, len(path.next), err)
-			}
-			if status == SMTUnknown {
-				result.Outcome = SafetyUnknown
-				return true, nil
-			}
-			if status == SMTSatisfiable {
-				result.Outcome = SafetyCounterexample
-				result.Depth = len(path.next)
-				result.Invariant = invariant.name
-				result.InitTransition = path.init
-				result.NextTransitions = append([]int(nil), path.next...)
-				result.States = states
-				return true, nil
+			for {
+				status, states, views, checkErr := executor.checkAndDecodeDistinctState(
+					ctx, invariant.expression, inputs.view, safetyExcludedViews(result))
+				if checkErr != nil {
+					return false, fmt.Errorf("check invariant %s at depth %d: %w", invariant.name, len(path.next), checkErr)
+				}
+				if status == SMTUnknown {
+					return stopOnUnknown(result), nil
+				}
+				if status != SMTSatisfiable {
+					break
+				}
+				recordSafetyCounterexample(result, BoundedCounterexample{
+					Depth: len(path.next), Invariant: invariant.name, InitTransition: path.init,
+					NextTransitions: append([]int(nil), path.next...), States: states, View: views,
+				})
+				if len(result.Counterexamples) >= inputs.maxErrors {
+					return true, nil
+				}
 			}
 		}
 		for invariantNumber, invariant := range inputs.traceInvariants {
 			if !inputs.tuning.allowsInvariant(len(path.next), "state", len(inputs.stateInvariants)+invariantNumber) {
 				continue
 			}
-			var states []DecodedState
-			status, states, err = executor.CheckTraceAndDecode(ctx, invariant.parameter, invariant.expression,
-				invariant.historyType, inputs.variableDeclarations)
-			if err != nil {
-				return false, fmt.Errorf("check trace invariant %s at depth %d: %w", invariant.name, len(path.next), err)
-			}
-			if status == SMTUnknown {
-				result.Outcome = SafetyUnknown
-				return true, nil
-			}
-			if status == SMTSatisfiable {
-				result.Outcome = SafetyCounterexample
-				result.Depth = len(path.next)
-				result.Invariant = invariant.name
-				result.TraceInvariant = true
-				result.InitTransition = path.init
-				result.NextTransitions = append([]int(nil), path.next...)
-				result.States = states
-				return true, nil
+			for {
+				status, states, views, checkErr := executor.checkTraceAndDecodeDistinctView(
+					ctx, invariant.parameter, invariant.expression, invariant.historyType,
+					inputs.variableDeclarations, inputs.view, safetyExcludedViews(result))
+				if checkErr != nil {
+					return false, fmt.Errorf("check trace invariant %s at depth %d: %w", invariant.name, len(path.next), checkErr)
+				}
+				if status == SMTUnknown {
+					return stopOnUnknown(result), nil
+				}
+				if status != SMTSatisfiable {
+					break
+				}
+				recordSafetyCounterexample(result, BoundedCounterexample{
+					Depth: len(path.next), Invariant: invariant.name, TraceInvariant: true,
+					InitTransition: path.init, NextTransitions: append([]int(nil), path.next...),
+					States: states, View: views,
+				})
+				if len(result.Counterexamples) >= inputs.maxErrors {
+					return true, nil
+				}
 			}
 		}
 	}
@@ -368,8 +404,7 @@ func searchSafetyPath(
 			return false, childErr
 		}
 		if childStatus == SMTUnknown {
-			result.Outcome = SafetyUnknown
-			return true, nil
+			return stopOnUnknown(result), nil
 		}
 		if childStatus == SMTUnsatisfiable {
 			continue
@@ -379,23 +414,26 @@ func searchSafetyPath(
 			if !inputs.tuning.allowsInvariant(len(child.next), "action", invariantNumber) {
 				continue
 			}
-			status, states, invariantErr := childExecutor.CheckPendingAndDecode(ctx, invariant.expression)
-			if invariantErr != nil {
-				return false, fmt.Errorf("check action invariant %s at depth %d: %w", invariant.name, len(child.next), invariantErr)
-			}
-			if status == SMTUnknown {
-				result.Outcome = SafetyUnknown
-				return true, nil
-			}
-			if status == SMTSatisfiable {
-				result.Outcome = SafetyCounterexample
-				result.Depth = len(child.next)
-				result.Invariant = invariant.name
-				result.ActionInvariant = true
-				result.InitTransition = child.init
-				result.NextTransitions = append([]int(nil), child.next...)
-				result.States = states
-				return true, nil
+			for {
+				status, states, views, invariantErr := childExecutor.checkPendingAndDecodeDistinctView(
+					ctx, invariant.expression, inputs.view, safetyExcludedViews(result))
+				if invariantErr != nil {
+					return false, fmt.Errorf("check action invariant %s at depth %d: %w", invariant.name, len(child.next), invariantErr)
+				}
+				if status == SMTUnknown {
+					return stopOnUnknown(result), nil
+				}
+				if status != SMTSatisfiable {
+					break
+				}
+				recordSafetyCounterexample(result, BoundedCounterexample{
+					Depth: len(child.next), Invariant: invariant.name, ActionInvariant: true,
+					InitTransition: child.init, NextTransitions: append([]int(nil), child.next...),
+					States: states, View: views,
+				})
+				if len(result.Counterexamples) >= inputs.maxErrors {
+					return true, nil
+				}
 			}
 		}
 		if len(path.next) < inputs.maxSteps {
@@ -403,6 +441,9 @@ func searchSafetyPath(
 		}
 	}
 	if inputs.checkDeadlocks && !enabledNext {
+		if len(result.Counterexamples) != 0 {
+			return false, nil
+		}
 		truth := NewValueExpr(BoolValue(true), Typed(BoolT1))
 		status, states, decodeErr := executor.CheckAndDecode(ctx, truth)
 		if decodeErr != nil {
@@ -420,6 +461,38 @@ func searchSafetyPath(
 		return true, nil
 	}
 	return false, nil
+}
+
+func safetyExcludedViews(result *BoundedSafetyResult) [][]Expr {
+	views := make([][]Expr, 0, len(result.Counterexamples))
+	for _, counterexample := range result.Counterexamples {
+		if len(counterexample.View) != 0 {
+			views = append(views, counterexample.View)
+		}
+	}
+	return views
+}
+
+func recordSafetyCounterexample(result *BoundedSafetyResult, counterexample BoundedCounterexample) {
+	result.Counterexamples = append(result.Counterexamples, counterexample)
+	result.Outcome = SafetyCounterexample
+	if len(result.Counterexamples) != 1 {
+		return
+	}
+	result.Depth = counterexample.Depth
+	result.Invariant = counterexample.Invariant
+	result.ActionInvariant = counterexample.ActionInvariant
+	result.TraceInvariant = counterexample.TraceInvariant
+	result.InitTransition = counterexample.InitTransition
+	result.NextTransitions = append([]int(nil), counterexample.NextTransitions...)
+	result.States = counterexample.States
+}
+
+func stopOnUnknown(result *BoundedSafetyResult) bool {
+	if len(result.Counterexamples) == 0 {
+		result.Outcome = SafetyUnknown
+	}
+	return true
 }
 
 func replayPendingNext(inputs modulePathInputs, path boundedPath, nextNumber int) (*TransitionExecutor, error) {

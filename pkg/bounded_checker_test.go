@@ -142,6 +142,116 @@ func TestCheckBoundedSafetyEnumeratesTransitionAlternatives(t *testing.T) {
 	}
 }
 
+func TestCheckBoundedSafetyEnumeratesDistinctViewsWithinOneSymbolicPath(t *testing.T) {
+	frontend := ParseAndTypeCheckSource(context.Background(), "MultiError.tla", `---- MODULE MultiError ----
+EXTENDS Integers, FiniteSets
+\* @type: Int;
+VARIABLE x
+Init == x \in {1, 2, 3}
+Next == x' = x
+Inv == x = 0
+View == x
+====
+`, FrontendOptions{}, TypeCheckOptions{})
+	if !frontend.OK() {
+		t.Fatalf("frontend diagnostics = %v", frontend.Diagnostics)
+	}
+	prepared, err := PrepareSafetyTransitions(frontend.Native, SafetyPipelineOptions{
+		Specification: SpecificationConfiguration{
+			Behavior: InitNextSpec{Init: "Init", Next: "Next"}, Invariants: []string{"Inv"}, View: "View",
+		}, Sources: frontend.Sources,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count := len(TransitionsFromModule(prepared.Module, NormalizedInitPrefix)); count != 1 {
+		t.Fatalf("normalized initial transition count = %d, want one symbolic path", count)
+	}
+	result, err := CheckBoundedSafetyWithOptions(context.Background(), prepared.Module, prepared.Predicates,
+		BoundedSafetyOptions{MaxSteps: 0, CheckDeadlocks: false, MaxErrors: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Outcome != SafetyCounterexample || len(result.Counterexamples) != 3 {
+		t.Fatalf("multi-error result = %#v", result)
+	}
+	values := make(map[string]struct{})
+	for _, counterexample := range result.Counterexamples {
+		if len(counterexample.States) != 1 || len(counterexample.View) != 1 {
+			t.Fatalf("counterexample = %#v", counterexample)
+		}
+		formatted, formatErr := FormatTLAExpression(counterexample.View[0])
+		if formatErr != nil {
+			t.Fatal(formatErr)
+		}
+		values[formatted] = struct{}{}
+	}
+	for _, want := range []string{"1", "2", "3"} {
+		if _, found := values[want]; !found {
+			t.Fatalf("distinct views = %v, missing %s", values, want)
+		}
+	}
+}
+
+func TestCheckBoundedSafetyBlocksDistinctMultiStateViewPrefixes(t *testing.T) {
+	frontend := ParseAndTypeCheckSource(context.Background(), "MultiStepError.tla", `---- MODULE MultiStepError ----
+EXTENDS Integers, FiniteSets
+\* @type: Int;
+VARIABLE x
+Init == x = 0
+Next == x' \in {1, 2, 3}
+Inv == x = 0
+View == x
+====
+`, FrontendOptions{}, TypeCheckOptions{})
+	if !frontend.OK() {
+		t.Fatalf("frontend diagnostics = %v", frontend.Diagnostics)
+	}
+	prepared, err := PrepareSafetyTransitions(frontend.Native, SafetyPipelineOptions{
+		Specification: SpecificationConfiguration{
+			Behavior: InitNextSpec{Init: "Init", Next: "Next"}, Invariants: []string{"Inv"}, View: "View",
+		}, Sources: frontend.Sources,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := CheckBoundedSafetyWithOptions(context.Background(), prepared.Module, prepared.Predicates,
+		BoundedSafetyOptions{MaxSteps: 1, CheckDeadlocks: false, MaxErrors: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Counterexamples) != 3 {
+		t.Fatalf("multi-step counterexamples = %#v", result.Counterexamples)
+	}
+	values := make(map[string]struct{})
+	for _, counterexample := range result.Counterexamples {
+		if counterexample.Depth != 1 || len(counterexample.View) != 2 {
+			t.Fatalf("multi-step counterexample = %#v", counterexample)
+		}
+		formatted, formatErr := FormatTLAExpression(counterexample.View[1])
+		if formatErr != nil {
+			t.Fatal(formatErr)
+		}
+		values[formatted] = struct{}{}
+	}
+	if len(values) != 3 {
+		t.Fatalf("multi-step distinct views = %v", values)
+	}
+}
+
+func TestCheckBoundedSafetyRequiresViewForMultipleErrors(t *testing.T) {
+	module, configuration := counterSafetyModule(0)
+	prepared, err := PrepareSafetyTransitions(module, SafetyPipelineOptions{Specification: configuration})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = CheckBoundedSafetyWithOptions(context.Background(), prepared.Module, prepared.Predicates,
+		BoundedSafetyOptions{MaxSteps: 0, MaxErrors: 2})
+	if err == nil || !strings.Contains(err.Error(), "requires a state view") {
+		t.Fatalf("missing view error = %v", err)
+	}
+}
+
 func TestCheckBoundedSafetySkipsUnsatisfiablePaths(t *testing.T) {
 	x := NewNameExpr("x", Typed(IntT1))
 	assignment := MustOperExpr(Op("EQ"), Typed(BoolT1), x, intLiteral(0))

@@ -394,12 +394,6 @@ func (config jsonCommandConfig) validateForModelCommand(command string, checkSpe
 		{config.Profiling != nil, "profiling"},
 		{config.Output != nil, "output"},
 	}
-	if checkSpecific {
-		unsupported = append(unsupported, struct {
-			set  bool
-			name string
-		}{config.Checker.View != nil, "checker.view"})
-	}
 	for _, field := range unsupported {
 		if field.set {
 			return fmt.Errorf("JSON configuration field %s is not supported by the Go %s command", field.name, command)
@@ -409,6 +403,9 @@ func (config jsonCommandConfig) validateForModelCommand(command string, checkSpe
 		if _, err := pal.ParseCheckerTuning(*config.Checker.Tuning); err != nil {
 			return fmt.Errorf("invalid JSON checker.tuning: %w", err)
 		}
+	}
+	if !checkSpecific && (config.Checker.MaxError != nil || config.Checker.View != nil) {
+		return fmt.Errorf("JSON checker.max-error and checker.view are currently supported only by the Go check command")
 	}
 	if config.Features != nil {
 		for _, feature := range *config.Features {
@@ -521,7 +518,8 @@ type jsonModelConfigTargets struct {
 	disablePolytypes   *bool
 	invariants         *csvStringList
 	temporalProperties *csvStringList
-	enforceMaxError    bool
+	maxErrors          *int
+	view               *string
 }
 
 func applyJSONModelDefaults(config jsonCommandConfig, visited map[string]bool, targets jsonModelConfigTargets) error {
@@ -563,6 +561,12 @@ func applyJSONModelDefaults(config jsonCommandConfig, visited map[string]bool, t
 	if targets.temporalProperties != nil && !visited["temporal"] && checker.TemporalProperties != nil {
 		*targets.temporalProperties = append((*targets.temporalProperties)[:0], (*checker.TemporalProperties)...)
 	}
+	if targets.maxErrors != nil && !visited["max-error"] && checker.MaxError != nil {
+		*targets.maxErrors = *checker.MaxError
+	}
+	if targets.view != nil && !visited["view"] && checker.View != nil {
+		*targets.view = *checker.View
+	}
 	if targets.disablePolytypes != nil && !visited["no-polytypes"] && config.Typechecker.InferPoly != nil {
 		*targets.disablePolytypes = !*config.Typechecker.InferPoly
 	}
@@ -571,9 +575,6 @@ func applyJSONModelDefaults(config jsonCommandConfig, visited map[string]bool, t
 		for _, feature := range *config.Features {
 			*targets.useRows = *targets.useRows || feature == "rows"
 		}
-	}
-	if targets.enforceMaxError && checker.MaxError != nil && *checker.MaxError != 1 {
-		return fmt.Errorf("JSON checker.max-error currently supports only 1")
 	}
 	return nil
 }

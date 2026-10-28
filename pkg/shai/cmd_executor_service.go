@@ -137,8 +137,11 @@ func validateRemoteCheckerConfig(checker remoteCheckerConfig) error {
 	if checker.SMTSolver != nil && !strings.EqualFold(*checker.SMTSolver, "z3") {
 		return fmt.Errorf("unsupported SMT solver %q (Go port uses g3 v0.0.5 as its Z3 backend)", *checker.SMTSolver)
 	}
-	if checker.MaxError != nil && *checker.MaxError != 1 {
-		return fmt.Errorf("checker.max-error currently supports only 1")
+	if checker.MaxError != nil && *checker.MaxError <= 0 {
+		return fmt.Errorf("checker.max-error must be positive")
+	}
+	if checker.MaxError != nil && *checker.MaxError > 1 && checker.View == nil {
+		return fmt.Errorf("checker.max-error=%d requires checker.view", *checker.MaxError)
 	}
 	if checker.Length != nil && *checker.Length < 0 {
 		return fmt.Errorf("checker.length cannot be negative")
@@ -298,12 +301,16 @@ func runRemoteCheck(ctx context.Context, path string, config remoteCommandConfig
 		length = *checker.Length
 	}
 	checkDeadlocks := checker.NoDeadlock == nil || !*checker.NoDeadlock
+	maxErrors := 1
+	if checker.MaxError != nil {
+		maxErrors = *checker.MaxError
+	}
 	tuning, err := pal.ParseCheckerTuning(checker.Tuning)
 	if err != nil {
 		return unexpectedCommandResponse(err), nil
 	}
 	result, err := pal.CheckBoundedSafetyWithOptions(ctx, prepared.Module, prepared.Predicates, pal.BoundedSafetyOptions{
-		MaxSteps: length, CheckDeadlocks: checkDeadlocks, Tuning: tuning,
+		MaxSteps: length, CheckDeadlocks: checkDeadlocks, Tuning: tuning, MaxErrors: maxErrors,
 	})
 	if err != nil {
 		return passFailureCommandResponse("BoundedChecker", map[string]string{"msg": err.Error()}), nil
@@ -313,12 +320,17 @@ func runRemoteCheck(ctx context.Context, path string, config remoteCommandConfig
 		if result.Outcome == pal.SafetyDeadlock {
 			checkingResult = "deadlock"
 		}
-		counterexample := any(map[string]any{"depth": result.Depth})
-		if trace, traceErr := pal.MarshalDecodedTraceITF(prepared.Module, result.States, pal.ITFOptions{}); traceErr == nil {
-			_ = json.Unmarshal(trace, &counterexample)
+		counterexamples := make([]any, 0, max(1, len(result.Counterexamples)))
+		if result.Outcome == pal.SafetyDeadlock {
+			counterexamples = append(counterexamples, encodedRemoteCounterexample(prepared.Module, result.Depth, result.States))
+		} else {
+			for _, counterexample := range result.Counterexamples {
+				counterexamples = append(counterexamples,
+					encodedRemoteCounterexample(prepared.Module, counterexample.Depth, counterexample.States))
+			}
 		}
 		return passFailureCommandResponse("BoundedChecker", map[string]any{
-			"checking_result": checkingResult, "counterexamples": []any{counterexample},
+			"checking_result": checkingResult, "counterexamples": counterexamples,
 		}), nil
 	}
 	encoded, err := pal.MarshalSingleModuleIRJSON(prepared.Module, pal.IRJSONOptions{})
@@ -326,6 +338,14 @@ func runRemoteCheck(ctx context.Context, path string, config remoteCommandConfig
 		return unexpectedCommandResponse(err), nil
 	}
 	return successfulCommandResponse(string(encoded)), nil
+}
+
+func encodedRemoteCounterexample(module *pal.Module, depth int, states []pal.DecodedState) any {
+	counterexample := any(map[string]any{"depth": depth})
+	if trace, err := pal.MarshalDecodedTraceITF(module, states, pal.ITFOptions{}); err == nil {
+		_ = json.Unmarshal(trace, &counterexample)
+	}
+	return counterexample
 }
 
 func remoteTypecheckOptions(config remoteCommandConfig) pal.TypeCheckOptions {

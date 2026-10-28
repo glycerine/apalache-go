@@ -21,6 +21,16 @@ Next == TRUE
 Inv == FALSE
 ====`
 
+const remoteMultiErrorSpec = `---- MODULE M ----
+EXTENDS Integers, FiniteSets
+\* @type: Int;
+VARIABLE x
+Init == x \in {1, 2, 3}
+Next == x' = x
+Inv == x = 0
+View == x
+====`
+
 const remoteIllTypedSpec = `---- MODULE M ----
 \* @type: () => Int;
 Foo == TRUE
@@ -128,6 +138,24 @@ func TestCmdExecutorChecksModelsAndReturnsCounterexamples(t *testing.T) {
 	}))
 	if err != nil || response.GetSuccess() == "" {
 		t.Fatalf("filtered remote check = %#v, %v", response, err)
+	}
+}
+
+func TestCmdExecutorReturnsMultipleDistinctCounterexamples(t *testing.T) {
+	service := NewCmdExecutorService()
+	response, err := service.Run(context.Background(), remoteRequest(t, cmd.Cmd_CHECK, remoteMultiErrorSpec, map[string]any{
+		"inv": []string{"Inv"}, "view": "View", "max-error": 3, "length": 0, "no-deadlock": true,
+	}))
+	if err != nil || response.GetFailure() == nil {
+		t.Fatalf("multi-error response = %#v, %v", response, err)
+	}
+	var failure struct {
+		ErrorData struct {
+			Counterexamples []any `json:"counterexamples"`
+		} `json:"error_data"`
+	}
+	if err = json.Unmarshal([]byte(response.GetFailure().GetData()), &failure); err != nil || len(failure.ErrorData.Counterexamples) != 3 {
+		t.Fatalf("multi-error data = %+v, %v", failure, err)
 	}
 }
 

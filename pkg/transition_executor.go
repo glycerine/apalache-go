@@ -306,6 +306,12 @@ func (executor *TransitionExecutor) CheckAndDecode(ctx context.Context, expressi
 	return executor.checkAndDecode(ctx, expression, executor.states)
 }
 
+func (executor *TransitionExecutor) checkAndDecodeDistinctState(
+	ctx context.Context, expression, view Expr, excluded [][]Expr,
+) (SMTStatus, []DecodedState, []Expr, error) {
+	return executor.checkAndDecodeDistinctView(ctx, expression, executor.states, view, excluded)
+}
+
 // CheckTraceAndDecode instantiates a one-argument trace predicate with the
 // sequence of records represented by the committed symbolic state bindings.
 func (executor *TransitionExecutor) CheckTraceAndDecode(
@@ -318,15 +324,25 @@ func (executor *TransitionExecutor) CheckTraceAndDecode(
 	if len(executor.states) == 0 {
 		return SMTUnknown, nil, fmt.Errorf("cannot check a trace predicate before the initial state")
 	}
+	instantiated, err := instantiateTraceExpression(parameter, expression, historyType, variables, executor.states)
+	if err != nil {
+		return SMTUnknown, nil, err
+	}
+	return executor.checkAndDecode(ctx, instantiated, executor.states)
+}
+
+func instantiateTraceExpression(
+	parameter string, expression Expr, historyType SeqType, variables []*VarDecl, bindings []Binding,
+) (Expr, error) {
 	ordered := append([]*VarDecl(nil), variables...)
 	sort.Slice(ordered, func(left, right int) bool { return ordered[left].Name() < ordered[right].Name() })
-	records := make([]Expr, len(executor.states))
-	for stateIndex, binding := range executor.states {
+	records := make([]Expr, len(bindings))
+	for stateIndex, binding := range bindings {
 		arguments := make([]Expr, 0, len(ordered)*2)
 		for _, variable := range ordered {
 			cell, found := binding.Get(variable.Name())
 			if !found {
-				return SMTUnknown, nil, fmt.Errorf("state %d has no binding for %s", stateIndex, variable.Name())
+				return nil, fmt.Errorf("state %d has no binding for %s", stateIndex, variable.Name())
 			}
 			arguments = append(arguments,
 				NewValueExpr(StringValue(variable.Name()), Typed(StrT1)), cell.NameExpr())
@@ -334,8 +350,18 @@ func (executor *TransitionExecutor) CheckTraceAndDecode(
 		records[stateIndex] = MustOperExpr(Op("RECORD"), Typed(historyType.Element()), arguments...)
 	}
 	history := MustOperExpr(Op("TUPLE"), Typed(historyType), records...)
-	instantiated := replaceNames(expression, map[string]Expr{parameter: history}, nil)
-	return executor.checkAndDecode(ctx, instantiated, executor.states)
+	return replaceNames(expression, map[string]Expr{parameter: history}, nil), nil
+}
+
+func (executor *TransitionExecutor) checkTraceAndDecodeDistinctView(
+	ctx context.Context, parameter string, expression Expr, historyType SeqType, variables []*VarDecl,
+	view Expr, excluded [][]Expr,
+) (SMTStatus, []DecodedState, []Expr, error) {
+	instantiated, err := instantiateTraceExpression(parameter, expression, historyType, variables, executor.states)
+	if err != nil {
+		return SMTUnknown, nil, nil, err
+	}
+	return executor.checkAndDecodeDistinctView(ctx, instantiated, executor.states, view, excluded)
 }
 
 // CheckPendingAndDecode evaluates an action expression before NextState and
@@ -347,6 +373,17 @@ func (executor *TransitionExecutor) CheckPendingAndDecode(ctx context.Context, e
 	bindings := append([]Binding(nil), executor.states...)
 	bindings = append(bindings, executor.scope.Binding.Shift(executor.constants))
 	return executor.checkAndDecode(ctx, expression, bindings)
+}
+
+func (executor *TransitionExecutor) checkPendingAndDecodeDistinctView(
+	ctx context.Context, expression, view Expr, excluded [][]Expr,
+) (SMTStatus, []DecodedState, []Expr, error) {
+	if !executor.picked {
+		return SMTUnknown, nil, nil, fmt.Errorf("select a transition before decoding a pending action")
+	}
+	bindings := append([]Binding(nil), executor.states...)
+	bindings = append(bindings, executor.scope.Binding.Shift(executor.constants))
+	return executor.checkAndDecodeDistinctView(ctx, expression, bindings, view, excluded)
 }
 
 func (executor *TransitionExecutor) checkAndDecode(
@@ -382,6 +419,79 @@ func (executor *TransitionExecutor) checkAndDecode(
 		states[index] = DecodedState{Values: values}
 	}
 	return status, states, nil
+}
+
+func (executor *TransitionExecutor) checkAndDecodeDistinctView(
+	ctx context.Context,
+	expression Expr,
+	bindings []Binding,
+	view Expr,
+	excluded [][]Expr,
+) (SMTStatus, []DecodedState, []Expr, error) {
+	if view == nil {
+		status, states, err := executor.checkAndDecode(ctx, expression, bindings)
+		return status, states, nil, err
+	}
+	if err := requireBooleanExpression(expression, "state expression"); err != nil {
+		return SMTUnknown, nil, nil, err
+	}
+	scope, assertion, err := executor.rewriter.Rewrite(expression, executor.scope)
+	if err != nil {
+		return SMTUnknown, nil, nil, fmt.Errorf("rewrite state expression: %w", err)
+	}
+	executor.scope = scope
+	viewCells := make([]ArenaCell, len(bindings))
+	for index, binding := range bindings {
+		viewScope, cell, rewriteErr := executor.rewriter.Rewrite(view,
+			RewriterScope{Arena: executor.scope.Arena, Binding: binding})
+		if rewriteErr != nil {
+			return SMTUnknown, nil, nil, fmt.Errorf("rewrite state view at depth %d: %w", index, rewriteErr)
+		}
+		executor.scope.Arena = viewScope.Arena
+		viewCells[index] = cell
+	}
+	temporary := []Expr{assertion.NameExpr()}
+	for _, prior := range excluded {
+		limit := len(prior)
+		if limit > len(viewCells) {
+			continue
+		}
+		differences := make([]Expr, limit)
+		for index := 0; index < limit; index++ {
+			equal := MustOperExpr(Op("EQ"), Typed(BoolT1), viewCells[index].NameExpr(), prior[index])
+			differences[index] = MustOperExpr(Op("NOT"), Typed(BoolT1), equal)
+		}
+		if len(differences) == 1 {
+			temporary = append(temporary, differences[0])
+		} else if len(differences) > 1 {
+			temporary = append(temporary, MustOperExpr(Op("OR"), Typed(BoolT1), differences...))
+		}
+	}
+	solver, encoder, status, err := executor.solve(ctx, temporary)
+	if solver != nil {
+		defer solver.Close()
+	}
+	if err != nil || status != SMTSatisfiable {
+		return status, nil, nil, err
+	}
+	decoder, err := NewSymbolicDecoder(encoder, executor.rewriter)
+	if err != nil {
+		return SMTUnknown, nil, nil, err
+	}
+	states := make([]DecodedState, len(bindings))
+	views := make([]Expr, len(viewCells))
+	for index, binding := range bindings {
+		values, decodeErr := decoder.DecodeBinding(executor.scope.Arena, binding)
+		if decodeErr != nil {
+			return SMTUnknown, nil, nil, fmt.Errorf("decode state %d: %w", index, decodeErr)
+		}
+		states[index] = DecodedState{Values: values}
+		views[index], decodeErr = decoder.DecodeCell(executor.scope.Arena, viewCells[index])
+		if decodeErr != nil {
+			return SMTUnknown, nil, nil, fmt.Errorf("decode state view %d: %w", index, decodeErr)
+		}
+	}
+	return status, states, views, nil
 }
 
 type DecodedState struct {

@@ -17,7 +17,7 @@ mod-infra/src/main/scala/at/forsyte/apalache/infra/passes/ToolModule.scala	parti
 mod-tool/src/main/scala/at/forsyte/apalache/tla/Tool.scala	partial	cmd/apalache;config_json.go	remaining CLI controls are open
 mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/AbstractCheckerCmd.scala	partial	cmd/apalache;config_json.go	remaining CLI controls are open
 mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/ApalacheCommand.scala	partial	cmd/apalache;config_json.go	remaining CLI controls are open
-mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/CheckCmd.scala	partial	cmd/apalache;config_json.go	remaining CLI controls are open
+mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/CheckCmd.scala	partial	cmd/apalache;config_json.go	max-error/view, search tuning, and principal checker controls are ported; remaining output/debug controls are open
 mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/ConfigCmd.scala	partial	cmd/apalache;config_json.go	remaining CLI controls are open
 mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/ParseCmd.scala	partial	cmd/apalache;config_json.go	remaining CLI controls are open
 mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/ServerCmd.scala	partial	cmd/apalache;config_json.go	remaining CLI controls are open
@@ -79,7 +79,7 @@ tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/MessageStorage.scala	part
 tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/ModelCheckerContext.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
 tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/ModelCheckerListener.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
 tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/RewritingRule.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
-tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/SeqModelChecker.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
+tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/SeqModelChecker.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	view-distinct multi-error search is ported; specialized rules and exact suite mappings remain
 tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/StackableContext.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
 tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/SymbState.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain
 tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/SymbStateDecoder.scala	partial	arena*.go;smt*.go;rewrite*.go;bounded_checker.go;transition_executor.go	many specialized rewriting rules and exact suite mappings remain

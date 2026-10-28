@@ -822,6 +822,8 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	flags.SetOutput(stderr)
 	backend := addCheckerBackendFlags(flags)
 	length := flags.Int("length", 10, "maximum number of Next steps")
+	maxErrors := flags.Int("max-error", 1, "produce at most this many distinct errors")
+	viewName := flags.String("view", "", "state view used to distinguish multiple errors")
 	timeoutSMT := flags.Int("timeout-smt", 0, "limit each SMT query to this many seconds (0 is unlimited)")
 	configFile := flags.String("config-file", "", "Apalache JSON configuration file")
 	configPath := flags.String("config", "", "TLC configuration file")
@@ -859,7 +861,7 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 			backend: backend, length: length, timeoutSMT: timeoutSMT, TLCConfig: configPath,
 			constantInit: constantInit, init: initName, next: nextName, useRows: useRows,
 			disablePolytypes: disablePolytypes, invariants: &invariants,
-			temporalProperties: &temporalProperties, enforceMaxError: true,
+			temporalProperties: &temporalProperties, maxErrors: maxErrors, view: viewName,
 		}); err != nil {
 			fmt.Fprintln(stderr, err)
 			return exitUsage
@@ -896,6 +898,14 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		fmt.Fprintln(stderr, "check length cannot be negative")
 		return exitUsage
 	}
+	if *maxErrors <= 0 {
+		fmt.Fprintln(stderr, "check max-error must be positive")
+		return exitUsage
+	}
+	if *maxErrors > 1 && *viewName == "" {
+		fmt.Fprintf(stderr, "checker.max-error=%d requires checker.view\n", *maxErrors)
+		return exitUsage
+	}
 	if err := validateSMTTimeout(*timeoutSMT); err != nil {
 		fmt.Fprintln(stderr, err)
 		return exitUsage
@@ -915,6 +925,7 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		ConstantInit:       *constantInit,
 		Invariants:         append([]string(nil), invariants...),
 		TemporalProperties: append([]string(nil), temporalProperties...),
+		View:               *viewName,
 	}
 	if *configPath != "" {
 		contents, err := os.ReadFile(*configPath)
@@ -984,7 +995,7 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		return exitUsage
 	}
 	result, err := pal.CheckBoundedSafetyWithOptions(ctx, prepared.Module, prepared.Predicates, pal.BoundedSafetyOptions{
-		MaxSteps: *length, CheckDeadlocks: checkDeadlocks, Tuning: checkerTuning,
+		MaxSteps: *length, CheckDeadlocks: checkDeadlocks, Tuning: checkerTuning, MaxErrors: *maxErrors,
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "bounded safety check failed: %v\n", err)
@@ -1004,20 +1015,26 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	}
 	switch result.Outcome {
 	case pal.SafetyCounterexample:
-		kind := "Invariant"
-		if result.TraceInvariant {
-			kind = "Trace invariant"
-		} else if result.ActionInvariant {
-			kind = "Action invariant"
-		}
-		fmt.Fprintf(stdout, "%s %s violated at depth %d (Init$%04d", kind, result.Invariant, result.Depth, result.InitTransition)
-		for _, number := range result.NextTransitions {
-			fmt.Fprintf(stdout, ", Next$%04d", number)
-		}
-		fmt.Fprintln(stdout, ").")
-		if formatErr := printDecodedStates(stdout, prepared.Module, result.States); formatErr != nil {
-			fmt.Fprintf(stderr, "cannot format counterexample state: %v\n", formatErr)
-			return exitTool
+		for index, counterexample := range result.Counterexamples {
+			kind := "Invariant"
+			if counterexample.TraceInvariant {
+				kind = "Trace invariant"
+			} else if counterexample.ActionInvariant {
+				kind = "Action invariant"
+			}
+			if len(result.Counterexamples) > 1 {
+				fmt.Fprintf(stdout, "Counterexample %d: ", index+1)
+			}
+			fmt.Fprintf(stdout, "%s %s violated at depth %d (Init$%04d", kind, counterexample.Invariant,
+				counterexample.Depth, counterexample.InitTransition)
+			for _, number := range counterexample.NextTransitions {
+				fmt.Fprintf(stdout, ", Next$%04d", number)
+			}
+			fmt.Fprintln(stdout, ").")
+			if formatErr := printDecodedStates(stdout, prepared.Module, counterexample.States); formatErr != nil {
+				fmt.Fprintf(stderr, "cannot format counterexample state: %v\n", formatErr)
+				return exitTool
+			}
 		}
 		return exitCounterexample
 	case pal.SafetyDeadlock:

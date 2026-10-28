@@ -128,6 +128,43 @@ Inc(x) == x + 1
 	}
 }
 
+func TestRunCheckCollectsConfiguredDistinctCounterexamples(t *testing.T) {
+	directory := t.TempDir()
+	t.Setenv("HOME", filepath.Join(directory, "home"))
+	t.Chdir(directory)
+	source := `---- MODULE MultiConfigured ----
+EXTENDS Integers, FiniteSets
+\* @type: Int;
+VARIABLE x
+Init == x \in {1, 2, 3}
+Next == x' = x
+Inv == x = 0
+View == x
+====
+`
+	document, err := json.Marshal(map[string]any{
+		"source": map[string]any{"kind": "string", "content": source, "format": "tla"},
+		"checker": map[string]any{
+			"length": 0, "inv": []string{"Inv"}, "view": "View", "max-error": 3, "no-deadlock": true,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile("multi.json", document, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	if code := run(context.Background(), []string{"check", "--config-file=multi.json"}, &stdout, &stderr); code != exitCounterexample {
+		t.Fatalf("multi-error check = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
+	}
+	for _, want := range []string{"Counterexample 1:", "Counterexample 2:", "Counterexample 3:"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("multi-error stdout = %q, missing %q", &stdout, want)
+		}
+	}
+}
+
 func TestRunParseHonorsExplicitJSONSourceFormat(t *testing.T) {
 	directory := t.TempDir()
 	t.Setenv("HOME", filepath.Join(directory, "home"))
