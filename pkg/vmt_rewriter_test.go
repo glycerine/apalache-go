@@ -86,23 +86,30 @@ func TestVMTRewriterBooleanAndQuantifierRules(t *testing.T) {
 
 	x := NewNameExpr("x", Typed(typ))
 	set := NewNameExpr("S", Typed(mustSet(typ)))
-	predicate := MustOperExpr(Op("EQ"), Typed(BoolT1), x, x)
-	forall := MustOperExpr(Op("FORALL3"), Typed(BoolT1), x, set, predicate)
-	if got := rewriteVMTText(t, rewriter, forall); got != "(forall ((x SSORT)) (= x x))" {
-		t.Fatalf("quantifier rewrite = %q", got)
+	y := NewNameExpr("y", Typed(IntT1))
+	quantifierCases := []struct {
+		name       string
+		expression Expr
+		want       string
+	}{
+		{"exists-constant-set", MustOperExpr(Op("EXISTS3"), Typed(BoolT1), x, set, p),
+			"(exists ((x SSORT)) p)"},
+		{"forall-integers", MustOperExpr(Op("FORALL3"), Typed(BoolT1), y,
+			NewValueExpr(IntSet, Typed(mustSet(IntT1))), q), "(forall ((y Int)) q)"},
+	}
+	for _, test := range quantifierCases {
+		t.Run(test.name, func(t *testing.T) {
+			if got := rewriteVMTText(t, rewriter, test.expression); got != test.want {
+				t.Fatalf("quantifier rewrite = %q, want %q", got, test.want)
+			}
+		})
 	}
 
-	intX := NewNameExpr("i", Typed(IntT1))
-	exists := MustOperExpr(Op("EXISTS3"), Typed(BoolT1), intX,
-		NewValueExpr(NatSet, Typed(mustSet(IntT1))),
-		MustOperExpr(Op("EQ"), Typed(BoolT1), intX, intX))
-	if got := rewriteVMTText(t, rewriter, exists); got != "(exists ((i Int)) (= i i))" {
-		t.Fatalf("integer quantifier rewrite = %q", got)
-	}
-	bad := MustOperExpr(Op("FORALL3"), Typed(BoolT1), intX,
-		NewValueExpr(StringSet, Typed(mustSet(StrT1))), predicate)
-	if _, err := rewriter.Rewrite(bad); err == nil {
-		t.Fatal("unrestricted STRING quantifier was accepted")
+	unknownType := mustNamedConst(t, "TSORT")
+	unknownSet := MustOperExpr(Op("EXISTS3"), Typed(BoolT1),
+		NewNameExpr("t", Typed(unknownType)), NewNameExpr("T", Typed(mustSet(unknownType))), p)
+	if _, err := rewriter.Rewrite(unknownSet); err == nil {
+		t.Fatal("quantifier over undeclared constant set T was accepted")
 	}
 }
 
