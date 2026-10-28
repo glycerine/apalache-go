@@ -584,6 +584,124 @@ INSTANCE A
 	}
 }
 
+func TestParseSourceNormalizesStandardModules(t *testing.T) {
+	result := ParseSource(context.Background(), "StandardModules.tla", `---- MODULE StandardModules ----
+EXTENDS Reals, Sequences, FiniteSets
+NatSet == Nat
+IntSet == Int
+RealSetValue == Real
+InfinityValue == Infinity
+Plus == 3 + 2
+Minus == 3 - 2
+UnaryMinus == -2
+Multiply == 3 * 2
+Power == 3 ^ 2
+Less == 3 < 2
+Greater == 3 > 2
+AtMost == 3 <= 2
+AtLeast == 3 >= 2
+Modulo == 3 % 2
+Divide == 3 \div 2
+RealDivide == 3 / 2
+Range == 2 .. 3
+SequenceSet == Seq({1, 2})
+Length == Len(<<1, 2>>)
+Concatenate == <<1>> \o <<2>>
+AppendValue == Append(<<1>>, 2)
+HeadValue == Head(<<1, 2>>)
+TailValue == Tail(<<1, 2>>)
+Slice == SubSeq(<<1, 2, 3>>, 2, 3)
+Finite == IsFiniteSet(BOOLEAN)
+CardinalityValue == Cardinality(BOOLEAN)
+====
+`, FrontendOptions{IncludeSource: true})
+	if !result.OK() {
+		t.Fatalf("ParseSource() diagnostics = %v", result.Diagnostics)
+	}
+	values := map[string]Value{
+		"NatSet": NatSet, "IntSet": IntSet, "RealSetValue": RealSet, "InfinityValue": RealInfinity(),
+	}
+	for name, want := range values {
+		body, found := OperatorBody(result.Native, name)
+		literal, ok := body.(*ValueExpr)
+		if !found || !ok || !EqualValues(literal.Value(), want) {
+			t.Errorf("%s body = %#v, want %v", name, body, want)
+		}
+	}
+	operators := map[string]string{
+		"Plus": "PLUS", "Minus": "MINUS", "UnaryMinus": "UNARY_MINUS", "Multiply": "MULT",
+		"Power": "POW", "Less": "LT", "Greater": "GT", "AtMost": "LE", "AtLeast": "GE",
+		"Modulo": "MOD", "Divide": "DIV", "RealDivide": "REAL_DIV", "Range": "INT_RANGE",
+		"SequenceSet": "Sequences!Seq", "Length": "Sequences!Len", "Concatenate": "Sequences!Concat",
+		"AppendValue": "Sequences!Append", "HeadValue": "Sequences!Head", "TailValue": "Sequences!Tail",
+		"Slice": "Sequences!SubSeq", "Finite": "FiniteSets!IsFiniteSet",
+		"CardinalityValue": "FiniteSets!Cardinality",
+	}
+	for name, want := range operators {
+		body, found := OperatorBody(result.Native, name)
+		if !found || countOperator(body, want) != 1 {
+			t.Errorf("%s body = %#v, want %s", name, body, want)
+		}
+	}
+	plus, _ := OperatorBody(result.Native, "Plus")
+	if location, found := result.Sources.Find(plus.ID()); !found || location.Region.Start.Line != 7 {
+		t.Fatalf("Plus source location = %#v, %v", location, found)
+	}
+}
+
+func TestParseSourceNormalizesExtendedLibraryOperators(t *testing.T) {
+	result := ParseSource(context.Background(), "ExtendedLibraries.tla", `---- MODULE ExtendedLibraries ----
+EXTENDS TLC, Apalache, Variants, Integers, FiniteSets
+VARIABLE x, S
+Assigned == x' := 1
+Skolemized == Skolem(\E y \in S: TRUE)
+Guessed == Guess(S)
+Expanded == Expand(SUBSET S)
+ConstantCardinality == ConstCardinality(Cardinality(S) >= 2)
+Identity(i) == i
+GeneratedSequence == MkSeq(2, Identity)
+Printed == Print("message", TRUE)
+PrintedT == PrintT("message")
+Asserted == Assert(TRUE, "message")
+Evaluated == TLCEval(42)
+Stringified == ToString(42)
+VariantValue == Variant("A", [value |-> 1])
+VariantSet == VariantFilter("A", {VariantValue})
+VariantLabel(v) == VariantTag(v)
+VariantUnsafe(v) == VariantGetUnsafe("A", v)
+VariantDefault(v) == VariantGetOrElse("A", v, [value |-> 0])
+====
+`, FrontendOptions{})
+	if !result.OK() {
+		t.Fatalf("ParseSource() diagnostics = %v", result.Diagnostics)
+	}
+	operators := map[string]string{
+		"Assigned": "EQ", "Skolemized": "Apalache!Skolem", "Guessed": "Apalache!Guess",
+		"Expanded": "Apalache!Expand", "ConstantCardinality": "Apalache!ConstCardinality",
+		"GeneratedSequence": "Apalache!MkSeq", "Stringified": "TLC!ToString",
+		"VariantValue": "Variants!Variant", "VariantSet": "Variants!VariantFilter",
+		"VariantLabel": "Variants!VariantTag", "VariantUnsafe": "Variants!VariantGetUnsafe",
+		"VariantDefault": "Variants!VariantGetOrElse",
+	}
+	for name, want := range operators {
+		body, found := OperatorBody(result.Native, name)
+		if !found || countOperator(body, want) != 1 {
+			t.Errorf("%s body = %#v, want %s", name, body, want)
+		}
+	}
+	values := map[string]Value{
+		"Printed": BoolValue(true), "PrintedT": BoolValue(true), "Asserted": BoolValue(true),
+		"Evaluated": Int64Value(42),
+	}
+	for name, want := range values {
+		body, found := OperatorBody(result.Native, name)
+		literal, ok := body.(*ValueExpr)
+		if !found || !ok || !EqualValues(literal.Value(), want) {
+			t.Errorf("%s body = %#v, want %v", name, body, want)
+		}
+	}
+}
+
 func TestParseAndTypeCheckSourceWrapsBuiltinOperatorArguments(t *testing.T) {
 	result := ParseAndTypeCheckSource(context.Background(), "BuiltinArguments.tla", `---- MODULE BuiltinArguments ----
 EXTENDS Integers

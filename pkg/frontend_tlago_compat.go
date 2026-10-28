@@ -9,8 +9,10 @@ import (
 
 var tlagoApalacheBuiltinCalls = map[string]string{
 	"Guess":                        "Apalache!Guess",
+	"Skolem":                       "Apalache!Skolem",
 	"Gen":                          "Apalache!Gen",
 	"Expand":                       "Apalache!Expand",
+	"ConstCardinality":             "Apalache!ConstCardinality",
 	"MkSeq":                        "Apalache!MkSeq",
 	"SetAsFun":                     "Apalache!SetAsFun",
 	"Repeat":                       "Apalache!Repeat",
@@ -1428,6 +1430,34 @@ func normalizeTlagoOperatorValues(module *Module, sources *SourceStore) *Module 
 			return nil, false
 		}
 		return name, true
+	})
+	return transformTlagoModuleExpressions(module, rewrite, sources)
+}
+
+// normalizeTlagoRealValues repairs the two predefined values from Reals.tla.
+// tlago v0.1.9 emits them as unresolved names, unlike Nat and Int, which its
+// exporter emits as predefined values directly.
+func normalizeTlagoRealValues(module *Module, sources *SourceStore, imported bool) *Module {
+	if module == nil || !imported {
+		return module
+	}
+	var tracker TransformationTracker = IdleTracker{}
+	if sources != nil {
+		tracker = NewListenerTracker(sources)
+	}
+	rewrite := RewriteExpressions(tracker, func(expression Expr) (Expr, bool) {
+		name, ok := expression.(*NameExpr)
+		if !ok {
+			return nil, false
+		}
+		switch name.Name() {
+		case "Real":
+			return NewValueExpr(RealSet, name.Tag()), true
+		case "Infinity":
+			return NewValueExpr(RealInfinity(), name.Tag()), true
+		default:
+			return nil, false
+		}
 	})
 	return transformTlagoModuleExpressions(module, rewrite, sources)
 }

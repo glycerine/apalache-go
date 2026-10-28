@@ -136,8 +136,10 @@ func ParseSource(ctx context.Context, filename, source string, opts FrontendOpti
 		result.Native = normalizeTlagoNamedAssumptionReferences(result.Native, result.Sources)
 		variantsImported := spec.Modules["Variants"] != nil
 		tlcImported := spec.Modules["TLC"] != nil
+		realsImported := spec.Modules["Reals"] != nil
 		result.Native = removeTlagoNativeVariantDeclarations(result.Native, result.Sources, variantsImported)
 		result.Native = normalizeTlagoTLCCalls(result.Native, result.Sources, tlcImported)
+		result.Native = normalizeTlagoRealValues(result.Native, result.Sources, realsImported)
 		result.Native = normalizeTlagoApalacheBuiltinCalls(result.Native, result.Sources, builtinInstanceModules)
 		result.Native = normalizeTlagoInstantiatedOperatorCalls(result.Native, result.Sources, instantiatedScopes)
 		result.Native = normalizeTlagoInstantiatedLocalDefinitions(result.Native, result.Sources, instantiatedLocals)
