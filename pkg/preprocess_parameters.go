@@ -70,7 +70,6 @@ func (normalizer *ParameterNormalizer) Module(module *Module) (*Module, error) {
 		}
 	}
 	result := NewModule(module.Name(), declarations)
-	result.properties = cloneMap(module.properties)
 	return result, nil
 }
 

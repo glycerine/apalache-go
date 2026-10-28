@@ -5,6 +5,18 @@ import (
 	"testing"
 )
 
+func TestParameterNormalizerNullaryIsStructuralNoOp(t *testing.T) {
+	typ := mustOperator(nil, IntT1)
+	declaration := NewOperDecl("A", nil, intLiteral(1), Typed(typ))
+	normalized, err := NewParameterNormalizer(nil, nil, NormalizeAllParameters).Declaration(declaration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if normalized == declaration || !EqualTypedDecl(normalized, declaration) || normalized.IsRecursive() != declaration.IsRecursive() {
+		t.Fatalf("nullary normalization = %#v", normalized)
+	}
+}
+
 func TestParameterNormalizerValueParameter(t *testing.T) {
 	operatorType := mustOperator([]Type{IntT1}, IntT1)
 	body := MustOperExpr(Op("PLUS"), Typed(IntT1), NewNameExpr("x", Typed(IntT1)), NewValueExpr(Int64Value(1), Typed(IntT1)))
@@ -114,5 +126,20 @@ func TestParameterNormalizerTracksIntroducedLet(t *testing.T) {
 	}
 	if !store.Contains(normalized.Body().ID()) {
 		t.Fatal("introduced LET lost the original body source")
+	}
+}
+
+func TestParameterNormalizerModuleMatchesScalaIdentityAndProperties(t *testing.T) {
+	operator := NewOperDecl("A", nil, intLiteral(1), Typed(mustOperator(nil, IntT1)))
+	variable := NewVarDecl("x", Typed(IntT1))
+	module := NewModule("M", []Decl{variable, operator})
+	module.AddProperty(PropertyTypeChecked)
+	normalized, err := NewParameterNormalizer(nil, nil, NormalizeAllParameters).Module(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if normalized == module || normalized.VarDeclarations()[0] != variable ||
+		normalized.OperDeclarations()[0] == operator || normalized.HasProperty(PropertyTypeChecked) {
+		t.Fatalf("normalized module identity/properties = %#v", normalized)
 	}
 }
