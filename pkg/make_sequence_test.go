@@ -59,3 +59,36 @@ func TestStratifiedMkSeqRejectsNegativeCapacity(t *testing.T) {
 		t.Fatal("negative MkSeq capacity was accepted")
 	}
 }
+
+func TestStratifiedMkSeqCapacityArithmeticAndErrors(t *testing.T) {
+	sequenceType := mustSeq(IntT1)
+	capacity := MustOperExpr(Op("DIV"), Typed(IntT1),
+		MustOperExpr(Op("MULT"), Typed(IntT1), intLiteral(2), intLiteral(3)), intLiteral(2))
+	expression := MustOperExpr(Op("Apalache!MkSeq"), Typed(sequenceType), capacity,
+		makeUnaryIntegerLambda(NewNameExpr("i", Typed(IntT1))))
+	expected := MustOperExpr(Op("TUPLE"), Typed(sequenceType), intLiteral(1), intLiteral(2), intLiteral(3))
+	rewriter := NewStratifiedRewriter()
+	scope, result, err := rewriter.Rewrite(
+		MustOperExpr(Op("EQ"), Typed(BoolT1), expression, expected), InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkRewrittenTruth(t, rewriter, scope, result, true)
+
+	binaryType := mustOperator([]Type{IntT1, IntT1}, IntT1)
+	binaryDecl := NewOperDecl("Binary", []OperatorParam{ValueParam("x"), ValueParam("y")},
+		NewNameExpr("x", Typed(IntT1)), Typed(binaryType))
+	binary := NewLetInExpr(NewNameExpr("Binary", Typed(binaryType)), Typed(binaryType), binaryDecl)
+	invalid := []Expr{
+		MustOperExpr(Op("Apalache!MkSeq"), Typed(IntT1), intLiteral(1), makeUnaryIntegerLambda(intLiteral(1))),
+		MustOperExpr(Op("Apalache!MkSeq"), Typed(sequenceType), intLiteral(1), binary),
+		MustOperExpr(Op("Apalache!MkSeq"), Typed(sequenceType), NewNameExpr("n", Typed(IntT1)), makeUnaryIntegerLambda(intLiteral(1))),
+		MustOperExpr(Op("Apalache!MkSeq"), Typed(sequenceType),
+			MustOperExpr(Op("DIV"), Typed(IntT1), intLiteral(1), intLiteral(0)), makeUnaryIntegerLambda(intLiteral(1))),
+	}
+	for _, invalidExpression := range invalid {
+		if _, _, err := NewStratifiedRewriter().Rewrite(invalidExpression, InitialRewriterScope()); err == nil {
+			t.Fatalf("invalid MkSeq was accepted: %v", invalidExpression)
+		}
+	}
+}
