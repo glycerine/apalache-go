@@ -1392,7 +1392,10 @@ func (rewriter *StratifiedRewriter) rewriteApplication(expression *OperExpr, sco
 			return scope, ArenaCell{}, typeErr
 		}
 		if (rewriter.smtEncoding == SMTEncodingArrays || rewriter.smtEncoding == SMTEncodingFunArrays) &&
-			isDirectSMTCellType(resultCellType) {
+			isDirectSMTCellType(resultCellType) && isDirectSMTCellType(argument.Type) {
+			// Direct keys already have the identity semantics used by the SMT
+			// array. Structural keys must pass through relation matching first,
+			// which establishes direct cell equality iff lazy structural equality.
 			newArena, result := scope.Arena.AppendCellType(resultCellType, true)
 			scope.Arena = newArena
 			selection := MustOperExpr(Op("Apalache!SelectInFun"), Typed(functionType.Result()),

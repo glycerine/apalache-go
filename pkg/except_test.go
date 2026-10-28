@@ -160,6 +160,47 @@ func TestStratifiedFunctionExceptUsesNestedNativeArrays(t *testing.T) {
 	}
 }
 
+func TestStratifiedFunctionArraysSupportSetValuedKeys(t *testing.T) {
+	keyType := mustSet(IntT1)
+	domainType := mustSet(keyType)
+	functionType := mustFun(keyType, IntT1)
+	key := func(value int64) Expr {
+		return MustOperExpr(Op("SET_ENUM"), Typed(keyType), intLiteral(value))
+	}
+	domain := MustOperExpr(Op("SET_ENUM"), Typed(domainType), key(1), key(2))
+	binder := NewNameExpr("s", Typed(keyType))
+	body := MustOperExpr(Op("IF_THEN_ELSE"), Typed(IntT1),
+		MustOperExpr(Op("SET_IN"), Typed(BoolT1), intLiteral(1), binder), intLiteral(11), intLiteral(22))
+	function := MustOperExpr(Op("FUN_CTOR"), Typed(functionType), body, binder, domain)
+	updated := exceptExpression(functionType, function, key(2), intLiteral(99))
+	apply := func(argument Expr) Expr {
+		return MustOperExpr(Op("FUN_APP"), Typed(IntT1), updated, argument)
+	}
+	claim := MustOperExpr(Op("AND"), Typed(BoolT1),
+		MustOperExpr(Op("EQ"), Typed(BoolT1), apply(key(1)), intLiteral(11)),
+		MustOperExpr(Op("EQ"), Typed(BoolT1), apply(key(2)), intLiteral(99)))
+	for _, encoding := range []SMTEncoding{SMTEncodingArrays, SMTEncodingFunArrays} {
+		t.Run(string(encoding), func(t *testing.T) {
+			rewriter := NewStratifiedRewriterWithOptions(StratifiedRewriterOptions{SMTEncoding: encoding})
+			scope, result, err := rewriter.Rewrite(claim, InitialRewriterScope())
+			if err != nil {
+				t.Fatal(err)
+			}
+			solver := newTestG3Solver(t)
+			encoder, err := EncodeRewriterScopeWithEncoding(solver, scope, rewriter.Constraints(), encoding)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = encoder.Assert(MustOperExpr(Op("NOT"), Typed(BoolT1), result.NameExpr())); err != nil {
+				t.Fatal(err)
+			}
+			if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTUnsatisfiable {
+				t.Fatalf("set-keyed native function under %s = %v, %v", encoding, status, checkErr)
+			}
+		})
+	}
+}
+
 func TestStratifiedFunctionExceptSupportsStructuralKeys(t *testing.T) {
 	intValue := func(value int64) Expr { return NewValueExpr(Int64Value(value), Typed(IntT1)) }
 	keyType, _ := NewTupleType(IntT1, IntT1)
@@ -174,12 +215,26 @@ func TestStratifiedFunctionExceptSupportsStructuralKeys(t *testing.T) {
 	updated := exceptExpression(functionType, function, key(3, 4), intValue(7))
 	application := MustOperExpr(Op("FUN_APP"), Typed(IntT1), updated, key(3, 4))
 	claim := MustOperExpr(Op("EQ"), Typed(BoolT1), application, intValue(7))
-	rewriter := NewStratifiedRewriter()
-	scope, result, err := rewriter.Rewrite(claim, InitialRewriterScope())
-	if err != nil {
-		t.Fatal(err)
+	for _, encoding := range []SMTEncoding{SMTEncodingOOPSLA19, SMTEncodingArrays, SMTEncodingFunArrays} {
+		t.Run(string(encoding), func(t *testing.T) {
+			rewriter := NewStratifiedRewriterWithOptions(StratifiedRewriterOptions{SMTEncoding: encoding})
+			scope, result, err := rewriter.Rewrite(claim, InitialRewriterScope())
+			if err != nil {
+				t.Fatal(err)
+			}
+			solver := newTestG3Solver(t)
+			encoder, err := EncodeRewriterScopeWithEncoding(solver, scope, rewriter.Constraints(), encoding)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = encoder.Assert(MustOperExpr(Op("NOT"), Typed(BoolT1), result.NameExpr())); err != nil {
+				t.Fatal(err)
+			}
+			if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTUnsatisfiable {
+				t.Fatalf("tuple-keyed function EXCEPT under %s = %v, %v", encoding, status, checkErr)
+			}
+		})
 	}
-	checkRewrittenTruth(t, rewriter, scope, result, true)
 }
 
 func TestStratifiedExceptRejectsInvalidLiteralSelectors(t *testing.T) {

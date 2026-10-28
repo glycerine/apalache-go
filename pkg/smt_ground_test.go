@@ -426,6 +426,80 @@ func TestEncodeRewriterScopeUsesNestedFunctionResult(t *testing.T) {
 	}
 }
 
+func TestEncodeRewriterScopeUsesStructuredNativeFunctionResults(t *testing.T) {
+	intSetType := mustSet(IntT1)
+	outerBinder := NewNameExpr("i", Typed(IntT1))
+	domain := MustOperExpr(Op("SET_ENUM"), Typed(intSetType), intLiteral(1), intLiteral(2))
+	symbolicArgument := MustOperExpr(Op("PLUS"), Typed(IntT1), intLiteral(1), intLiteral(1))
+
+	innerType := mustFun(IntT1, IntT1)
+	innerBinder := NewNameExpr("j", Typed(IntT1))
+	inner := MustOperExpr(Op("FUN_CTOR"), Typed(innerType),
+		MustOperExpr(Op("PLUS"), Typed(IntT1), outerBinder, innerBinder),
+		innerBinder, MustOperExpr(Op("SET_ENUM"), Typed(intSetType), intLiteral(1)))
+	outerFunctionType := mustFun(IntT1, innerType)
+	outerFunction := MustOperExpr(Op("FUN_CTOR"), Typed(outerFunctionType), inner, outerBinder, domain)
+	selectedFunction := MustOperExpr(Op("FUN_APP"), Typed(innerType), outerFunction, symbolicArgument)
+	functionClaim := MustOperExpr(Op("EQ"), Typed(BoolT1),
+		MustOperExpr(Op("FUN_APP"), Typed(IntT1), selectedFunction, intLiteral(1)), intLiteral(3))
+
+	recordType, err := NewRecordType(map[string]Type{"value": IntT1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := MustOperExpr(Op("RECORD"), Typed(recordType),
+		NewValueExpr(StringValue("value"), Typed(StrT1)),
+		MustOperExpr(Op("PLUS"), Typed(IntT1), outerBinder, intLiteral(10)))
+	outerRecordType := mustFun(IntT1, recordType)
+	outerRecord := MustOperExpr(Op("FUN_CTOR"), Typed(outerRecordType), record, outerBinder, domain)
+	selectedRecord := MustOperExpr(Op("FUN_APP"), Typed(recordType), outerRecord, symbolicArgument)
+	recordClaim := MustOperExpr(Op("EQ"), Typed(BoolT1),
+		MustOperExpr(Op("FUN_APP"), Typed(IntT1), selectedRecord,
+			NewValueExpr(StringValue("value"), Typed(StrT1))), intLiteral(12))
+
+	sequenceType, err := NewSeqType(IntT1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sequence := MustOperExpr(Op("TUPLE"), Typed(sequenceType), outerBinder,
+		MustOperExpr(Op("PLUS"), Typed(IntT1), outerBinder, intLiteral(1)))
+	outerSequenceType := mustFun(IntT1, sequenceType)
+	outerSequence := MustOperExpr(Op("FUN_CTOR"), Typed(outerSequenceType), sequence, outerBinder, domain)
+	selectedSequence := MustOperExpr(Op("FUN_APP"), Typed(sequenceType), outerSequence, symbolicArgument)
+	sequenceClaim := MustOperExpr(Op("EQ"), Typed(BoolT1),
+		MustOperExpr(Op("FUN_APP"), Typed(IntT1), selectedSequence, intLiteral(2)), intLiteral(3))
+
+	for _, test := range []struct {
+		name  string
+		claim Expr
+	}{
+		{name: "function", claim: functionClaim},
+		{name: "record", claim: recordClaim},
+		{name: "sequence", claim: sequenceClaim},
+	} {
+		for _, encoding := range []SMTEncoding{SMTEncodingArrays, SMTEncodingFunArrays} {
+			t.Run(test.name+"/"+string(encoding), func(t *testing.T) {
+				rewriter := NewStratifiedRewriterWithOptions(StratifiedRewriterOptions{SMTEncoding: encoding})
+				scope, result, rewriteErr := rewriter.Rewrite(test.claim, InitialRewriterScope())
+				if rewriteErr != nil {
+					t.Fatal(rewriteErr)
+				}
+				solver := newTestG3Solver(t)
+				encoder, encodeErr := EncodeRewriterScopeWithEncoding(solver, scope, rewriter.Constraints(), encoding)
+				if encodeErr != nil {
+					t.Fatal(encodeErr)
+				}
+				if assertErr := encoder.Assert(MustOperExpr(Op("NOT"), Typed(BoolT1), result.NameExpr())); assertErr != nil {
+					t.Fatal(assertErr)
+				}
+				if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTUnsatisfiable {
+					t.Fatalf("%s result under %s = %v, %v", test.name, encoding, status, checkErr)
+				}
+			})
+		}
+	}
+}
+
 func TestG3GroundEncoderArraySSAStoresAndUnconstraining(t *testing.T) {
 	t.Run("set store", func(t *testing.T) {
 		solver := newTestG3Solver(t)
