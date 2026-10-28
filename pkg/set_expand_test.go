@@ -47,6 +47,17 @@ func TestStratifiedPowerSetExpansionPreservesBaseGuards(t *testing.T) {
 		t.Fatal(err)
 	}
 	checkRewrittenTruth(t, rewriter, scope, result, false)
+
+	empty := MustOperExpr(Op("SET_ENUM"), Typed(intSetType))
+	one := MustOperExpr(Op("SET_ENUM"), Typed(intSetType), intValue(1))
+	expected := MustOperExpr(Op("SET_ENUM"), Typed(powerSetType), empty, one)
+	exactRewriter := NewStratifiedRewriter()
+	exactScope, exact, err := exactRewriter.Rewrite(
+		MustOperExpr(Op("EQ"), Typed(BoolT1), expanded, expected), InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkRewrittenTruth(t, exactRewriter, exactScope, exact, true)
 }
 
 func TestStratifiedFunctionSetExpansionIsRejected(t *testing.T) {
