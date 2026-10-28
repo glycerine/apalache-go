@@ -91,9 +91,11 @@ func newTransitionExecutorWithEncodingAndSolverOptions(
 	shortCircuit bool, smtEncoding SMTEncoding,
 ) *TransitionExecutor {
 	return &TransitionExecutor{
-		constants:         stringSet(constants),
-		variables:         stringSet(variables),
-		rewriter:          NewStratifiedRewriterWithOptions(StratifiedRewriterOptions{ShortCircuit: shortCircuit}),
+		constants: stringSet(constants),
+		variables: stringSet(variables),
+		rewriter: NewStratifiedRewriterWithOptions(StratifiedRewriterOptions{
+			ShortCircuit: shortCircuit, SMTEncoding: smtEncoding,
+		}),
 		scope:             InitialRewriterScope(),
 		prepared:          make(map[int]EncodedTransition),
 		solverUIntOptions: solverUIntOptions,

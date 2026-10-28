@@ -215,6 +215,35 @@ func TestEncodeRewriterScopeUsesNativeEmptySetArray(t *testing.T) {
 	}
 }
 
+func TestEncodeRewriterScopePopulatesNativeSetArray(t *testing.T) {
+	rewriter := NewStratifiedRewriterWithOptions(StratifiedRewriterOptions{SMTEncoding: SMTEncodingArrays})
+	setExpression := MustOperExpr(Op("SET_ENUM"), Typed(mustSet(IntT1)), intLiteral(1))
+	scope, set, err := rewriter.Rewrite(setExpression, InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	elements := scope.Arena.GetHas(set)
+	if len(elements) != 1 {
+		t.Fatalf("enumerated set pointers = %v", elements)
+	}
+	solver := newTestG3Solver(t)
+	encoder, err := EncodeRewriterScopeWithEncoding(solver, scope, rewriter.Constraints(), SMTEncodingArrays)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTSatisfiable {
+		t.Fatalf("populated native set array = %v, %v", status, checkErr)
+	}
+	selected := MustOperExpr(Op("Apalache!SelectInSet"), Typed(BoolT1),
+		elements[0].Element().NameExpr(), set.NameExpr())
+	if err = encoder.Assert(MustOperExpr(Op("NOT"), Typed(BoolT1), selected)); err != nil {
+		t.Fatal(err)
+	}
+	if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTUnsatisfiable {
+		t.Fatalf("stored native set member = %v, %v", status, checkErr)
+	}
+}
+
 func TestG3GroundEncoderArraySSAStoresAndUnconstraining(t *testing.T) {
 	t.Run("set store", func(t *testing.T) {
 		solver := newTestG3Solver(t)

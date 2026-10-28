@@ -14,6 +14,7 @@ type StratifiedRewriter struct {
 	defaults     *DefaultValueCache
 	equality     *LazyEquality
 	shortCircuit bool
+	smtEncoding  SMTEncoding
 	constraints  []Expr
 	messages     *MapMessageStorage
 }
@@ -38,12 +39,16 @@ func NewStratifiedRewriter() *StratifiedRewriter {
 // semantics but can materially affect solver performance.
 type StratifiedRewriterOptions struct {
 	ShortCircuit bool
+	SMTEncoding  SMTEncoding
 }
 
 func NewStratifiedRewriterWithOptions(options StratifiedRewriterOptions) *StratifiedRewriter {
+	if options.SMTEncoding == "" {
+		options.SMTEncoding = SMTEncodingOOPSLA19
+	}
 	result := &StratifiedRewriter{
 		integers: NewIntValueCache(), literals: NewUninterpretedLiteralCache(), shortCircuit: options.ShortCircuit,
-		messages: NewMessageStorage(),
+		smtEncoding: options.SMTEncoding, messages: NewMessageStorage(),
 	}
 	result.ranges = NewIntRangeCache(result.integers)
 	result.equality = NewLazyEquality(result.assert, func(tag string) (ArenaCell, bool) {
@@ -2244,7 +2249,13 @@ func (rewriter *StratifiedRewriter) rewriteSetConstructor(expression *OperExpr, 
 		pointers[index] = FixedElementPointer{Cell: cell}
 	}
 	scope.Arena = newArena.AppendHas(setCell, pointers...)
-	rewriter.addMembershipConstraints(scope.Arena, setCell)
+	if rewriter.smtEncoding == SMTEncodingArrays {
+		for _, cell := range unique {
+			rewriter.assert(MustOperExpr(Op("Apalache!StoreInSet"), Typed(BoolT1), cell.NameExpr(), setCell.NameExpr()))
+		}
+	} else {
+		rewriter.addMembershipConstraints(scope.Arena, setCell)
+	}
 	return scope, setCell, nil
 }
 

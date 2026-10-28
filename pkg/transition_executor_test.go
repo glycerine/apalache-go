@@ -186,11 +186,11 @@ func TestTransitionExecutorCheckStateIsTemporary(t *testing.T) {
 	}
 }
 
-func TestTransitionExecutorSolvesEmptySetMembershipWithNativeArrays(t *testing.T) {
+func TestTransitionExecutorSolvesSetMembershipWithNativeArrays(t *testing.T) {
 	executor := newTransitionExecutorWithEncodingAndSolverOptions(
 		nil, nil, nil, nil, false, SMTEncodingArrays)
-	set := MustOperExpr(Op("SET_ENUM"), Typed(mustSet(IntT1)))
-	membership := MustOperExpr(Op("SET_NOT_IN"), Typed(BoolT1), intLiteral(1), set)
+	set := MustOperExpr(Op("SET_ENUM"), Typed(mustSet(IntT1)), intLiteral(1))
+	membership := MustOperExpr(Op("SET_IN"), Typed(BoolT1), intLiteral(1), set)
 	if err := executor.AssertState(membership); err != nil {
 		t.Fatal(err)
 	}
