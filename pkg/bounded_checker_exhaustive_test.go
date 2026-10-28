@@ -278,6 +278,7 @@ func testExhaustiveValueMachines(
 	prefix, variable, annotation string,
 	values []string,
 	seed int64,
+	extensions string,
 ) {
 	t.Helper()
 	random := rand.New(rand.NewSource(seed))
@@ -288,13 +289,17 @@ func testExhaustiveValueMachines(
 		invariant := uint64(random.Intn(1 << stateCount))
 		bound := random.Intn(4)
 		name := fmt.Sprintf("%s%d", prefix, number)
+		extendsLine := ""
+		if extensions != "" {
+			extendsLine = "EXTENDS " + extensions + "\n"
+		}
 		source := fmt.Sprintf(`---- MODULE %s ----
-\* @type: %s;
+%s\* @type: %s;
 VARIABLE %s
 Init == %s
 Next == %s
 Inv == %s
-====`, name, annotation, variable,
+====`, name, extendsLine, annotation, variable,
 			valueMaskPredicate(variable, values, init, false),
 			valueTransitionPredicate(variable, values, edges),
 			valueMaskPredicate(variable, values, invariant, false))
@@ -372,19 +377,19 @@ func TestBoundedSafetyMatchesExhaustiveRecordMachines(t *testing.T) {
 		"[flag |-> FALSE, count |-> 1]",
 		"[flag |-> TRUE, count |-> 0]",
 		"[flag |-> TRUE, count |-> 1]",
-	}, 0x5ec07d)
+	}, 0x5ec07d, "")
 }
 
 func TestBoundedSafetyMatchesExhaustiveSetMachines(t *testing.T) {
 	testExhaustiveValueMachines(t, "ExhaustiveSet", "s", "Set(Int)", []string{
 		"{}", "{1}", "{2}", "{1, 2}",
-	}, 0x5e7)
+	}, 0x5e7, "")
 }
 
 func TestBoundedSafetyMatchesExhaustiveSequenceMachines(t *testing.T) {
 	testExhaustiveValueMachines(t, "ExhaustiveSequence", "q", "Seq(Int)", []string{
 		"<<>>", "<<0>>", "<<1>>", "<<0, 1>>",
-	}, 0x5e0)
+	}, 0x5e0, "")
 }
 
 func TestBoundedSafetyMatchesExhaustiveFunctionMachines(t *testing.T) {
@@ -393,5 +398,24 @@ func TestBoundedSafetyMatchesExhaustiveFunctionMachines(t *testing.T) {
 		"[i \\in {1, 2} |-> i = 2]",
 		"[i \\in {1, 2} |-> i = 1]",
 		"[i \\in {1, 2} |-> TRUE]",
-	}, 0xf00c710)
+	}, 0xf00c710, "")
+}
+
+func TestBoundedSafetyMatchesExhaustiveVariantMachines(t *testing.T) {
+	testExhaustiveValueMachines(t, "ExhaustiveVariant", "v", "A(Int) | B(Bool)", []string{
+		`Variant("A", 0)`,
+		`Variant("A", 1)`,
+		`Variant("B", FALSE)`,
+		`Variant("B", TRUE)`,
+	}, 0xa11a17, "Variants")
+}
+
+func TestBoundedSafetyMatchesExhaustiveNestedMachines(t *testing.T) {
+	testExhaustiveValueMachines(t, "ExhaustiveNested", "n",
+		"{ items: Seq(Int), choice: A(Int) | B(Bool) }", []string{
+			`[items |-> <<>>, choice |-> Variant("A", 0)]`,
+			`[items |-> <<1>>, choice |-> Variant("A", 1)]`,
+			`[items |-> <<>>, choice |-> Variant("B", FALSE)]`,
+			`[items |-> <<1, 2>>, choice |-> Variant("B", TRUE)]`,
+		}, 0x0e57ed, "Variants")
 }
