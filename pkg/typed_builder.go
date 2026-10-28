@@ -5,9 +5,11 @@ import (
 	"math/big"
 )
 
-type TypedBuilder struct{}
+type TypedBuilder struct{ strict bool }
 
-func NewTypedBuilder() *TypedBuilder { return &TypedBuilder{} }
+func NewTypedBuilder() *TypedBuilder { return NewTypedBuilderWithStrict(true) }
+
+func NewTypedBuilderWithStrict(strict bool) *TypedBuilder { return &TypedBuilder{strict: strict} }
 
 type TypedParameter struct {
 	Parameter OperatorParam

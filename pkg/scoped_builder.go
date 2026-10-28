@@ -32,7 +32,11 @@ func (instruction ExprInstruction) Build() (Expr, error) {
 
 type ScopedBuilder struct{ typed *TypedBuilder }
 
-func NewScopedBuilder() *ScopedBuilder { return &ScopedBuilder{typed: NewTypedBuilder()} }
+func NewScopedBuilder() *ScopedBuilder { return NewScopedBuilderWithStrict(true) }
+
+func NewScopedBuilderWithStrict(strict bool) *ScopedBuilder {
+	return &ScopedBuilder{typed: NewTypedBuilderWithStrict(strict)}
+}
 
 func (builder *ScopedBuilder) Unchecked(expr Expr) ExprInstruction {
 	return ExprInstruction{run: func(*scopeContext) (Expr, error) {
