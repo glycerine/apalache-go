@@ -112,6 +112,22 @@ func TestExprOptimizerRecordAndTupleMapMembership(t *testing.T) {
 	if got := optimizeForTest(t, generalMembership); !EqualTypedExpr(got, generalMembership) {
 		t.Fatalf("general record map was optimized: %v", got)
 	}
+
+	innerTuple := MustOperExpr(Op("TUPLE"), Typed(mustTuple(IntT1, IntT1)),
+		NewNameExpr("a", Typed(IntT1)), NewNameExpr("b", Typed(IntT1)))
+	innerMap := MustOperExpr(Op("SET_MAP"), Typed(mustSet(mustTuple(IntT1, IntT1))), innerTuple,
+		innerTuple.Arguments()[0], NewNameExpr("A", Typed(intSet)),
+		innerTuple.Arguments()[1], NewNameExpr("B", Typed(intSet)))
+	outerTupleType := mustTuple(mustTuple(IntT1, IntT1), IntT1)
+	outerTuple := MustOperExpr(Op("TUPLE"), Typed(outerTupleType),
+		NewNameExpr("ab", Typed(mustTuple(IntT1, IntT1))), NewNameExpr("c", Typed(IntT1)))
+	outerMap := MustOperExpr(Op("SET_MAP"), Typed(mustSet(outerTupleType)), outerTuple,
+		outerTuple.Arguments()[0], innerMap, outerTuple.Arguments()[1], NewNameExpr("C", Typed(intSet)))
+	nested := optimizeForTest(t, MustOperExpr(Op("SET_IN"), Typed(BoolT1),
+		NewNameExpr("t", Typed(outerTupleType)), outerMap)).(*OperExpr)
+	if nested.Operator().Name() != "AND" || nested.Arguments()[0].(*OperExpr).Operator().Name() != "AND" {
+		t.Fatalf("nested tuple product membership = %v", nested)
+	}
 }
 
 func TestExprOptimizerPowersetMembership(t *testing.T) {
@@ -171,6 +187,29 @@ func TestExprOptimizerCardinalityRules(t *testing.T) {
 	greaterThanOne := optimizeForTest(t, MustOperExpr(Op("GT"), Typed(BoolT1), card(set), i(1)))
 	if _, ok := greaterThanOne.(*LetInExpr); !ok {
 		t.Fatalf("cardinality > 1 = %v", greaterThanOne)
+	}
+	general := MustOperExpr(Op("GT"), Typed(BoolT1), card(set), i(5))
+	if got := optimizeForTest(t, general); got != general {
+		t.Fatalf("general cardinality comparison changed: %v", got)
+	}
+}
+
+func TestExprOptimizerClassifiesMalformedSetTypes(t *testing.T) {
+	notASet := NewNameExpr("n", Typed(IntT1))
+	rightSet := NewNameExpr("S", Typed(mustSet(IntT1)))
+	powerset := MustOperExpr(Op("SET_POWERSET"), Typed(mustSet(mustSet(IntT1))), rightSet)
+	_, err := optimizerForTest().Expression(MustOperExpr(Op("SET_IN"), Typed(BoolT1), notASet, powerset))
+	var malformed *MalformedTlaError
+	if !errors.As(err, &malformed) || malformed.CauseExpr() != notASet {
+		t.Fatalf("powerset membership error = %T %v", err, err)
+	}
+
+	cardinality := MustOperExpr(Op("FiniteSets!Cardinality"), Typed(IntT1), notASet)
+	comparison := MustOperExpr(Op("GE"), Typed(BoolT1), cardinality, i(2))
+	_, err = optimizerForTest().Expression(comparison)
+	var typing *TypingException
+	if !errors.As(err, &typing) || typing.CauseExprID() != comparison.ID() {
+		t.Fatalf("cardinality type error = %T %v", err, err)
 	}
 }
 
@@ -274,8 +313,10 @@ func TestExprOptimizerUsesAbstractTransformerTrackingLayers(t *testing.T) {
 		}
 	}
 
-	definition := NewOperDecl("D", nil, leaf, Typed(mustOperator(nil, IntT1)))
-	let := NewLetInExpr(leaf, Typed(IntT1), definition)
+	letBody := NewNameExpr("body", Typed(IntT1))
+	definitionBody := NewNameExpr("definition", Typed(IntT1))
+	definition := NewOperDecl("D", nil, definitionBody, Typed(mustOperator(nil, IntT1)))
+	let := NewLetInExpr(letBody, Typed(IntT1), definition)
 	listener = &recordingListener{}
 	if _, err := NewExprOptimizer(nil, NewListenerTracker(listener)).Expression(let); err != nil {
 		t.Fatal(err)
@@ -284,5 +325,29 @@ func TestExprOptimizerUsesAbstractTransformerTrackingLayers(t *testing.T) {
 	// recursive layer because AbstractTransformer never offers LET to rules.
 	if len(listener.expressions) != 5 {
 		t.Fatalf("LET tracking events = %d, want 5: %#v", len(listener.expressions), listener.expressions)
+	}
+	if listener.expressions[0][0] != letBody || listener.expressions[2][0] != definitionBody {
+		t.Fatalf("LET was not traversed body-first: %#v", listener.expressions)
+	}
+}
+
+func TestExprOptimizerAllocatesFreshNamesInScalaTraversalOrder(t *testing.T) {
+	intSet := mustSet(IntT1)
+	powersetMembership := func(left, right string) Expr {
+		set := NewNameExpr(left, Typed(intSet))
+		powerset := MustOperExpr(Op("SET_POWERSET"), Typed(mustSet(intSet)), NewNameExpr(right, Typed(intSet)))
+		return MustOperExpr(Op("SET_IN"), Typed(BoolT1), set, powerset)
+	}
+	definition := NewOperDecl("D", nil, powersetMembership("A", "B"), Typed(mustOperator(nil, BoolT1)))
+	got, err := optimizerForTest().Expression(NewLetInExpr(powersetMembership("S", "T"), Typed(BoolT1), definition))
+	if err != nil {
+		t.Fatal(err)
+	}
+	let := got.(*LetInExpr)
+	if let.Body().(*OperExpr).Arguments()[0].(*NameExpr).Name() != "t_1" {
+		t.Fatalf("LET body did not receive first fresh name: %v", let.Body())
+	}
+	if let.Declarations()[0].Body().(*OperExpr).Arguments()[0].(*NameExpr).Name() != "t_2" {
+		t.Fatalf("LET definition did not receive second fresh name: %v", let.Declarations()[0].Body())
 	}
 }

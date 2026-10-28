@@ -54,15 +54,6 @@ func (optimizer *ExprOptimizer) transform(expression Expr) (Expr, error) {
 	case *LetInExpr:
 		applyOneLevel = false
 		declarations := typed.Declarations()
-		for index, declaration := range declarations {
-			body, err := optimizer.transform(declaration.Body())
-			if err != nil {
-				return nil, err
-			}
-			copy := declaration.copyWithTag(declaration.Tag())
-			copy.SetBody(body)
-			declarations[index] = copy
-		}
 		previousDefinitions := optimizer.functionDefinitions
 		optimizer.functionDefinitions = make(map[string]*OperExpr, len(previousDefinitions)+len(declarations))
 		for name, definition := range previousDefinitions {
@@ -80,6 +71,15 @@ func (optimizer *ExprOptimizer) transform(expression Expr) (Expr, error) {
 		optimizer.functionDefinitions = previousDefinitions
 		if err != nil {
 			return nil, err
+		}
+		for index, declaration := range declarations {
+			declarationBody, bodyErr := optimizer.transform(declaration.Body())
+			if bodyErr != nil {
+				return nil, bodyErr
+			}
+			copy := declaration.copyWithTag(declaration.Tag())
+			copy.SetBody(declarationBody)
+			declarations[index] = copy
 		}
 		retained := make([]*OperDecl, 0, len(declarations))
 		for index, declaration := range declarations {
@@ -175,7 +175,7 @@ func (optimizer *ExprOptimizer) oneLevel(expression Expr) (Expr, error) {
 					return expression, nil
 				}
 			}
-			elementType, err := setElementType(args[0])
+			elementType, err := optimizerSetElementType(args[0])
 			if err != nil {
 				return nil, err
 			}
@@ -363,7 +363,7 @@ func (optimizer *ExprOptimizer) recordMapMembership(member Expr, mapped *OperExp
 	}
 	recordValue := member
 	if powerset {
-		elementType, err := setElementType(member)
+		elementType, err := optimizerSetElementType(member)
 		if err != nil {
 			return nil, false, err
 		}
@@ -470,16 +470,17 @@ func (optimizer *ExprOptimizer) cardinalityComparison(op *OperExpr) (Expr, bool,
 			if rewritten {
 				return result, true, nil
 			}
-			return generated, true, nil
+			return op, true, nil
 		}
 	case "GE":
 		if integer.Cmp(big.NewInt(1)) == 0 {
 			return notEmpty(), true, nil
 		}
 		if integer.Cmp(big.NewInt(2)) == 0 {
-			elementType, err := setElementType(set)
+			elementType, err := optimizerSetElementType(set)
 			if err != nil {
-				return nil, true, err
+				return nil, true, NewTypingException(
+					fmt.Sprintf("Unexpected type %s in expression %v", set.Tag(), op), op.ID())
 			}
 			firstName, secondName, definitionName := optimizer.names.NewName(), optimizer.names.NewName(), optimizer.names.NewName()
 			operatorType := mustOperator(nil, mustSet(elementType))
@@ -496,6 +497,18 @@ func (optimizer *ExprOptimizer) cardinalityComparison(op *OperExpr) (Expr, bool,
 		}
 	}
 	return nil, false, nil
+}
+
+func optimizerSetElementType(expression Expr) (Type, error) {
+	typ, ok := expression.Tag().Type()
+	if !ok {
+		return nil, NewMalformedTlaError("Expected a set, found: "+expression.Tag().String(), expression)
+	}
+	set, ok := typ.(SetType)
+	if !ok {
+		return nil, NewMalformedTlaError("Expected a set, found: "+expression.Tag().String(), expression)
+	}
+	return set.Element(), nil
 }
 
 func (optimizer *ExprOptimizer) optimizeExists(expression Expr) (Expr, error) {
