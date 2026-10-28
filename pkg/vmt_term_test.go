@@ -28,6 +28,164 @@ func TestVMTSortFromTypeMatchesScalaFragment(t *testing.T) {
 	}
 }
 
+func TestVMTFormulaBaseMatchesScala(t *testing.T) {
+	a, err := UninterpretedVMTSort("A")
+	if err != nil {
+		t.Fatal(err)
+	}
+	function := FunctionVMTSort(a, IntVMTSort(), BoolVMTSort())
+	for _, test := range []struct {
+		sort VMTSort
+		name string
+	}{
+		{BoolVMTSort(), "Boolean"}, {IntVMTSort(), "Integer"},
+		{UntypedVMTSort(), "Untyped"}, {a, "A"}, {function, "Function"},
+	} {
+		if test.sort.SortName() != test.name {
+			t.Errorf("sort name = %q, want %q", test.sort.SortName(), test.name)
+		}
+	}
+	if function.Arity() != 2 || IntVMTSort().Arity() != 0 {
+		t.Fatalf("sort arities = %d, %d", function.Arity(), IntVMTSort().Arity())
+	}
+
+	constant := VMTConstDeclaration{Name: "x", Sort: a}
+	declaration := VMTFunctionDeclaration{Name: "f", Sort: function}
+	variable, err := declaration.AsVar()
+	if err != nil || variable.Name != "f" || !variable.Sort.Equal(function) {
+		t.Fatalf("declared function variable = %#v, %v", variable, err)
+	}
+	body, _ := VMTVar("result", a)
+	definition := VMTFunctionDefinition{
+		Name: "g", Arguments: []VMTBinding{{Name: "i", Sort: IntVMTSort()}}, Body: body,
+	}
+	defined, err := definition.AsVar()
+	wantDefinedSort := FunctionVMTSort(a, IntVMTSort())
+	if err != nil || defined.Name != "g" || !defined.Sort.Equal(wantDefinedSort) {
+		t.Fatalf("defined function variable = %#v, %v", defined, err)
+	}
+	var declarations []VMTDeclaration = []VMTDeclaration{constant, declaration, definition}
+	if len(declarations) != 3 {
+		t.Fatal("formula declaration family is incomplete")
+	}
+}
+
+func TestVMTBooleanFormulaFamilyMatchesScala(t *testing.T) {
+	truth, falsehood := VMTBool(true), VMTBool(false)
+	integer, _ := VMTInt(big.NewInt(1))
+	for _, build := range []func() error{
+		func() error { _, err := VMTAndTerm(truth, falsehood); return err },
+		func() error { _, err := VMTOrTerm(truth, falsehood); return err },
+		func() error { _, err := VMTNotTerm(truth); return err },
+		func() error { _, err := VMTImpliesTerm(truth, falsehood); return err },
+		func() error { _, err := VMTEquivTerm(truth, falsehood); return err },
+		func() error {
+			_, err := VMTForallTerm([]VMTBinding{{Name: "p", Sort: BoolVMTSort()}}, truth)
+			return err
+		},
+		func() error { _, err := VMTExistsTerm(nil, falsehood); return err },
+	} {
+		if err := build(); err != nil {
+			t.Errorf("valid Boolean formula rejected: %v", err)
+		}
+	}
+	for _, build := range []func() error{
+		func() error { _, err := VMTAndTerm(truth, integer); return err },
+		func() error { _, err := VMTOrTerm(integer); return err },
+		func() error { _, err := VMTNotTerm(integer); return err },
+		func() error { _, err := VMTImpliesTerm(truth, integer); return err },
+		func() error { _, err := VMTEquivTerm(integer, falsehood); return err },
+		func() error { _, err := VMTForallTerm(nil, integer); return err },
+		func() error { _, err := VMTExistsTerm(nil, integer); return err },
+	} {
+		if err := build(); err == nil {
+			t.Error("invalid Boolean formula was accepted")
+		}
+	}
+}
+
+func TestVMTIntegerFormulaFamilyMatchesScala(t *testing.T) {
+	one, _ := VMTInt(big.NewInt(1))
+	two, _ := VMTInt(big.NewInt(2))
+	boolean := VMTBool(true)
+	tests := []struct {
+		name string
+		kind VMTTermKind
+		sort VMTSort
+		make func(VMTTerm, VMTTerm) (VMTTerm, error)
+	}{
+		{"plus", VMTPlus, IntVMTSort(), VMTPlusTerm},
+		{"minus", VMTMinus, IntVMTSort(), VMTMinusTerm},
+		{"multiply", VMTMultiply, IntVMTSort(), VMTMultiplyTerm},
+		{"divide", VMTDivide, IntVMTSort(), VMTDivideTerm},
+		{"modulo", VMTModulo, IntVMTSort(), VMTModuloTerm},
+		{"less-than", VMTLessThan, BoolVMTSort(), VMTLessThanTerm},
+		{"less-equal", VMTLessEqual, BoolVMTSort(), VMTLessEqualTerm},
+		{"greater-than", VMTGreaterThan, BoolVMTSort(), VMTGreaterThanTerm},
+		{"greater-equal", VMTGreaterEqual, BoolVMTSort(), VMTGreaterEqualTerm},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			term, err := test.make(one, two)
+			if err != nil || term.Kind != test.kind || !term.Sort.Equal(test.sort) {
+				t.Fatalf("term = %#v, %v", term, err)
+			}
+			if _, err := test.make(one, boolean); err == nil {
+				t.Fatal("non-Integer right argument was accepted")
+			}
+			if _, err := test.make(boolean, two); err == nil {
+				t.Fatal("non-Integer left argument was accepted")
+			}
+		})
+	}
+	for _, test := range []struct {
+		name string
+		kind VMTTermKind
+		make func(VMTTerm) (VMTTerm, error)
+	}{
+		{"unary-minus", VMTUnaryMinus, VMTUnaryMinusTerm},
+		{"absolute", VMTAbsolute, VMTAbsoluteTerm},
+	} {
+		term, err := test.make(one)
+		if err != nil || term.Kind != test.kind || !term.Sort.Equal(IntVMTSort()) {
+			t.Fatalf("%s term = %#v, %v", test.name, term, err)
+		}
+		if _, err := test.make(boolean); err == nil {
+			t.Errorf("%s accepted a Boolean", test.name)
+		}
+	}
+}
+
+func TestFormatVMTIntegerFormulaFamily(t *testing.T) {
+	one, _ := VMTInt(big.NewInt(1))
+	two, _ := VMTInt(big.NewInt(2))
+	binary := []struct {
+		make func(VMTTerm, VMTTerm) (VMTTerm, error)
+		want string
+	}{
+		{VMTPlusTerm, "(+ 1 2)"}, {VMTMinusTerm, "(- 1 2)"},
+		{VMTMultiplyTerm, "(* 1 2)"}, {VMTDivideTerm, "(div 1 2)"},
+		{VMTModuloTerm, "(mod 1 2)"}, {VMTLessThanTerm, "(< 1 2)"},
+		{VMTLessEqualTerm, "(<= 1 2)"}, {VMTGreaterThanTerm, "(> 1 2)"},
+		{VMTGreaterEqualTerm, "(>= 1 2)"},
+	}
+	for _, test := range binary {
+		term, _ := test.make(one, two)
+		if got, err := FormatVMTTerm(term); err != nil || got != test.want {
+			t.Errorf("formatted term = %q, %v; want %q", got, err, test.want)
+		}
+	}
+	for _, test := range []struct {
+		make func(VMTTerm) (VMTTerm, error)
+		want string
+	}{{VMTUnaryMinusTerm, "(- 1)"}, {VMTAbsoluteTerm, "(abs 1)"}} {
+		term, _ := test.make(one)
+		if got, err := FormatVMTTerm(term); err != nil || got != test.want {
+			t.Errorf("formatted term = %q, %v; want %q", got, err, test.want)
+		}
+	}
+}
+
 func TestVMTTermConstructorsEnforceSorts(t *testing.T) {
 	a, _ := UninterpretedVMTSort("A")
 	b, _ := UninterpretedVMTSort("B")

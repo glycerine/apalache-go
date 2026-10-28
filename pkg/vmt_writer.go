@@ -98,6 +98,28 @@ func FormatVMTTerm(term VMTTerm) (string, error) {
 		return formatVMTBinary("=>", term.Args, format)
 	case VMTEquiv, VMTEqual:
 		return formatVMTBinary("=", term.Args, format)
+	case VMTPlus:
+		return formatVMTBinary("+", term.Args, format)
+	case VMTMinus:
+		return formatVMTBinary("-", term.Args, format)
+	case VMTUnaryMinus:
+		return formatVMTUnary("-", term.Args, format)
+	case VMTMultiply:
+		return formatVMTBinary("*", term.Args, format)
+	case VMTDivide:
+		return formatVMTBinary("div", term.Args, format)
+	case VMTModulo:
+		return formatVMTBinary("mod", term.Args, format)
+	case VMTAbsolute:
+		return formatVMTUnary("abs", term.Args, format)
+	case VMTLessThan:
+		return formatVMTBinary("<", term.Args, format)
+	case VMTLessEqual:
+		return formatVMTBinary("<=", term.Args, format)
+	case VMTGreaterThan:
+		return formatVMTBinary(">", term.Args, format)
+	case VMTGreaterEqual:
+		return formatVMTBinary(">=", term.Args, format)
 	case VMTApply:
 		arguments, err := formatArgs(term.Args)
 		if err != nil {

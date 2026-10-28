@@ -12,6 +12,7 @@ const (
 	VMTIntSort
 	VMTUninterpretedSort
 	VMTFunctionSort
+	VMTUntypedSort
 )
 
 // VMTSort is the first-order sort fragment accepted by the Scala ReTLA VMT
@@ -24,8 +25,9 @@ type VMTSort struct {
 	Range  *VMTSort
 }
 
-func BoolVMTSort() VMTSort { return VMTSort{Kind: VMTBoolSort} }
-func IntVMTSort() VMTSort  { return VMTSort{Kind: VMTIntSort} }
+func BoolVMTSort() VMTSort    { return VMTSort{Kind: VMTBoolSort} }
+func IntVMTSort() VMTSort     { return VMTSort{Kind: VMTIntSort} }
+func UntypedVMTSort() VMTSort { return VMTSort{Kind: VMTUntypedSort} }
 func UninterpretedVMTSort(name string) (VMTSort, error) {
 	if name == "" {
 		return VMTSort{}, fmt.Errorf("VMT uninterpreted sort name cannot be empty")
@@ -35,6 +37,26 @@ func UninterpretedVMTSort(name string) (VMTSort, error) {
 func FunctionVMTSort(result VMTSort, arguments ...VMTSort) VMTSort {
 	copyResult := result
 	return VMTSort{Kind: VMTFunctionSort, Domain: append([]VMTSort(nil), arguments...), Range: &copyResult}
+}
+func (sort VMTSort) SortName() string {
+	switch sort.Kind {
+	case VMTBoolSort:
+		return "Boolean"
+	case VMTIntSort:
+		return "Integer"
+	case VMTUntypedSort:
+		return "Untyped"
+	case VMTFunctionSort:
+		return "Function"
+	default:
+		return sort.Name
+	}
+}
+func (sort VMTSort) Arity() int {
+	if sort.Kind != VMTFunctionSort {
+		return 0
+	}
+	return len(sort.Domain)
 }
 func (sort VMTSort) Equal(other VMTSort) bool {
 	if sort.Kind != other.Kind || sort.Name != other.Name || len(sort.Domain) != len(other.Domain) {
@@ -105,11 +127,42 @@ const (
 	VMTEqual
 	VMTApply
 	VMTIfThenElse
+	VMTPlus
+	VMTMinus
+	VMTUnaryMinus
+	VMTMultiply
+	VMTDivide
+	VMTModulo
+	VMTAbsolute
+	VMTLessThan
+	VMTLessEqual
+	VMTGreaterThan
+	VMTGreaterEqual
 )
 
 type VMTBinding struct {
 	Name string
 	Sort VMTSort
+}
+
+// VMTDeclaration is the closed declaration family from lir/formulas.
+type VMTDeclaration interface{ vmtDeclaration() }
+
+type VMTConstDeclaration struct {
+	Name string
+	Sort VMTSort
+}
+
+func (VMTConstDeclaration) vmtDeclaration() {}
+
+type VMTFunctionDeclaration struct {
+	Name string
+	Sort VMTSort
+}
+
+func (VMTFunctionDeclaration) vmtDeclaration() {}
+func (declaration VMTFunctionDeclaration) AsVar() (VMTTerm, error) {
+	return VMTVar(declaration.Name, declaration.Sort)
 }
 
 // VMTFunctionDefinition is an SMT-LIB define-fun introduced while lowering a
@@ -118,6 +171,15 @@ type VMTFunctionDefinition struct {
 	Name      string
 	Arguments []VMTBinding
 	Body      VMTTerm
+}
+
+func (VMTFunctionDefinition) vmtDeclaration() {}
+func (definition VMTFunctionDefinition) AsVar() (VMTTerm, error) {
+	domain := make([]VMTSort, len(definition.Arguments))
+	for index, argument := range definition.Arguments {
+		domain[index] = argument.Sort
+	}
+	return VMTVar(definition.Name, FunctionVMTSort(definition.Body.Sort, domain...))
 }
 
 // VMTDeclarations contains the auxiliary declarations discovered while an
@@ -246,6 +308,54 @@ func VMTIfThenElseTerm(condition, thenTerm, elseTerm VMTTerm) (VMTTerm, error) {
 		return VMTTerm{}, fmt.Errorf("VMT conditional branches have different sorts")
 	}
 	return VMTTerm{Kind: VMTIfThenElse, Sort: thenTerm.Sort, Args: []VMTTerm{condition, thenTerm, elseTerm}}, nil
+}
+
+func vmtIntegerUnary(kind VMTTermKind, term VMTTerm) (VMTTerm, error) {
+	if !term.Sort.Equal(IntVMTSort()) {
+		return VMTTerm{}, fmt.Errorf("integer unary operation requires an Integer term")
+	}
+	return VMTTerm{Kind: kind, Sort: IntVMTSort(), Args: []VMTTerm{term}}, nil
+}
+
+func vmtIntegerBinary(kind VMTTermKind, result VMTSort, left, right VMTTerm) (VMTTerm, error) {
+	if !left.Sort.Equal(IntVMTSort()) || !right.Sort.Equal(IntVMTSort()) {
+		return VMTTerm{}, fmt.Errorf("integer binary operation requires Integer terms")
+	}
+	return VMTTerm{Kind: kind, Sort: result, Args: []VMTTerm{left, right}}, nil
+}
+
+func VMTPlusTerm(left, right VMTTerm) (VMTTerm, error) {
+	return vmtIntegerBinary(VMTPlus, IntVMTSort(), left, right)
+}
+func VMTMinusTerm(left, right VMTTerm) (VMTTerm, error) {
+	return vmtIntegerBinary(VMTMinus, IntVMTSort(), left, right)
+}
+func VMTUnaryMinusTerm(term VMTTerm) (VMTTerm, error) {
+	return vmtIntegerUnary(VMTUnaryMinus, term)
+}
+func VMTMultiplyTerm(left, right VMTTerm) (VMTTerm, error) {
+	return vmtIntegerBinary(VMTMultiply, IntVMTSort(), left, right)
+}
+func VMTDivideTerm(left, right VMTTerm) (VMTTerm, error) {
+	return vmtIntegerBinary(VMTDivide, IntVMTSort(), left, right)
+}
+func VMTModuloTerm(left, right VMTTerm) (VMTTerm, error) {
+	return vmtIntegerBinary(VMTModulo, IntVMTSort(), left, right)
+}
+func VMTAbsoluteTerm(term VMTTerm) (VMTTerm, error) {
+	return vmtIntegerUnary(VMTAbsolute, term)
+}
+func VMTLessThanTerm(left, right VMTTerm) (VMTTerm, error) {
+	return vmtIntegerBinary(VMTLessThan, BoolVMTSort(), left, right)
+}
+func VMTLessEqualTerm(left, right VMTTerm) (VMTTerm, error) {
+	return vmtIntegerBinary(VMTLessEqual, BoolVMTSort(), left, right)
+}
+func VMTGreaterThanTerm(left, right VMTTerm) (VMTTerm, error) {
+	return vmtIntegerBinary(VMTGreaterThan, BoolVMTSort(), left, right)
+}
+func VMTGreaterEqualTerm(left, right VMTTerm) (VMTTerm, error) {
+	return vmtIntegerBinary(VMTGreaterEqual, BoolVMTSort(), left, right)
 }
 func vmtQuantifier(kind VMTTermKind, bindings []VMTBinding, predicate VMTTerm) (VMTTerm, error) {
 	if !predicate.Sort.Equal(BoolVMTSort()) {
