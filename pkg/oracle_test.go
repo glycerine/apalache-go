@@ -413,6 +413,84 @@ func TestUninterpretedConstOracleScalaSolverCases(t *testing.T) {
 	}
 }
 
+func TestPropositionalAndLegacySparseOracleScalaSolverCases(t *testing.T) {
+	base := InitialRewriterScope()
+	scope, oracle, constraints, err := CreatePropositionalOracle(base, 6)
+	if err != nil || oracle.Size() != 6 || len(oracle.Bits) != 3 || len(constraints) != 2 {
+		t.Fatalf("propositional oracle = %#v, constraints %d, error %v", oracle, len(constraints), err)
+	}
+	choice3, _ := oracle.Chosen(scope, 3)
+	solver := newTestG3Solver(t)
+	encoder, err := EncodeRewriterScope(solver, scope, append(append([]Expr(nil), constraints...), choice3))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTSatisfiable {
+		t.Fatalf("propositional choice 3 = %v, %v", status, checkErr)
+	}
+	if decoded, decodeErr := oracle.Decode(encoder); decodeErr != nil || decoded != 3 {
+		t.Fatalf("propositional decode = %d, %v", decoded, decodeErr)
+	}
+	choice4, _ := oracle.Chosen(scope, 4)
+	solver = newTestG3Solver(t)
+	if _, err = EncodeRewriterScope(solver, scope, append(append(append([]Expr(nil), constraints...), choice3), choice4)); err != nil {
+		t.Fatal(err)
+	}
+	if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTUnsatisfiable {
+		t.Fatalf("two propositional choices = %v, %v", status, checkErr)
+	}
+
+	for selected := 0; selected < 2; selected++ {
+		caseScope := InitialRewriterScope()
+		var flag ArenaCell
+		caseScope.Arena, flag = caseScope.Arena.AppendCellType(BasicCellType{Type: BoolT1})
+		caseScope, caseOracle, caseConstraints, createErr := CreatePropositionalOracle(caseScope, 2)
+		if createErr != nil {
+			t.Fatal(createErr)
+		}
+		cases, caseErr := caseOracle.Cases(caseScope, []Expr{
+			flag.NameExpr(), MustOperExpr(Op("NOT"), Typed(BoolT1), flag.NameExpr()),
+		}, nil)
+		if caseErr != nil {
+			t.Fatal(caseErr)
+		}
+		choice, _ := caseOracle.Chosen(caseScope, selected)
+		caseConstraints = append(caseConstraints, cases, choice)
+		solver = newTestG3Solver(t)
+		encoder, err = EncodeRewriterScope(solver, caseScope, caseConstraints)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTSatisfiable {
+			t.Fatalf("propositional case %d = %v, %v", selected, status, checkErr)
+		}
+		if value, evalErr := encoder.EvaluateBool(flag.NameExpr()); evalErr != nil || value != (selected == 0) {
+			t.Fatalf("propositional flag %d = %v, %v", selected, value, evalErr)
+		}
+	}
+
+	sparseScope, backend, sparseConstraints, err := CreatePropositionalOracle(base, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sparse, err := NewSparseOracle(backend, []int{1, 5, 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chosenFive, _ := sparse.Chosen(sparseScope, 5)
+	solver = newTestG3Solver(t)
+	encoder, err = EncodeRewriterScope(solver, sparseScope, append(sparseConstraints, chosenFive))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTSatisfiable {
+		t.Fatalf("legacy sparse choice = %v, %v", status, checkErr)
+	}
+	if decoded, decodeErr := sparse.Decode(encoder); decodeErr != nil || decoded != 5 {
+		t.Fatalf("legacy sparse decode = %d, %v", decoded, decodeErr)
+	}
+}
+
 func TestOracleModelDecodingThroughG3(t *testing.T) {
 	scope, intOracle, err := CreateIntOracle(InitialRewriterScope(), 3)
 	if err != nil {

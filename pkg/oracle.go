@@ -109,6 +109,77 @@ func (oracle *MockOracle) Cases(_ RewriterScope, assertions, elseAssertions []Ex
 
 func (oracle *MockOracle) Decode(*G3GroundEncoder) (int, error) { return oracle.Fixed, nil }
 
+// PropositionalOracle represents a finite choice as Boolean bits, least
+// significant bit first. Constraints returned by creation exclude unused bit
+// patterns when the choice count is not a power of two.
+type PropositionalOracle struct {
+	Bits    []ArenaCell
+	NValues int
+}
+
+func CreatePropositionalOracle(scope RewriterScope, nvalues int) (RewriterScope, *PropositionalOracle, []Expr, error) {
+	if nvalues < 0 {
+		return scope, nil, nil, fmt.Errorf("propositional oracle must have a non-negative size")
+	}
+	upperBound := 1
+	bits := 0
+	for upperBound < nvalues {
+		upperBound *= 2
+		bits++
+	}
+	oracle := &PropositionalOracle{Bits: make([]ArenaCell, bits), NValues: nvalues}
+	for index := range oracle.Bits {
+		scope.Arena, oracle.Bits[index] = scope.Arena.AppendCellType(BasicCellType{Type: BoolT1})
+	}
+	constraints := make([]Expr, 0, upperBound-nvalues)
+	for value := nvalues; value < upperBound; value++ {
+		chosen, err := oracle.Chosen(scope, value)
+		if err != nil {
+			return scope, nil, nil, err
+		}
+		constraints = append(constraints, MustOperExpr(Op("NOT"), Typed(BoolT1), chosen))
+	}
+	return scope, oracle, constraints, nil
+}
+
+func (oracle *PropositionalOracle) Size() int { return oracle.NValues }
+
+func (oracle *PropositionalOracle) Chosen(scope RewriterScope, index int) (Expr, error) {
+	if len(oracle.Bits) == 0 {
+		return scope.Arena.TrueCell().NameExpr(), nil
+	}
+	literals := make([]Expr, len(oracle.Bits))
+	for bit, cell := range oracle.Bits {
+		literal := Expr(cell.NameExpr())
+		if index&(1<<bit) == 0 {
+			literal = MustOperExpr(Op("NOT"), Typed(BoolT1), literal)
+		}
+		literals[bit] = literal
+	}
+	if len(literals) == 1 {
+		return literals[0], nil
+	}
+	return MustOperExpr(Op("AND"), Typed(BoolT1), literals...), nil
+}
+
+func (oracle *PropositionalOracle) Cases(scope RewriterScope, assertions, elseAssertions []Expr) (Expr, error) {
+	return oracleCases(oracle, scope, assertions, elseAssertions)
+}
+
+func (oracle *PropositionalOracle) Decode(encoder *G3GroundEncoder) (int, error) {
+	value := 0
+	for bit, cell := range oracle.Bits {
+		enabled, err := encoder.EvaluateBool(cell.NameExpr())
+		if err != nil {
+			return 0, err
+		}
+		if enabled {
+			value |= 1 << bit
+		}
+	}
+	return value, nil
+}
+
 type SparseOracle struct {
 	Oracle  ChoiceOracle
 	Values  []int
