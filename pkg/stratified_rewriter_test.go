@@ -454,21 +454,36 @@ func TestStratifiedRewriterSetConstructionUnionAndFilter(t *testing.T) {
 		NewValueExpr(BoolValue(false), Typed(BoolT1)), NewValueExpr(BoolValue(true), Typed(BoolT1)))
 	bound := NewNameExpr("b", Typed(BoolT1))
 	filter := MustOperExpr(Op("SET_FILTER"), boolSet, bound, booleans, bound)
+	scope.Binding = scope.Binding.With("b", scope.Arena.TrueCell())
 	filteredScope, filteredCell, err := rewriter.Rewrite(filter, scope)
 	if err != nil {
 		t.Fatal(err)
 	}
 	filtered := filteredScope.Arena.GetHas(filteredCell)
-	if len(filtered) != 2 || filteredScope.Binding.Contains("b") {
+	outerB, retained := filteredScope.Binding.Get("b")
+	if len(filtered) != 2 || !retained || !outerB.Equal(scope.Arena.TrueCell()) {
 		t.Fatalf("filtered pointers/binding = %#v / %#v", filtered, filteredScope.Binding.Map())
 	}
-	for _, pointer := range filtered {
+	constraints := rewriter.Constraints()
+	filterConstraints := constraints[len(constraints)-len(filtered):]
+	for index, pointer := range filtered {
 		guarded, ok := pointer.(SMTElementPointer)
-		if !ok || !guarded.Element().NameExpr().Tag().Equal(Typed(BoolT1)) {
+		if !ok || !EqualTypedExpr(guarded.ToSMT(), guarded.Element().NameExpr()) {
 			t.Fatalf("filtered pointer = %#v", pointer)
 		}
+		equality, ok := filterConstraints[index].(*OperExpr)
+		if !ok || equality.Operator().Name() != "EQ" ||
+			!EqualTypedExpr(equality.Arguments()[1], guarded.ToSMT()) {
+			t.Fatalf("filtered membership constraint = %#v", filterConstraints[index])
+		}
+		membership, ok := equality.Arguments()[0].(*OperExpr)
+		if !ok || membership.Operator().Name() != "SET_IN" ||
+			!EqualTypedExpr(membership.Arguments()[0], guarded.Element().NameExpr()) ||
+			!EqualTypedExpr(membership.Arguments()[1], filteredCell.NameExpr()) {
+			t.Fatalf("filtered membership = %#v", equality.Arguments()[0])
+		}
 	}
-	if len(rewriter.Constraints()) == 0 {
+	if len(constraints) == 0 {
 		t.Fatal("set rewrites produced no constraints")
 	}
 }
