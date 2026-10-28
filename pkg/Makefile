@@ -11,7 +11,7 @@ RELEASE_NAME := apalache-go_$(VERSION)_$(GOOS_VALUE)-$(GOARCH_VALUE)
 STAGING_DIR := $(BUILD_ROOT)/$(RELEASE_NAME)
 ARCHIVE := $(DIST_ROOT)/$(RELEASE_NAME).tar.gz
 
-.PHONY: build coverage dist test vet verify test-race test-fuzz-smoke test-oracle test-corpus test-release test-deterministic
+.PHONY: build coverage dist test vet verify test-race test-fuzz-smoke test-oracle test-solver test-corpus test-release test-deterministic
 
 FUZZ_TIME ?= 10s
 
@@ -46,6 +46,9 @@ test-fuzz-smoke:
 
 test-oracle: build
 	APALACHE_GO=$(abspath $(BUILD_ROOT)/apalache) GOFLAGS='-p=8' $(CPU_RUN) $(GO) test -tags=oracle -run TestScalaDifferentialSafetyManifest .
+
+test-solver:
+	GOFLAGS='-p=8' $(CPU_RUN) $(GO) test -tags=solver -run TestVMTQueriesAgreeAcrossZ3AndCVC5 .
 
 test-corpus:
 	GOFLAGS='-p=8' $(CPU_RUN) $(GO) test -tags=corpus -run 'Test.*Corpus' .
