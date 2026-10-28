@@ -2135,6 +2135,35 @@ func TestStratifiedRecordConstructionAndEqualityThroughG3(t *testing.T) {
 	}
 }
 
+func TestStratifiedLegacyRecordRuntimeDomainAndErrors(t *testing.T) {
+	recordType, err := NewRecordType(map[string]Type{"a": IntT1, "b": BoolT1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := func(name string) Expr { return NewValueExpr(StringValue(name), Typed(StrT1)) }
+	record := MustOperExpr(Op("RECORD"), Typed(recordType), key("a"), intLiteral(1))
+	domain := MustOperExpr(Op("DOMAIN"), Typed(mustSet(StrT1)), record)
+	expected := MustOperExpr(Op("SET_ENUM"), Typed(mustSet(StrT1)), key("a"))
+	rewriter := NewStratifiedRewriter()
+	scope, result, err := rewriter.Rewrite(
+		MustOperExpr(Op("EQ"), Typed(BoolT1), domain, expected), InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkRewrittenTruth(t, rewriter, scope, result, true)
+
+	invalid := []Expr{
+		MustOperExpr(Op("RECORD"), Typed(recordType), NewNameExpr("k", Typed(StrT1)), intLiteral(1)),
+		MustOperExpr(Op("RECORD"), Typed(recordType), key("missing"), intLiteral(1)),
+		MustOperExpr(Op("RECORD"), Typed(IntT1), key("a"), intLiteral(1)),
+	}
+	for _, expression := range invalid {
+		if _, _, err := NewStratifiedRewriter().Rewrite(expression, InitialRewriterScope()); err == nil {
+			t.Fatalf("invalid record constructor was accepted: %v", expression)
+		}
+	}
+}
+
 func TestStratifiedClosedRowRecordEqualityThroughG3(t *testing.T) {
 	row, err := NewRowType(map[string]Type{"x": BoolT1}, nil)
 	if err != nil {
