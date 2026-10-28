@@ -151,7 +151,7 @@ func init() {
 		low, high int
 	}{
 		{"EQ", fixed(2), 50, 50}, {"NE", fixed(2), 50, 50}, {"OPER_APP", positive, 160, 160},
-		{"CHOOSE3", fixed(3), 0, 0}, {"CHOOSE2", fixed(2), 0, 0}, {"LABEL", MinimalArity(2), 160, 160},
+		{"CHOOSE3", fixed(3), 0, 0}, {"CHOOSE2", fixed(2), 0, 0}, {"LABEL", MinimalArity(2), 0, 0},
 		{"AND", any, 30, 30}, {"OR", any, 30, 30}, {"NOT", fixed(1), 40, 40},
 		{"IMPLIES", fixed(2), 10, 10}, {"EQUIV", fixed(2), 20, 20}, {"FORALL3", fixed(3), 0, 0},
 		{"FORALL2", fixed(2), 0, 0}, {"EXISTS3", fixed(3), 0, 0}, {"EXISTS2", fixed(2), 0, 0},

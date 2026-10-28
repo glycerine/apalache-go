@@ -402,7 +402,7 @@ func formatTLAOperator(parent Precedence, expression *OperExpr) (string, error) 
 		if len(arguments) < 2 {
 			return "", fmt.Errorf("malformed label")
 		}
-		body, err := format(0, operator.Precedence())
+		body, err := format(0, Precedence{Low: 160, High: 160})
 		if err != nil {
 			return "", err
 		}
@@ -430,7 +430,7 @@ func formatTLAOperator(parent Precedence, expression *OperExpr) (string, error) 
 		if len(extra) > 0 {
 			label += "(" + strings.Join(extra, ", ") + ")"
 		}
-		return label + " :: " + body, nil
+		return wrapTLA(parent, operator.Precedence(), label+" :: "+body), nil
 	case "Variants!Variant":
 		items, err := formatTLAArgs(arguments, operator.Precedence())
 		if err != nil {
@@ -493,7 +493,7 @@ func formatTLABinder(parent Precedence, expression *OperExpr, bounded bool) (str
 	if err != nil {
 		return "", err
 	}
-	return wrapTLA(parent, operator.Precedence(), sign+" "+variable+": "+body), nil
+	return wrapTLA(parent, operator.Precedence(), sign+" "+variable+" : "+body), nil
 }
 func formatTLAMapSet(parent Precedence, expression *OperExpr) (string, error) {
 	arguments := expression.Arguments()
@@ -505,7 +505,7 @@ func formatTLAMapSet(parent Precedence, expression *OperExpr) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return "{(" + body + "): " + bindings + "}", nil
+	return "{ (" + body + "): " + bindings + " }", nil
 }
 func formatTLAFunCtor(parent Precedence, expression *OperExpr) (string, error) {
 	arguments := expression.Arguments()

@@ -45,7 +45,7 @@ func TestFormatTLAExpressionScalaOracleCases(t *testing.T) {
 		{"tuple", tlaOper("TUPLE", tlaInt(1), tlaInt(2)), "<<1, 2>>"},
 		{"record", tlaOper("RECORD", tlaString("a"), tlaInt(1)), "[a |-> 1]"},
 		{"function", tlaOper("FUN_CTOR", tlaName("x"), tlaName("x"), tlaName("S")), "[x \\in S |-> x]"},
-		{"map set", tlaOper("SET_MAP", tlaName("x"), tlaName("x"), tlaName("S")), "{(x): x \\in S}"},
+		{"map set", tlaOper("SET_MAP", tlaName("x"), tlaName("x"), tlaName("S")), "{ (x): x \\in S }"},
 		{"filter", tlaOper("SET_FILTER", tlaName("x"), tlaName("S"), tlaOper("GT", tlaName("x"), tlaInt(0))), "{x \\in S: x > 0}"},
 		{"bounded exists", tlaOper("EXISTS3", tlaName("x"), tlaName("S"), tlaOper("GT", tlaName("x"), tlaInt(0))), "\\E x \\in S: x > 0"},
 		{"temporal forall", tlaOper("TEMPORAL_FORALL", tlaName("x"), tlaName("A")), "\\AA x: A"},
@@ -62,6 +62,122 @@ func TestFormatTLAExpressionScalaOracleCases(t *testing.T) {
 			}
 			if got != test.want {
 				t.Fatalf("got %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestFormatTLAPrecedenceAndBinderOracleCases(t *testing.T) {
+	cases := []struct {
+		name string
+		expr Expr
+		want string
+	}{
+		{"composition left of equality", tlaOper("EQ", tlaOper("COMPOSE", tlaName("a"), tlaName("b")), tlaName("c")), "(a \\cdot b) = c"},
+		{"composition right of equality", tlaOper("EQ", tlaName("a"), tlaOper("COMPOSE", tlaName("b"), tlaName("c"))), "a = (b \\cdot c)"},
+		{"UNION left of product", tlaOper("SET_TIMES", tlaOper("SET_UNARY_UNION", tlaName("S")), tlaName("T")), "(UNION S) \\X T"},
+		{"SUBSET right of product", tlaOper("SET_TIMES", tlaName("S"), tlaOper("SET_POWERSET", tlaName("T"))), "S \\X (SUBSET T)"},
+		{"DOMAIN left of product", tlaOper("SET_TIMES", tlaOper("DOMAIN", tlaName("S")), tlaName("T")), "(DOMAIN S) \\X T"},
+		{"unbounded choose", tlaOper("CHOOSE2", tlaName("z"), NewValueExpr(BoolValue(true), Untyped())), "CHOOSE z : TRUE"},
+		{"unbounded forall", tlaOper("FORALL2", tlaName("z"), NewValueExpr(BoolValue(false), Untyped())), "\\A z : FALSE"},
+		{"unbounded exists", tlaOper("EXISTS2", tlaName("z"), NewValueExpr(BoolValue(false), Untyped())), "\\E z : FALSE"},
+		{"choose under equality", tlaOper("EQ", tlaOper("CHOOSE2", tlaName("z"), NewValueExpr(BoolValue(true), Untyped())), tlaName("y")), "(CHOOSE z : TRUE) = y"},
+		{"negative exponent", tlaOper("POW", tlaInt(2), tlaInt(-1)), "2 ^ (-1)"},
+		{"negative multiplier", tlaOper("MULT", tlaInt(2), tlaInt(-1)), "2 * (-1)"},
+		{"negative divisor", tlaOper("DIV", tlaInt(2), tlaInt(-1)), "2 \\div (-1)"},
+		{"minus negative", tlaOper("UNARY_MINUS", tlaInt(-106)), "-(-106)"},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := FormatTLAExpression(test.expr)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != test.want {
+				t.Fatalf("got %q, want %q", got, test.want)
+			}
+			module := "---- MODULE PrettyRoundTrip ----\nEXTENDS Integers, Sequences\nVARIABLES a, b, c, S, T, y\nTest == " + got + "\n====\n"
+			parsed := ParseSource(context.Background(), "PrettyRoundTrip.tla", module, FrontendOptions{})
+			if !parsed.OK() {
+				t.Fatalf("formatted expression did not parse: %v\n%s", parsed.Diagnostics, module)
+			}
+		})
+	}
+}
+
+func TestFormatTLAActionLabelAndPrefixOracleCases(t *testing.T) {
+	falseValue := NewValueExpr(BoolValue(false), Untyped())
+	emptyTuple := tlaOper("TUPLE")
+	head := tlaOper("Sequences!Head", emptyTuple)
+	labelledTuple := tlaOper("LABEL", emptyTuple, tlaString("label0"))
+	labelledFalse := tlaOper("LABEL", falseValue, tlaString("label0"))
+	cases := []struct {
+		name string
+		expr Expr
+		want string
+	}{
+		{"stutter bare", tlaOper("STUTTER", falseValue, tlaName("x")), "[FALSE]_x"},
+		{"nonstutter grouped", tlaOper("NO_STUTTER", falseValue, head), "<<FALSE>>_(Head(<<>>))"},
+		{"weak fairness grouped", tlaOper("WEAK_FAIRNESS", tlaInt(0), falseValue), "WF_(0)(FALSE)"},
+		{"strong fairness bare", tlaOper("STRONG_FAIRNESS", tlaName("x"), falseValue), "SF_x(FALSE)"},
+		{"label left concat", tlaOper("Sequences!Concat", labelledTuple, emptyTuple), "(label0 :: <<>>) \\o <<>>"},
+		{"label right concat", tlaOper("Sequences!Concat", emptyTuple, labelledTuple), "<<>> \\o (label0 :: <<>>)"},
+		{"label membership", tlaOper("SET_IN", tlaOper("LABEL", tlaName("x"), tlaString("label0")), tlaName("S")), "(label0 :: x) \\in S"},
+		{"label function", tlaOper("FUN_APP", tlaOper("LABEL", tlaName("a"), tlaString("label0")), tlaInt(1)), "(label0 :: a)[1]"},
+		{"label argument", tlaOper("FUN_APP", tlaName("a"), tlaOper("LABEL", tlaInt(1), tlaString("label0"))), "a[(label0 :: 1)]"},
+		{"label enabled", tlaOper("ENABLED", labelledFalse), "ENABLED (label0 :: FALSE)"},
+		{"enabled equality", tlaOper("ENABLED", tlaOper("EQ", tlaName("x"), falseValue)), "ENABLED (x = FALSE)"},
+		{"unchanged membership", tlaOper("UNCHANGED", tlaOper("SET_IN", tlaName("x"), tlaName("S"))), "UNCHANGED (x \\in S)"},
+		{"eventually inequality", tlaOper("EVENTUALLY", tlaOper("NE", tlaName("x"), falseValue)), "<>(x /= FALSE)"},
+		{"always nonmembership", tlaOper("GLOBALLY", tlaOper("SET_NOT_IN", tlaName("x"), tlaName("S"))), "[](x \\notin S)"},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := FormatTLAExpression(test.expr)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != test.want {
+				t.Fatalf("got %q, want %q", got, test.want)
+			}
+			module := "---- MODULE PrettyActionRoundTrip ----\nEXTENDS Integers, Sequences\nVARIABLES a, x, S\nTest == " + got + "\n====\n"
+			parsed := ParseSource(context.Background(), "PrettyActionRoundTrip.tla", module, FrontendOptions{})
+			if !parsed.OK() {
+				t.Fatalf("formatted expression did not parse: %v\n%s", parsed.Diagnostics, module)
+			}
+		})
+	}
+}
+
+func TestFormatTLASetMapBodyOracleCases(t *testing.T) {
+	setMap := func(body Expr, bindings ...Expr) Expr {
+		return tlaOper("SET_MAP", append([]Expr{body}, bindings...)...)
+	}
+	membership := tlaOper("SET_IN", tlaOper("NOT", NewValueExpr(BoolValue(false), Untyped())), tlaName("S"))
+	tupleMembership := tlaOper("SET_IN", tlaOper("TUPLE", tlaName("x"), tlaName("y")), tlaName("S"))
+	cases := []struct {
+		name string
+		expr Expr
+		want string
+	}{
+		{"ordinary multiple binders", setMap(tlaOper("PLUS", tlaName("u"), tlaName("v")), tlaName("u"), tlaName("S"), tlaName("v"), tlaName("T")), "{ (u + v): u \\in S, v \\in T }"},
+		{"scalar membership body", setMap(membership, tlaName("z"), tlaName("T")), "{ ((~FALSE) \\in S): z \\in T }"},
+		{"tuple membership body", setMap(tupleMembership, tlaName("z"), tlaName("T")), "{ (<<x, y>> \\in S): z \\in T }"},
+		{"nested map body", setMap(setMap(tlaOper("SET_IN", tlaName("x"), tlaName("S")), tlaName("u"), tlaName("T")), tlaName("v"), tlaName("S")), "{ ({ (x \\in S): u \\in T }): v \\in S }"},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := FormatTLAExpression(test.expr)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != test.want {
+				t.Fatalf("got %q, want %q", got, test.want)
+			}
+			module := "---- MODULE PrettySetMapRoundTrip ----\nEXTENDS Integers\nVARIABLES S, T, x, y\nTest == " + got + "\n====\n"
+			parsed := ParseSource(context.Background(), "PrettySetMapRoundTrip.tla", module, FrontendOptions{})
+			if !parsed.OK() {
+				t.Fatalf("formatted expression did not parse: %v\n%s", parsed.Diagnostics, module)
 			}
 		})
 	}
