@@ -118,6 +118,21 @@ func TestParseCheckerTuningMapsIntegerSolverOptionsToG3(t *testing.T) {
 	}
 }
 
+func TestCheckerTuningWithSMTRandomSeedIsImmutable(t *testing.T) {
+	original, err := ParseCheckerTuning(map[string]string{"z3.rlimit": "11"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	seeded := original.WithSMTRandomSeed(17)
+	if _, found := original.solverUIntOptions["smt.random_seed"]; found {
+		t.Fatal("WithSMTRandomSeed mutated the original tuning")
+	}
+	if seeded.solverUIntOptions["smt.random_seed"] != 17 || seeded.solverUIntOptions["sat.random_seed"] != 17 ||
+		seeded.solverUIntOptions["rlimit"] != 11 {
+		t.Fatalf("seeded solver options = %#v", seeded.solverUIntOptions)
+	}
+}
+
 func TestParseCheckerTuningSimulationControls(t *testing.T) {
 	tuning, err := ParseCheckerTuning(map[string]string{
 		"search.simulation": "true", "search.simulation.maxRun": "17", "search.outputTraces": "true",

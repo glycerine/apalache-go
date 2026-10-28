@@ -644,6 +644,11 @@ func runTest(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 			}
 		}
 	}
+	seed := uint32(time.Now().UnixMilli() & 0x7fffffff)
+	if seed == 0 {
+		seed = 1
+	}
+	checkerTuning = checkerTuning.WithSMTRandomSeed(seed)
 	resolveOutputDirectoryOptions(applicationConfig, visited, outDir, runDir)
 	var path, before, action, assertion string
 	switch {

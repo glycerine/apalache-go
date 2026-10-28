@@ -190,6 +190,16 @@ func (tuning CheckerTuning) WithOutputTraces(enabled bool) CheckerTuning {
 	return tuning
 }
 
+func (tuning CheckerTuning) WithSMTRandomSeed(seed uint32) CheckerTuning {
+	tuning.solverUIntOptions = cloneMap(tuning.solverUIntOptions)
+	if tuning.solverUIntOptions == nil {
+		tuning.solverUIntOptions = make(map[string]uint32)
+	}
+	tuning.solverUIntOptions["sat.random_seed"] = seed
+	tuning.solverUIntOptions["smt.random_seed"] = seed
+	return tuning
+}
+
 func (tuning CheckerTuning) withExactTransitionPath(init int, next []int) CheckerTuning {
 	words := make([]string, 0, len(next)+1)
 	words = append(words, fmt.Sprintf("0->%d", init))
