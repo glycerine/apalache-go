@@ -460,41 +460,6 @@ func (rewriter *StratifiedRewriter) rewriteFiniteQuantifier(expression *OperExpr
 			return scope, ArenaCell{}, fmt.Errorf("bounded quantifier over integer range: %w", err)
 		}
 	}
-	if _, functionSet := setCell.Type.(FiniteFunctionSetCellType); functionSet {
-		if expression.Operator().Name() != "EXISTS3" {
-			return scope, ArenaCell{}, fmt.Errorf("bounded quantifier %s over a compact function set is not supported", expression.Operator().Name())
-		}
-		emptiness, classifyErr := rewriter.classifySetEmptiness(scope, setCell)
-		if classifyErr != nil {
-			return scope, ArenaCell{}, classifyErr
-		}
-		if emptiness.kind != nonEmptyStatic {
-			return scope, ArenaCell{}, fmt.Errorf("existential quantification over a possibly empty compact function set is not supported")
-		}
-		var picked ArenaCell
-		scope, picked, err = rewriter.pickFunctionFromSet(scope, setCell)
-		if err != nil {
-			return scope, ArenaCell{}, err
-		}
-		baseBinding := scope.Binding
-		scope.Binding = scope.Binding.With(binder.Name(), picked)
-		var predicate ArenaCell
-		scope, predicate, err = rewriter.Rewrite(arguments[2], scope)
-		if err != nil {
-			return scope, ArenaCell{}, err
-		}
-		binding := scope.Binding.Map()
-		if previous, shadowed := baseBinding.Get(binder.Name()); shadowed {
-			binding[binder.Name()] = previous
-		} else {
-			delete(binding, binder.Name())
-		}
-		scope.Binding = NewBinding(binding)
-		if !EqualTypes(predicate.Type.TLAType(), BoolT1) {
-			return scope, ArenaCell{}, fmt.Errorf("bounded quantifier predicate has type %s", predicate.Type)
-		}
-		return scope, predicate, nil
-	}
 	if !isFiniteSetCellType(setCell.Type) {
 		return scope, ArenaCell{}, fmt.Errorf("bounded quantifier %s requires a finite set, found %s", expression.Operator().Name(), setCell.Type)
 	}

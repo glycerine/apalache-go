@@ -1620,6 +1620,49 @@ func TestStratifiedFiniteQuantifiersThroughG3(t *testing.T) {
 	}
 }
 
+func TestStratifiedFiniteQuantifierGuardsAndErrors(t *testing.T) {
+	setTag := Typed(mustSet(IntT1))
+	filterBinder := NewNameExpr("i", Typed(IntT1))
+	base := MustOperExpr(Op("SET_ENUM"), setTag, intLiteral(1), intLiteral(2))
+	guarded := MustOperExpr(Op("SET_FILTER"), setTag, filterBinder, base,
+		MustOperExpr(Op("EQ"), Typed(BoolT1), filterBinder, intLiteral(1)))
+	x := NewNameExpr("x", Typed(IntT1))
+	for _, test := range []struct {
+		name     string
+		operator string
+		body     Expr
+		want     bool
+	}{
+		{"absent existential witness", "EXISTS3", MustOperExpr(Op("EQ"), Typed(BoolT1), x, intLiteral(2)), false},
+		{"guarded universal", "FORALL3", MustOperExpr(Op("EQ"), Typed(BoolT1), x, intLiteral(1)), true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			rewriter := NewStratifiedRewriter()
+			scope, result, err := rewriter.Rewrite(
+				MustOperExpr(Op(test.operator), Typed(BoolT1), x, guarded, test.body), InitialRewriterScope())
+			if err != nil {
+				t.Fatal(err)
+			}
+			checkRewrittenTruth(t, rewriter, scope, result, test.want)
+		})
+	}
+
+	functionType := mustFun(IntT1, BoolT1)
+	functionSet := MustOperExpr(Op("FUN_SET"), Typed(mustSet(functionType)),
+		MustOperExpr(Op("SET_ENUM"), setTag, intLiteral(1)),
+		MustOperExpr(Op("SET_ENUM"), Typed(mustSet(BoolT1)), boolExpr(true)))
+	invalid := []Expr{
+		MustOperExpr(Op("EXISTS3"), Typed(BoolT1), NewNameExpr("f", Typed(functionType)), functionSet, boolExpr(true)),
+		MustOperExpr(Op("EXISTS3"), Typed(BoolT1), x, base, intLiteral(1)),
+		MustOperExpr(Op("EXISTS3"), Typed(BoolT1), x, intLiteral(1), boolExpr(true)),
+	}
+	for _, expression := range invalid {
+		if _, _, err := NewStratifiedRewriter().Rewrite(expression, InitialRewriterScope()); err == nil {
+			t.Fatalf("invalid bounded quantifier was accepted: %v", expression)
+		}
+	}
+}
+
 func TestStratifiedFiniteFunctionsThroughG3(t *testing.T) {
 	functionType, err := NewFunType(IntT1, IntT1)
 	if err != nil {
