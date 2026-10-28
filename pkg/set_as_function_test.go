@@ -54,3 +54,51 @@ func TestStratifiedSetAsFunctionPreservesDomain(t *testing.T) {
 	}
 	checkRewrittenTruth(t, rewriter, scope, result, true)
 }
+
+func TestStratifiedSetAsFunctionEmptyAndGuardedDuplicateKeys(t *testing.T) {
+	intValue := func(value int64) Expr { return NewValueExpr(Int64Value(value), Typed(IntT1)) }
+	pairType, _ := NewTupleType(IntT1, IntT1)
+	relationType := mustSet(pairType)
+	functionType := mustFun(IntT1, IntT1)
+	pair := func(value int64) Expr {
+		return MustOperExpr(Op("TUPLE"), Typed(pairType), intValue(1), intValue(value))
+	}
+
+	emptyRelation := MustOperExpr(Op("SET_ENUM"), Typed(relationType))
+	emptyFunction := MustOperExpr(Op("Apalache!SetAsFun"), Typed(functionType), emptyRelation)
+	emptyDomain := MustOperExpr(Op("DOMAIN"), Typed(mustSet(IntT1)), emptyFunction)
+	rewriter := NewStratifiedRewriter()
+	scope, result, err := rewriter.Rewrite(MustOperExpr(Op("EQ"), Typed(BoolT1), emptyDomain,
+		MustOperExpr(Op("SET_ENUM"), Typed(mustSet(IntT1)))), InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkRewrittenTruth(t, rewriter, scope, result, true)
+
+	first, second := pair(10), pair(99)
+	binder := NewNameExpr("p", Typed(pairType))
+	guardedRelation := MustOperExpr(Op("SET_FILTER"), Typed(relationType), binder,
+		MustOperExpr(Op("SET_ENUM"), Typed(relationType), first, second),
+		MustOperExpr(Op("EQ"), Typed(BoolT1), binder, second))
+	function := MustOperExpr(Op("Apalache!SetAsFun"), Typed(functionType), guardedRelation)
+	application := MustOperExpr(Op("FUN_APP"), Typed(IntT1), function, intValue(1))
+	rewriter = NewStratifiedRewriter()
+	scope, result, err = rewriter.Rewrite(
+		MustOperExpr(Op("EQ"), Typed(BoolT1), application, intValue(99)), InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkRewrittenTruth(t, rewriter, scope, result, true)
+}
+
+func TestStratifiedSetAsFunctionRejectsInvalidTypes(t *testing.T) {
+	intSet := MustOperExpr(Op("SET_ENUM"), Typed(mustSet(IntT1)), NewValueExpr(Int64Value(1), Typed(IntT1)))
+	for _, expression := range []Expr{
+		MustOperExpr(Op("Apalache!SetAsFun"), Typed(mustFun(IntT1, IntT1)), intSet),
+		MustOperExpr(Op("Apalache!SetAsFun"), Typed(IntT1), intSet),
+	} {
+		if _, _, err := NewStratifiedRewriter().Rewrite(expression, InitialRewriterScope()); err == nil {
+			t.Fatalf("invalid SetAsFun was accepted: %v", expression)
+		}
+	}
+}
