@@ -1,6 +1,9 @@
 package apalache
 
-import "fmt"
+import (
+	"fmt"
+	"reflect"
+)
 
 type LanguageFailure struct {
 	ID      UID
@@ -26,13 +29,23 @@ type LanguagePredicate interface {
 	CheckModule(*Module) PredicateResult
 }
 
+// NamedLanguagePredicate supplies the Scala class name used in watchdog
+// diagnostics. Predicates without it fall back to their concrete Go name.
+type NamedLanguagePredicate interface {
+	LanguagePredicateName() string
+}
+
 type LanguagePredicateError struct {
-	Subject  string
-	Failures []LanguageFailure
+	Subject       string
+	PredicateName string
+	Failures      []LanguageFailure
 }
 
 func (err *LanguagePredicateError) Error() string {
-	return fmt.Sprintf("some %s do not fit the expected language fragment", err.Subject)
+	if err.PredicateName == "" {
+		return fmt.Sprintf("Some %s do not fit in the expected fragment", err.Subject)
+	}
+	return fmt.Sprintf("Some %s do not fit in the fragment %s", err.Subject, err.PredicateName)
 }
 
 // Unwrap exposes the canonical Scala LanguagePredError while retaining the
@@ -46,7 +59,11 @@ func WatchExpression(predicate LanguagePredicate, expression Expr) error {
 	if result.OK() {
 		return nil
 	}
-	return &LanguagePredicateError{Subject: "expressions", Failures: result.Failures}
+	return &LanguagePredicateError{
+		Subject:       "expressions",
+		PredicateName: languagePredicateName(predicate),
+		Failures:      append([]LanguageFailure(nil), result.Failures...),
+	}
 }
 
 func WatchModule(predicate LanguagePredicate, module *Module) error {
@@ -54,10 +71,30 @@ func WatchModule(predicate LanguagePredicate, module *Module) error {
 	if result.OK() {
 		return nil
 	}
-	return &LanguagePredicateError{Subject: "declarations", Failures: result.Failures}
+	return &LanguagePredicateError{
+		Subject:       "declarations",
+		PredicateName: languagePredicateName(predicate),
+		Failures:      append([]LanguageFailure(nil), result.Failures...),
+	}
+}
+
+func languagePredicateName(predicate LanguagePredicate) string {
+	if named, ok := predicate.(NamedLanguagePredicate); ok {
+		return named.LanguagePredicateName()
+	}
+	typ := reflect.TypeOf(predicate)
+	if typ == nil {
+		return "<nil>"
+	}
+	for typ.Kind() == reflect.Pointer {
+		typ = typ.Elem()
+	}
+	return typ.Name()
 }
 
 type FlatLanguagePredicate struct{}
+
+func (FlatLanguagePredicate) LanguagePredicateName() string { return "FlatLanguagePred" }
 
 func (FlatLanguagePredicate) CheckExpression(expression Expr) PredicateResult {
 	return checkFlatInContext(make(map[string]struct{}), expression)
@@ -112,6 +149,8 @@ func checkFlatInContext(context map[string]struct{}, expression Expr) PredicateR
 // by the transition disassembler and VMT backend. User operators must already
 // be inlined, except for nullary operators introduced by a surrounding LET-IN.
 type ReTLALanguagePredicate struct{}
+
+func (ReTLALanguagePredicate) LanguagePredicateName() string { return "ReTLALanguagePred" }
 
 var reTLAOperators = map[string]struct{}{
 	"Apalache!:=":     {},
@@ -228,10 +267,14 @@ func checkReTLAInContext(context map[string]struct{}, expression Expr) Predicate
 
 type MonotypeLanguagePredicate struct{}
 
+func (MonotypeLanguagePredicate) LanguagePredicateName() string { return "MonotypeLanguagePred" }
+
 // TypedLanguagePredicate accepts polymorphic tags but rejects every untyped
 // expression or declaration. It is used when loading already-typechecked IR,
 // whose imported operators may legitimately retain type variables.
 type TypedLanguagePredicate struct{}
+
+func (TypedLanguagePredicate) LanguagePredicateName() string { return "TypedLanguagePred" }
 
 func checkTyped(id UID, tag TypeTag) PredicateResult {
 	if _, typed := tag.Type(); typed {
@@ -281,7 +324,7 @@ func checkMonotype(id UID, tag TypeTag) PredicateResult {
 	if len(typ.UsedNames()) == 0 {
 		return PredicateOK()
 	}
-	return PredicateFail(id, fmt.Sprintf("expected a non-polymorphic type, found: %s; you may need to annotate an empty collection", typ))
+	return PredicateFail(id, fmt.Sprintf("Expected a non-polymorphic type, found: %s\nYou may need to annotate an empty collection.", typ))
 }
 
 func (predicate MonotypeLanguagePredicate) CheckExpression(expression Expr) PredicateResult {
@@ -312,6 +355,10 @@ func (predicate MonotypeLanguagePredicate) CheckModule(module *Module) Predicate
 }
 
 type NonrecursiveLanguagePredicate struct{}
+
+func (NonrecursiveLanguagePredicate) LanguagePredicateName() string {
+	return "NonrecursiveLanguagePred"
+}
 
 func (predicate NonrecursiveLanguagePredicate) checkDeclaration(declaration *OperDecl) PredicateResult {
 	result := PredicateOK()

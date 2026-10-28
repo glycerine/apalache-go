@@ -2,6 +2,8 @@ package apalache
 
 import (
 	"errors"
+	"fmt"
+	"reflect"
 	"testing"
 )
 
@@ -11,6 +13,42 @@ func TestPredicateResultAccumulatesFailures(t *testing.T) {
 	result := left.And(PredicateOK()).And(right)
 	if result.OK() || len(result.Failures) != 2 || result.Failures[0].Message != "left" || result.Failures[1].Message != "right" {
 		t.Fatalf("unexpected combined result: %+v", result)
+	}
+}
+
+func TestPredicateResultScalaAndTruthTableAndCopies(t *testing.T) {
+	oneID := NewUID()
+	twoID := NewUID()
+	one := PredicateFail(oneID, "one")
+	two := PredicateFail(twoID, "two")
+	cases := []struct {
+		left, right PredicateResult
+		want        []LanguageFailure
+	}{
+		{PredicateOK(), PredicateOK(), nil},
+		{PredicateOK(), one, one.Failures},
+		{one, PredicateOK(), one.Failures},
+		{one, two, []LanguageFailure{{ID: oneID, Message: "one"}, {ID: twoID, Message: "two"}}},
+	}
+	for _, test := range cases {
+		got := test.left.And(test.right)
+		if len(got.Failures) != len(test.want) {
+			t.Fatalf("%+v AND %+v: got %+v, want %+v", test.left, test.right, got.Failures, test.want)
+		}
+		for index := range test.want {
+			if got.Failures[index] != test.want[index] {
+				t.Fatalf("%+v AND %+v: got %+v, want %+v", test.left, test.right, got.Failures, test.want)
+			}
+		}
+		if len(got.Failures) > 0 {
+			got.Failures[0].Message = "mutated"
+			if len(test.left.Failures) > 0 && test.left.Failures[0].Message == "mutated" {
+				t.Fatal("And aliased its left input")
+			}
+			if len(test.left.Failures) == 0 && test.right.Failures[0].Message == "mutated" {
+				t.Fatal("And aliased its right input")
+			}
+		}
 	}
 }
 
@@ -79,6 +117,8 @@ func TestMonotypeLanguagePredicate(t *testing.T) {
 	poly := NewNameExpr("empty", Typed(variable))
 	if result := (MonotypeLanguagePredicate{}).CheckExpression(poly); result.OK() || result.Failures[0].ID != poly.ID() {
 		t.Fatalf("accepted polymorphic type: %+v", result)
+	} else if want := fmt.Sprintf("Expected a non-polymorphic type, found: %s\nYou may need to annotate an empty collection.", variable); result.Failures[0].Message != want {
+		t.Fatalf("wrong Scala diagnostic:\n got %q\nwant %q", result.Failures[0].Message, want)
 	}
 	if result := (MonotypeLanguagePredicate{}).CheckExpression(NewNameExpr("x", Untyped())); result.OK() {
 		t.Fatal("accepted untyped expression")
@@ -115,6 +155,10 @@ func TestNonrecursiveLanguagePredicate(t *testing.T) {
 	if result := predicate.CheckExpression(recursiveFunction); result.OK() || result.Failures[0].ID != recursiveFunction.ID() {
 		t.Fatalf("accepted recursive function: %+v", result)
 	}
+	if got, want := predicate.CheckModule(module).Failures[0].Message,
+		"RECURSIVE Rec(_). Apalache does not support recursive operators."; got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
 }
 
 func TestLanguageWatchdogReturnsStructuredError(t *testing.T) {
@@ -122,5 +166,35 @@ func TestLanguageWatchdogReturnsStructuredError(t *testing.T) {
 	var predicateError *LanguagePredicateError
 	if !errors.As(err, &predicateError) || len(predicateError.Failures) != 1 {
 		t.Fatalf("got %T %v", err, err)
+	}
+	if got, want := err.Error(), "Some expressions do not fit in the fragment FlatLanguagePred"; got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+	canonical := new(LanguagePredError)
+	if !errors.As(err, &canonical) || canonical.Error() != err.Error() || !reflect.DeepEqual(canonical.FailedIDs(), predicateError.Failures) {
+		t.Fatalf("canonical unwrap mismatch: %#v", canonical)
+	}
+
+	module := NewModule("M", []Decl{NewOperDecl("A", nil, untypedApp("Missing"), Untyped())})
+	err = WatchModule(FlatLanguagePredicate{}, module)
+	if got, want := err.Error(), "Some declarations do not fit in the fragment FlatLanguagePred"; got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+type fallbackNamedPredicate struct{}
+
+func (fallbackNamedPredicate) CheckExpression(expression Expr) PredicateResult {
+	return (FlatLanguagePredicate{}).CheckExpression(expression)
+}
+
+func (fallbackNamedPredicate) CheckModule(module *Module) PredicateResult {
+	return (FlatLanguagePredicate{}).CheckModule(module)
+}
+
+func TestLanguageWatchdogFallsBackToConcretePredicateName(t *testing.T) {
+	err := WatchExpression(fallbackNamedPredicate{}, untypedApp("Missing"))
+	if got, want := err.Error(), "Some expressions do not fit in the fragment fallbackNamedPredicate"; got != want {
+		t.Fatalf("got %q, want %q", got, want)
 	}
 }
