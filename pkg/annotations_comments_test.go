@@ -1,10 +1,55 @@
 package apalache
 
 import (
+	"math/rand"
 	"reflect"
+	"regexp"
+	"strings"
 	"sync"
 	"testing"
 )
+
+func TestPreprocessAnnotationCommentsScalaEdgeCases(t *testing.T) {
+	for _, input := range []string{"", "\\*", "(* aaa *)"} {
+		clean, annotations := PreprocessAnnotationComments(input)
+		withoutComments := strings.TrimSpace(regexp.MustCompile(`(\\\*|\(\*|\*\))`).ReplaceAllString(input, ""))
+		if (withoutComments != "") != (strings.TrimSpace(clean) != "" || len(annotations) != 0) {
+			t.Fatalf("input %q became clean=%q annotations=%q", input, clean, annotations)
+		}
+	}
+	clean, annotations := PreprocessAnnotationComments(`" "`)
+	if strings.TrimSpace(clean) != `" "` || len(annotations) != 0 {
+		t.Fatalf("quotes changed: clean=%q annotations=%q", clean, annotations)
+	}
+	for _, input := range []string{"(*\n@type: Int;\n", "\\*@type: Int;"} {
+		clean, annotations = PreprocessAnnotationComments(input)
+		if strings.TrimSpace(clean) != "" || !reflect.DeepEqual(annotations, []string{"@type: Int;"}) {
+			t.Fatalf("start annotation %q = clean %q annotations %q", input, clean, annotations)
+		}
+	}
+	alias := "@typeAlias: MESSAGE = { tag: \"req\", ask: Int }\n | { tag: \"ack\", success: Bool };"
+	_, annotations = PreprocessAnnotationComments("(*\n  " + alias + "\n *)")
+	if !reflect.DeepEqual(annotations, []string{alias}) {
+		t.Fatalf("pipe alias annotations = %q", annotations)
+	}
+}
+
+func TestPreprocessAnnotationCommentsIsTotalOnGeneratedASCII(t *testing.T) {
+	random := rand.New(rand.NewSource(0xc0ffee))
+	commentTokens := regexp.MustCompile(`(\\\*|\(\*|\*\))`)
+	for iteration := 0; iteration < 300; iteration++ {
+		buffer := make([]byte, random.Intn(200))
+		for index := range buffer {
+			buffer[index] = byte(random.Intn(128))
+		}
+		input := string(buffer)
+		clean, annotations := PreprocessAnnotationComments(input)
+		withoutComments := strings.TrimSpace(commentTokens.ReplaceAllString(input, ""))
+		if (withoutComments != "") != (strings.TrimSpace(clean) != "" || len(annotations) != 0) {
+			t.Fatalf("iteration %d lost content: input=%q clean=%q annotations=%q", iteration, input, clean, annotations)
+		}
+	}
+}
 
 func TestPreprocessAnnotationCommentsRemovesDelimitersAndNestedComments(t *testing.T) {
 	input := "(* T-Rex\n   D-Rex*)\n   (* zz.*)\n (* \\* uuuuvvv*)abc\n(*\n  aaaa (* bbbb *) cccc\n*)\n"
