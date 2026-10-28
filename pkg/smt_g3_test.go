@@ -235,6 +235,77 @@ func TestG3SolverBooleanArrayMap(t *testing.T) {
 	}
 }
 
+func TestG3SolverNestedArrays(t *testing.T) {
+	t.Run("array-valued result", func(t *testing.T) {
+		solver := newTestG3Solver(t)
+		falsehood, _ := solver.Bool(false)
+		truth, _ := solver.Bool(true)
+		inner, err := solver.ConstantArray(SMTInt, "", falsehood)
+		if err != nil {
+			t.Fatal(err)
+		}
+		two, _ := solver.Int(2)
+		inner, err = solver.Store(inner, two, truth)
+		if err != nil {
+			t.Fatal(err)
+		}
+		outer, err := solver.constantArrayWithIndexSpec(scalarSMTSortSpec(SMTInt, ""), inner)
+		if err != nil {
+			t.Fatal(err)
+		}
+		one, _ := solver.Int(1)
+		outer, err = solver.Store(outer, one, inner)
+		if err != nil {
+			t.Fatal(err)
+		}
+		selectedInner, err := solver.Select(outer, one)
+		if err != nil {
+			t.Fatal(err)
+		}
+		selectedValue, err := solver.Select(selectedInner, two)
+		if err != nil {
+			t.Fatal(err)
+		}
+		negated, _ := solver.Not(selectedValue)
+		if err = solver.Assert(negated); err != nil {
+			t.Fatal(err)
+		}
+		if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTUnsatisfiable {
+			t.Fatalf("nested array result = %v, %v", status, checkErr)
+		}
+	})
+
+	t.Run("array-valued index", func(t *testing.T) {
+		solver := newTestG3Solver(t)
+		falsehood, _ := solver.Bool(false)
+		truth, _ := solver.Bool(true)
+		inner, err := solver.ConstantArray(SMTInt, "", falsehood)
+		if err != nil {
+			t.Fatal(err)
+		}
+		outer, err := solver.declareArrayWithSpecs(
+			"set_of_sets", smtTermSortSpec(inner), scalarSMTSortSpec(SMTBool, ""))
+		if err != nil {
+			t.Fatal(err)
+		}
+		outer, err = solver.Store(outer, inner, truth)
+		if err != nil {
+			t.Fatal(err)
+		}
+		selected, err := solver.Select(outer, inner)
+		if err != nil {
+			t.Fatal(err)
+		}
+		negated, _ := solver.Not(selected)
+		if err = solver.Assert(negated); err != nil {
+			t.Fatal(err)
+		}
+		if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTUnsatisfiable {
+			t.Fatalf("nested array index = %v, %v", status, checkErr)
+		}
+	})
+}
+
 func TestG3SolverUninterpretedAndConstantArrays(t *testing.T) {
 	solver := newTestG3Solver(t)
 	element, err := solver.DeclareUninterpreted("array_element", "Elem")

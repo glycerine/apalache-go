@@ -440,11 +440,11 @@ func (encoder *G3GroundEncoder) freshArrayVersion(expression Expr) (SMTTerm, err
 	}
 	encoder.arrayVersions[name.Name()]++
 	versionedName := fmt.Sprintf("%s_ssa%d", name.Name(), encoder.arrayVersions[name.Name()])
-	updated, err := encoder.solver.DeclareArrayWithSortIDs(
-		versionedName,
-		current.arrayIndexSort, current.arrayIndexSortID,
-		current.arrayValueSort, current.arrayValueSortID,
-	)
+	if current.arraySpec == nil {
+		return SMTTerm{}, fmt.Errorf("SMT name %s has no array sort metadata", name.Name())
+	}
+	updated, err := encoder.solver.declareArrayWithSpecs(
+		versionedName, current.arraySpec.index, current.arraySpec.value)
 	if err != nil {
 		return SMTTerm{}, err
 	}

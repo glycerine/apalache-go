@@ -69,6 +69,48 @@ type SMTTerm struct {
 	arrayIndexSortID string
 	arrayValueSort   SMTSort
 	arrayValueSortID string
+	arraySpec        *smtSortSpec
+}
+
+type smtSortSpec struct {
+	kind         SMTSort
+	id           string
+	index, value *smtSortSpec
+}
+
+func scalarSMTSortSpec(kind SMTSort, id string) *smtSortSpec {
+	return &smtSortSpec{kind: kind, id: normalizedScalarSortID(kind, id)}
+}
+
+func arraySMTSortSpec(index, value *smtSortSpec) *smtSortSpec {
+	return &smtSortSpec{kind: SMTArray, index: index, value: value}
+}
+
+func (spec *smtSortSpec) sortID() string {
+	if spec == nil {
+		return ""
+	}
+	if spec.kind != SMTArray {
+		return normalizedScalarSortID(spec.kind, spec.id)
+	}
+	return fmt.Sprintf("(Array %s %s)", spec.index.sortID(), spec.value.sortID())
+}
+
+func newSMTTermWithSpec(solver *G3SolverContext, handle ast.ASTHandle, spec *smtSortSpec) SMTTerm {
+	term := SMTTerm{owner: solver, handle: handle, sort: spec.kind, sortID: spec.sortID()}
+	if spec.kind == SMTArray {
+		term.arraySpec = spec
+		term.arrayIndexSort, term.arrayIndexSortID = spec.index.kind, spec.index.sortID()
+		term.arrayValueSort, term.arrayValueSortID = spec.value.kind, spec.value.sortID()
+	}
+	return term
+}
+
+func smtTermSortSpec(term SMTTerm) *smtSortSpec {
+	if term.sort == SMTArray && term.arraySpec != nil {
+		return term.arraySpec
+	}
+	return scalarSMTSortSpec(term.sort, term.sortID)
 }
 
 func (term SMTTerm) Sort() SMTSort { return term.sort }
@@ -301,15 +343,33 @@ func (solver *G3SolverContext) DeclareArrayWithSortIDs(
 	valueSort SMTSort,
 	valueSortID string,
 ) (SMTTerm, error) {
-	indexHandle, err := solver.lookupOrDeclareScalarSort(indexSort, indexSortID)
-	if err != nil {
-		return SMTTerm{}, fmt.Errorf("array index sort: %w", err)
+	return solver.declareArrayWithSpecs(name,
+		scalarSMTSortSpec(indexSort, indexSortID), scalarSMTSortSpec(valueSort, valueSortID))
+}
+
+func (solver *G3SolverContext) smtSortHandle(spec *smtSortSpec) (ast.ASTHandle, error) {
+	if spec == nil {
+		return ast.ASTHandle{}, fmt.Errorf("SMT sort specification cannot be nil")
 	}
-	valueHandle, err := solver.lookupOrDeclareScalarSort(valueSort, valueSortID)
-	if err != nil {
-		return SMTTerm{}, fmt.Errorf("array value sort: %w", err)
+	if spec.kind != SMTArray {
+		return solver.lookupOrDeclareScalarSort(spec.kind, spec.id)
 	}
-	arrayHandle, err := solver.manager.MkArraySort(ast.SliceArguments([]ast.ASTHandle{indexHandle}), valueHandle)
+	indexHandle, err := solver.smtSortHandle(spec.index)
+	if err != nil {
+		return ast.ASTHandle{}, fmt.Errorf("array index sort: %w", err)
+	}
+	valueHandle, err := solver.smtSortHandle(spec.value)
+	if err != nil {
+		return ast.ASTHandle{}, fmt.Errorf("array value sort: %w", err)
+	}
+	return solver.manager.MkArraySort(ast.SliceArguments([]ast.ASTHandle{indexHandle}), valueHandle)
+}
+
+func (solver *G3SolverContext) declareArrayWithSpecs(
+	name string, indexSpec, valueSpec *smtSortSpec,
+) (SMTTerm, error) {
+	arraySpec := arraySMTSortSpec(indexSpec, valueSpec)
+	arrayHandle, err := solver.smtSortHandle(arraySpec)
 	if err != nil {
 		return SMTTerm{}, err
 	}
@@ -317,14 +377,7 @@ func (solver *G3SolverContext) DeclareArrayWithSortIDs(
 		return SMTTerm{}, err
 	}
 	handle, err := solver.context.MakeApp(name, nil, nil, ast.ASTHandle{})
-	indexSortID = normalizedScalarSortID(indexSort, indexSortID)
-	valueSortID = normalizedScalarSortID(valueSort, valueSortID)
-	return SMTTerm{
-		owner: solver, handle: handle, sort: SMTArray,
-		sortID:         fmt.Sprintf("(Array %s %s)", indexSortID, valueSortID),
-		arrayIndexSort: indexSort, arrayIndexSortID: indexSortID,
-		arrayValueSort: valueSort, arrayValueSortID: valueSortID,
-	}, err
+	return newSMTTermWithSpec(solver, handle, arraySpec), err
 }
 
 func (solver *G3SolverContext) lookupOrDeclareScalarSort(sort SMTSort, sortID string) (ast.ASTHandle, error) {
@@ -349,21 +402,17 @@ func (solver *G3SolverContext) ConstantArray(
 	indexSortID string,
 	value SMTTerm,
 ) (SMTTerm, error) {
+	return solver.constantArrayWithIndexSpec(scalarSMTSortSpec(indexSort, indexSortID), value)
+}
+
+func (solver *G3SolverContext) constantArrayWithIndexSpec(
+	indexSpec *smtSortSpec, value SMTTerm,
+) (SMTTerm, error) {
 	if err := solver.validateTerm(value, value.sort); err != nil {
 		return SMTTerm{}, err
 	}
-	if value.sort == SMTArray {
-		return SMTTerm{}, fmt.Errorf("nested constant arrays are not yet supported")
-	}
-	indexHandle, err := solver.lookupOrDeclareScalarSort(indexSort, indexSortID)
-	if err != nil {
-		return SMTTerm{}, fmt.Errorf("constant array index sort: %w", err)
-	}
-	valueHandle, err := solver.lookupOrDeclareScalarSort(value.sort, value.sortID)
-	if err != nil {
-		return SMTTerm{}, fmt.Errorf("constant array value sort: %w", err)
-	}
-	arrayHandle, err := solver.manager.MkArraySort(ast.SliceArguments([]ast.ASTHandle{indexHandle}), valueHandle)
+	arraySpec := arraySMTSortSpec(indexSpec, smtTermSortSpec(value))
+	arrayHandle, err := solver.smtSortHandle(arraySpec)
 	if err != nil {
 		return SMTTerm{}, err
 	}
@@ -371,13 +420,7 @@ func (solver *G3SolverContext) ConstantArray(
 	if err != nil {
 		return SMTTerm{}, err
 	}
-	indexSortID = normalizedScalarSortID(indexSort, indexSortID)
-	return SMTTerm{
-		owner: solver, handle: handle, sort: SMTArray,
-		sortID:         fmt.Sprintf("(Array %s %s)", indexSortID, value.sortID),
-		arrayIndexSort: indexSort, arrayIndexSortID: indexSortID,
-		arrayValueSort: value.sort, arrayValueSortID: value.sortID,
-	}, nil
+	return newSMTTermWithSpec(solver, handle, arraySpec), nil
 }
 
 func scalarSortID(sort SMTSort) string {
@@ -588,7 +631,7 @@ func (solver *G3SolverContext) Select(array, index SMTTerm) (SMTTerm, error) {
 		return SMTTerm{}, err
 	}
 	handle, err := solver.manager.MkFamilyApp(family, ast.ASTArrayOpSelect, nil, []ast.ASTHandle{array.handle, index.handle})
-	return SMTTerm{owner: solver, handle: handle, sort: array.arrayValueSort, sortID: array.arrayValueSortID}, err
+	return newSMTTermWithSpec(solver, handle, array.arraySpec.value), err
 }
 
 func (solver *G3SolverContext) Store(array, index, value SMTTerm) (SMTTerm, error) {
