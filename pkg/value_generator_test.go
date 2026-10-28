@@ -8,13 +8,16 @@ import (
 func TestStratifiedGenBuildsBoundedStructures(t *testing.T) {
 	row, _ := NewRowType(map[string]Type{"A": IntT1, "B": BoolT1}, nil)
 	variantType := NewVariantType(row)
+	recordRow, _ := NewRowType(map[string]Type{"x": IntT1, "ok": BoolT1}, nil)
+	recordRowType := NewRecordRowType(recordRow)
 	recordType, _ := NewRecordType(map[string]Type{"x": IntT1, "ok": BoolT1})
 	tupleType, _ := NewTupleType(IntT1, BoolT1)
 	sequenceType, _ := NewSeqType(IntT1)
 	functionType, _ := NewFunType(IntT1, BoolT1)
+	constantType, _ := NewConstType("PID")
 	types := []Type{
-		IntT1, BoolT1, StrT1, mustSet(IntT1), sequenceType,
-		tupleType, recordType, variantType, functionType,
+		IntT1, BoolT1, StrT1, constantType, mustSet(IntT1), sequenceType,
+		tupleType, recordType, recordRowType, variantType, functionType,
 	}
 	for _, typ := range types {
 		t.Run(typ.String(), func(t *testing.T) {
@@ -111,11 +114,18 @@ func TestStratifiedGenVariantTagIsAnOption(t *testing.T) {
 }
 
 func TestStratifiedGenRejectsInvalidBounds(t *testing.T) {
-	for _, bound := range []int64{-1, 0} {
-		expression := MustOperExpr(Op("Apalache!Gen"), Typed(IntT1),
-			NewValueExpr(Int64Value(bound), Typed(IntT1)))
-		if _, _, err := NewStratifiedRewriter().Rewrite(expression, InitialRewriterScope()); err == nil {
-			t.Fatalf("Gen accepted bound %d", bound)
+	invalid := []Expr{
+		MustOperExpr(Op("Apalache!Gen"), Typed(IntT1), NewValueExpr(Int64Value(-1), Typed(IntT1))),
+		MustOperExpr(Op("Apalache!Gen"), Typed(IntT1), NewValueExpr(Int64Value(0), Typed(IntT1))),
+		MustOperExpr(Op("Apalache!Gen"), Untyped(), NewValueExpr(Int64Value(1), Typed(IntT1))),
+		MustOperExpr(Op("Apalache!Gen"), Typed(IntT1), NewValueExpr(Int64Value(1), Typed(BoolT1))),
+		MustOperExpr(Op("Apalache!Gen"), Typed(IntT1), NewNameExpr("n", Typed(IntT1))),
+	}
+	for _, expression := range invalid {
+		base := InitialRewriterScope()
+		returned, _, err := NewStratifiedRewriter().Rewrite(expression, base)
+		if err == nil || returned.Arena != base.Arena {
+			t.Fatalf("invalid Gen returned scope=%v, err=%v", returned, err)
 		}
 	}
 }

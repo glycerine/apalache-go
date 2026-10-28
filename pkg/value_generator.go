@@ -7,13 +7,17 @@ func (rewriter *StratifiedRewriter) rewriteGenerate(expression *OperExpr, scope 
 	if len(arguments) != 1 {
 		return scope, ArenaCell{}, fmt.Errorf("Gen requires one positive integer bound")
 	}
-	boundValue, ok := constantInteger(arguments[0])
-	if !ok || !boundValue.IsInt64() || boundValue.Sign() <= 0 || int64(int(boundValue.Int64())) != boundValue.Int64() {
-		return scope, ArenaCell{}, fmt.Errorf("Gen requires a constant positive machine-sized integer bound")
-	}
 	typ, typed := expression.Tag().Type()
 	if !typed {
 		return scope, ArenaCell{}, fmt.Errorf("Gen must be typed")
+	}
+	boundType, boundTyped := arguments[0].Tag().Type()
+	if !boundTyped || !EqualTypes(boundType, IntT1) {
+		return scope, ArenaCell{}, fmt.Errorf("Gen bound must have type Int, found %v", boundType)
+	}
+	boundValue, ok := constantInteger(arguments[0])
+	if !ok || !boundValue.IsInt64() || boundValue.Sign() <= 0 || int64(int(boundValue.Int64())) != boundValue.Int64() {
+		return scope, ArenaCell{}, fmt.Errorf("Gen requires a constant positive machine-sized integer bound")
 	}
 	return rewriter.generateBoundedValue(scope, typ, int(boundValue.Int64()))
 }
