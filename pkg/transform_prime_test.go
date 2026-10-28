@@ -1,6 +1,9 @@
 package apalache
 
-import "testing"
+import (
+	"math/rand"
+	"testing"
+)
 
 func TestPropagatePrimesBasicCases(t *testing.T) {
 	states := map[string]struct{}{"x": {}, "y": {}}
@@ -72,4 +75,74 @@ func TestPropagatePrimesLeavesOnlyNamesUnderPrime(t *testing.T) {
 		}
 	}
 	check(got)
+}
+
+func TestPropagatePrimesGeneratedExpressionsLeaveOnlyNamesPrimed(t *testing.T) {
+	random := rand.New(rand.NewSource(0x91e))
+	names := []string{"x", "y", "N", "K"}
+	var generate func(int) Expr
+	generate = func(depth int) Expr {
+		if depth == 0 || random.Intn(4) == 0 {
+			if random.Intn(2) == 0 {
+				return NewNameExpr(names[random.Intn(len(names))], Untyped())
+			}
+			return NewValueExpr(Int64Value(random.Int63n(1000)), Untyped())
+		}
+		switch random.Intn(5) {
+		case 0:
+			return MustOperExpr(Op("PRIME"), Untyped(), generate(depth-1))
+		case 1:
+			return MustOperExpr(Op("PLUS"), Untyped(), generate(depth-1), generate(depth-1))
+		case 2:
+			return MustOperExpr(Op("EQ"), Untyped(), generate(depth-1), generate(depth-1))
+		case 3:
+			return MustOperExpr(Op("IF_THEN_ELSE"), Untyped(),
+				generate(depth-1), generate(depth-1), generate(depth-1))
+		default:
+			declaration := NewOperDecl("Local", nil, generate(depth-1), Untyped())
+			return NewLetInExpr(generate(depth-1), Untyped(), declaration)
+		}
+	}
+	states := map[string]struct{}{"x": {}, "y": {}}
+	for iteration := 0; iteration < 1000; iteration++ {
+		got := PropagatePrimes(nil, states)(generate(1 + random.Intn(10)))
+		assertOnlyNamesPrimed(t, got)
+	}
+}
+
+func assertOnlyNamesPrimed(t *testing.T, expression Expr) {
+	t.Helper()
+	switch typed := expression.(type) {
+	case *OperExpr:
+		if typed.Operator().Name() == "PRIME" {
+			if len(typed.Arguments()) != 1 {
+				t.Fatalf("malformed PRIME expression: %#v", typed)
+			}
+			if _, named := typed.Arguments()[0].(*NameExpr); !named {
+				t.Fatalf("PRIME remains over %T", typed.Arguments()[0])
+			}
+		}
+		for _, argument := range typed.Arguments() {
+			assertOnlyNamesPrimed(t, argument)
+		}
+	case *LetInExpr:
+		assertOnlyNamesPrimed(t, typed.Body())
+		for _, declaration := range typed.Declarations() {
+			assertOnlyNamesPrimed(t, declaration.Body())
+		}
+	}
+}
+
+func TestPropagatePrimesTracksUnchangedLetDeclarations(t *testing.T) {
+	listener := &recordingListener{}
+	declaration := NewOperDecl("Constant", nil, NewNameExpr("N", Untyped()), Untyped())
+	let := NewLetInExpr(NewNameExpr("Constant", Untyped()), Untyped(), declaration)
+	got := PropagatePrimes(NewListenerTracker(listener), map[string]struct{}{"x": {}})(let)
+	if got != let {
+		t.Fatal("structurally unchanged LET was unnecessarily rebuilt")
+	}
+	if len(listener.declarations) != 1 || listener.declarations[0][0] != declaration ||
+		listener.declarations[0][1].ID() == declaration.ID() {
+		t.Fatalf("unchanged LET declaration tracking = %#v", listener.declarations)
+	}
 }

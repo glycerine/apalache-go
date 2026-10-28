@@ -496,7 +496,7 @@ tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/standard/Kerame
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/standard/ModuleByExTransformer.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/standard/MonotypeLanguagePred.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/standard/NonrecursiveLanguagePred.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
-tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/standard/PrimePropagation.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/standard/PrimePropagation.scala	ported	transform_standard.go;transform_prime_test.go	PRIME propagates through operators and LET bodies to state-variable names, disappears over constants/values, preserves tags, and tracks every copied LET declaration
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/standard/ReTLALanguagePred.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/standard/ReplaceFixed.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/standard/SimpleUnchangedUnroller.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains

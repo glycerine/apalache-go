@@ -134,12 +134,10 @@ func PropagatePrimes(tracker TransformationTracker, stateVariables map[string]st
 				changed := false
 				for index, declaration := range declarations {
 					body := transform(declaration.Body(), prime)
-					if !EqualExpr(body, declaration.Body()) {
-						copy := declaration.copyWithTag(declaration.Tag())
-						copy.SetBody(body)
-						declarations[index] = tracker.TrackOperatorDeclaration(func(*OperDecl) *OperDecl { return copy })(declaration)
-						changed = true
-					}
+					copy := declaration.copyWithTag(declaration.Tag())
+					copy.SetBody(body)
+					declarations[index] = tracker.TrackOperatorDeclaration(func(*OperDecl) *OperDecl { return copy })(declaration)
+					changed = changed || !EqualExpr(body, declaration.Body())
 				}
 				body := transform(typed.Body(), prime)
 				if !changed && EqualExpr(body, typed.Body()) {
