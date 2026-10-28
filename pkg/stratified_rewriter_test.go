@@ -1064,6 +1064,40 @@ func TestStratifiedStructuralConditionalsThroughG3(t *testing.T) {
 	}
 }
 
+func TestStratifiedConditionalPrunedBranchWideningAndTypeErrors(t *testing.T) {
+	narrowType, err := NewRecordType(map[string]Type{"a": IntT1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wideType, err := NewRecordType(map[string]Type{"a": IntT1, "b": BoolT1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := func(name string) Expr { return NewValueExpr(StringValue(name), Typed(StrT1)) }
+	narrow := MustOperExpr(Op("RECORD"), Typed(narrowType), key("a"), intLiteral(1))
+	wide := MustOperExpr(Op("RECORD"), Typed(wideType),
+		key("a"), intLiteral(2), key("b"), boolExpr(true))
+	conditional := MustOperExpr(Op("IF_THEN_ELSE"), Typed(wideType), boolExpr(true), narrow, wide)
+	rewriter := NewStratifiedRewriter()
+	scope, result, err := rewriter.Rewrite(conditional, InitialRewriterScope())
+	if err != nil || !EqualTypes(result.Type.TLAType(), wideType) || len(scope.Arena.GetHas(result)) != 2 {
+		t.Fatalf("widened pruned branch = %v, fields=%d, err=%v", result, len(scope.Arena.GetHas(result)), err)
+	}
+
+	invalid := []Expr{
+		MustOperExpr(Op("IF_THEN_ELSE"), Typed(IntT1), intLiteral(1), intLiteral(2), intLiteral(3)),
+		MustOperExpr(Op("IF_THEN_ELSE"), Untyped(), boolExpr(true), intLiteral(2), intLiteral(3)),
+		MustOperExpr(Op("IF_THEN_ELSE"), Typed(IntT1), boolExpr(true), boolExpr(false), intLiteral(3)),
+	}
+	for _, expression := range invalid {
+		base := InitialRewriterScope()
+		returned, _, err := NewStratifiedRewriter().Rewrite(expression, base)
+		if err == nil || returned.Arena != base.Arena {
+			t.Fatalf("invalid conditional returned scope=%v, err=%v", returned, err)
+		}
+	}
+}
+
 func TestStratifiedFiniteAndNaturalMembershipThroughG3(t *testing.T) {
 	rewriter := NewStratifiedRewriter()
 	setType := Typed(mustSet(IntT1))

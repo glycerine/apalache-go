@@ -1709,15 +1709,31 @@ func (rewriter *StratifiedRewriter) rewriteConditional(expression *OperExpr, sco
 	if len(arguments) != 3 {
 		return scope, ArenaCell{}, fmt.Errorf("conditional requires three arguments")
 	}
+	expectedType, typed := expression.Tag().Type()
+	if !typed {
+		return scope, ArenaCell{}, fmt.Errorf("conditional must be typed")
+	}
+	predicateType, predicateTyped := arguments[0].Tag().Type()
+	if !predicateTyped || !EqualTypes(predicateType, BoolT1) {
+		return scope, ArenaCell{}, fmt.Errorf("conditional predicate must have type Bool, found %v", predicateType)
+	}
 	scope, predicate, err := rewriter.Rewrite(arguments[0], scope)
 	if err != nil {
 		return scope, ArenaCell{}, err
 	}
 	if predicate.Equal(scope.Arena.TrueCell()) {
-		return rewriter.Rewrite(arguments[1], scope)
+		scope, chosen, err := rewriter.Rewrite(arguments[1], scope)
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+		return rewriter.coerceCell(scope, chosen, expectedType)
 	}
 	if predicate.Equal(scope.Arena.FalseCell()) {
-		return rewriter.Rewrite(arguments[2], scope)
+		scope, chosen, err := rewriter.Rewrite(arguments[2], scope)
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+		return rewriter.coerceCell(scope, chosen, expectedType)
 	}
 	scope, thenCell, err := rewriter.Rewrite(arguments[1], scope)
 	if err != nil {
@@ -1729,10 +1745,6 @@ func (rewriter *StratifiedRewriter) rewriteConditional(expression *OperExpr, sco
 	}
 	if !EqualTypes(predicate.Type.TLAType(), BoolT1) {
 		return scope, ArenaCell{}, fmt.Errorf("conditional predicate has non-Boolean type %s", predicate.Type)
-	}
-	expectedType, typed := expression.Tag().Type()
-	if !typed {
-		return scope, ArenaCell{}, fmt.Errorf("conditional must be typed")
 	}
 	scope, thenCell, err = rewriter.coerceCell(scope, thenCell, expectedType)
 	if err != nil {
