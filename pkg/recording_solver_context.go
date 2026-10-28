@@ -124,3 +124,4 @@ func (context *RecordingSolverContext) ExtractLog() *SMTLog {
 func (context *RecordingSolverContext) Dispose() error { return context.solver.Dispose() }
 
 var _ SMTLogReplayTarget = (*RecordingSolverContext)(nil)
+var _ GroundSolverContext = (*RecordingSolverContext)(nil)

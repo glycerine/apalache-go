@@ -7,6 +7,25 @@ import (
 	"time"
 )
 
+type GroundSolverContext interface {
+	Config() SolverConfig
+	Level() int
+	Metrics() SolverContextMetrics
+	SetSMTListener(SMTListener)
+	DeclareCell(ArenaCell) error
+	DeclareMembership(ArenaCell, ArenaCell) error
+	Assert(Expr) error
+	Evaluate(Expr) (Expr, error)
+	Check(context.Context) (SMTStatus, error)
+	CheckWithTimeout(context.Context, int) (SMTStatus, error)
+	CheckConsistency(*PureArena) error
+	Log(string)
+	Logs() []string
+	Push() error
+	Pop(...int) error
+	Dispose() error
+}
+
 // SolverContext exposes the arena-cell/TLA-expression solver boundary used by
 // rewriting and exploration while delegating SMT terms to pure-Go g3.
 type SolverContext struct {
@@ -203,3 +222,4 @@ func (solver *SolverContext) Dispose() error {
 }
 
 var _ SMTLogReplayTarget = (*SolverContext)(nil)
+var _ GroundSolverContext = (*SolverContext)(nil)
