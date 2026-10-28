@@ -878,6 +878,44 @@ func TestStratifiedArithmeticEqualityAndConditionalThroughG3(t *testing.T) {
 	}
 }
 
+func TestStratifiedIntegerArithmeticOperatorsAndTypeErrors(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		expression Expr
+		want       int64
+	}{
+		{name: "plus", expression: MustOperExpr(Op("PLUS"), Typed(IntT1), intLiteral(7), intLiteral(5)), want: 12},
+		{name: "minus", expression: MustOperExpr(Op("MINUS"), Typed(IntT1), intLiteral(7), intLiteral(5)), want: 2},
+		{name: "multiply", expression: MustOperExpr(Op("MULT"), Typed(IntT1), intLiteral(7), intLiteral(5)), want: 35},
+		{name: "divide", expression: MustOperExpr(Op("DIV"), Typed(IntT1), intLiteral(17), intLiteral(5)), want: 3},
+		{name: "modulo", expression: MustOperExpr(Op("MOD"), Typed(IntT1), intLiteral(17), intLiteral(5)), want: 2},
+		{name: "unary minus", expression: MustOperExpr(Op("UNARY_MINUS"), Typed(IntT1), intLiteral(7)), want: -7},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			claim := MustOperExpr(Op("EQ"), Typed(BoolT1), test.expression, intLiteral(test.want))
+			rewriter := NewStratifiedRewriter()
+			scope, result, err := rewriter.Rewrite(claim, InitialRewriterScope())
+			if err != nil {
+				t.Fatal(err)
+			}
+			checkRewrittenTruth(t, rewriter, scope, result, true)
+		})
+	}
+
+	for _, invalid := range []Expr{
+		MustOperExpr(Op("PLUS"), Typed(BoolT1), intLiteral(1), intLiteral(2)),
+		MustOperExpr(Op("PLUS"), Typed(IntT1), intLiteral(1), boolExpr(true)),
+		MustOperExpr(Op("UNARY_MINUS"), Untyped(), intLiteral(1)),
+		MustOperExpr(Op("POW"), Typed(IntT1), intLiteral(2), boolExpr(true)),
+	} {
+		base := InitialRewriterScope()
+		returned, _, err := NewStratifiedRewriter().Rewrite(invalid, base)
+		if err == nil || returned.Arena != base.Arena {
+			t.Fatalf("invalid arithmetic returned scope=%v, err=%v", returned, err)
+		}
+	}
+}
+
 func TestStratifiedEqualityIdentityAndTypeErrors(t *testing.T) {
 	for _, operator := range []string{"EQ", "NE"} {
 		name := NewNameExpr("unbound", Typed(IntT1))

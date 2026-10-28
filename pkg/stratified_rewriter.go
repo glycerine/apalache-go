@@ -1613,6 +1613,10 @@ func isPackedArithmeticOperator(name string) bool {
 }
 
 func (rewriter *StratifiedRewriter) packArithmeticExpression(expression Expr, scope RewriterScope) (RewriterScope, Expr, error) {
+	typ, typedTag := expression.Tag().Type()
+	if !typedTag || !CompatibleTypes(typ, IntT1) {
+		return scope, nil, fmt.Errorf("integer arithmetic expression must have type Int, found %v", typ)
+	}
 	switch typed := expression.(type) {
 	case *ValueExpr:
 		if _, integer := typed.Value().(IntValue); integer {
@@ -1663,6 +1667,13 @@ func (rewriter *StratifiedRewriter) rewritePower(expression *OperExpr, scope Rew
 	arguments := expression.Arguments()
 	if len(arguments) != 2 {
 		return scope, ArenaCell{}, fmt.Errorf("integer exponentiation requires two arguments")
+	}
+	resultType, resultTyped := expression.Tag().Type()
+	leftType, leftTyped := arguments[0].Tag().Type()
+	rightType, rightTyped := arguments[1].Tag().Type()
+	if !resultTyped || !leftTyped || !rightTyped || !CompatibleTypes(resultType, IntT1) ||
+		!CompatibleTypes(leftType, IntT1) || !CompatibleTypes(rightType, IntT1) {
+		return scope, ArenaCell{}, fmt.Errorf("integer exponentiation requires Int operands and result")
 	}
 	exponent, constant := constantInteger(arguments[1])
 	if !constant {
