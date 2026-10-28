@@ -856,35 +856,9 @@ func metadataForExpressions(expressions []Expr) []specEntryMetadata {
 
 func expressionLabels(expression Expr) []string {
 	labels := make(map[string]struct{})
-	var visit func(Expr)
-	visit = func(current Expr) {
-		operator, ok := current.(*OperExpr)
-		if ok && operator.Operator().Name() == "LABEL" && len(operator.Arguments()) >= 2 {
-			value, valueOK := operator.Arguments()[1].(*ValueExpr)
-			name, nameOK := StringValue(""), false
-			if valueOK {
-				name, nameOK = value.Value().(StringValue)
-			}
-			if nameOK {
-				labels[string(name)] = struct{}{}
-			}
-		}
-		switch typed := current.(type) {
-		case *OperExpr:
-			for _, argument := range typed.Arguments() {
-				visit(argument)
-			}
-		case *LetInExpr:
-			visit(typed.Body())
-			for _, declaration := range typed.Declarations() {
-				visit(declaration.Body())
-			}
-		}
+	for _, label := range FindLabels(expression) {
+		labels[label] = struct{}{}
 	}
-	if expression == nil {
-		return []string{}
-	}
-	visit(expression)
 	result := make([]string, 0, len(labels))
 	for label := range labels {
 		result = append(result, label)
