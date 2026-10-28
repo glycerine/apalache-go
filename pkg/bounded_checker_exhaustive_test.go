@@ -380,3 +380,18 @@ func TestBoundedSafetyMatchesExhaustiveSetMachines(t *testing.T) {
 		"{}", "{1}", "{2}", "{1, 2}",
 	}, 0x5e7)
 }
+
+func TestBoundedSafetyMatchesExhaustiveSequenceMachines(t *testing.T) {
+	testExhaustiveValueMachines(t, "ExhaustiveSequence", "q", "Seq(Int)", []string{
+		"<<>>", "<<0>>", "<<1>>", "<<0, 1>>",
+	}, 0x5e0)
+}
+
+func TestBoundedSafetyMatchesExhaustiveFunctionMachines(t *testing.T) {
+	testExhaustiveValueMachines(t, "ExhaustiveFunction", "f", "Int -> Bool", []string{
+		"[i \\in {1, 2} |-> FALSE]",
+		"[i \\in {1, 2} |-> i = 2]",
+		"[i \\in {1, 2} |-> i = 1]",
+		"[i \\in {1, 2} |-> TRUE]",
+	}, 0xf00c710)
+}
