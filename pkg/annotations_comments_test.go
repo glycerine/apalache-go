@@ -74,6 +74,21 @@ func TestFindAnnotationCandidatesPreservesSourcePositions(t *testing.T) {
 	}
 }
 
+func TestAnnotationCandidateIdentifiesUnterminatedInlineForm(t *testing.T) {
+	candidates := FindAnnotationCandidates("\\* @type: ACTION\nValue == TRUE\n")
+	if len(candidates) != 1 || !candidates[0].UnterminatedInline() {
+		t.Fatalf("unterminated candidates = %#v", candidates)
+	}
+	complete := FindAnnotationCandidates("\\* @type: ACTION;\nValue == TRUE\n")
+	if len(complete) != 1 || complete[0].UnterminatedInline() {
+		t.Fatalf("complete candidates = %#v", complete)
+	}
+	parenthesized := FindAnnotationCandidates("\\* @type(\"ACTION\")\nValue == TRUE\n")
+	if len(parenthesized) != 1 || parenthesized[0].UnterminatedInline() {
+		t.Fatalf("parenthesized candidates = %#v", parenthesized)
+	}
+}
+
 func stringsTrimSpace(value string) string {
 	start, end := 0, len(value)
 	for start < end && (value[start] == ' ' || value[start] == '\n' || value[start] == '\t' || value[start] == '\r') {

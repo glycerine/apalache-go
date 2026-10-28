@@ -347,6 +347,24 @@ type tlagoInstantiatedLocalScope struct {
 	exports map[string]struct{}
 }
 
+func exposeTlagoRootLocalDefinitions(spec *tlago.Spec) []tlagoInstantiatedLocalScope {
+	if spec == nil || spec.Root == nil {
+		return nil
+	}
+	scope := tlagoInstantiatedLocalScope{exports: make(map[string]struct{})}
+	for _, definition := range spec.Root.Definitions {
+		if definition.Local {
+			scope.names = append(scope.names, definition.Name)
+		} else {
+			scope.exports[definition.Name] = struct{}{}
+		}
+	}
+	if len(scope.names) == 0 {
+		return nil
+	}
+	return []tlagoInstantiatedLocalScope{scope}
+}
+
 // exposeTlagoInstantiatedLocalDefinitions asks tlago's flattened IR exporter
 // to include LOCAL definitions needed by INSTANCE exports. They are
 // folded back into scoped LET-IN declarations after IR conversion.

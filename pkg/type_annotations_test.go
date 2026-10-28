@@ -170,3 +170,123 @@ CONSTANT N
 		t.Fatalf("missing alias cycle diagnostic: %#v", extracted.Diagnostics)
 	}
 }
+
+func TestExtractTypeAnnotationsIgnoresMissingSemicolon(t *testing.T) {
+	source := `---- MODULE MissingSemicolon ----
+\* last action performed
+\* @type: ACTION
+action == TRUE
+====
+`
+	frontend := ParseSource(context.Background(), "MissingSemicolon.tla", source, FrontendOptions{IncludeSource: true})
+	if !frontend.OK() {
+		t.Fatalf("ParseSource() diagnostics = %v", frontend.Diagnostics)
+	}
+	extracted := ExtractTypeAnnotations("MissingSemicolon.tla", source, frontend.Native, frontend.Sources)
+	if !extracted.OK() {
+		t.Fatalf("unterminated annotation should be ignored, diagnostics = %v", extracted.Diagnostics)
+	}
+	action, found := declarationNamed(frontend.Native, "action")
+	if !found {
+		t.Fatal("missing action declaration")
+	}
+	if _, attached := extracted.Annotations.Find(action.ID(), "type"); attached {
+		t.Fatal("unterminated type annotation was attached")
+	}
+	if _, typed := extracted.Types[action.ID()]; typed {
+		t.Fatal("unterminated type annotation produced a type")
+	}
+}
+
+func TestParseAndTypeCheckSourceScopesAnnotatedRootLocalOperator(t *testing.T) {
+	source := `---- MODULE AnnotatedLocal ----
+EXTENDS Integers
+(*
+  @pure
+  @type: (Int) => Int;
+*)
+LOCAL Inc(x) == x + 1
+A(n) == Inc(n)
+====
+`
+	result := ParseAndTypeCheckSource(context.Background(), "AnnotatedLocal.tla", source, FrontendOptions{}, TypeCheckOptions{})
+	if !result.OK() {
+		t.Fatalf("ParseAndTypeCheckSource() diagnostics = %v", result.Diagnostics)
+	}
+	if _, leaked := declarationNamed(result.Native, "Inc"); leaked {
+		t.Fatalf("LOCAL Inc leaked into root declarations: %v", declarationNames(result.Native))
+	}
+	body, found := OperatorBody(result.Native, "A")
+	let, ok := body.(*LetInExpr)
+	if !found || !ok || len(let.Declarations()) != 1 {
+		t.Fatalf("A body = %#v, want one scoped LET declaration", body)
+	}
+	local := let.Declarations()[0]
+	if !strings.HasPrefix(local.Name(), "LOCAL$") || !strings.HasSuffix(local.Name(), "Inc") {
+		t.Fatalf("local declaration = %s, want unique LOCAL Inc name", local.Name())
+	}
+	if _, found := result.Annotations.Find(local.ID(), "pure"); !found {
+		t.Fatal("scoped Inc lost @pure annotation")
+	}
+	wantType, err := NewOperatorType([]Type{IntT1}, IntT1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if typ, found := local.Tag().Type(); !found || !EqualTypes(typ, wantType) {
+		t.Fatalf("scoped Inc type = %v, %v", typ, found)
+	}
+}
+
+func TestExtractTypeAnnotationsAttachesCustomAndRecursiveAnnotations(t *testing.T) {
+	source := `---- MODULE AnnotationTargets ----
+EXTENDS Integers
+CONSTANT
+(*
+  @awesome
+  @type("Set(Int)")
+*)
+S
+VARIABLE
+\* @amazing
+\* @type: Set(Int);
+V
+RECURSIVE Fact(_)
+(*
+  @tailrec
+  @type("(Int) => Int")
+*)
+Fact(n) == IF n <= 1 THEN 1 ELSE n * Fact(n - 1)
+\* @type: Int -> Int;
+Rec[n \in Int] == IF n <= 1 THEN 1 ELSE n * Rec[n - 1]
+====
+`
+	frontend := ParseSource(context.Background(), "AnnotationTargets.tla", source, FrontendOptions{IncludeSource: true})
+	if !frontend.OK() {
+		t.Fatalf("ParseSource() diagnostics = %v", frontend.Diagnostics)
+	}
+	extracted := ExtractTypeAnnotations("AnnotationTargets.tla", source, frontend.Native, frontend.Sources)
+	if !extracted.OK() {
+		t.Fatalf("ExtractTypeAnnotations() diagnostics = %v", extracted.Diagnostics)
+	}
+	for name, annotationName := range map[string]string{
+		"S": "awesome", "V": "amazing", "Fact": "tailrec",
+	} {
+		declaration, found := declarationNamed(frontend.Native, name)
+		if !found {
+			t.Fatalf("missing %s declaration", name)
+		}
+		if _, found := extracted.Annotations.Find(declaration.ID(), annotationName); !found {
+			t.Errorf("%s lost @%s annotation", name, annotationName)
+		}
+		if _, found := extracted.Types[declaration.ID()]; !found {
+			t.Errorf("%s lost @type annotation", name)
+		}
+	}
+	recursiveFunction, found := declarationNamed(frontend.Native, "Rec")
+	if !found {
+		t.Fatal("missing Rec declaration")
+	}
+	if _, found := extracted.Types[recursiveFunction.ID()]; !found {
+		t.Fatal("recursive function lost @type annotation")
+	}
+}

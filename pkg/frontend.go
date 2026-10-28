@@ -118,7 +118,8 @@ func ParseSource(ctx context.Context, filename, source string, opts FrontendOpti
 
 	normalizeTlagoRootLocalInstances(spec)
 	normalizeTlagoNestedInstances(spec)
-	instantiatedLocals := exposeTlagoInstantiatedLocalDefinitions(spec)
+	instantiatedLocals := exposeTlagoRootLocalDefinitions(spec)
+	instantiatedLocals = append(instantiatedLocals, exposeTlagoInstantiatedLocalDefinitions(spec)...)
 	normalizeTlagoLambdas(spec)
 	binderLayouts := normalizeTlagoApalacheAssignments(spec)
 	builtinInstanceModules := tlagoBuiltinInstanceModules(spec)
@@ -201,16 +202,47 @@ func remapDeclarationAnnotations(from, to *Module, annotations *AnnotationStore)
 	if annotations == nil || from == nil || to == nil {
 		return annotations
 	}
-	byName := make(map[string][]Annotation)
-	for _, declaration := range from.Declarations() {
+	fromDeclarations := nestedModuleDeclarations(from)
+	toDeclarations := nestedModuleDeclarations(to)
+	result := NewAnnotationStore()
+	for index, declaration := range fromDeclarations {
+		if index >= len(toDeclarations) || declaration.Name() != toDeclarations[index].Name() {
+			continue
+		}
 		if values := annotations.Get(declaration.ID()); len(values) > 0 {
-			byName[declaration.Name()] = values
+			result.Set(toDeclarations[index].ID(), values)
 		}
 	}
-	result := NewAnnotationStore()
-	for _, declaration := range to.Declarations() {
-		if values := byName[declaration.Name()]; len(values) > 0 {
-			result.Set(declaration.ID(), values)
+	return result
+}
+
+func nestedModuleDeclarations(module *Module) []Decl {
+	if module == nil {
+		return nil
+	}
+	result := make([]Decl, 0, len(module.Declarations()))
+	var visitExpression func(Expr)
+	visitExpression = func(expression Expr) {
+		switch typed := expression.(type) {
+		case *OperExpr:
+			for _, argument := range typed.Arguments() {
+				visitExpression(argument)
+			}
+		case *LetInExpr:
+			for _, declaration := range typed.Declarations() {
+				result = append(result, declaration)
+				visitExpression(declaration.Body())
+			}
+			visitExpression(typed.Body())
+		}
+	}
+	for _, declaration := range module.Declarations() {
+		result = append(result, declaration)
+		switch typed := declaration.(type) {
+		case *OperDecl:
+			visitExpression(typed.Body())
+		case *AssumeDecl:
+			visitExpression(typed.Body())
 		}
 	}
 	return result

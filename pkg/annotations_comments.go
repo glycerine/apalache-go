@@ -25,6 +25,25 @@ type AnnotationCandidate struct {
 	Position SourcePosition
 }
 
+// UnterminatedInline reports the legacy @name: value form whose terminating
+// semicolon is absent. Scala Apalache intentionally ignores these fragments
+// instead of treating them as malformed annotations (issues #954 and #1292).
+func (candidate AnnotationCandidate) UnterminatedInline() bool {
+	trimmed := strings.TrimSpace(candidate.Text)
+	if len(trimmed) < 2 || trimmed[0] != '@' {
+		return false
+	}
+	index := 1
+	for index < len(trimmed) && (trimmed[index] == '_' || trimmed[index] >= 'a' && trimmed[index] <= 'z' ||
+		trimmed[index] >= 'A' && trimmed[index] <= 'Z' || trimmed[index] >= '0' && trimmed[index] <= '9') {
+		index++
+	}
+	for index < len(trimmed) && (trimmed[index] == ' ' || trimmed[index] == '\t') {
+		index++
+	}
+	return index < len(trimmed) && trimmed[index] == ':' && !strings.HasSuffix(trimmed, ";")
+}
+
 func (s annotationCommentState) inAnnotation() bool { return s.parens || s.colon }
 func (s annotationCommentState) excluding() bool    { return s.oneLine && s.level > 0 || s.level > 1 }
 

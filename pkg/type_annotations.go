@@ -48,6 +48,9 @@ func ExtractTypeAnnotations(filename, source string, module *Module, sources *So
 		position := Position{Filename: filename, Line: candidate.Position.Line, Column: candidate.Position.Column}
 		annotation, err := ParseAnnotation(candidate.Text)
 		if err != nil {
+			if candidate.UnterminatedInline() {
+				continue
+			}
 			result.Diagnostics = append(result.Diagnostics, Diagnostic{
 				Code: "E-ANNOTATION", Severity: SeverityError, Message: err.Error(), Position: position,
 			})
