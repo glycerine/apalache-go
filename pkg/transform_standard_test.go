@@ -32,6 +32,85 @@ func TestReplaceEqualRewritesLetInBodies(t *testing.T) {
 	}
 }
 
+func TestReplaceFixedMatchesScalaCases(t *testing.T) {
+	x := NewNameExpr("x", Untyped())
+	y := NewNameExpr("y", Untyped())
+	z := NewNameExpr("z", Untyped())
+	p := NewNameExpr("p", Untyped())
+	prime := func(expression Expr) Expr { return MustOperExpr(Op("PRIME"), Untyped(), expression) }
+	replace := ReplaceEqual(IdleTracker{}, x, func() Expr { return NewNameExpr("y", Untyped()) })
+
+	for name, pair := range map[string][2]Expr{
+		"basic":     {x, y},
+		"unmatched": {z, z},
+		"nested": {MustOperExpr(Op("PLUS"), Untyped(), x, z),
+			MustOperExpr(Op("PLUS"), Untyped(), y, z)},
+		"prime": {prime(x), prime(y)},
+		"conditional": {MustOperExpr(Op("IF_THEN_ELSE"), Untyped(), p, x, y),
+			MustOperExpr(Op("IF_THEN_ELSE"), Untyped(), p, y, y)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := replace(pair[0]); !EqualExpr(got, pair[1]) {
+				t.Fatalf("replacement = %#v, want %#v", got, pair[1])
+			}
+		})
+	}
+
+	primeX := prime(x)
+	three := intLiteral(3)
+	assignment := MustOperExpr(Op("Apalache!:="), Untyped(), primeX, three)
+	equality := MustOperExpr(Op("EQ"), Untyped(), primeX, three)
+	partial := RewriteExpressions(IdleTracker{}, func(expression Expr) (Expr, bool) {
+		operator, ok := expression.(*OperExpr)
+		if !ok || operator.Operator().Name() != "Apalache!:=" {
+			return nil, false
+		}
+		arguments := operator.Arguments()
+		return MustOperExpr(Op("EQ"), operator.Tag(), arguments...), true
+	})
+	actualPartial := partial(MustOperExpr(Op("AND"), Untyped(), assignment, equality))
+	if !EqualExpr(actualPartial, MustOperExpr(Op("AND"), Untyped(), equality, equality)) {
+		t.Fatalf("partial replacement = %#v", actualPartial)
+	}
+
+	aDecl := NewOperDecl("A", nil, x, Untyped())
+	let := NewLetInExpr(untypedApp("A"), Untyped(), aDecl)
+	expectedA := NewOperDecl("A", nil, y, Untyped())
+	if got := replace(let); !EqualExpr(got, NewLetInExpr(untypedApp("A"), Untyped(), expectedA)) {
+		t.Fatalf("LET replacement = %#v", got)
+	}
+
+	unchangedDecl := NewOperDecl("A", nil, NewNameExpr("q", Untyped()), Untyped())
+	unchanged := NewLetInExpr(MustOperExpr(Op("PLUS"), Untyped(), z, untypedApp("A")), Untyped(), unchangedDecl)
+	if got := replace(unchanged); got != unchanged {
+		t.Fatal("unchanged LET was unnecessarily rebuilt")
+	}
+
+	bDecl := NewOperDecl("B", []OperatorParam{ValueParam("p")}, p, Untyped())
+	multiple := NewLetInExpr(MustOperExpr(Op("SET_ENUM"), Untyped(),
+		MustOperExpr(Op("PLUS"), Untyped(), x, untypedApp("A")), untypedApp("B", x)),
+		Untyped(), aDecl, bDecl)
+	wantMultiple := NewLetInExpr(MustOperExpr(Op("SET_ENUM"), Untyped(),
+		MustOperExpr(Op("PLUS"), Untyped(), y, untypedApp("A")), untypedApp("B", y)),
+		Untyped(), expectedA, NewOperDecl("B", []OperatorParam{ValueParam("p")}, p, Untyped()))
+	if got := replace(multiple); !EqualExpr(got, wantMultiple) {
+		t.Fatalf("multi-declaration LET replacement = %#v", got)
+	}
+}
+
+func TestReplaceFixedTracksUnchangedLetDeclarations(t *testing.T) {
+	listener := &recordingListener{}
+	declaration := NewOperDecl("A", nil, NewNameExpr("q", Untyped()), Untyped())
+	let := NewLetInExpr(untypedApp("A"), Untyped(), declaration)
+	pattern := NewNameExpr("x", Untyped())
+	got := ReplaceEqual(NewListenerTracker(listener), pattern,
+		func() Expr { return NewNameExpr("y", Untyped()) })(let)
+	if got != let || len(listener.declarations) != 1 || listener.declarations[0][0] != declaration ||
+		listener.declarations[0][1].ID() == declaration.ID() {
+		t.Fatalf("unchanged LET tracking = %#v, result identity changed=%v", listener.declarations, got != let)
+	}
+}
+
 func TestFlattenBooleanConnectives(t *testing.T) {
 	x := NewNameExpr("x", Untyped())
 	y := NewNameExpr("y", Untyped())

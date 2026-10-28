@@ -50,12 +50,10 @@ func RewriteExpressions(tracker TransformationTracker, rewrite ExpressionRewrite
 			for index, declaration := range declarations {
 				originalBody := declaration.Body()
 				newBody := transform(originalBody)
-				if !EqualExpr(originalBody, newBody) {
-					copy := declaration.copyWithTag(declaration.Tag())
-					copy.SetBody(newBody)
-					declarations[index] = tracker.TrackOperatorDeclaration(func(*OperDecl) *OperDecl { return copy })(declaration)
-					changed = true
-				}
+				copy := declaration.copyWithTag(declaration.Tag())
+				copy.SetBody(newBody)
+				declarations[index] = tracker.TrackOperatorDeclaration(func(*OperDecl) *OperDecl { return copy })(declaration)
+				changed = changed || !EqualExpr(originalBody, newBody)
 			}
 			body := transform(typed.Body())
 			changed = changed || !EqualExpr(typed.Body(), body)
