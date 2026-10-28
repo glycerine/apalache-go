@@ -70,7 +70,7 @@ func (encoder *TemporalLoopEncoder) AddToInit(
 ) *OperDecl {
 	inLoop := NewNameExpr(TemporalInLoopName, Typed(BoolT1))
 	conjuncts := []Expr{MustOperExpr(Op("EQ"), Typed(BoolT1), inLoop, temporalBool(false))}
-	for index, variable := range variables {
+	for index, variable := range variables[:min(len(variables), len(saved))] {
 		conjuncts = append(conjuncts, MustOperExpr(Op("EQ"), Typed(BoolT1),
 			temporalName(saved[index]), temporalName(variable)))
 	}
@@ -100,12 +100,14 @@ func (encoder *TemporalLoopEncoder) AddToNext(
 		MustOperExpr(Op("IMPLIES"), Typed(BoolT1), inLoop, inLoopPrime),
 	)
 
-	equalities := make([]Expr, len(variables))
+	equalities := make([]Expr, min(len(variables), len(saved)))
 	savedNames := make([]Expr, len(saved))
 	savedTypes := make([]Type, len(saved))
-	for index, variable := range variables {
+	for index, variable := range variables[:len(equalities)] {
 		equalities[index] = MustOperExpr(Op("EQ"), Typed(BoolT1),
 			temporalPrime(temporalName(saved[index])), temporalName(variable))
+	}
+	for index := range saved {
 		savedNames[index] = temporalName(saved[index])
 		typ, ok := saved[index].Tag().Type()
 		if !ok {
@@ -126,7 +128,7 @@ func (encoder *TemporalLoopEncoder) AddToNext(
 
 func (encoder *TemporalLoopEncoder) LoopPredicate(variables, saved []*VarDecl) *OperDecl {
 	conjuncts := []Expr{NewNameExpr(TemporalInLoopName, Typed(BoolT1))}
-	for index, variable := range variables {
+	for index, variable := range variables[:min(len(variables), len(saved))] {
 		conjuncts = append(conjuncts, MustOperExpr(Op("EQ"), Typed(BoolT1),
 			temporalName(variable), temporalName(saved[index])))
 	}

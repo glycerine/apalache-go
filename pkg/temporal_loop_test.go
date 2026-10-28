@@ -56,6 +56,32 @@ func TestTemporalLoopEncoderSavedUpdateMatchesScalaRule(t *testing.T) {
 	}
 }
 
+func TestTemporalLoopEncoderHelpersUseScalaZipSemantics(t *testing.T) {
+	encoder := NewTemporalLoopEncoder(nil)
+	x := NewVarDecl("x", Typed(IntT1))
+	y := NewVarDecl("y", Typed(IntT1))
+	savedX := NewVarDecl("__saved_x", Typed(IntT1))
+	init := boolDefinition("Init", temporalBool(true))
+	next := boolDefinition("Next", temporalBool(true))
+
+	if got := countOperator(encoder.AddToInit([]*VarDecl{x, y}, []*VarDecl{savedX}, init).Body(), "EQ"); got != 2 {
+		t.Fatalf("init equality count = %d, want InLoop plus one zipped pair", got)
+	}
+	encodedNext := encoder.AddToNext([]*VarDecl{x, y}, []*VarDecl{savedX}, next)
+	if got := countNamed(encodedNext.Body(), "y"); got != 0 {
+		t.Fatalf("unpaired variable occurred %d times in next encoding", got)
+	}
+	if got := countOperator(encoder.LoopPredicate([]*VarDecl{x, y}, []*VarDecl{savedX}).Body(), "EQ"); got != 1 {
+		t.Fatalf("loop predicate equality count = %d, want one zipped pair", got)
+	}
+
+	empty := NewModule("Empty", []Decl{init, next})
+	result, err := encoder.AddLoopLogic(empty, "Init", "Next")
+	if err != nil || len(result.Module.VarDeclarations()) != 1 || result.Module.VarDeclarations()[0].Name() != TemporalInLoopName {
+		t.Fatalf("empty-state loop encoding = %#v, %v", result, err)
+	}
+}
+
 func TestTemporalLoopEncoderRejectsMissingAndUntypedInputs(t *testing.T) {
 	module := temporalTestModule()
 	if _, err := NewTemporalLoopEncoder(nil).AddLoopLogic(module, "Missing", "Next"); err == nil {
