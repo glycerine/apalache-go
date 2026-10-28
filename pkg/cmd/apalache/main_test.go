@@ -672,6 +672,10 @@ Inv == x < 2
 		!bytes.Contains(tlaData, []byte("State1")) {
 		t.Fatalf("custom TLA trace = %q, %v", tlaData, err)
 	}
+	if tlcData, err := os.ReadFile(filepath.Join(runDir, "MCexample.out")); err != nil ||
+		!bytes.Contains(tlcData, []byte("2: <Next>")) {
+		t.Fatalf("custom TLC trace = %q, %v", tlcData, err)
+	}
 	if data, err := os.ReadFile(filepath.Join(runDir, "run.txt")); err != nil ||
 		!strings.Contains(string(data), "check --output-traces") || !strings.Contains(string(data), path) {
 		t.Fatalf("custom run metadata = %q, %v", data, err)
@@ -961,7 +965,7 @@ StillZero == x = 0
 	if code := run(context.Background(), args, &stdout, &stderr); code != exitCounterexample {
 		t.Fatalf("failing output test = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
 	}
-	for _, name := range []string{"run.txt", "violation.tla", "violation.json", "violation.itf.json"} {
+	for _, name := range []string{"run.txt", "violation.tla", "MCviolation.out", "violation.json", "violation.itf.json"} {
 		if _, err := os.Stat(filepath.Join(runDir, name)); err != nil {
 			t.Fatalf("test output %s: %v", name, err)
 		}

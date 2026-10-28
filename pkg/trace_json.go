@@ -3,6 +3,7 @@ package apalache
 import (
 	"fmt"
 	"sort"
+	"strings"
 )
 
 // MarshalDecodedTraceApalacheJSON emits the legacy Apalache-IR trace shape
@@ -23,6 +24,59 @@ func FormatDecodedTraceTLA(module *Module, states []DecodedState, violation Expr
 		return "", err
 	}
 	return FormatTLAModule(traceModule, TLAFormatOptions{ExtendedModules: []string{module.Name()}})
+}
+
+// FormatDecodedTraceTLC emits the TLC console-message trace shape used by
+// Scala's TlcCounterexampleWriter. It deliberately omits wall-clock text so
+// repeated standalone runs are byte-for-byte reproducible.
+func FormatDecodedTraceTLC(module *Module, states []DecodedState) (string, error) {
+	if module == nil {
+		return "", fmt.Errorf("cannot encode decoded trace for nil module")
+	}
+	if len(states) == 0 {
+		return "", fmt.Errorf("expected at least one decoded state, found none")
+	}
+	variableNames := make(map[string]struct{}, len(module.VarDeclarations()))
+	for _, declaration := range module.VarDeclarations() {
+		if !declaration.IsInternal() {
+			variableNames[declaration.Name()] = struct{}{}
+		}
+	}
+	var output strings.Builder
+	output.WriteString("@!@!@STARTMSG 2262:0 @!@!@\nCreated by Apalache Go\n@!@!@ENDMSG 2262 @!@!@\n")
+	output.WriteString("@!@!@STARTMSG 2110:1 @!@!@\nInvariant is violated.\n@!@!@ENDMSG 2110 @!@!@\n")
+	output.WriteString("@!@!@STARTMSG 2121:1 @!@!@\nThe behavior up to this point is:\n@!@!@ENDMSG 2121 @!@!@\n")
+	for index, state := range states {
+		label := "<Next>"
+		if index == 0 {
+			label = "<Initial predicate>"
+		}
+		fmt.Fprintf(&output, "@!@!@STARTMSG 2217:4 @!@!@\n%d: %s\n", index+1, label)
+		names := make([]string, 0, len(variableNames))
+		for name := range variableNames {
+			if _, found := state.Values[name]; found {
+				names = append(names, name)
+			}
+		}
+		sort.Strings(names)
+		if len(names) == 0 {
+			output.WriteString("TRUE\n")
+		} else {
+			prefix := ""
+			if len(names) > 1 {
+				prefix = "/\\ "
+			}
+			for _, name := range names {
+				value, err := FormatTLAExpression(state.Values[name])
+				if err != nil {
+					return "", fmt.Errorf("format state %d variable %s: %w", index, name, err)
+				}
+				fmt.Fprintf(&output, "%s%s = %s\n", prefix, ParseableTLAName(name), value)
+			}
+		}
+		output.WriteString("@!@!@ENDMSG 2217 @!@!@\n")
+	}
+	return output.String(), nil
 }
 
 func decodedTraceModule(module *Module, states []DecodedState, violation Expr) (*Module, error) {

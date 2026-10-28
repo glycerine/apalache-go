@@ -1027,18 +1027,24 @@ func writeDecodedTraceFormats(
 	if err != nil {
 		return nil, err
 	}
+	tlc, err := pal.FormatDecodedTraceTLC(module, states)
+	if err != nil {
+		return nil, err
+	}
 	legacy, err := pal.MarshalDecodedTraceApalacheJSON(module, states, violation)
 	if err != nil {
 		return nil, err
 	}
+	tlcPath := filepath.Join(filepath.Dir(prefix), "MC"+filepath.Base(prefix)+".out")
 	files := []struct {
 		path string
 		data []byte
 	}{
 		{prefix + ".tla", []byte(tla)},
+		{tlcPath, []byte(tlc)},
 		{prefix + ".json", append(legacy, '\n')},
 	}
-	written := make([]string, 0, 3)
+	written := make([]string, 0, 4)
 	for _, file := range files {
 		if err = os.WriteFile(file.path, file.data, 0o644); err != nil {
 			return written, err
@@ -1057,7 +1063,7 @@ func writeDecodedTraceFormatPaths(
 	states []pal.DecodedState,
 	violation pal.Expr,
 ) ([]string, error) {
-	written := make([]string, 0, len(itfPaths)*3)
+	written := make([]string, 0, len(itfPaths)*4)
 	for _, path := range itfPaths {
 		files, err := writeDecodedTraceFormats(path, module, states, violation)
 		if err != nil {

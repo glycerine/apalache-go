@@ -47,6 +47,21 @@ func TestMarshalDecodedTraceFormatsRoundTrip(t *testing.T) {
 			t.Errorf("TLA trace missing %q:\n%s", fragment, tla)
 		}
 	}
+	tlc, err := FormatDecodedTraceTLC(module, states)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, fragment := range []string{
+		"@!@!@STARTMSG 2110:1 @!@!@", "1: <Initial predicate>", "2: <Next>",
+		"/\\ x = 1\n/\\ y = FALSE", "/\\ x = 2\n/\\ y = TRUE",
+	} {
+		if !strings.Contains(tlc, fragment) {
+			t.Errorf("TLC trace missing %q:\n%s", fragment, tlc)
+		}
+	}
+	if strings.Contains(tlc, "N = 10") || strings.Contains(tlc, "__internal") {
+		t.Fatalf("TLC trace exposed constants/internal state:\n%s", tlc)
+	}
 }
 
 func TestMarshalDecodedTraceFormatsRejectEmptyTrace(t *testing.T) {
@@ -56,6 +71,9 @@ func TestMarshalDecodedTraceFormatsRejectEmptyTrace(t *testing.T) {
 	}
 	if _, err := FormatDecodedTraceTLA(module, nil, nil); err == nil {
 		t.Fatal("TLA accepted an empty decoded trace")
+	}
+	if _, err := FormatDecodedTraceTLC(module, nil); err == nil {
+		t.Fatal("TLC accepted an empty decoded trace")
 	}
 }
 
