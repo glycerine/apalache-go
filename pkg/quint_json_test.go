@@ -318,6 +318,10 @@ func TestConvertQuintPredefinedNamesAndLocalLets(t *testing.T) {
 	if !ok || len(let.Declarations()) != 1 || let.Declarations()[0].Name() != "local" {
 		t.Fatalf("local let converted to %#v", converted)
 	}
+	application, ok := let.Body().(*OperExpr)
+	if !ok || application.Operator().Name() != "OPER_APP" {
+		t.Fatalf("local nullary reference converted to %v", let.Body())
+	}
 
 	truth := quintJSONExpr{ID: json.Number("5"), Kind: "bool", Value: json.RawMessage("true")}
 	for _, labelName := range []string{"__label_Step", "main::__label_Step", "main::worker::__label_Step"} {

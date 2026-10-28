@@ -91,7 +91,8 @@ type quintJSONLambdaParam struct {
 }
 
 type quintJSONImporter struct {
-	types map[string]quintJSONScheme
+	types   map[string]quintJSONScheme
+	nullary map[string]struct{}
 }
 
 // ParseQuintJSON converts the typed JSON IR emitted by `quint typecheck --out`
@@ -114,8 +115,14 @@ func ParseQuintJSON(data []byte) (*Module, error) {
 	if len(output.Modules) != 1 {
 		return nil, fmt.Errorf("Quint JSON IR contains %d modules; exactly one is required", len(output.Modules))
 	}
-	importer := quintJSONImporter{types: output.Types}
 	module := output.Modules[0]
+	nullary := make(map[string]struct{})
+	for _, definition := range module.Declarations {
+		if definition.Kind == "def" && definition.Qualifier != "run" && definition.Expr != nil && definition.Expr.Kind != "lambda" {
+			nullary[definition.Name] = struct{}{}
+		}
+	}
+	importer := quintJSONImporter{types: output.Types, nullary: nullary}
 	declarations := make([]Decl, 0, len(module.Declarations))
 	for _, definition := range module.Declarations {
 		declaration, include, err := importer.declaration(definition)
@@ -211,6 +218,11 @@ func (importer quintJSONImporter) expression(expression quintJSONExpr) (Expr, er
 			return NewValueExpr(IntSet, Typed(mustSet(IntT1))), nil
 		case "Nat":
 			return NewValueExpr(NatSet, Typed(mustSet(IntT1))), nil
+		}
+		if _, isNullary := importer.nullary[expression.Name]; isNullary {
+			operatorType := mustOperator(nil, typ)
+			name := NewNameExpr(expression.Name, Typed(operatorType))
+			return NewOperExpr(Op("OPER_APP"), Typed(typ), name)
 		}
 		return NewNameExpr(expression.Name, Typed(typ)), nil
 	case "bool":
@@ -308,7 +320,12 @@ func (importer quintJSONImporter) expression(expression quintJSONExpr) (Expr, er
 		if declarationErr != nil {
 			return nil, declarationErr
 		}
-		scope, scopeErr := importer.expression(*expression.Expr)
+		scopeImporter := importer
+		if definition.Expr != nil && definition.Expr.Kind != "lambda" {
+			scopeImporter.nullary = cloneMap(importer.nullary)
+			scopeImporter.nullary[definition.Name] = struct{}{}
+		}
+		scope, scopeErr := scopeImporter.expression(*expression.Expr)
 		if scopeErr != nil {
 			return nil, scopeErr
 		}
