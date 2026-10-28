@@ -106,3 +106,32 @@ func TestStratifiedExceptRejectsInvalidLiteralSelectors(t *testing.T) {
 		t.Fatal("out-of-bounds tuple EXCEPT was accepted")
 	}
 }
+
+func TestStratifiedRecordExceptPreservesDomainAndRejectsInvalidUpdates(t *testing.T) {
+	recordType, err := NewRecordType(map[string]Type{"a": IntT1, "b": BoolT1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := func(name string) Expr { return NewValueExpr(StringValue(name), Typed(StrT1)) }
+	record := MustOperExpr(Op("RECORD"), Typed(recordType), key("a"), intLiteral(1))
+	updated := exceptExpression(recordType, record, key("a"), intLiteral(8))
+	domain := MustOperExpr(Op("DOMAIN"), Typed(mustSet(StrT1)), updated)
+	expected := MustOperExpr(Op("SET_ENUM"), Typed(mustSet(StrT1)), key("a"))
+	rewriter := NewStratifiedRewriter()
+	scope, result, err := rewriter.Rewrite(
+		MustOperExpr(Op("EQ"), Typed(BoolT1), domain, expected), InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkRewrittenTruth(t, rewriter, scope, result, true)
+
+	for _, invalid := range []Expr{
+		exceptExpression(recordType, record, NewNameExpr("field", Typed(StrT1)), intLiteral(2)),
+		exceptExpression(recordType, record, key("missing"), intLiteral(2)),
+		exceptExpression(recordType, record, key("a"), NewValueExpr(BoolValue(true), Typed(BoolT1))),
+	} {
+		if _, _, err := NewStratifiedRewriter().Rewrite(invalid, InitialRewriterScope()); err == nil {
+			t.Fatalf("invalid record update was accepted: %v", invalid)
+		}
+	}
+}
