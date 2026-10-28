@@ -60,3 +60,41 @@ func TestStratifiedFunctionSetExpansionIsRejected(t *testing.T) {
 		t.Fatalf("function-set expansion error = %v", err)
 	}
 }
+
+func TestStratifiedPowerSetExpansionEmptyAndErrorContracts(t *testing.T) {
+	intSetType := mustSet(IntT1)
+	powerSetType := mustSet(intSetType)
+	empty := MustOperExpr(Op("SET_ENUM"), Typed(intSetType))
+	expanded := MustOperExpr(Op("Apalache!Expand"), Typed(powerSetType),
+		MustOperExpr(Op("SET_POWERSET"), Typed(powerSetType), empty))
+	expected := MustOperExpr(Op("SET_ENUM"), Typed(powerSetType), empty)
+	rewriter := NewStratifiedRewriter()
+	scope, result, err := rewriter.Rewrite(
+		MustOperExpr(Op("EQ"), Typed(BoolT1), expanded, expected), InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkRewrittenTruth(t, rewriter, scope, result, true)
+
+	for _, invalid := range []Expr{
+		MustOperExpr(Op("Apalache!Expand"), Typed(powerSetType), empty),
+		MustOperExpr(Op("Apalache!Expand"), Typed(powerSetType),
+			MustOperExpr(Op("SET_POWERSET"), Typed(powerSetType), NewValueExpr(IntSet, Typed(intSetType)))),
+	} {
+		if _, _, err := NewStratifiedRewriter().Rewrite(invalid, InitialRewriterScope()); err == nil {
+			t.Fatalf("invalid expansion was accepted: %v", invalid)
+		}
+	}
+
+	elements := make([]Expr, powerSetMaxBaseSize+1)
+	for index := range elements {
+		elements[index] = NewValueExpr(Int64Value(int64(index)), Typed(IntT1))
+	}
+	tooLargeBase := MustOperExpr(Op("SET_ENUM"), Typed(intSetType), elements...)
+	tooLarge := MustOperExpr(Op("Apalache!Expand"), Typed(powerSetType),
+		MustOperExpr(Op("SET_POWERSET"), Typed(powerSetType), tooLargeBase))
+	if _, _, err := NewStratifiedRewriter().Rewrite(tooLarge, InitialRewriterScope()); err == nil ||
+		!strings.Contains(err.Error(), "exceeds limit") {
+		t.Fatalf("large expansion error = %v", err)
+	}
+}
