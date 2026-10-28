@@ -67,6 +67,13 @@ func TestAssignmentStrategyBranchesAndQuantifiers(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(strategy, AssignmentStrategy{left.ID(), right.ID()}) {
 		t.Fatalf("branch strategy = %v, %v", strategy, err)
 	}
+	leftLabel := MustOperExpr(Op("LABEL"), Typed(BoolT1), left, s("L1"))
+	rightLabel := MustOperExpr(Op("LABEL"), Typed(BoolT1), right, s("L2"))
+	labelled := MustOperExpr(Op("OR"), Typed(BoolT1), leftLabel, rightLabel)
+	strategy, err = extractor.GetStrategy(assignmentVariables("x"), labelled, nil)
+	if err != nil || !reflect.DeepEqual(strategy, AssignmentStrategy{left.ID(), right.ID()}) {
+		t.Fatalf("label-transparent branch strategy = %v, %v", strategy, err)
+	}
 	imbalanced := MustOperExpr(Op("OR"), Typed(BoolT1), left, NewValueExpr(BoolValue(true), Typed(BoolT1)))
 	if _, err := extractor.GetStrategy(assignmentVariables("x"), imbalanced, nil); err == nil || !strings.Contains(err.Error(), "Missing assignments to: x") {
 		t.Fatalf("imbalanced branch error = %v", err)
@@ -89,10 +96,18 @@ func TestAssignmentStrategyBranchesAndQuantifiers(t *testing.T) {
 func TestAssignmentStrategyLetApplicationsAndRecursion(t *testing.T) {
 	extractor := NewSMTFreeSymbolicTransitionExtractor(nil, nil)
 	xAssignment := assignmentCandidate("x", intLiteral(1))
+	nullary := NewOperDecl("N", nil, xAssignment, Untyped())
+	nullaryCall := MustOperExpr(Op("OPER_APP"), Typed(BoolT1), NewNameExpr("N", Untyped()))
+	nullaryLet := NewLetInExpr(nullaryCall, Typed(BoolT1), nullary)
+	strategy, err := extractor.GetStrategy(assignmentVariables("x"), nullaryLet, nil)
+	if err != nil || !reflect.DeepEqual(strategy, AssignmentStrategy{xAssignment.ID()}) {
+		t.Fatalf("nullary LET strategy = %v, %v", strategy, err)
+	}
+
 	local := NewOperDecl("A", []OperatorParam{ValueParam("p")}, xAssignment, Untyped())
 	application := MustOperExpr(Op("OPER_APP"), Typed(BoolT1), NewNameExpr("A", Untyped()), intLiteral(1))
 	let := NewLetInExpr(application, Typed(BoolT1), local)
-	strategy, err := extractor.GetStrategy(assignmentVariables("x"), let, nil)
+	strategy, err = extractor.GetStrategy(assignmentVariables("x"), let, nil)
 	if err != nil || !reflect.DeepEqual(strategy, AssignmentStrategy{xAssignment.ID()}) {
 		t.Fatalf("LET strategy = %v, %v", strategy, err)
 	}

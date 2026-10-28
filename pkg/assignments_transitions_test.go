@@ -6,9 +6,12 @@ import (
 )
 
 func TestAllSelectionCombinations(t *testing.T) {
-	a, b, c, d := NewUID(), NewUID(), NewUID(), NewUID()
+	a, b, c, d, e, f := NewUID(), NewUID(), NewUID(), NewUID(), NewUID(), NewUID()
 	if got := allSelectionCombinations(nil); len(got) != 0 {
 		t.Fatalf("empty combinations = %v", got)
+	}
+	if got := allSelectionCombinations([]assignmentSelectionSet{selectionSet()}); len(got) != 0 {
+		t.Fatalf("factor without alternatives = %v", got)
 	}
 	sets := []assignmentSelectionSet{
 		selectionSet(assignmentSelection{a}, assignmentSelection{b}),
@@ -21,6 +24,53 @@ func TestAllSelectionCombinations(t *testing.T) {
 	)
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("combinations = %v, want %v", got, want)
+	}
+	got = allSelectionCombinations([]assignmentSelectionSet{
+		selectionSet(assignmentSelection{a}, assignmentSelection{b}),
+		selectionSet(assignmentSelection{c}, assignmentSelection{d}),
+		selectionSet(assignmentSelection{e}, assignmentSelection{f}),
+	})
+	want = selectionSet(
+		assignmentSelection{a, c, e}, assignmentSelection{a, c, f},
+		assignmentSelection{a, d, e}, assignmentSelection{a, d, f},
+		assignmentSelection{b, c, e}, assignmentSelection{b, c, f},
+		assignmentSelection{b, d, e}, assignmentSelection{b, d, f},
+	)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("three-factor combinations = %v, want %v", got, want)
+	}
+}
+
+func TestSelectionLabelsAtUnionsAlternatives(t *testing.T) {
+	a, b, root := NewUID(), NewUID(), NewUID()
+	selections := assignmentSelectionMap{root: selectionSet(assignmentSelection{a}, assignmentSelection{b})}
+	if got, want := labelsAt(root, selections), canonicalSelection([]UID{a, b}); !reflect.DeepEqual(got, want) {
+		t.Fatalf("labelsAt = %v, want %v", got, want)
+	}
+	if got := labelsAt(NewUID(), selections); got != nil {
+		t.Fatalf("labelsAt absent expression = %v", got)
+	}
+}
+
+func TestAllSelectionsMapsConditionalDisjunctionCartesianProduct(t *testing.T) {
+	x1, x2 := assignmentCandidate("x", intLiteral(1)), assignmentCandidate("x", intLiteral(2))
+	y1, y2 := assignmentCandidate("y", intLiteral(3)), assignmentCandidate("y", intLiteral(4))
+	action := MustOperExpr(Op("AND"), Typed(BoolT1),
+		MustOperExpr(Op("IF_THEN_ELSE"), Typed(BoolT1), NewNameExpr("C", Typed(BoolT1)), x1, x2),
+		MustOperExpr(Op("OR"), Typed(BoolT1), y1, y2))
+	selected := map[UID]struct{}{x1.ID(): {}, x2.ID(): {}, y1.ID(): {}, y2.ID(): {}}
+	introduction := NewAssignmentOperatorIntroductionFromSet(selected, nil)
+	transformed := introduction.Expression(action)
+	replacements := introduction.Replacements()
+	selections := NewSymbolicTransitionGenerator(nil).allSelections(transformed, nil)
+	want := selectionSet(
+		assignmentSelection{replacements[x1.ID()], replacements[y1.ID()]},
+		assignmentSelection{replacements[x1.ID()], replacements[y2.ID()]},
+		assignmentSelection{replacements[x2.ID()], replacements[y1.ID()]},
+		assignmentSelection{replacements[x2.ID()], replacements[y2.ID()]},
+	)
+	if got := selections[transformed.ID()]; !reflect.DeepEqual(got, want) {
+		t.Fatalf("root selections = %v, want %v", got, want)
 	}
 }
 
@@ -107,6 +157,26 @@ func TestSymbolicTransitionGeneratorSharesLetAssignmentAcrossBranches(t *testing
 	let := transitions[0].Expression.(*LetInExpr)
 	if let.Declarations()[0].Body().(*OperExpr).Operator().Name() != "Apalache!:=" || let.Body().(*OperExpr).Operator().Name() != "OR" {
 		t.Fatalf("shared LET transition = %v", let)
+	}
+}
+
+func TestSymbolicTransitionSlicePreservesSharedLetAssignment(t *testing.T) {
+	assignment := assignmentCandidate("x", intLiteral(1))
+	definition := NewOperDecl("X", nil, assignment, Typed(mustOperator(nil, BoolT1)))
+	operatorType := mustOperator(nil, BoolT1)
+	call := func() Expr { return MustOperExpr(Op("OPER_APP"), Typed(BoolT1), NewNameExpr("X", Typed(operatorType))) }
+	action := NewLetInExpr(MustOperExpr(Op("OR"), Typed(BoolT1),
+		MustOperExpr(Op("AND"), Typed(BoolT1), NewNameExpr("A", Typed(BoolT1)), call()),
+		MustOperExpr(Op("AND"), Typed(BoolT1), NewNameExpr("B", Typed(BoolT1)), call())),
+		Typed(BoolT1), definition)
+	introduction := NewAssignmentOperatorIntroductionFromSet(map[UID]struct{}{assignment.ID(): {}}, nil)
+	transformed := introduction.Expression(action)
+	replacement := introduction.Replacements()[assignment.ID()]
+	generator := NewSymbolicTransitionGenerator(nil)
+	selections := generator.allSelections(transformed, nil)
+	sliced := generator.sliceWith(assignmentSelection{replacement}, selections, transformed)
+	if !EqualExpr(sliced, transformed) {
+		t.Fatalf("shared LET slice = %v, want unchanged %v", sliced, transformed)
 	}
 }
 
