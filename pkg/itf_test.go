@@ -30,6 +30,55 @@ func TestMarshalITFTraceMergesConstantInitialization(t *testing.T) {
 	}
 }
 
+func TestTlaToITFJSONMatchesScalaTraceShapeAndRoundTrips(t *testing.T) {
+	module := NewModule("test", []Decl{NewVarDecl("x", Typed(IntT1))})
+	states := []TraceState{
+		{},
+		{"x": intLiteral(1)},
+		{"x": intLiteral(2)},
+	}
+	data, err := MarshalITFTrace(module, states, ITFOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var root map[string]any
+	if err = json.Unmarshal(data, &root); err != nil {
+		t.Fatal(err)
+	}
+	meta := root[ITFMetaField].(map[string]any)
+	if meta["format"] != "ITF" ||
+		meta["format-description"] != "https://apalache-mc.org/docs/adr/015adr-trace.html" ||
+		meta[ITFVarTypesField].(map[string]any)["x"] != "Int" {
+		t.Fatalf("ITF metadata = %#v", meta)
+	}
+	variables := root[ITFVarsField].([]any)
+	encoded := root[ITFStatesField].([]any)
+	if len(variables) != 1 || variables[0] != "x" || len(encoded) != 2 {
+		t.Fatalf("ITF vars/states = %#v / %#v", variables, encoded)
+	}
+	for index, raw := range encoded {
+		state := raw.(map[string]any)
+		if state[ITFMetaField].(map[string]any)["index"] != float64(index) ||
+			state["x"].(map[string]any)[ITFBigIntField] != []string{"1", "2"}[index] {
+			t.Fatalf("ITF state %d = %#v", index, state)
+		}
+	}
+	decoded, err := UnmarshalITFTrace(data)
+	if err != nil || len(decoded) != 2 {
+		t.Fatalf("round trip = %#v, %v", decoded, err)
+	}
+	for index, state := range decoded {
+		value, ok := state["x"].(*ValueExpr)
+		if !ok {
+			t.Fatalf("decoded state %d = %#v", index, state)
+		}
+		integer, integerOK := value.Value().(IntValue)
+		if !integerOK || integer.BigInt().Int64() != int64(index+1) {
+			t.Fatalf("decoded state %d = %#v", index, state)
+		}
+	}
+}
+
 func TestMarshalDecodedTraceITFSeparatesConstantsWithoutDroppingInitialState(t *testing.T) {
 	module := NewModule("M", []Decl{NewConstDecl("N", Typed(IntT1)), NewVarDecl("x", Typed(IntT1))})
 	states := []DecodedState{

@@ -115,7 +115,7 @@ tla-io/src/test/scala/at/forsyte/apalache/io/config/TestApalacheConfigLoader.sca
 tla-io/src/test/scala/at/forsyte/apalache/io/config/TestOptions.scala	partial	ir_json_test.go;itf_test.go;tlc_config*_test.go;type_annotations_test.go	remaining writer and configuration cases are open
 tla-io/src/test/scala/at/forsyte/apalache/io/config/TestRemoteConfigValidator.scala	partial	ir_json_test.go;itf_test.go;tlc_config*_test.go;type_annotations_test.go	remaining writer and configuration cases are open
 tla-io/src/test/scala/at/forsyte/apalache/io/itf/TestItfJsonToTla.scala	partial	ir_json_test.go;itf_test.go;tlc_config*_test.go;type_annotations_test.go	remaining writer and configuration cases are open
-tla-io/src/test/scala/at/forsyte/apalache/io/itf/TestTlaToItfJson.scala	partial	ir_json_test.go;itf_test.go;tlc_config*_test.go;type_annotations_test.go	remaining writer and configuration cases are open
+tla-io/src/test/scala/at/forsyte/apalache/io/itf/TestTlaToItfJson.scala	ported	itf_test.go	exact metadata, variable/type declaration, indexed bigint state encoding, constant-initialization slot removal, and encoder/decoder round trip are mapped
 tla-io/src/test/scala/at/forsyte/apalache/io/json/TestTlaToUJson.scala	partial	ir_json_test.go;itf_test.go;tlc_config*_test.go;type_annotations_test.go	remaining writer and configuration cases are open
 tla-io/src/test/scala/at/forsyte/apalache/io/json/TestUJsonToTla.scala	partial	ir_json_test.go;itf_test.go;tlc_config*_test.go;type_annotations_test.go	remaining writer and configuration cases are open
 tla-io/src/test/scala/at/forsyte/apalache/io/json/TestUJsonToTlaViaBuilder.scala	partial	ir_json_test.go;itf_test.go;tlc_config*_test.go;type_annotations_test.go	remaining writer and configuration cases are open
