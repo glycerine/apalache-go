@@ -461,6 +461,9 @@ func validateRecordIRType(arguments []Expr, result Type, set bool) error {
 		if !ok {
 			return fmt.Errorf("record key is not a string")
 		}
+		if _, duplicate := fields[key.Value()]; duplicate {
+			return fmt.Errorf("duplicate record field %q", key.Value())
+		}
 		fieldType, _ := arguments[index+1].Tag().Type()
 		if set {
 			setType, ok := fieldType.(SetType)

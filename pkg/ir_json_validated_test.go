@@ -92,6 +92,7 @@ func TestValidatedIRJSONDecoderValueDependentOperators(t *testing.T) {
 	variantSet := MustOperExpr(Op("SET_ENUM"), Typed(setVariant), variantValue)
 	sparse, _ := NewSparseTupleType(map[int]Type{3: StrT1})
 	record, _ := NewRecordType(map[string]Type{"items": newSeqTypeUnchecked(IntT1)})
+	singleFieldRecord, _ := NewRecordType(map[string]Type{"item": IntT1})
 	recordValue := NewNameExpr("record", Typed(record))
 	updatePath := MustOperExpr(Op("TUPLE"), Typed(newTupleTypeUnchecked(StrT1, IntT1)),
 		NewValueExpr(StringValue("items"), Typed(StrT1)), intLiteral(2))
@@ -134,6 +135,12 @@ func TestValidatedIRJSONDecoderValueDependentOperators(t *testing.T) {
 		MustOperExpr(Op("EXCEPT"), Typed(record), recordValue, updatePath, boolExpr(false)),
 		MustOperExpr(Op("EXCEPT"), Typed(record), recordValue,
 			NewNameExpr("path", Typed(newTupleTypeUnchecked(StrT1))), intLiteral(9)),
+		MustOperExpr(Op("RECORD"), Typed(singleFieldRecord),
+			NewValueExpr(StringValue("item"), Typed(StrT1)), intLiteral(1),
+			NewValueExpr(StringValue("item"), Typed(StrT1)), intLiteral(2)),
+		MustOperExpr(Op("RECORD_SET"), Typed(newSetTypeUnchecked(singleFieldRecord)),
+			NewValueExpr(StringValue("item"), Typed(StrT1)), MustOperExpr(Op("SET_ENUM"), Typed(setInt), intLiteral(1)),
+			NewValueExpr(StringValue("item"), Typed(StrT1)), MustOperExpr(Op("SET_ENUM"), Typed(setInt), intLiteral(2))),
 		MustOperExpr(Op("Apalache!MkSeq"), Typed(newSeqTypeUnchecked(IntT1)), NewNameExpr("n", Typed(IntT1)),
 			NewNameExpr("f", Typed(mustOperator([]Type{IntT1}, IntT1)))),
 	}
