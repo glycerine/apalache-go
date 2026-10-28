@@ -453,6 +453,7 @@ func (rewriter *StratifiedRewriter) rewriteFunctionConstructor(expression *OperE
 	baseBinding := scope.Binding
 	domainPointers := scope.Arena.GetHas(domain)
 	relationPointers := make([]ElementPointer, len(domainPointers))
+	rangeCells := make([]ArenaCell, len(domainPointers))
 	pairType, _ := NewTupleType(functionType.Argument(), functionType.Result())
 	for index, pointer := range domainPointers {
 		mappedScope := RewriterScope{Arena: scope.Arena, Binding: baseBinding.With(binder.Name(), pointer.Element())}
@@ -469,6 +470,7 @@ func (rewriter *StratifiedRewriter) rewriteFunctionConstructor(expression *OperE
 			FixedElementPointer{Cell: pointer.Element()}, FixedElementPointer{Cell: result})
 		scope.Arena = mappedScope.Arena
 		relationPointers[index] = PointerWithSameCondition(pointer, pair)
+		rangeCells[index] = result
 	}
 	scope.Binding = baseBinding
 	newArena, relation := scope.Arena.AppendCellType(BasicCellType{Type: functionRelationType(functionType)})
@@ -476,6 +478,23 @@ func (rewriter *StratifiedRewriter) rewriteFunctionConstructor(expression *OperE
 	rewriter.addMembershipConstraints(scope.Arena, relation)
 	newArena, function := scope.Arena.AppendCellType(BasicCellType{Type: functionType})
 	scope.Arena = newArena.SetDomain(function, domain).SetCodomain(function, relation)
+	if rewriter.smtEncoding == SMTEncodingArrays || rewriter.smtEncoding == SMTEncodingFunArrays {
+		for index, pointer := range domainPointers {
+			condition := pointer.ToSMT()
+			if active, constant := boolConstant(condition); constant && !active {
+				continue
+			}
+			value := Expr(rangeCells[index].NameExpr())
+			if _, constant := boolConstant(condition); !constant {
+				oldValue := MustOperExpr(Op("Apalache!SelectInFun"), Typed(functionType.Result()),
+					pointer.Element().NameExpr(), function.NameExpr())
+				value = MustOperExpr(Op("IF_THEN_ELSE"), Typed(functionType.Result()),
+					condition, value, oldValue)
+			}
+			rewriter.assert(MustOperExpr(Op("Apalache!StoreInSet"), Typed(BoolT1),
+				value, function.NameExpr(), pointer.Element().NameExpr()))
+		}
+	}
 	return scope, function, nil
 }
 
@@ -1367,6 +1386,19 @@ func (rewriter *StratifiedRewriter) rewriteApplication(expression *OperExpr, sco
 		scope, argument, err = rewriter.coerceCell(scope, argument, functionType.Argument())
 		if err != nil {
 			return scope, ArenaCell{}, fmt.Errorf("function argument cannot be widened to %s: %w", functionType.Argument(), err)
+		}
+		resultCellType, typeErr := CellTypeFromType(functionType.Result())
+		if typeErr != nil {
+			return scope, ArenaCell{}, typeErr
+		}
+		if (rewriter.smtEncoding == SMTEncodingArrays || rewriter.smtEncoding == SMTEncodingFunArrays) &&
+			isDirectSMTCellType(resultCellType) {
+			newArena, result := scope.Arena.AppendCellType(resultCellType, true)
+			scope.Arena = newArena
+			selection := MustOperExpr(Op("Apalache!SelectInFun"), Typed(functionType.Result()),
+				argument.NameExpr(), collection.NameExpr())
+			rewriter.assert(MustOperExpr(Op("EQ"), Typed(BoolT1), result.NameExpr(), selection))
+			return project(scope, result)
 		}
 		relation, err := scope.Arena.Codomain(collection)
 		if err != nil {

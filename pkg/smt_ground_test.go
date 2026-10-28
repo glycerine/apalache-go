@@ -281,6 +281,66 @@ func TestEncodeRewriterScopeStoresDynamicSetMembership(t *testing.T) {
 	}
 }
 
+func TestEncodeRewriterScopeUsesNativeFunctionArrays(t *testing.T) {
+	functionType, err := NewFunType(IntT1, IntT1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	binder := NewNameExpr("x", Typed(IntT1))
+	domainBinder := NewNameExpr("d", Typed(IntT1))
+	domainElements := MustOperExpr(Op("SET_ENUM"), Typed(mustSet(IntT1)), intLiteral(1), intLiteral(2))
+	domainPredicate := MustOperExpr(Op("EQ"), Typed(BoolT1), domainBinder, intLiteral(1))
+	domain := MustOperExpr(Op("SET_FILTER"), Typed(mustSet(IntT1)),
+		domainBinder, domainElements, domainPredicate)
+	body := MustOperExpr(Op("PLUS"), Typed(IntT1), binder, intLiteral(10))
+	function := MustOperExpr(Op("FUN_CTOR"), Typed(functionType), body, binder, domain)
+	application := MustOperExpr(Op("FUN_APP"), Typed(IntT1), function, intLiteral(1))
+	claim := MustOperExpr(Op("EQ"), Typed(BoolT1), application, intLiteral(11))
+	for _, encoding := range []SMTEncoding{SMTEncodingArrays, SMTEncodingFunArrays} {
+		t.Run(string(encoding), func(t *testing.T) {
+			rewriter := NewStratifiedRewriterWithOptions(StratifiedRewriterOptions{SMTEncoding: encoding})
+			scope, result, rewriteErr := rewriter.Rewrite(claim, InitialRewriterScope())
+			if rewriteErr != nil {
+				t.Fatal(rewriteErr)
+			}
+			seenStore, seenSelect := false, false
+			var inspect func(Expr)
+			inspect = func(expression Expr) {
+				oper, ok := expression.(*OperExpr)
+				if !ok {
+					return
+				}
+				seenStore = seenStore || oper.Operator().Name() == "Apalache!StoreInSet" && len(oper.Arguments()) == 3
+				seenSelect = seenSelect || oper.Operator().Name() == "Apalache!SelectInFun"
+				for _, argument := range oper.Arguments() {
+					inspect(argument)
+				}
+			}
+			for _, constraint := range rewriter.Constraints() {
+				inspect(constraint)
+			}
+			if !seenStore || !seenSelect {
+				t.Fatalf("native function constraints: store=%v select=%v constraints=%v",
+					seenStore, seenSelect, rewriter.Constraints())
+			}
+			solver := newTestG3Solver(t)
+			encoder, encodeErr := EncodeRewriterScopeWithEncoding(solver, scope, rewriter.Constraints(), encoding)
+			if encodeErr != nil {
+				t.Fatal(encodeErr)
+			}
+			if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTSatisfiable {
+				t.Fatalf("native function scope = %v, %v", status, checkErr)
+			}
+			if assertErr := encoder.Assert(MustOperExpr(Op("NOT"), Typed(BoolT1), result.NameExpr())); assertErr != nil {
+				t.Fatal(assertErr)
+			}
+			if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTUnsatisfiable {
+				t.Fatalf("native function application = %v, %v", status, checkErr)
+			}
+		})
+	}
+}
+
 func TestG3GroundEncoderArraySSAStoresAndUnconstraining(t *testing.T) {
 	t.Run("set store", func(t *testing.T) {
 		solver := newTestG3Solver(t)
