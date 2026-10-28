@@ -605,6 +605,21 @@ Inv == x < 2
 	} else if states, decodeErr := pal.UnmarshalITFTrace(data); decodeErr != nil || len(states) != 2 {
 		t.Fatalf("safe example trace = %d states, %v", len(states), decodeErr)
 	}
+	outDir := filepath.Join(dir, "out")
+	runDir := filepath.Join(dir, "custom-run")
+	stdout.Reset()
+	stderr.Reset()
+	directoryTraceArgs := append([]string{"check", "--output-traces", "--out-dir=" + outDir, "--run-dir=" + runDir}, direct[1:]...)
+	if code := run(context.Background(), directoryTraceArgs, &stdout, &stderr); code != exitOK {
+		t.Fatalf("directory trace check = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
+	}
+	if _, err := os.Stat(filepath.Join(runDir, "example.itf.json")); err != nil {
+		t.Fatalf("custom run trace: %v", err)
+	}
+	generated, err := filepath.Glob(filepath.Join(outDir, filepath.Base(path), "*", "example.itf.json"))
+	if err != nil || len(generated) != 1 {
+		t.Fatalf("generated run traces = %v, %v", generated, err)
+	}
 	jsonPath := filepath.Join(dir, "Counter.json")
 	stdout.Reset()
 	stderr.Reset()
@@ -811,6 +826,18 @@ Next == x' = x + 1
 	}
 	if states, ok := trace["states"].([]any); !ok || len(states) != 3 {
 		t.Fatalf("ITF simulation = %#v", trace)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	implicitRunDir := filepath.Join(dir, "simulation-run")
+	code = run(context.Background(), []string{
+		"simulate", "--max-run=1", "--length=1", "--output-traces", "--run-dir=" + implicitRunDir, path,
+	}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("run-dir simulation = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
+	}
+	if _, err = os.Stat(filepath.Join(implicitRunDir, "example.itf.json")); err != nil {
+		t.Fatalf("run-dir simulation trace: %v", err)
 	}
 	stdout.Reset()
 	stderr.Reset()

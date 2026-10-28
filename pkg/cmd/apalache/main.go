@@ -665,6 +665,8 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	viewName := flags.String("view", "", "state view used to distinguish multiple errors")
 	timeoutSMT := flags.Int("timeout-smt", 0, "limit each SMT query to this many seconds (0 is unlimited)")
 	configFile := flags.String("config-file", "", "Apalache JSON configuration file")
+	outDir := flags.String("out-dir", "", "root directory for source-namespaced run output")
+	runDir := flags.String("run-dir", "", "additional directory receiving run output directly")
 	configPath := flags.String("config", "", "TLC configuration file")
 	initName := flags.String("init", "", "initial-state operator")
 	nextName := flags.String("next", "", "next-state operator")
@@ -718,6 +720,7 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 			}
 		}
 	}
+	resolveOutputDirectoryOptions(applicationConfig, visited, outDir, runDir)
 	if visited["init"] != visited["next"] {
 		fmt.Fprintln(stderr, "-init and -next must be provided together")
 		return exitUsage
@@ -804,6 +807,11 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	} else if configuration.TLCConfig == nil {
 		configuration.Behavior = pal.InitNextSpec{Init: "Init", Next: "Next"}
 	}
+	outputPaths, err := prepareCommandOutputPaths(*outDir, *runDir, sourcePath, "simulate")
+	if err != nil {
+		fmt.Fprintf(stderr, "cannot configure simulation output: %v\n", err)
+		return exitUsage
+	}
 
 	frontend := pal.ParseAndTypeCheckFile(ctx, sourcePath, pal.FrontendOptions{
 		LibraryPaths: libraryPaths,
@@ -830,12 +838,15 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	if len(report.Counterexamples) != 0 {
 		for index, counterexample := range report.Counterexamples {
 			if *outputTraces {
-				outputPath := traceITFPath("", "violation", index+1, len(report.Counterexamples))
-				if writeErr := writeDecodedITF(outputPath, prepared.Module, counterexample.States); writeErr != nil {
+				name := traceITFPath("", "violation", index+1, len(report.Counterexamples))
+				written, writeErr := writeDecodedITFPaths(outputPaths.implicitFiles(name), prepared.Module, counterexample.States)
+				if writeErr != nil {
 					fmt.Fprintf(stderr, "cannot write ITF simulation counterexample: %v\n", writeErr)
 					return exitTool
 				}
-				fmt.Fprintf(stdout, "Wrote ITF trace to %s.\n", outputPath)
+				for _, outputPath := range written {
+					fmt.Fprintf(stdout, "Wrote ITF trace to %s.\n", outputPath)
+				}
 			}
 			kind := "Invariant"
 			if counterexample.TraceInvariant {
@@ -859,12 +870,19 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 			return exitTool
 		}
 		if *itfPath != "" || *outputTraces {
-			outputPath := traceITFPath(*itfPath, "example", run+1, len(results))
-			if writeErr := writeDecodedITF(outputPath, prepared.Module, result.States); writeErr != nil {
+			name := traceITFPath(*itfPath, "example", run+1, len(results))
+			outputFiles := []string{name}
+			if *itfPath == "" {
+				outputFiles = outputPaths.implicitFiles(name)
+			}
+			written, writeErr := writeDecodedITFPaths(outputFiles, prepared.Module, result.States)
+			if writeErr != nil {
 				fmt.Fprintf(stderr, "cannot write ITF simulation: %v\n", writeErr)
 				return exitTool
 			}
-			fmt.Fprintf(stdout, "Wrote ITF trace to %s.\n", outputPath)
+			for _, outputPath := range written {
+				fmt.Fprintf(stdout, "Wrote ITF trace to %s.\n", outputPath)
+			}
 		}
 		if len(results) > 1 {
 			fmt.Fprintf(stdout, "Simulation run %d of %d: ", run+1, len(results))
@@ -908,6 +926,17 @@ func writeDecodedITF(path string, module *pal.Module, states []pal.DecodedState)
 	return os.WriteFile(path, append(data, '\n'), 0o644)
 }
 
+func writeDecodedITFPaths(paths []string, module *pal.Module, states []pal.DecodedState) ([]string, error) {
+	written := make([]string, 0, len(paths))
+	for _, path := range paths {
+		if err := writeDecodedITF(path, module, states); err != nil {
+			return written, err
+		}
+		written = append(written, path)
+	}
+	return written, nil
+}
+
 func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("check", flag.ContinueOnError)
 	flags.SetOutput(stderr)
@@ -917,6 +946,8 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	viewName := flags.String("view", "", "state view used to distinguish multiple errors")
 	timeoutSMT := flags.Int("timeout-smt", 0, "limit each SMT query to this many seconds (0 is unlimited)")
 	configFile := flags.String("config-file", "", "Apalache JSON configuration file")
+	outDir := flags.String("out-dir", "", "root directory for source-namespaced run output")
+	runDir := flags.String("run-dir", "", "additional directory receiving run output directly")
 	configPath := flags.String("config", "", "TLC configuration file")
 	initName := flags.String("init", "", "initial-state operator")
 	nextName := flags.String("next", "", "next-state operator")
@@ -969,6 +1000,7 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 			}
 		}
 	}
+	resolveOutputDirectoryOptions(applicationConfig, visited, outDir, runDir)
 	if visited["init"] != visited["next"] {
 		fmt.Fprintln(stderr, "-init and -next must be provided together")
 		return exitUsage
@@ -1067,6 +1099,11 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		}
 		checkDeadlocks = false
 	}
+	outputPaths, err := prepareCommandOutputPaths(*outDir, *runDir, sourcePath, "check")
+	if err != nil {
+		fmt.Fprintf(stderr, "cannot configure check output: %v\n", err)
+		return exitUsage
+	}
 
 	frontend := pal.ParseAndTypeCheckFile(ctx, sourcePath, pal.FrontendOptions{
 		LibraryPaths: libraryPaths,
@@ -1111,12 +1148,19 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	}
 	if *itfPath != "" || *outputTraces {
 		for index, states := range traceStates {
-			outputPath := traceITFPath(*itfPath, tracePrefix, index+1, len(traceStates))
-			if writeErr := writeDecodedITF(outputPath, prepared.Module, states); writeErr != nil {
+			name := traceITFPath(*itfPath, tracePrefix, index+1, len(traceStates))
+			outputFiles := []string{name}
+			if *itfPath == "" {
+				outputFiles = outputPaths.implicitFiles(name)
+			}
+			written, writeErr := writeDecodedITFPaths(outputFiles, prepared.Module, states)
+			if writeErr != nil {
 				fmt.Fprintf(stderr, "cannot write ITF trace: %v\n", writeErr)
 				return exitTool
 			}
-			fmt.Fprintf(stdout, "Wrote ITF trace to %s.\n", outputPath)
+			for _, outputPath := range written {
+				fmt.Fprintf(stdout, "Wrote ITF trace to %s.\n", outputPath)
+			}
 		}
 	}
 	switch result.Outcome {
