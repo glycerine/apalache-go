@@ -46,7 +46,8 @@ func ReadTLAType1Tag(text string) (TypeTag, error) {
 	}
 	typ, err := ParseType(text)
 	if err != nil {
-		return Untyped(), err
+		return Untyped(), NewJSONDeserializationError(
+			"Error in type annotation: Expected Type1 expression or 'Untyped', found: "+text, err)
 	}
 	return Typed(typ), nil
 }

@@ -44,6 +44,11 @@ func TestTLAType1TagPrinterReaderAndUntypedReader(t *testing.T) {
 	}
 	if _, err := ReadTLAType1Tag("not a type ("); err == nil {
 		t.Fatal("accepted malformed type tag")
+	} else {
+		var jsonErr *JSONDeserializationError
+		if !errors.As(err, &jsonErr) || err.Error() != "Error in type annotation: Expected Type1 expression or 'Untyped', found: not a type (" {
+			t.Fatalf("malformed tag error = %T: %v", err, err)
+		}
 	}
 	erased, err := (UntypedTagReader{}).ReadTypeTag(fmt.Sprintf("%s", setInt))
 	if err != nil || erased.IsTyped() {
