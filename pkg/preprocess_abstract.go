@@ -41,13 +41,14 @@ func (transformer *AbstractTransformer) Transform(expression Expr) Expr {
 			}
 			return transformer.transformOneLevel(shallow)
 		case *LetInExpr:
+			body := transform(typed.Body())
 			declarations := typed.Declarations()
 			for index, declaration := range declarations {
 				copy := declaration.copyWithTag(declaration.Tag())
 				copy.SetBody(transform(declaration.Body()))
 				declarations[index] = copy
 			}
-			return NewLetInExpr(transform(typed.Body()), typed.Tag(), declarations...)
+			return NewLetInExpr(body, typed.Tag(), declarations...)
 		default:
 			return transformer.transformOneLevel(current)
 		}

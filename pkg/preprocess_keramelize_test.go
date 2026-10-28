@@ -1,6 +1,9 @@
 package apalache
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 func TestKeramelizerLogicAndSetAlgebra(t *testing.T) {
 	x := NewNameExpr("x", Typed(IntT1))
@@ -29,6 +32,12 @@ func TestKeramelizerLogicAndSetAlgebra(t *testing.T) {
 	impl, err := NewKeramelizer(nil, nil).Expression(MustOperExpr(Op("IMPLIES"), Typed(BoolT1), NewNameExpr("P", Typed(BoolT1)), NewNameExpr("Q", Typed(BoolT1))))
 	if err != nil || impl.(*OperExpr).Operator().Name() != "OR" {
 		t.Fatalf("implication = %v, %v", impl, err)
+	}
+	for _, test := range []struct{ operator, want string }{{"EQUIV", "EQ"}, {"NE", "NOT"}} {
+		got, transformErr := NewKeramelizer(nil, nil).Expression(MustOperExpr(Op(test.operator), Typed(BoolT1), x, x))
+		if transformErr != nil || got.(*OperExpr).Operator().Name() != test.want {
+			t.Errorf("%s rewrite = %v, %v", test.operator, got, transformErr)
+		}
 	}
 }
 
@@ -61,6 +70,26 @@ func TestKeramelizerProductsRecordsAndSubsets(t *testing.T) {
 	outer := subset.(*OperExpr)
 	if outer.Operator().Name() != "FORALL3" || outer.Arguments()[2].(*OperExpr).Operator().Name() != "FORALL3" {
 		t.Fatalf("subset powerset = %v", subset)
+	}
+}
+
+func TestKeramelizerNestedPowersetSubset(t *testing.T) {
+	intSetType := mustSet(IntT1)
+	intSet := NewNameExpr("B", Typed(intSetType))
+	power := MustOperExpr(Op("SET_POWERSET"), Typed(mustSet(intSetType)), intSet)
+	doublePower := MustOperExpr(Op("SET_POWERSET"), Typed(mustSet(mustSet(intSetType))), power)
+	sets := NewNameExpr("A", Typed(mustSet(mustSet(IntT1))))
+	got, err := NewKeramelizer(nil, nil).Expression(MustOperExpr(Op("SET_SUBSET_EQ"), Typed(BoolT1), sets, doublePower))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if countOperator(got, "FORALL3") != 3 || countOperator(got, "SET_SUBSET_EQ") != 0 {
+		t.Fatalf("nested powerset subset = %v", got)
+	}
+	leftPower := MustOperExpr(Op("SET_POWERSET"), Typed(mustSet(intSetType)), NewNameExpr("A0", Typed(intSetType)))
+	got, err = NewKeramelizer(nil, nil).Expression(MustOperExpr(Op("SET_SUBSET_EQ"), Typed(BoolT1), leftPower, power))
+	if err != nil || countOperator(got, "FORALL3") != 1 {
+		t.Fatalf("powerset-to-powerset subset = %v, %v", got, err)
 	}
 }
 
@@ -113,5 +142,58 @@ func TestKeramelizerAssignmentsAndCases(t *testing.T) {
 	got, err = NewKeramelizer(nil, nil).Expression(valueCase)
 	if err != nil || got.(*OperExpr).Operator().Name() != "IF_THEN_ELSE" {
 		t.Fatalf("value CASE = %v, %v", got, err)
+	}
+}
+
+func TestKeramelizerCaseWithoutOtherAndEmptyCase(t *testing.T) {
+	p := NewNameExpr("P", Typed(BoolT1))
+	q := NewNameExpr("Q", Typed(BoolT1))
+	one, two := intLiteral(1), intLiteral(2)
+	valueCase := MustOperExpr(Op("CASE"), Typed(IntT1), p, one, q, two)
+	got, err := NewKeramelizer(nil, nil).Expression(valueCase)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ite := got.(*OperExpr)
+	if ite.Operator().Name() != "IF_THEN_ELSE" || ite.Arguments()[0] != p || ite.Arguments()[2] != two {
+		t.Fatalf("CASE without OTHER = %v", got)
+	}
+	booleanCase := MustOperExpr(Op("CASE"), Typed(BoolT1), p, q, q, p)
+	got, err = NewKeramelizer(nil, nil).Expression(booleanCase)
+	if err != nil || got.(*OperExpr).Operator().Name() != "OR" || len(got.(*OperExpr).Arguments()) != 2 {
+		t.Fatalf("Boolean CASE without OTHER = %v, %v", got, err)
+	}
+}
+
+func TestKeramelizerScalaLETOrderMalformedSetAndTracking(t *testing.T) {
+	setType := mustSet(IntT1)
+	intersection := func(left, right string) Expr {
+		return MustOperExpr(Op("SET_INTERSECT"), Typed(setType),
+			NewNameExpr(left, Typed(setType)), NewNameExpr(right, Typed(setType)))
+	}
+	local := NewOperDecl("Local", nil, intersection("C", "D"), Typed(mustOperator(nil, setType)))
+	root := NewLetInExpr(intersection("A", "B"), Typed(setType), local)
+	got, err := NewKeramelizer(NewUniqueNameGenerator(), nil).Expression(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	let := got.(*LetInExpr)
+	if let.Body().(*OperExpr).Arguments()[0].(*NameExpr).Name() != "t_1" ||
+		let.Declarations()[0].Body().(*OperExpr).Arguments()[0].(*NameExpr).Name() != "t_2" {
+		t.Fatalf("LET fresh-name order body=%v definition=%v", let.Body(), let.Declarations()[0].Body())
+	}
+
+	badSet := NewNameExpr("Bad", Typed(IntT1))
+	_, err = NewKeramelizer(nil, nil).Expression(MustOperExpr(Op("SET_INTERSECT"), Typed(IntT1), badSet, badSet))
+	var malformed *MalformedTlaError
+	if !errors.As(err, &malformed) || malformed.CauseExpr() != badSet {
+		t.Fatalf("malformed set error = %T %v", err, err)
+	}
+
+	original := MustOperExpr(Op("SET_NOT_IN"), Typed(BoolT1), intLiteral(1), NewNameExpr("S", Typed(setType)))
+	changes := NewChangeListener()
+	rewritten, err := NewKeramelizer(nil, NewListenerTracker(changes)).Expression(original)
+	if err != nil || changes.TraceBack(rewritten.ID()) != original.ID() {
+		t.Fatalf("tracked rewrite = %v, %v, origin %s", rewritten, err, changes.TraceBack(rewritten.ID()))
 	}
 }

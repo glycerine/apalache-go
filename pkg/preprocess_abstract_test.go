@@ -68,6 +68,24 @@ func TestAbstractTransformerLETBodiesAndIdentity(t *testing.T) {
 	}
 }
 
+func TestAbstractTransformerVisitsLETBodyBeforeDefinitions(t *testing.T) {
+	one := intLiteral(1)
+	local := NewOperDecl("Local", nil, one, Typed(mustOperator(nil, IntT1)))
+	let := NewLetInExpr(one, Typed(IntT1), local)
+	visits := 0
+	transformer := NewAbstractTransformer(nil, func(expression Expr) (Expr, bool) {
+		if _, literal := expression.(*ValueExpr); !literal {
+			return nil, false
+		}
+		visits++
+		return intLiteral(int64(visits)), true
+	})
+	got := transformer.Transform(let).(*LetInExpr)
+	if !EqualTypedExpr(got.Body(), intLiteral(1)) || !EqualTypedExpr(got.Declarations()[0].Body(), intLiteral(2)) {
+		t.Fatalf("LET visit order body=%v definition=%v", got.Body(), got.Declarations()[0].Body())
+	}
+}
+
 func TestAbstractTransformerTracksIntermediateOperatorOnlyForChangedArguments(t *testing.T) {
 	one := intLiteral(1)
 	plus := MustOperExpr(Op("PLUS"), Typed(IntT1), one, one)

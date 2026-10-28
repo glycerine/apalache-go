@@ -28,18 +28,22 @@ func (keramelizer *Keramelizer) Expression(expression Expr) (Expr, error) {
 }
 
 func (keramelizer *Keramelizer) transform(expression Expr) (Expr, error) {
-	var rebuilt Expr = expression
+	var shallow Expr = expression
 	switch typed := expression.(type) {
 	case *OperExpr:
 		arguments := typed.Arguments()
+		changed := false
 		for index, argument := range arguments {
 			var err error
 			arguments[index], err = keramelizer.transform(argument)
 			if err != nil {
 				return nil, err
 			}
+			changed = changed || arguments[index].ID() != argument.ID()
 		}
-		rebuilt = MustOperExpr(typed.Operator(), typed.Tag(), arguments...)
+		if changed {
+			shallow = keramelizer.tracker.Hold(typed, MustOperExpr(typed.Operator(), typed.Tag(), arguments...))
+		}
 	case *LetInExpr:
 		body, err := keramelizer.transform(typed.Body())
 		if err != nil {
@@ -55,12 +59,14 @@ func (keramelizer *Keramelizer) transform(expression Expr) (Expr, error) {
 			copy.SetBody(newBody)
 			declarations[index] = copy
 		}
-		rebuilt = NewLetInExpr(body, typed.Tag(), declarations...)
+		result := NewLetInExpr(body, typed.Tag(), declarations...)
+		return keramelizer.tracker.TrackExpression(func(Expr) Expr { return result })(expression), nil
 	}
-	result, err := keramelizer.oneLevel(rebuilt)
+	result, err := keramelizer.oneLevel(shallow)
 	if err != nil {
 		return nil, err
 	}
+	result = keramelizer.tracker.TrackExpression(func(Expr) Expr { return result })(shallow)
 	return keramelizer.tracker.TrackExpression(func(Expr) Expr { return result })(expression), nil
 }
 
@@ -71,7 +77,7 @@ func (keramelizer *Keramelizer) oneLevel(expression Expr) (Expr, error) {
 	}
 	args := op.Arguments()
 	name := op.Operator().Name()
-	setElement := func(set Expr) (Type, error) { return setElementType(set) }
+	setElement := func(set Expr) (Type, error) { return keramelizerSetElementType(set) }
 	forallMembership := func(left, right Expr) (Expr, error) {
 		typ, err := setElement(left)
 		if err != nil {
@@ -204,6 +210,18 @@ func (keramelizer *Keramelizer) oneLevel(expression Expr) (Expr, error) {
 		return keramelizeCase(op, args)
 	}
 	return expression, nil
+}
+
+func keramelizerSetElementType(expression Expr) (Type, error) {
+	typ, ok := expression.Tag().Type()
+	if !ok {
+		return nil, NewMalformedTlaError("Expected a set, found: "+expression.Tag().String(), expression)
+	}
+	set, ok := typ.(SetType)
+	if !ok {
+		return nil, NewMalformedTlaError("Expected a set, found: "+expression.Tag().String(), expression)
+	}
+	return set.Element(), nil
 }
 
 func keramelizeCase(expression *OperExpr, arguments []Expr) (Expr, error) {

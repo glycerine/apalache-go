@@ -58,6 +58,10 @@ func SimplifySetMembership(root Expr, generator *UniqueNameGenerator, tracker Tr
 				shallow = tracker.Hold(typed, MustOperExpr(typed.Operator(), typed.Tag(), arguments...))
 			}
 		case *LetInExpr:
+			body, err := transform(typed.Body())
+			if err != nil {
+				return nil, err
+			}
 			declarations := typed.Declarations()
 			for index, declaration := range declarations {
 				body, err := transform(declaration.Body())
@@ -67,10 +71,6 @@ func SimplifySetMembership(root Expr, generator *UniqueNameGenerator, tracker Tr
 				copy := declaration.copyWithTag(declaration.Tag())
 				copy.SetBody(body)
 				declarations[index] = copy
-			}
-			body, err := transform(typed.Body())
-			if err != nil {
-				return nil, err
 			}
 			result := NewLetInExpr(body, typed.Tag(), declarations...)
 			return tracker.TrackExpression(func(Expr) Expr { return result })(expression), nil
