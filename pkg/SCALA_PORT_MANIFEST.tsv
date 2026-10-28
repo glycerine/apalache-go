@@ -391,7 +391,7 @@ tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/ConstSimplifierBase.scala	parti
 tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/Desugarer.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
 tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/ExprOptimizer.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
 tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/Inliner.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
-tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/IntegerQuantificationOptimizer.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
+tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/IntegerQuantificationOptimizer.scala	ported	preprocess_quantifiers.go;preprocess_quantifiers_test.go	bounded Int/Nat/range quantifiers become typed unbounded quantifiers with conjunction/implication guards, fresh bound-name occurrences, shallow matching, and tracker reporting
 tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/Keramelizer.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
 tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/LetInOptimizer.scala	ported	preprocess_let.go;preprocess_let_test.go	conservative one-pass use analysis removes unused LET declarations, preserves used/lambda definitions and untouched identities, propagates nested changes, and tracks rebuilt nodes
 tla-pp/src/main/scala/at/forsyte/apalache/tla/pp/NormalizedNames.scala	partial	preprocess_*.go;temporal_*.go;retla*.go	remaining preprocessing suite mapping is open
