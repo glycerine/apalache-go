@@ -140,7 +140,7 @@ tla-pp/src/test/scala/at/forsyte/apalache/tla/pp/TestConstAndDefRewriter.scala	p
 tla-pp/src/test/scala/at/forsyte/apalache/tla/pp/TestConstSimplifier.scala	partial	preprocess_*_test.go;temporal_*_test.go;retla*_test.go	remaining preprocessing cases are open
 tla-pp/src/test/scala/at/forsyte/apalache/tla/pp/TestDesugarer.scala	partial	preprocess_*_test.go;temporal_*_test.go;retla*_test.go	remaining preprocessing cases are open
 tla-pp/src/test/scala/at/forsyte/apalache/tla/pp/TestExprOptimizer.scala	partial	preprocess_*_test.go;temporal_*_test.go;retla*_test.go	remaining preprocessing cases are open
-tla-pp/src/test/scala/at/forsyte/apalache/tla/pp/TestInliner.scala	partial	preprocess_*_test.go;temporal_*_test.go;retla*_test.go	remaining preprocessing cases are open
+tla-pp/src/test/scala/at/forsyte/apalache/tla/pp/TestInliner.scala	ported	preprocess_inliner_test.go;preprocess_inline_pass_test.go	all local/module, dependency, nullary, call-by-name/lambda, named-assumption, nonbasic-argument, recursive, filtering, tracking, and polymorphic variable-order cases are executable in Go
 tla-pp/src/test/scala/at/forsyte/apalache/tla/pp/TestKeramelizer.scala	partial	preprocess_*_test.go;temporal_*_test.go;retla*_test.go	remaining preprocessing cases are open
 tla-pp/src/test/scala/at/forsyte/apalache/tla/pp/TestLetInOptimizer.scala	ported	preprocess_let_test.go	exact scalar/operator identity, unused/used/mixed LET, lambda LET, nested operator removal, touch propagation, and tracker cases are mapped
 tla-pp/src/test/scala/at/forsyte/apalache/tla/pp/TestLoopEncoder.scala	partial	preprocess_*_test.go;temporal_*_test.go;retla*_test.go	remaining preprocessing cases are open

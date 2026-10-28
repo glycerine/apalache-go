@@ -168,7 +168,7 @@ func TestInstantiateEmbeddedOperatorPreservesNullaryLetSharing(t *testing.T) {
 }
 
 func TestInlinerTransitivePolymorphismIgnoresVariableNumbering(t *testing.T) {
-	for _, numbers := range [][2]int{{0, 1}, {1, 0}, {0, 2}, {2, 0}} {
+	for _, numbers := range [][2]int{{0, 1}, {1, 0}, {0, 2}, {2, 0}, {1, 2}, {2, 1}} {
 		a, _ := NewVarType(numbers[0])
 		b, _ := NewVarType(numbers[1])
 		pType := mustOperator([]Type{a}, mustSet(a))
@@ -192,6 +192,33 @@ func TestInlinerTransitivePolymorphismIgnoresVariableNumbering(t *testing.T) {
 		if typ, _ := set.Arguments()[0].Tag().Type(); !EqualTypes(typ, IntT1) {
 			t.Fatalf("variables %v: element type %v", numbers, typ)
 		}
+	}
+}
+
+func TestInlinerSpecializesTransitivePolymorphismAtModuleLevel(t *testing.T) {
+	a, _ := NewVarType(2)
+	b, _ := NewVarType(1)
+	pType := mustOperator([]Type{a}, mustSet(a))
+	p := NewOperDecl("P", []OperatorParam{ValueParam("x")},
+		MustOperExpr(Op("SET_ENUM"), Typed(mustSet(a)), NewNameExpr("x", Typed(a))), Typed(pType))
+	pAtB := mustOperator([]Type{b}, mustSet(b))
+	qType := mustOperator([]Type{b}, mustSet(b))
+	q := NewOperDecl("Q", []OperatorParam{ValueParam("y")},
+		inlineApplication("P", pAtB, mustSet(b), NewNameExpr("y", Typed(b))), Typed(qType))
+	qAtIntSet := mustOperator([]Type{mustSet(IntT1)}, mustSet(mustSet(IntT1)))
+	x := NewOperDecl("X", nil,
+		inlineApplication("Q", qAtIntSet, mustSet(mustSet(IntT1)), MustOperExpr(Op("SET_ENUM"), Typed(mustSet(IntT1)))),
+		Typed(mustOperator(nil, mustSet(mustSet(IntT1)))))
+	got, err := NewInliner(nil, nil, true, nil).Module(NewModule("M", []Decl{x, q, p}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	xBody := got.OperDeclarations()[2].Body().(*OperExpr)
+	if typ, _ := xBody.Tag().Type(); !EqualTypes(typ, mustSet(mustSet(IntT1))) {
+		t.Fatalf("module polymorphic result type = %v", typ)
+	}
+	if typ, _ := xBody.Arguments()[0].Tag().Type(); !EqualTypes(typ, mustSet(IntT1)) {
+		t.Fatalf("module polymorphic element type = %v", typ)
 	}
 }
 
@@ -252,5 +279,100 @@ func TestInlinerReportsSignatureMismatchAsTypingException(t *testing.T) {
 	var typing *TypingException
 	if !errors.As(err, &typing) || len(listener.declarations) != 1 || typing.CauseExprID() != listener.declarations[0][1].ID() {
 		t.Fatalf("signature mismatch = %T %v", err, err)
+	}
+}
+
+func TestInlinerHandlesNonbasicArgumentsAndModuleDependencyOrder(t *testing.T) {
+	nullaryType := mustOperator(nil, IntT1)
+	unaryType := mustOperator([]Type{IntT1}, IntT1)
+	b := NewOperDecl("B", nil, intLiteral(42), Typed(nullaryType))
+	a := NewOperDecl("A", []OperatorParam{ValueParam("x")}, NewNameExpr("x", Typed(IntT1)), Typed(unaryType))
+	bCall := inlineApplication("B", nullaryType, IntT1)
+	nestedCall := inlineApplication("A", unaryType, IntT1, bCall)
+	local := NewLetInExpr(nestedCall, Typed(IntT1), b, a)
+	got, err := NewInliner(nil, nil, false, nil).Transform(local)
+	if err != nil || !EqualTypedExpr(got, intLiteral(42)) {
+		t.Fatalf("nonbasic argument = %v, %v", got, err)
+	}
+
+	q := NewOperDecl("Q", []OperatorParam{ValueParam("y")},
+		MustOperExpr(Op("PLUS"), Typed(IntT1), inlineApplication("P", unaryType, IntT1, NewNameExpr("y", Typed(IntT1))), intLiteral(1)), Typed(unaryType))
+	p := NewOperDecl("P", []OperatorParam{ValueParam("x")},
+		MustOperExpr(Op("PLUS"), Typed(IntT1), NewNameExpr("x", Typed(IntT1)), intLiteral(1)), Typed(unaryType))
+	x := NewOperDecl("X", nil, inlineApplication("Q", unaryType, IntT1, intLiteral(1)), Typed(nullaryType))
+	module := NewModule("M", []Decl{x, q, p})
+	onlyX := KeepOnlyInlinedDeclarations(map[string]struct{}{"X": {}})
+	inlined, err := NewInliner(nil, nil, true, onlyX).Module(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(inlined.OperDeclarations()) != 1 || inlined.OperDeclarations()[0].Name() != "X" {
+		t.Fatalf("module filter/dependency order = %#v", inlined.Declarations())
+	}
+	want := MustOperExpr(Op("PLUS"), Typed(IntT1),
+		MustOperExpr(Op("PLUS"), Typed(IntT1), intLiteral(1), intLiteral(1)), intLiteral(1))
+	if !EqualTypedExpr(inlined.OperDeclarations()[0].Body(), want) {
+		t.Fatalf("transitive module inline = %v, want %v", inlined.OperDeclarations()[0].Body(), want)
+	}
+}
+
+func TestInlinerAlwaysInlinesGlobalNullaryOperators(t *testing.T) {
+	nullaryType := mustOperator(nil, IntT1)
+	a := NewOperDecl("A", nil, intLiteral(1), Typed(nullaryType))
+	x := NewOperDecl("X", nil, inlineApplication("A", nullaryType, IntT1), Typed(nullaryType))
+	got, err := NewInliner(nil, nil, true, nil).Module(NewModule("M", []Decl{x, a}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !EqualTypedExpr(got.OperDeclarations()[1].Body(), intLiteral(1)) {
+		t.Fatalf("global nullary call = %v", got.OperDeclarations()[1].Body())
+	}
+}
+
+func TestInlinerPreservesNestedPassByNameDefinitions(t *testing.T) {
+	binaryType := mustOperator([]Type{IntT1, IntT1}, IntT1)
+	f := NewOperDecl("F", []OperatorParam{ValueParam("old"), ValueParam("new")},
+		NewNameExpr("new", Typed(IntT1)), Typed(binaryType))
+	fold := MustOperExpr(Op("Apalache!ApaFoldSet"), Typed(IntT1),
+		NewNameExpr("F", Typed(binaryType)), intLiteral(0),
+		MustOperExpr(Op("SET_ENUM"), Typed(mustSet(IntT1)), intLiteral(1)))
+	aBody := NewLetInExpr(fold, Typed(IntT1), f)
+	a := NewOperDecl("A", []OperatorParam{ValueParam("old"), ValueParam("new")}, aBody, Typed(binaryType))
+	invBody := MustOperExpr(Op("Apalache!ApaFoldSet"), Typed(IntT1),
+		NewNameExpr("A", Typed(binaryType)), intLiteral(0),
+		MustOperExpr(Op("SET_ENUM"), Typed(mustSet(IntT1)), intLiteral(1)))
+	inv := NewOperDecl("Inv", nil, invBody, Typed(mustOperator(nil, IntT1)))
+	got, err := NewInliner(nil, nil, true, nil).Module(NewModule("M", []Decl{a, inv}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	outerFold := got.OperDeclarations()[1].Body().(*OperExpr)
+	embeddedA, ok := outerFold.Arguments()[0].(*LetInExpr)
+	if !ok || !isPassByNameLet(embeddedA) {
+		t.Fatalf("outer pass-by-name = %v", outerFold.Arguments()[0])
+	}
+	innerFold := embeddedA.Declarations()[0].Body().(*OperExpr)
+	embeddedF, ok := innerFold.Arguments()[0].(*LetInExpr)
+	if !ok || !isPassByNameLet(embeddedF) {
+		t.Fatalf("nested pass-by-name = %v", innerFold.Arguments()[0])
+	}
+}
+
+func TestInlinerPassByNameKeepsCallSiteTypeVariables(t *testing.T) {
+	a, _ := NewVarType(0)
+	b, _ := NewVarType(1)
+	calleeType := mustOperator([]Type{a}, a)
+	callType := mustOperator([]Type{b}, b)
+	declaration := NewOperDecl("F", []OperatorParam{ValueParam("x")}, NewNameExpr("x", Typed(a)), Typed(calleeType))
+	root := NewLetInExpr(MustOperExpr(Op("TUPLE"), Typed(mustTuple(callType)), NewNameExpr("F", Typed(callType))),
+		Typed(mustTuple(callType)), declaration)
+	got, err := NewInliner(nil, nil, false, nil).Transform(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	embedded := got.(*OperExpr).Arguments()[0].(*LetInExpr)
+	localType, _ := embedded.Declarations()[0].Tag().Type()
+	if !EqualTypes(localType, callType) {
+		t.Fatalf("embedded call-site type = %v, want %v", localType, callType)
 	}
 }
