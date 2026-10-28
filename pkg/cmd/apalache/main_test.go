@@ -1158,6 +1158,38 @@ func TestRunCheckerCommandsRejectUnsupportedBackends(t *testing.T) {
 	}
 }
 
+func TestCheckerBackendEnvironmentPrecedence(t *testing.T) {
+	t.Setenv("SMT_ENCODING", "arrays")
+	t.Setenv("SMT_SOLVER", "z3")
+	options := &checkerBackendOptions{algorithm: "incremental", encoding: "oopsla19", solver: "z3"}
+	visited := make(map[string]bool)
+	applyCheckerBackendEnvironment(options, visited)
+	if options.encoding != "arrays" || options.solver != "z3" ||
+		!visited["smt-encoding"] || !visited["smt-solver"] {
+		t.Fatalf("environment backend = %#v, visited=%v", options, visited)
+	}
+
+	options.encoding = "funArrays"
+	options.solver = "explicit"
+	applyCheckerBackendEnvironment(options, visited)
+	if options.encoding != "funArrays" || options.solver != "explicit" {
+		t.Fatalf("explicit backend was overwritten by environment: %#v", options)
+	}
+}
+
+func TestRunCheckerCommandsValidateBackendEnvironment(t *testing.T) {
+	t.Setenv("SMT_ENCODING", "unknown")
+	for _, command := range []string{"check", "simulate"} {
+		t.Run(command, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := run(context.Background(), []string{command, "M.tla"}, &stdout, &stderr)
+			if code != exitUsage || !strings.Contains(stderr.String(), "want oopsla19, arrays, or funArrays") {
+				t.Fatalf("%s environment validation = %d, stderr=%q", command, code, &stderr)
+			}
+		})
+	}
+}
+
 func TestParseTuningOptionsMatchesScalaCLIFormat(t *testing.T) {
 	got, err := parseTuningOptions("search.invariant.mode=after:z3.smt.mbqi=false:value=with spaces")
 	if err != nil {

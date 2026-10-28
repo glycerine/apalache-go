@@ -781,6 +781,7 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	}
 	visited := make(map[string]bool)
 	flags.Visit(func(flag *flag.Flag) { visited[flag.Name] = true })
+	applyCheckerBackendEnvironment(backend, visited)
 	applicationConfig, selectedConfig, err := loadCommandConfig(*configFile)
 	if err != nil {
 		fmt.Fprintf(stderr, "cannot load Apalache configuration: %v\n", err)
@@ -1191,6 +1192,7 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	}
 	visited := make(map[string]bool)
 	flags.Visit(func(flag *flag.Flag) { visited[flag.Name] = true })
+	applyCheckerBackendEnvironment(backend, visited)
 	applicationConfig, selectedConfig, err := loadCommandConfig(*configFile)
 	if err != nil {
 		fmt.Fprintf(stderr, "cannot load Apalache configuration: %v\n", err)
@@ -1794,6 +1796,24 @@ func addCheckerBackendFlags(flags *flag.FlagSet) *checkerBackendOptions {
 	flags.StringVar(&options.encoding, "smt-encoding", "oopsla19", "SMT encoding (oopsla19, arrays, or funArrays)")
 	flags.StringVar(&options.solver, "smt-solver", "z3", "SMT solver backend (z3 via g3)")
 	return options
+}
+
+func applyCheckerBackendEnvironment(options *checkerBackendOptions, visited map[string]bool) {
+	if options == nil {
+		return
+	}
+	if !visited["smt-encoding"] {
+		if value, found := os.LookupEnv("SMT_ENCODING"); found {
+			options.encoding = value
+			visited["smt-encoding"] = true
+		}
+	}
+	if !visited["smt-solver"] {
+		if value, found := os.LookupEnv("SMT_SOLVER"); found {
+			options.solver = value
+			visited["smt-solver"] = true
+		}
+	}
 }
 
 func validateCheckerBackendOptions(options *checkerBackendOptions) error {
