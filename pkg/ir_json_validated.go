@@ -107,9 +107,12 @@ func validateTypedIRExpression(expression Expr, names map[string]Type) error {
 			}
 			argumentTypes[index], _ = argument.Tag().Type()
 		}
+		if err = validateTypedIRLiteralRequirements(typed, typ, argumentTypes); err != nil {
+			return err
+		}
 		inferred, inferErr := InferOperatorType(typed.Operator(), argumentTypes)
 		if inferErr != nil {
-			if errors.Is(inferErr, ErrUnknownOperatorSignature) {
+			if errors.Is(inferErr, ErrUnknownOperatorSignature) || typed.Operator().Name() == "SET_ENUM" && len(arguments) == 0 {
 				return validateValueDependentIRType(typed, typ, argumentTypes)
 			}
 			return inferErr
@@ -137,8 +140,67 @@ func validateTypedIRExpression(expression Expr, names map[string]Type) error {
 	}
 }
 
+func validateTypedIRLiteralRequirements(expression *OperExpr, result Type, arguments []Type) error {
+	name := expression.Operator().Name()
+	switch name {
+	case "REAL_DIV", "FUN_REC_CTOR", "FUN_REC_REF", "Apalache!<:", "TLC!TLCGet",
+		"ApalacheInternal!__NotSupportedByModelChecker":
+		return fmt.Errorf("%s is not supported by the typed JSON builder", name)
+	case "LABEL":
+		for index, argument := range expression.Arguments()[1:] {
+			if _, ok := stringIRLiteral(argument); !ok {
+				return fmt.Errorf("LABEL argument %d must be a string literal", index+1)
+			}
+		}
+	case "Apalache!MkSeq":
+		if _, ok := integerIRLiteral(expression.Arguments()[0]); !ok {
+			return fmt.Errorf("Apalache!MkSeq requires an integer literal")
+		}
+	case "Apalache!Repeat":
+		if _, ok := integerIRLiteral(expression.Arguments()[1]); !ok {
+			return fmt.Errorf("Apalache!Repeat requires an integer literal")
+		}
+	case "Apalache!Gen":
+		if len(arguments) != 1 || !EqualTypes(arguments[0], IntT1) || result == nil {
+			return fmt.Errorf("Apalache!Gen requires an integer bound and typed result")
+		}
+	case "Variants!Variant", "Variants!VariantFilter", "Variants!VariantGetUnsafe", "Variants!VariantGetOrElse":
+		if _, ok := stringIRLiteral(expression.Arguments()[0]); !ok {
+			return fmt.Errorf("%s tag must be a string literal", name)
+		}
+	}
+	return nil
+}
+
+func stringIRLiteral(expression Expr) (string, bool) {
+	value, ok := expression.(*ValueExpr)
+	if !ok {
+		return "", false
+	}
+	stringValue, ok := value.Value().(StringValue)
+	if !ok {
+		return "", false
+	}
+	return stringValue.Value(), true
+}
+
+func integerIRLiteral(expression Expr) (IntValue, bool) {
+	value, ok := expression.(*ValueExpr)
+	if !ok {
+		return IntValue{}, false
+	}
+	integer, ok := value.Value().(IntValue)
+	return integer, ok
+}
+
 func validateValueDependentIRType(expression *OperExpr, result Type, arguments []Type) error {
 	switch expression.Operator().Name() {
+	case "SET_ENUM":
+		if len(arguments) == 0 {
+			if _, ok := result.(SetType); ok {
+				return nil
+			}
+		}
 	case "TUPLE":
 		tuple, ok := result.(TupleType)
 		if !ok || !equalTypeSlices(tuple.Elements(), arguments) {
@@ -170,10 +232,48 @@ func validateValueDependentIRType(expression *OperExpr, result Type, arguments [
 			return nil
 		}
 	case "Variants!Variant":
-		if len(arguments) == 2 {
-			if _, ok := result.(VariantType); ok && EqualTypes(arguments[0], StrT1) {
-				return nil
+		if len(arguments) == 2 && EqualTypes(arguments[0], StrT1) {
+			variant, ok := result.(VariantType)
+			tag, literal := stringIRLiteral(expression.Arguments()[0])
+			if ok && literal {
+				if valueType, found := variant.Row().Fields()[tag]; found && EqualTypes(valueType, arguments[1]) {
+					return nil
+				}
 			}
+		}
+	case "Variants!VariantFilter":
+		if len(arguments) == 2 && EqualTypes(arguments[0], StrT1) {
+			variant, ok := arguments[1].(VariantType)
+			tag, literal := stringIRLiteral(expression.Arguments()[0])
+			if ok && literal {
+				if _, found := variant.Row().Fields()[tag]; found && EqualTypes(result, newSetTypeUnchecked(variant)) {
+					return nil
+				}
+			}
+		}
+	case "Variants!VariantGetUnsafe":
+		if len(arguments) == 2 && EqualTypes(arguments[0], StrT1) {
+			variant, ok := arguments[1].(VariantType)
+			tag, literal := stringIRLiteral(expression.Arguments()[0])
+			if ok && literal {
+				if valueType, found := variant.Row().Fields()[tag]; found && EqualTypes(result, valueType) {
+					return nil
+				}
+			}
+		}
+	case "Variants!VariantGetOrElse":
+		if len(arguments) == 3 && EqualTypes(arguments[0], StrT1) {
+			variant, ok := arguments[1].(VariantType)
+			tag, literal := stringIRLiteral(expression.Arguments()[0])
+			if ok && literal {
+				if valueType, found := variant.Row().Fields()[tag]; found && CompatibleTypes(valueType, arguments[2]) && EqualTypes(result, valueType) {
+					return nil
+				}
+			}
+		}
+	case "Apalache!Gen":
+		if len(arguments) == 1 && EqualTypes(arguments[0], IntT1) {
+			return nil
 		}
 	}
 	return fmt.Errorf("cannot validate %s(%v) with result tag %s", expression.Operator().Name(), arguments, result)

@@ -66,3 +66,42 @@ func TestValidatedIRJSONDecoderDeclarationsModulesAndRoots(t *testing.T) {
 		t.Fatal("accepted declaration whose body disagrees with its result type")
 	}
 }
+
+func TestValidatedIRJSONDecoderValueDependentOperators(t *testing.T) {
+	setInt, _ := NewSetType(IntT1)
+	row, _ := NewRowType(map[string]Type{"A": IntT1}, nil)
+	variant := NewVariantType(row)
+	valid := []Expr{
+		MustOperExpr(Op("SET_ENUM"), Typed(setInt)),
+		MustOperExpr(Op("TUPLE"), Typed(newTupleTypeUnchecked(IntT1, BoolT1)), intLiteral(1), boolExpr(true)),
+		MustOperExpr(Op("Variants!Variant"), Typed(variant), NewValueExpr(StringValue("A"), Typed(StrT1)), intLiteral(1)),
+		MustOperExpr(Op("Variants!VariantGetUnsafe"), Typed(IntT1), NewValueExpr(StringValue("A"), Typed(StrT1)),
+			MustOperExpr(Op("Variants!Variant"), Typed(variant), NewValueExpr(StringValue("A"), Typed(StrT1)), intLiteral(1))),
+	}
+	decoder := ValidatedIRJSONDecoder{}
+	encoder := IRJSONEncoder{}
+	for _, expression := range valid {
+		encoded, err := encoder.Expression(expression)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = decoder.Expression(encoded); err != nil {
+			t.Fatalf("rejected %s: %v", expression.(*OperExpr).Operator(), err)
+		}
+	}
+	invalid := []Expr{
+		MustOperExpr(Op("REAL_DIV"), Typed(RealT1), intLiteral(1), intLiteral(2)),
+		MustOperExpr(Op("Variants!Variant"), Typed(variant), NewValueExpr(StringValue("A"), Typed(StrT1)), boolExpr(true)),
+		MustOperExpr(Op("Apalache!MkSeq"), Typed(newSeqTypeUnchecked(IntT1)), NewNameExpr("n", Typed(IntT1)),
+			NewNameExpr("f", Typed(mustOperator([]Type{IntT1}, IntT1)))),
+	}
+	for _, expression := range invalid {
+		encoded, err := encoder.Expression(expression)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = decoder.Expression(encoded); err == nil {
+			t.Fatalf("accepted invalid value-dependent expression %s", expression.(*OperExpr).Operator())
+		}
+	}
+}
