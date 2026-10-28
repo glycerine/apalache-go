@@ -113,6 +113,44 @@ func TestStratifiedGenVariantTagIsAnOption(t *testing.T) {
 	checkRewrittenTruth(t, rewriter, scope, result, true)
 }
 
+func TestStratifiedGenFunctionHasUniqueActiveKeys(t *testing.T) {
+	functionType, _ := NewFunType(IntT1, BoolT1)
+	rewriter := NewStratifiedRewriter()
+	scope, function, err := rewriter.Rewrite(MustOperExpr(Op("Apalache!Gen"), Typed(functionType),
+		NewValueExpr(Int64Value(2), Typed(IntT1))), InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	relation, err := scope.Arena.Codomain(function)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pointers := scope.Arena.GetHas(relation)
+	if len(pointers) != 2 {
+		t.Fatalf("generated relation has %d entries, want 2", len(pointers))
+	}
+	firstKey, _, err := unpackFunctionPair(scope.Arena, pointers[0].Element())
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondKey, _, err := unpackFunctionPair(scope.Arena, pointers[1].Element())
+	if err != nil {
+		t.Fatal(err)
+	}
+	equal, err := rewriter.equality.Equal(scope.Arena, firstKey, secondKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	solver := newTestG3Solver(t)
+	constraints := append(rewriter.Constraints(), pointers[0].ToSMT(), pointers[1].ToSMT(), equal)
+	if _, err := EncodeRewriterScope(solver, scope, constraints); err != nil {
+		t.Fatal(err)
+	}
+	if status, err := solver.Check(context.Background()); err != nil || status != SMTUnsatisfiable {
+		t.Fatalf("duplicate active generated function keys = %v, %v", status, err)
+	}
+}
+
 func TestStratifiedGenRejectsInvalidBounds(t *testing.T) {
 	invalid := []Expr{
 		MustOperExpr(Op("Apalache!Gen"), Typed(IntT1), NewValueExpr(Int64Value(-1), Typed(IntT1))),
