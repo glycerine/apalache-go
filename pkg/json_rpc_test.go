@@ -3,6 +3,7 @@ package apalache
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -321,6 +322,51 @@ func TestExplorationJSONRPCLoadRejectsInvalidParams(t *testing.T) {
 		if errorObject["code"] != float64(JSONRPCInvalidParams) {
 			t.Fatalf("loadSpec invalid params = %#v", response)
 		}
+	}
+}
+
+func TestExplorationJSONRPCLoadsAuxiliaryTLAAndCanonicalJSON(t *testing.T) {
+	handler := NewExplorationJSONRPCHandler()
+	root := `---- MODULE Root ----
+EXTENDS Aux
+\* @type: Int;
+VARIABLE x
+Init == x = Zero
+Next == x' = x
+====`
+	auxiliary := `---- MODULE Aux ----
+\* @type: Int;
+Zero == 0
+====`
+	loadAuxiliary := postJSONRPC(t, handler, fmt.Sprintf(
+		`{"jsonrpc":"2.0","method":"loadSpec","params":{"sources":[%q,%q]},"id":1}`,
+		base64.StdEncoding.EncodeToString([]byte(root)), base64.StdEncoding.EncodeToString([]byte(auxiliary)),
+	))
+	if result, _ := loadAuxiliary["result"].(map[string]any); result["sessionId"] == nil {
+		t.Fatalf("auxiliary TLA load = %#v", loadAuxiliary)
+	}
+
+	frontend := ParseAndTypeCheckSource(context.Background(), "Canonical.tla", `---- MODULE Canonical ----
+\* @type: Int;
+VARIABLE x
+Init == x = 0
+Next == x' = x
+====`, FrontendOptions{}, TypeCheckOptions{})
+	if !frontend.OK() {
+		t.Fatalf("canonical JSON frontend = %v", frontend.Diagnostics)
+	}
+	canonical, err := MarshalSingleModuleIRJSON(frontend.Native, IRJSONOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	loadJSON := postJSONRPC(t, handler, fmt.Sprintf(
+		`{"jsonrpc":"2.0","method":"loadSpec","params":{"sources":[%q],"format":"json"},"id":2}`,
+		base64.StdEncoding.EncodeToString(canonical),
+	))
+	result, _ := loadJSON["result"].(map[string]any)
+	parameters, _ := result["specParameters"].(map[string]any)
+	if result["sessionId"] == nil || len(parameters["initTransitions"].([]any)) != 1 {
+		t.Fatalf("canonical JSON load = %#v", loadJSON)
 	}
 }
 
