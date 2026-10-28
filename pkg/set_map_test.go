@@ -81,6 +81,37 @@ func TestStratifiedSetMapPreservesSymbolicMembership(t *testing.T) {
 	checkRewrittenTruth(t, rewriter, scope, result, true)
 }
 
+func TestStratifiedSetMapEnumeratesFirstBinderFastest(t *testing.T) {
+	intSetType := mustSet(IntT1)
+	domain := func(values ...int64) Expr {
+		elements := make([]Expr, len(values))
+		for index, value := range values {
+			elements[index] = intLiteral(value)
+		}
+		return MustOperExpr(Op("SET_ENUM"), Typed(intSetType), elements...)
+	}
+	x := NewNameExpr("x", Typed(IntT1))
+	y := NewNameExpr("y", Typed(IntT1))
+	mapped := MustOperExpr(Op("SET_MAP"), Typed(intSetType),
+		MustOperExpr(Op("PLUS"), Typed(IntT1), x, y), x, domain(1, 2), y, domain(10, 20))
+	rewriter := NewStratifiedRewriter()
+	scope, result, err := rewriter.Rewrite(mapped, InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []int64{11, 12, 21, 22}
+	pointers := scope.Arena.GetHas(result)
+	if len(pointers) != len(want) {
+		t.Fatalf("mapped pointers = %d, want %d", len(pointers), len(want))
+	}
+	for index, pointer := range pointers {
+		value, found := rewriter.IntegerCache().FindValue(pointer.Element())
+		if !found || value.Int64() != want[index] {
+			t.Fatalf("mapped image %d = %v, found %v; want %d", index, value, found, want[index])
+		}
+	}
+}
+
 func TestStratifiedSetMapRejectsInfiniteDomains(t *testing.T) {
 	x := NewNameExpr("x", Typed(IntT1))
 	expression := MustOperExpr(Op("SET_MAP"), Typed(mustSet(IntT1)), x, x,

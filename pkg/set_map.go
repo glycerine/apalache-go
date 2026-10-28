@@ -44,42 +44,38 @@ func (rewriter *StratifiedRewriter) rewriteSetMap(expression *OperExpr, scope Re
 	}
 
 	baseBinding := scope.Binding
-	selected := make([]ElementPointer, binderCount)
 	outputPointers := make([]ElementPointer, 0)
-	var enumerate func(int) error
-	enumerate = func(depth int) error {
-		if depth < binderCount {
-			for _, pointer := range pointerLists[depth] {
-				selected[depth] = pointer
-				if recursionErr := enumerate(depth + 1); recursionErr != nil {
-					return recursionErr
-				}
-			}
-			return nil
+	limits := make([]int, binderCount)
+	for index, pointers := range pointerLists {
+		limits[index] = len(pointers) - 1
+	}
+	iterator := NewIntTupleIterator(limits)
+	for iterator.HasNext() {
+		indices, iterationErr := iterator.Next()
+		if iterationErr != nil {
+			return scope, ArenaCell{}, iterationErr
 		}
+		selected := make([]ElementPointer, binderCount)
 		binding := baseBinding
 		for index, binder := range binders {
+			selected[index] = pointerLists[index][indices[index]]
 			binding = binding.With(binder.Name(), selected[index].Element())
 		}
 		mappedScope := RewriterScope{Arena: scope.Arena, Binding: binding}
 		mappedScope, result, rewriteErr := rewriter.Rewrite(arguments[0], mappedScope)
 		if rewriteErr != nil {
-			return rewriteErr
+			return scope, ArenaCell{}, rewriteErr
 		}
 		mappedScope, result, rewriteErr = rewriter.coerceCell(mappedScope, result, setType.Element())
 		if rewriteErr != nil {
-			return fmt.Errorf("set map result cannot be widened to %s: %w", setType.Element(), rewriteErr)
+			return scope, ArenaCell{}, fmt.Errorf("set map result cannot be widened to %s: %w", setType.Element(), rewriteErr)
 		}
 		scope.Arena = mappedScope.Arena
 		pointer, pointerErr := TupleElementPointer(selected, result)
 		if pointerErr != nil {
-			return pointerErr
+			return scope, ArenaCell{}, pointerErr
 		}
 		outputPointers = append(outputPointers, pointer)
-		return nil
-	}
-	if err := enumerate(0); err != nil {
-		return scope, ArenaCell{}, err
 	}
 	scope.Binding = baseBinding
 	if len(outputPointers) > 0 {
