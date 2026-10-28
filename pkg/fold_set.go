@@ -31,6 +31,10 @@ func (rewriter *StratifiedRewriter) rewriteFoldSet(expression *OperExpr, scope R
 		return scope, ArenaCell{}, fmt.Errorf("FoldSet requires an ordinary finite set, found %s", set.Type)
 	}
 	pointers := scope.Arena.GetHas(set)
+	scope, nonDuplicates, err := rewriter.setDeduplicationPredicates(scope, set)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
 	for index, pointer := range pointers {
 		body, inlineErr := instantiateEmbeddedOperator(operator, resultType,
 			accumulator.NameExpr(), pointer.Element().NameExpr())
@@ -46,20 +50,7 @@ func (rewriter *StratifiedRewriter) rewriteFoldSet(expression *OperExpr, scope R
 		if err != nil {
 			return scope, ArenaCell{}, fmt.Errorf("fold operator result cannot be widened to %s: %w", resultType, err)
 		}
-		conditions := []Expr{pointer.ToSMT()}
-		for previous := 0; previous < index; previous++ {
-			equal, equalErr := rewriter.equality.Equal(scope.Arena,
-				pointer.Element(), pointers[previous].Element())
-			if equalErr != nil {
-				return scope, ArenaCell{}, equalErr
-			}
-			conditions = append(conditions, booleanOr(
-				MustOperExpr(Op("NOT"), Typed(BoolT1), pointers[previous].ToSMT()),
-				MustOperExpr(Op("NOT"), Typed(BoolT1), equal)))
-		}
-		var predicate ArenaCell
-		scope, predicate = rewriter.bindBoolean(scope, booleanAnd(conditions...))
-		scope, accumulator, err = rewriter.chooseConditional(scope, predicate, next, accumulator)
+		scope, accumulator, err = rewriter.chooseConditional(scope, nonDuplicates[index], next, accumulator)
 		if err != nil {
 			return scope, ArenaCell{}, fmt.Errorf("select fold set element %d: %w", index+1, err)
 		}

@@ -954,20 +954,13 @@ func (rewriter *StratifiedRewriter) rewriteCardinality(expression *OperExpr, sco
 	if constantCardinality {
 		return rewriter.Rewrite(NewValueExpr(Int64Value(int64(len(seen))), Typed(IntT1)), scope)
 	}
+	scope, nonDuplicates, err := rewriter.setDeduplicationPredicates(scope, setCell)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
 	sum := Expr(NewValueExpr(Int64Value(0), Typed(IntT1)))
-	for index, pointer := range pointers {
-		uniqueConditions := []Expr{pointer.ToSMT()}
-		for previous := 0; previous < index; previous++ {
-			equal, equalityErr := rewriter.equality.Equal(scope.Arena, pointer.Element(), pointers[previous].Element())
-			if equalityErr != nil {
-				return scope, ArenaCell{}, equalityErr
-			}
-			uniqueConditions = append(uniqueConditions, booleanOr(
-				MustOperExpr(Op("NOT"), Typed(BoolT1), pointers[previous].ToSMT()),
-				MustOperExpr(Op("NOT"), Typed(BoolT1), equal),
-			))
-		}
-		increment := MustOperExpr(Op("IF_THEN_ELSE"), Typed(IntT1), booleanAnd(uniqueConditions...),
+	for _, predicate := range nonDuplicates {
+		increment := MustOperExpr(Op("IF_THEN_ELSE"), Typed(IntT1), predicate.NameExpr(),
 			NewValueExpr(Int64Value(1), Typed(IntT1)), NewValueExpr(Int64Value(0), Typed(IntT1)))
 		sum = MustOperExpr(Op("PLUS"), Typed(IntT1), sum, increment)
 	}
