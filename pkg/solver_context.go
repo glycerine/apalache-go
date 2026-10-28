@@ -47,7 +47,7 @@ func CreateSolverContext(config SolverConfig) (*SolverContext, error) {
 	if err != nil {
 		return nil, err
 	}
-	encoder, err := NewG3GroundEncoder(solver)
+	encoder, err := NewG3GroundEncoderWithEncoding(solver, config.SMTEncoding)
 	if err != nil {
 		_ = solver.Close()
 		return nil, err
@@ -93,6 +93,9 @@ func (solver *SolverContext) DeclareCell(cell ArenaCell) error {
 }
 
 func (solver *SolverContext) DeclareMembership(set, element ArenaCell) error {
+	if solver.config.SMTEncoding == SMTEncodingArrays {
+		return nil
+	}
 	key := [2]int{set.ID, element.ID}
 	if _, declared := solver.memberships[key]; declared {
 		return nil

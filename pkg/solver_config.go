@@ -87,8 +87,9 @@ func (config SolverConfig) WithSolverParameters(parameters map[string]any) Solve
 }
 
 func NewG3SolverContextWithConfig(config SolverConfig) (*G3SolverContext, error) {
-	if config.SMTEncoding != SMTEncodingOOPSLA19 {
-		return nil, fmt.Errorf("g3 supports SMT encoding %s, found %s", SMTEncodingOOPSLA19, config.SMTEncoding)
+	if config.SMTEncoding != SMTEncodingOOPSLA19 && config.SMTEncoding != SMTEncodingArrays &&
+		config.SMTEncoding != SMTEncodingFunArrays {
+		return nil, fmt.Errorf("unsupported g3 SMT encoding %s", config.SMTEncoding)
 	}
 	if config.SMTSolver != SMTSolverZ3 {
 		return nil, fmt.Errorf("g3 is the Z3-compatible backend, found %s", config.SMTSolver)

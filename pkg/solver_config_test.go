@@ -68,9 +68,22 @@ func TestSolverConfigConstructsPinnedG3WithTypedParameters(t *testing.T) {
 	}
 }
 
+func TestSolverConfigConstructsPinnedG3ForEveryEncoding(t *testing.T) {
+	for _, encoding := range []SMTEncoding{SMTEncodingOOPSLA19, SMTEncodingArrays, SMTEncodingFunArrays} {
+		t.Run(string(encoding), func(t *testing.T) {
+			config := NewSolverConfig(false, false, 0, encoding, 60, SMTSolverZ3, nil)
+			solver, err := NewG3SolverContextWithConfig(config)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer solver.Close()
+		})
+	}
+}
+
 func TestSolverConfigRejectsUnavailableOrInvalidBackends(t *testing.T) {
 	tests := []SolverConfig{
-		NewSolverConfig(false, false, 0, SMTEncodingArrays, 60, SMTSolverZ3, nil),
+		NewSolverConfig(false, false, 0, SMTEncoding("unknown"), 60, SMTSolverZ3, nil),
 		NewSolverConfig(false, false, 0, SMTEncodingOOPSLA19, 60, SMTSolverCVC5, nil),
 		NewSolverConfig(false, false, -1, SMTEncodingOOPSLA19, 60, SMTSolverZ3, nil),
 		NewSolverConfig(false, false, 0, SMTEncodingOOPSLA19, 60, SMTSolverZ3, map[string]any{"x": []int{1}}),

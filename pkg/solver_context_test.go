@@ -108,6 +108,74 @@ func TestSolverContextStackTimeoutConsistencyAndMembership(t *testing.T) {
 	}
 }
 
+func TestSolverContextRunsNativeArrayEncodings(t *testing.T) {
+	t.Run("set arrays", func(t *testing.T) {
+		config := DefaultSolverConfig()
+		config.SMTEncoding = SMTEncodingArrays
+		solver, err := CreateSolverContext(config)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer solver.Dispose()
+		listener := &recordingSMTListener{}
+		solver.SetSMTListener(listener)
+		element := NewArenaCell(0, BasicCellType{Type: IntT1})
+		set := NewArenaCell(1, BasicCellType{Type: mustSet(IntT1)})
+		for _, cell := range []ArenaCell{element, set} {
+			if err = solver.DeclareCell(cell); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err = solver.DeclareMembership(set, element); err != nil {
+			t.Fatal(err)
+		}
+		if solver.Metrics().NConstants != 2 || !reflect.DeepEqual(listener.constants, []string{"$C$0", "$C$1"}) {
+			t.Fatalf("native membership declarations should be implicit: metrics=%#v constants=%v", solver.Metrics(), listener.constants)
+		}
+		store := MustOperExpr(Op("Apalache!StoreInSet"), Typed(BoolT1), element.NameExpr(), set.NameExpr())
+		selected := MustOperExpr(Op("Apalache!SelectInSet"), Typed(BoolT1), element.NameExpr(), set.NameExpr())
+		if err = solver.Assert(store); err != nil {
+			t.Fatal(err)
+		}
+		if err = solver.Assert(MustOperExpr(Op("NOT"), Typed(BoolT1), selected)); err != nil {
+			t.Fatal(err)
+		}
+		if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTUnsatisfiable {
+			t.Fatalf("stored set member = %v, %v", status, checkErr)
+		}
+	})
+
+	t.Run("function arrays", func(t *testing.T) {
+		config := DefaultSolverConfig()
+		config.SMTEncoding = SMTEncodingFunArrays
+		solver, err := CreateSolverContext(config)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer solver.Dispose()
+		argument := NewArenaCell(0, BasicCellType{Type: IntT1})
+		function := NewArenaCell(1, BasicCellType{Type: mustFunType(t, IntT1, BoolT1)})
+		for _, cell := range []ArenaCell{argument, function} {
+			if err = solver.DeclareCell(cell); err != nil {
+				t.Fatal(err)
+			}
+		}
+		store := MustOperExpr(Op("Apalache!StoreInSet"), Typed(BoolT1),
+			boolExpr(true), function.NameExpr(), argument.NameExpr())
+		selected := MustOperExpr(Op("Apalache!SelectInFun"), Typed(BoolT1),
+			argument.NameExpr(), function.NameExpr())
+		if err = solver.Assert(store); err != nil {
+			t.Fatal(err)
+		}
+		if err = solver.Assert(MustOperExpr(Op("NOT"), Typed(BoolT1), selected)); err != nil {
+			t.Fatal(err)
+		}
+		if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTUnsatisfiable {
+			t.Fatalf("stored function result = %v, %v", status, checkErr)
+		}
+	})
+}
+
 func TestSolverContextFactoryRejectsUnsupportedBackend(t *testing.T) {
 	config := DefaultSolverConfig()
 	config.SMTSolver = SMTSolverCVC5
