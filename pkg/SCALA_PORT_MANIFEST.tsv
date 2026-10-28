@@ -474,7 +474,7 @@ tlair/src/main/scala/at/forsyte/apalache/tla/lir/src/SourceRegion.scala	partial	
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/src/SourceStore.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/storage/BodyMapFactory.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/storage/ChangeListener.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
-tlair/src/main/scala/at/forsyte/apalache/tla/lir/storage/DisjointSets.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/storage/DisjointSets.scala	ported	disjoint_sets.go;disjoint_sets_test.go	immutable generic add/find/path-compression/weighted-merge, membership, element/representative enumeration, set counts, missing-element errors, and dummy-merge equivalence are ported
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/storage/SourceLocator.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/storage/package.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/transformations/LanguagePred.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains

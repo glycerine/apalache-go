@@ -1,6 +1,9 @@
 package apalache
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 func TestDisjointSetsBadCallsAndAdd(t *testing.T) {
 	empty := NewDisjointSets[int]()
@@ -46,6 +49,18 @@ func TestDisjointSetsMergeAll(t *testing.T) {
 	}
 	if sets.NumSets() != 1 {
 		t.Fatalf("got %d sets, want 1", sets.NumSets())
+	}
+}
+
+func TestDisjointSetsDummyMergeEqualsFindScalaOracleCase(t *testing.T) {
+	sets := NewDisjointSets(1, 2, 3, 4)
+	_, sets, _ = sets.Merge(2, 3)
+	_, sets, _ = sets.Merge(1, 2)
+	mergeRepresentative, afterMerge, mergeErr := sets.Merge(1, 1)
+	findRepresentative, afterFind, findErr := sets.Find(1)
+	if mergeErr != nil || findErr != nil || mergeRepresentative != findRepresentative || !reflect.DeepEqual(afterMerge, afterFind) {
+		t.Fatalf("dummy merge = (%d, %#v, %v), find = (%d, %#v, %v)",
+			mergeRepresentative, afterMerge, mergeErr, findRepresentative, afterFind, findErr)
 	}
 }
 
