@@ -15,6 +15,22 @@ type TLAWriter interface {
 	WriteExpression(Expr) error
 }
 
+// TLADeclarationAnnotator supplies already-rendered annotation lines for a
+// declaration. The bool distinguishes the default no-decoration result.
+type TLADeclarationAnnotator interface {
+	Annotate(TextLayout, Decl) ([]string, bool)
+}
+
+type TLADeclarationAnnotatorFunc func(TextLayout, Decl) ([]string, bool)
+
+func (annotator TLADeclarationAnnotatorFunc) Annotate(layout TextLayout, declaration Decl) ([]string, bool) {
+	return annotator(layout, declaration)
+}
+
+type NoTLADeclarationAnnotations struct{}
+
+func (NoTLADeclarationAnnotations) Annotate(TextLayout, Decl) ([]string, bool) { return nil, false }
+
 type PrettyTLAWriter struct {
 	output      io.Writer
 	annotations *AnnotationStore
@@ -89,22 +105,30 @@ func (writer *PrettyTLAWriterWithAnnotations) annotations(declaration Decl) []An
 	return annotations
 }
 
-func formatAnnotationBlock(annotations []Annotation, outerIndent, annotationIndent string) string {
+func formatAnnotationBlock(annotations []string, outerIndent, annotationIndent string) string {
 	var output strings.Builder
 	output.WriteString(outerIndent + "(*\n")
 	for _, annotation := range annotations {
-		output.WriteString(annotationIndent + annotation.PrettyString() + "\n")
+		output.WriteString(annotationIndent + annotation + "\n")
 	}
 	output.WriteString(outerIndent + "*)")
 	return output.String()
 }
 
 func (writer *PrettyTLAWriterWithAnnotations) formatDeclaration(declaration Decl) (string, error) {
+	annotations := writer.annotations(declaration)
+	lines := make([]string, len(annotations))
+	for index, annotation := range annotations {
+		lines[index] = annotation.PrettyString()
+	}
+	return formatDecoratedTLADeclaration(declaration, lines)
+}
+
+func formatDecoratedTLADeclaration(declaration Decl, annotations []string) (string, error) {
 	base, err := FormatTLADeclaration(declaration, nil)
 	if err != nil {
 		return "", err
 	}
-	annotations := writer.annotations(declaration)
 	if len(annotations) == 0 {
 		return base, nil
 	}
@@ -126,6 +150,69 @@ func (writer *PrettyTLAWriterWithAnnotations) formatDeclaration(declaration Decl
 		}
 	}
 	return block + "\n" + base, nil
+}
+
+type PrettyTLAWriterWithAnnotator struct {
+	output    io.Writer
+	layout    TextLayout
+	annotator TLADeclarationAnnotator
+}
+
+func NewPrettyTLAWriterWithAnnotator(
+	output io.Writer,
+	layout TextLayout,
+	annotator TLADeclarationAnnotator,
+) *PrettyTLAWriterWithAnnotator {
+	if annotator == nil {
+		annotator = NoTLADeclarationAnnotations{}
+	}
+	return &PrettyTLAWriterWithAnnotator{output: output, layout: layout, annotator: annotator}
+}
+
+func (writer *PrettyTLAWriterWithAnnotator) formatDeclaration(declaration Decl) (string, error) {
+	annotations, found := writer.annotator.Annotate(writer.layout, declaration)
+	if !found {
+		annotations = nil
+	}
+	return formatDecoratedTLADeclaration(declaration, append([]string(nil), annotations...))
+}
+
+func (writer *PrettyTLAWriterWithAnnotator) WriteModule(module *Module, extendedModules []string) error {
+	if writer == nil || writer.output == nil {
+		return fmt.Errorf("decorated TLA+ writer has no output")
+	}
+	formatted, err := formatTLAModuleWith(module, TLAFormatOptions{
+		ExtendedModules: append([]string(nil), extendedModules...),
+	}, writer.formatDeclaration)
+	if err != nil {
+		return err
+	}
+	_, err = io.WriteString(writer.output, formatted)
+	return err
+}
+
+func (writer *PrettyTLAWriterWithAnnotator) WriteDeclaration(declaration Decl) error {
+	if writer == nil || writer.output == nil {
+		return fmt.Errorf("decorated TLA+ writer has no output")
+	}
+	formatted, err := writer.formatDeclaration(declaration)
+	if err != nil {
+		return err
+	}
+	_, err = io.WriteString(writer.output, formatted+"\n\n")
+	return err
+}
+
+func (writer *PrettyTLAWriterWithAnnotator) WriteExpression(expression Expr) error {
+	if writer == nil || writer.output == nil {
+		return fmt.Errorf("decorated TLA+ writer has no output")
+	}
+	formatted, err := FormatTLAExpression(expression)
+	if err != nil {
+		return err
+	}
+	_, err = io.WriteString(writer.output, formatted)
+	return err
 }
 
 func (writer *PrettyTLAWriterWithAnnotations) WriteModule(module *Module, extendedModules []string) error {
@@ -262,4 +349,5 @@ func (factory TLAWriterFactory) WriteModuleJSONFile(path string, module *Module)
 
 var _ TLAWriter = (*PrettyTLAWriter)(nil)
 var _ TLAWriter = (*PrettyTLAWriterWithAnnotations)(nil)
+var _ TLAWriter = (*PrettyTLAWriterWithAnnotator)(nil)
 var _ TLAWriter = (*JSONTLAWriter)(nil)

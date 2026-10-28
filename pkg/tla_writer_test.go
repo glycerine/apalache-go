@@ -100,6 +100,48 @@ func TestPrettyTLAWriterWithAnnotationsWritesTypedModule(t *testing.T) {
 	}
 }
 
+func TestTLADeclarationAnnotatorDecoratesDirectAndModuleOutput(t *testing.T) {
+	declaration := NewOperDecl("Flag", nil, NewValueExpr(BoolValue(true), Typed(BoolT1)), Untyped())
+	layout := TextLayout{TextWidth: 41, Indent: 3}
+	calls := 0
+	annotator := TLADeclarationAnnotatorFunc(func(gotLayout TextLayout, gotDeclaration Decl) ([]string, bool) {
+		calls++
+		if gotLayout != layout || gotDeclaration.ID() != declaration.ID() {
+			t.Fatalf("annotator arguments = %+v, %s", gotLayout, gotDeclaration.ID())
+		}
+		return []string{"@custom(true)"}, true
+	})
+	var direct bytes.Buffer
+	if err := NewPrettyTLAWriterWithAnnotator(&direct, layout, annotator).WriteDeclaration(declaration); err != nil {
+		t.Fatal(err)
+	}
+	if direct.String() != "(*\n  @custom(true)\n*)\nFlag == TRUE\n\n" {
+		t.Fatalf("direct decorated output = %q", direct.String())
+	}
+	var module bytes.Buffer
+	if err := NewPrettyTLAWriterWithAnnotator(&module, layout, annotator).
+		WriteModule(NewModule("M", []Decl{declaration}), nil); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 || !strings.Contains(module.String(), "@custom(true)") {
+		t.Fatalf("module decoration calls/output = %d, %q", calls, module.String())
+	}
+}
+
+func TestTLADeclarationAnnotatorDefaultsToNoDecoration(t *testing.T) {
+	declaration := NewConstDecl("N", Untyped())
+	var output bytes.Buffer
+	if err := NewPrettyTLAWriterWithAnnotator(&output, DefaultTextLayout(), nil).WriteDeclaration(declaration); err != nil {
+		t.Fatal(err)
+	}
+	if output.String() != "CONSTANT N\n\n" {
+		t.Fatalf("default annotator output = %q", output.String())
+	}
+	if annotations, found := (NoTLADeclarationAnnotations{}).Annotate(DefaultTextLayout(), declaration); found || annotations != nil {
+		t.Fatalf("default annotations = %#v, %v", annotations, found)
+	}
+}
+
 func TestJSONTLAWriterWritesEveryNodeShapeWithSources(t *testing.T) {
 	expression := NewValueExpr(Int64Value(1), Typed(IntT1))
 	declaration := NewOperDecl("N", nil, expression, Typed(mustOperator(nil, IntT1)))
