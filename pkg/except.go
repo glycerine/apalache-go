@@ -164,8 +164,14 @@ func (rewriter *StratifiedRewriter) rewriteFunctionExcept(
 	newArena, updatedRelation := scope.Arena.AppendCellType(relation.Type)
 	scope.Arena = newArena.AppendHas(updatedRelation, updatedPointers...)
 	rewriter.addMembershipConstraints(scope.Arena, updatedRelation)
-	newArena, updatedFunction := scope.Arena.AppendCellType(oldFunction.Type)
+	arrayEncoding := rewriter.smtEncoding == SMTEncodingArrays || rewriter.smtEncoding == SMTEncodingFunArrays
+	newArena, updatedFunction := scope.Arena.AppendCellType(oldFunction.Type, arrayEncoding)
 	scope.Arena = newArena.SetDomain(updatedFunction, domain).SetCodomain(updatedFunction, updatedRelation)
+	if arrayEncoding {
+		rewriter.assert(MustOperExpr(Op("EQ"), Typed(BoolT1), updatedFunction.NameExpr(), oldFunction.NameExpr()))
+		rewriter.assert(MustOperExpr(Op("Apalache!StoreInSet"), Typed(BoolT1),
+			newValue.NameExpr(), updatedFunction.NameExpr(), key.NameExpr()))
+	}
 	return scope, updatedFunction, nil
 }
 

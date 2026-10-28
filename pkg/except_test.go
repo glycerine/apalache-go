@@ -1,6 +1,9 @@
 package apalache
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 func exceptExpression(targetType Type, target, key, value Expr) Expr {
 	accessorType, _ := NewTupleType(mustTagType(key.Tag()))
@@ -73,6 +76,44 @@ func TestStratifiedFunctionExceptThroughG3(t *testing.T) {
 		t.Fatal(err)
 	}
 	checkRewrittenTruth(t, rewriter, scope, result, true)
+}
+
+func TestStratifiedFunctionExceptUsesNativeArrays(t *testing.T) {
+	functionType, _ := NewFunType(IntT1, IntT1)
+	domain := MustOperExpr(Op("SET_ENUM"), Typed(mustSet(IntT1)), intLiteral(1), intLiteral(2))
+	binder := NewNameExpr("x", Typed(IntT1))
+	body := MustOperExpr(Op("MULT"), Typed(IntT1), binder, intLiteral(10))
+	function := MustOperExpr(Op("FUN_CTOR"), Typed(functionType), body, binder, domain)
+	updated := exceptExpression(functionType, function, intLiteral(1), intLiteral(99))
+	apply := func(argument int64) Expr {
+		return MustOperExpr(Op("FUN_APP"), Typed(IntT1), updated, intLiteral(argument))
+	}
+	claim := MustOperExpr(Op("AND"), Typed(BoolT1),
+		MustOperExpr(Op("EQ"), Typed(BoolT1), apply(1), intLiteral(99)),
+		MustOperExpr(Op("EQ"), Typed(BoolT1), apply(2), intLiteral(20)))
+	for _, encoding := range []SMTEncoding{SMTEncodingArrays, SMTEncodingFunArrays} {
+		t.Run(string(encoding), func(t *testing.T) {
+			rewriter := NewStratifiedRewriterWithOptions(StratifiedRewriterOptions{SMTEncoding: encoding})
+			scope, result, err := rewriter.Rewrite(claim, InitialRewriterScope())
+			if err != nil {
+				t.Fatal(err)
+			}
+			solver := newTestG3Solver(t)
+			encoder, err := EncodeRewriterScopeWithEncoding(solver, scope, rewriter.Constraints(), encoding)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTSatisfiable {
+				t.Fatalf("native function EXCEPT scope = %v, %v", status, checkErr)
+			}
+			if err = encoder.Assert(MustOperExpr(Op("NOT"), Typed(BoolT1), result.NameExpr())); err != nil {
+				t.Fatal(err)
+			}
+			if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTUnsatisfiable {
+				t.Fatalf("native function EXCEPT = %v, %v", status, checkErr)
+			}
+		})
+	}
 }
 
 func TestStratifiedFunctionExceptSupportsStructuralKeys(t *testing.T) {
