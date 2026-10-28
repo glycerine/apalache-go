@@ -1503,6 +1503,35 @@ func TestStratifiedStructuralDomainsThroughG3(t *testing.T) {
 	}
 }
 
+func TestStratifiedDomainRuleRowRecordAndUnsupportedType(t *testing.T) {
+	row, err := NewRowType(map[string]Type{"a": IntT1, "b": BoolT1}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recordType := NewRecordRowType(row)
+	record := MustOperExpr(Op("RECORD"), Typed(recordType),
+		NewValueExpr(StringValue("b"), Typed(StrT1)), NewValueExpr(BoolValue(true), Typed(BoolT1)),
+		NewValueExpr(StringValue("a"), Typed(StrT1)), intLiteral(1))
+	stringSetTag := Typed(mustSet(StrT1))
+	domain := MustOperExpr(Op("DOMAIN"), stringSetTag, record)
+	want := MustOperExpr(Op("SET_ENUM"), stringSetTag,
+		NewValueExpr(StringValue("a"), Typed(StrT1)), NewValueExpr(StringValue("b"), Typed(StrT1)))
+	equality := MustOperExpr(Op("EQ"), Typed(BoolT1), domain, want)
+	rewriter := NewStratifiedRewriter()
+	scope, result, err := rewriter.Rewrite(equality, InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkRewrittenTruth(t, rewriter, scope, result, true)
+
+	bad := MustOperExpr(Op("DOMAIN"), Typed(mustSet(IntT1)), intLiteral(1))
+	base := InitialRewriterScope()
+	returned, _, err := NewStratifiedRewriter().Rewrite(bad, base)
+	if err == nil || returned.Arena.CellCount() != base.Arena.CellCount()+1 {
+		t.Fatalf("unsupported DOMAIN returned scope=%v, err=%v", returned, err)
+	}
+}
+
 func TestStratifiedFiniteSetEqualityThroughG3(t *testing.T) {
 	setType := Typed(mustSet(IntT1))
 	set := func(values ...int64) Expr {
