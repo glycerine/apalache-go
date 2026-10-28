@@ -13,12 +13,39 @@ func MarkSkolemizableExpression(expression Expr, tracker TransformationTracker) 
 	}
 	var transform ExprTransform
 	transform = tracker.TrackExpression(func(current Expr) Expr {
+		if let, ok := current.(*LetInExpr); ok {
+			declarations := let.Declarations()
+			result := make([]*OperDecl, 0, 2*len(declarations))
+			result = append(result, declarations...)
+			for _, declaration := range declarations {
+				typ, typed := declaration.Tag().Type()
+				operatorType, operator := typ.(OperatorType)
+				if !typed || !operator || len(operatorType.Arguments()) != 0 || !EqualTypes(operatorType.Result(), BoolT1) {
+					continue
+				}
+				copy := NewOperDecl(declaration.Name()+"$_skolem", declaration.FormalParams(),
+					transform(declaration.Body()), declaration.Tag())
+				copy.SetRecursive(declaration.IsRecursive())
+				result = append(result, copy)
+			}
+			return NewLetInExpr(transform(let.Body()), let.Tag(), result...)
+		}
 		operation, ok := current.(*OperExpr)
 		if !ok {
 			return current
 		}
 		arguments := operation.Arguments()
 		switch operation.Operator().Name() {
+		case "OPER_APP":
+			if len(arguments) == 1 {
+				if name, named := arguments[0].(*NameExpr); named {
+					if resultType, typed := operation.Tag().Type(); typed && EqualTypes(resultType, BoolT1) {
+						return MustOperExpr(operation.Operator(), operation.Tag(),
+							NewNameExpr(name.Name()+"$_skolem", name.Tag()))
+					}
+				}
+			}
+			return current
 		case "EXISTS3":
 			if len(arguments) != 3 {
 				return current

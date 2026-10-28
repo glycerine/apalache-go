@@ -46,6 +46,71 @@ func TestMarkSkolemizableModuleMarksCardinalityAndProperty(t *testing.T) {
 	}
 }
 
+func TestMarkSkolemizableExpressionScalaOracleCases(t *testing.T) {
+	intSetType := mustSet(IntT1)
+	binder := func(name string) Expr { return NewNameExpr(name, Typed(IntT1)) }
+	set := NewNameExpr("S", Typed(intSetType))
+	predicate := func(name string) Expr { return NewNameExpr(name, Typed(BoolT1)) }
+	exists := func(name, pred string) Expr {
+		return MustOperExpr(Op("EXISTS3"), Typed(BoolT1), binder(name), set, predicate(pred))
+	}
+	marked := func(expression Expr) Expr {
+		return MustOperExpr(Op("Apalache!Skolem"), Typed(BoolT1), expression)
+	}
+	left := exists("y", "P")
+	right := exists("z", "Q")
+	and := MustOperExpr(Op("AND"), Typed(BoolT1), left, right)
+	if got, want := MarkSkolemizableExpression(and, nil),
+		MustOperExpr(Op("AND"), Typed(BoolT1), marked(left), marked(right)); !EqualTypedExpr(got, want) {
+		t.Fatalf("conjunction marking = %v, want %v", got, want)
+	}
+	if got, want := MarkSkolemizableExpression(left, nil), marked(left); !EqualTypedExpr(got, want) {
+		t.Fatalf("existential marking = %v, want %v", got, want)
+	}
+
+	assignment := MustOperExpr(Op("Apalache!:="), Typed(BoolT1),
+		MustOperExpr(Op("PRIME"), Typed(BoolT1), NewNameExpr("x", Typed(BoolT1))), left)
+	if got := MarkSkolemizableExpression(assignment, nil); !EqualTypedExpr(got, assignment) {
+		t.Fatalf("assignment value was traversed: %v", got)
+	}
+
+	operatorType := mustOperator(nil, BoolT1)
+	declaration := NewOperDecl("A", nil, left, Typed(operatorType))
+	application := func(name string) Expr {
+		return MustOperExpr(Op("OPER_APP"), Typed(BoolT1), NewNameExpr(name, Typed(operatorType)))
+	}
+	positiveLet := NewLetInExpr(MustOperExpr(Op("OR"), Typed(BoolT1), application("A"), boolExpr(true)),
+		Typed(BoolT1), declaration)
+	wantPositive := NewLetInExpr(MustOperExpr(Op("OR"), Typed(BoolT1), application("A$_skolem"), boolExpr(true)),
+		Typed(BoolT1), declaration,
+		NewOperDecl("A$_skolem", nil, marked(left), Typed(operatorType)))
+	if got := MarkSkolemizableExpression(positiveLet, nil); !EqualTypedExpr(got, wantPositive) {
+		t.Fatalf("positive LET marking = %v, want %v", got, wantPositive)
+	}
+	valueLet := NewLetInExpr(MustOperExpr(Op("EQ"), Typed(BoolT1), application("A"), boolExpr(false)),
+		Typed(BoolT1), declaration)
+	wantValue := NewLetInExpr(valueLet.Body(), Typed(BoolT1), declaration,
+		NewOperDecl("A$_skolem", nil, marked(left), Typed(operatorType)))
+	if got := MarkSkolemizableExpression(valueLet, nil); !EqualTypedExpr(got, wantValue) {
+		t.Fatalf("value LET marking = %v, want %v", got, wantValue)
+	}
+
+	cardinality := MustOperExpr(Op("FiniteSets!Cardinality"), Typed(IntT1), set)
+	ge := MustOperExpr(Op("GE"), Typed(BoolT1), cardinality, intLiteral(3))
+	if got, want := MarkSkolemizableExpression(ge, nil),
+		MustOperExpr(Op("Apalache!ConstCardinality"), Typed(BoolT1), ge); !EqualTypedExpr(got, want) {
+		t.Fatalf("cardinality marking = %v, want %v", got, want)
+	}
+	for _, expression := range []Expr{
+		MustOperExpr(Op("NOT"), Typed(BoolT1), ge),
+		MustOperExpr(Op("LT"), Typed(BoolT1), cardinality, intLiteral(3)),
+	} {
+		if got := MarkSkolemizableExpression(expression, nil); !EqualTypedExpr(got, expression) {
+			t.Errorf("negative/value cardinality was marked: %v", got)
+		}
+	}
+}
+
 func TestMarkSetExpansionsPropagatesConsumerRequirements(t *testing.T) {
 	intSet := mustSet(IntT1)
 	powerSet := mustSet(intSet)
