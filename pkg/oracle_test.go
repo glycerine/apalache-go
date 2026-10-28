@@ -2,6 +2,7 @@ package apalache
 
 import (
 	"context"
+	"sort"
 	"testing"
 )
 
@@ -189,6 +190,88 @@ func TestSparseAndZipOracles(t *testing.T) {
 	}
 	if _, err := NewZipOracle(backend, [][]int{{2, 1}}); err == nil {
 		t.Fatal("unsorted zip group was accepted")
+	}
+}
+
+func TestSparseAndZipOracleScalaPropertyMatrices(t *testing.T) {
+	base := InitialRewriterScope()
+	for _, sourceValues := range [][]int{
+		nil, {0}, {-10, 0, 10}, {5, 2, 9, 5, 2}, {20, 19, 18, 4, 3, 2, 1, 0},
+	} {
+		unique := append([]int(nil), sourceValues...)
+		sort.Ints(unique)
+		unique = compactInts(unique)
+		scope, backend, err := CreateIntOracle(base, len(unique))
+		if err != nil {
+			t.Fatal(err)
+		}
+		oracle, err := NewSparseOracle(backend, sourceValues)
+		if err != nil || oracle.Size() != len(unique) {
+			t.Fatalf("sparse oracle %v = %#v, %v", sourceValues, oracle, err)
+		}
+		for index := -10; index <= 20; index++ {
+			chosen, chosenErr := oracle.Chosen(scope, index)
+			if chosenErr != nil {
+				t.Fatal(chosenErr)
+			}
+			position := sort.SearchInts(unique, index)
+			if position == len(unique) || unique[position] != index {
+				if value, ok := chosen.(*ValueExpr); !ok || bool(value.Value().(BoolValue)) {
+					t.Errorf("sparse oracle %v accepted absent value %d: %v", unique, index, chosen)
+				}
+				continue
+			}
+			arguments := chosen.(*OperExpr).Arguments()
+			if arguments[1].(*ValueExpr).Value().(IntValue).BigInt().Int64() != int64(position) {
+				t.Errorf("sparse oracle %v mapped %d to %v", unique, index, chosen)
+			}
+		}
+	}
+	_, wrongBackend, _ := CreateIntOracle(base, 1)
+	if _, err := NewSparseOracle(wrongBackend, []int{1, 2}); err == nil {
+		t.Fatal("sparse oracle accepted a backend with the wrong size")
+	}
+
+	_, backend, err := CreateIntOracle(base, 12)
+	if err != nil {
+		t.Fatal(err)
+	}
+	groupings := [][][]int{
+		nil,
+		{{0}, {1}, {2}, {3}, {4}, {5}, {6}, {7}, {8}, {9}, {10}, {11}},
+		{{0, 1}, {2, 3}, {4, 5}, {6, 7}, {8, 9}, {10, 11}},
+		{{0, 1, 2}, {3, 4, 5}, {6, 7, 8}, {9, 10, 11}},
+		{{0, 1, 2, 3}, {4, 5, 6, 7}, {8, 9, 10, 11}},
+		{{0, 1, 2, 3, 4, 5}, {6, 7, 8, 9, 10, 11}},
+		{{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}},
+	}
+	for _, groups := range groupings {
+		oracle, oracleErr := NewZipOracle(backend, groups)
+		if oracleErr != nil {
+			t.Fatal(oracleErr)
+		}
+		for index := 0; index <= 10; index++ {
+			chosen, chosenErr := oracle.Chosen(base, index)
+			if chosenErr != nil {
+				t.Fatal(chosenErr)
+			}
+			if index >= len(groups) {
+				if value, ok := chosen.(*ValueExpr); !ok || bool(value.Value().(BoolValue)) {
+					t.Errorf("zip oracle with %d groups accepted index %d: %v", len(groups), index, chosen)
+				}
+				continue
+			}
+			disjunction, ok := chosen.(*OperExpr)
+			if !ok || disjunction.Operator().Name() != "OR" || len(disjunction.Arguments()) != len(groups[index]) {
+				t.Errorf("zip oracle group %d/%d = %v", index, len(groups), chosen)
+			}
+		}
+	}
+	if _, err := NewZipOracle(backend, [][]int{{2, 1}}); err == nil {
+		t.Fatal("zip oracle accepted an unsorted group")
+	}
+	if _, err := NewZipOracle(backend, [][]int{{12}}); err == nil {
+		t.Fatal("zip oracle accepted an out-of-range backend index")
 	}
 }
 
