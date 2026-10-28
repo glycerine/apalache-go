@@ -93,10 +93,13 @@ func PrepareSafetyTransitions(module *Module, options SafetyPipelineOptions) (Sa
 	if err != nil {
 		return SafetyPipelineResult{}, err
 	}
-	withVCs, err := GenerateVerificationConditions(primed, configured.Predicates, tracker)
+	withVCs, vcSources, err := generateVerificationConditions(primed, configured.Predicates, tracker)
 	if err != nil {
 		return SafetyPipelineResult{}, fmt.Errorf("verification conditions: %w", err)
 	}
+	configured.Predicates.vcStateSources = vcSources.state
+	configured.Predicates.vcActionSources = vcSources.action
+	configured.Predicates.vcTraceSources = vcSources.trace
 	preprocessed, err := PreprocessModule(withVCs, PreprocessOptions{Names: names, Renamer: renamer, Tracker: tracker, ConstantInitName: configured.Predicates.ConstantInit})
 	if err != nil {
 		return SafetyPipelineResult{}, err

@@ -122,6 +122,22 @@ func CheckBoundedSafetyWithOptions(
 			for index := range traceInvariants {
 				traceInvariants[index].name = predicates.Invariants[0]
 			}
+		} else if normalizedVCs {
+			if len(predicates.vcStateSources) == len(stateInvariants) {
+				for index := range stateInvariants {
+					stateInvariants[index].name = predicates.vcStateSources[index]
+				}
+			}
+			if len(predicates.vcActionSources) == len(actionInvariants) {
+				for index := range actionInvariants {
+					actionInvariants[index].name = predicates.vcActionSources[index]
+				}
+			}
+			if len(predicates.vcTraceSources) == len(traceInvariants) {
+				for index := range traceInvariants {
+					traceInvariants[index].name = predicates.vcTraceSources[index]
+				}
+			}
 		}
 	}
 	if !normalizedVCs {
@@ -244,53 +260,61 @@ func normalizedCheckerVCs(module *Module) (
 	bool,
 	error,
 ) {
-	operators := make(map[string]*OperDecl)
-	for _, declaration := range module.OperDeclarations() {
-		operators[declaration.Name()] = declaration
-	}
-	state := make([]namedExpression, 0)
-	action := make([]namedExpression, 0)
-	trace := make([]namedTraceInvariant, 0)
-	found := false
-	for _, positive := range module.OperDeclarations() {
-		prefix, negativePrefix := "", ""
-		kind := 0
-		switch {
-		case strings.HasPrefix(positive.Name(), NormalizedVCInvariantPrefix):
-			prefix, negativePrefix, kind = NormalizedVCInvariantPrefix, NormalizedVCNotInvariantPrefix, 1
-		case strings.HasPrefix(positive.Name(), NormalizedVCActionPrefix):
-			prefix, negativePrefix, kind = NormalizedVCActionPrefix, NormalizedVCNotActionPrefix, 2
-		case strings.HasPrefix(positive.Name(), NormalizedVCTracePrefix):
-			prefix, negativePrefix, kind = NormalizedVCTracePrefix, NormalizedVCNotTracePrefix, 3
-		default:
-			continue
-		}
-		found = true
-		suffix := strings.TrimPrefix(positive.Name(), prefix)
-		negative, ok := operators[negativePrefix+suffix]
-		if !ok {
-			return nil, nil, nil, true, fmt.Errorf("verification condition %s has no matching negation", positive.Name())
-		}
-		switch kind {
-		case 1:
-			state = append(state, namedExpression{name: positive.Name(), expression: negative.Body()})
-		case 2:
-			action = append(action, namedExpression{name: positive.Name(), expression: negative.Body()})
-		case 3:
-			parameters := positive.FormalParams()
-			if len(parameters) != 1 || parameters[0].Arity > 0 {
-				return nil, nil, nil, true, fmt.Errorf("trace verification condition %s has invalid parameters", positive.Name())
+	type vcPair struct{ positive, negative *OperDecl }
+	pairs := func(positivePrefix, negativePrefix string) ([]vcPair, error) {
+		positives, negatives := make([]*OperDecl, 0), make([]*OperDecl, 0)
+		for _, declaration := range module.OperDeclarations() {
+			if strings.HasPrefix(declaration.Name(), positivePrefix) {
+				positives = append(positives, declaration)
+			} else if strings.HasPrefix(declaration.Name(), negativePrefix) {
+				negatives = append(negatives, declaration)
 			}
-			historyType, validationErr := validateTraceInvariantType(positive, module.VarDeclarations())
-			if validationErr != nil {
-				return nil, nil, nil, true, validationErr
-			}
-			trace = append(trace, namedTraceInvariant{
-				name: positive.Name(), parameter: parameters[0].Name,
-				expression: negative.Body(), historyType: historyType,
-			})
 		}
+		if len(positives) != len(negatives) {
+			return nil, fmt.Errorf("verification condition counts for %s and %s differ: %d and %d", positivePrefix, negativePrefix, len(positives), len(negatives))
+		}
+		result := make([]vcPair, len(positives))
+		for index := range positives {
+			result[index] = vcPair{positive: positives[index], negative: negatives[index]}
+		}
+		return result, nil
 	}
+	statePairs, err := pairs(NormalizedVCInvariantPrefix, NormalizedVCNotInvariantPrefix)
+	if err != nil {
+		return nil, nil, nil, true, err
+	}
+	actionPairs, err := pairs(NormalizedVCActionPrefix, NormalizedVCNotActionPrefix)
+	if err != nil {
+		return nil, nil, nil, true, err
+	}
+	tracePairs, err := pairs(NormalizedVCTracePrefix, NormalizedVCNotTracePrefix)
+	if err != nil {
+		return nil, nil, nil, true, err
+	}
+	state := make([]namedExpression, len(statePairs))
+	for index, pair := range statePairs {
+		state[index] = namedExpression{name: pair.positive.Name(), expression: pair.negative.Body()}
+	}
+	action := make([]namedExpression, len(actionPairs))
+	for index, pair := range actionPairs {
+		action[index] = namedExpression{name: pair.positive.Name(), expression: pair.negative.Body()}
+	}
+	trace := make([]namedTraceInvariant, 0, len(tracePairs))
+	for _, pair := range tracePairs {
+		parameters := pair.positive.FormalParams()
+		if len(parameters) != 1 || parameters[0].Arity > 0 {
+			return nil, nil, nil, true, fmt.Errorf("trace verification condition %s has invalid parameters", pair.positive.Name())
+		}
+		historyType, validationErr := validateTraceInvariantType(pair.positive, module.VarDeclarations())
+		if validationErr != nil {
+			return nil, nil, nil, true, validationErr
+		}
+		trace = append(trace, namedTraceInvariant{
+			name: pair.positive.Name(), parameter: parameters[0].Name,
+			expression: pair.negative.Body(), historyType: historyType,
+		})
+	}
+	found := len(statePairs)+len(actionPairs)+len(tracePairs) > 0
 	return state, action, trace, found, nil
 }
 

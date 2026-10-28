@@ -1,6 +1,9 @@
 package apalache
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 type VCGenerator struct{ tracker TransformationTracker }
 
@@ -15,29 +18,52 @@ func NewVCGenerator(tracker TransformationTracker) *VCGenerator {
 // VCGenPassImpl. Invariants are expanded in configuration order, followed by
 // the optional normalized state view.
 func GenerateVerificationConditions(module *Module, predicates DerivedPredicates, tracker TransformationTracker) (*Module, error) {
+	result, _, err := generateVerificationConditions(module, predicates, tracker)
+	return result, err
+}
+
+type verificationConditionSources struct {
+	state  []string
+	action []string
+	trace  []string
+}
+
+func generateVerificationConditions(module *Module, predicates DerivedPredicates, tracker TransformationTracker) (*Module, verificationConditionSources, error) {
 	if module == nil {
-		return nil, fmt.Errorf("cannot generate verification conditions for a nil module")
+		return nil, verificationConditionSources{}, fmt.Errorf("cannot generate verification conditions for a nil module")
 	}
 	if !module.HasProperty(PropertyInlined) {
-		return nil, fmt.Errorf("VC generation requires an inlined module")
+		return nil, verificationConditionSources{}, fmt.Errorf("VC generation requires an inlined module")
 	}
 	generator := NewVCGenerator(tracker)
 	current := module
+	sources := verificationConditionSources{}
 	var err error
 	for _, invariant := range predicates.Invariants {
+		declarationCount := len(current.Declarations())
 		current, err = generator.GenerateInvariant(current, invariant)
 		if err != nil {
-			return nil, err
+			return nil, verificationConditionSources{}, err
+		}
+		for _, declaration := range current.Declarations()[declarationCount:] {
+			switch {
+			case strings.HasPrefix(declaration.Name(), NormalizedVCInvariantPrefix):
+				sources.state = append(sources.state, invariant)
+			case strings.HasPrefix(declaration.Name(), NormalizedVCActionPrefix):
+				sources.action = append(sources.action, invariant)
+			case strings.HasPrefix(declaration.Name(), NormalizedVCTracePrefix):
+				sources.trace = append(sources.trace, invariant)
+			}
 		}
 	}
 	if predicates.View != "" {
 		current, err = generator.GenerateView(current, predicates.View)
 		if err != nil {
-			return nil, err
+			return nil, verificationConditionSources{}, err
 		}
 	}
 	current.AddProperty(PropertyVCGenerated)
-	return current, nil
+	return current, sources, nil
 }
 
 func (generator *VCGenerator) moduleWith(module *Module, declarations ...Decl) *Module {

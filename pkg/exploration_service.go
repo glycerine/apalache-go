@@ -799,49 +799,33 @@ func explorationSpecParameters(prepared SafetyPipelineResult) (specParameters, e
 	}
 	result.InitTransitions = metadataForExpressions(TransitionsFromModule(prepared.Module, NormalizedInitPrefix))
 	result.NextTransitions = metadataForExpressions(TransitionsFromModule(prepared.Module, NormalizedNextPrefix))
-	levels := NewLevelFinder(prepared.Module)
-	for _, name := range prepared.Predicates.Invariants {
-		declaration, found := declarationNamed(prepared.Module, name)
-		operator, ok := declaration.(*OperDecl)
-		if !found || !ok || len(operator.FormalParams()) != 0 {
-			return specParameters{}, fmt.Errorf("invariant %s was not found as a nullary operator", name)
-		}
-		entry := specEntryMetadata{Labels: expressionLabels(operator.Body())}
-		switch levels.LevelOfExpression(operator.Body()) {
-		case ConstantLevel, StateLevel:
+	for _, declaration := range prepared.Module.OperDeclarations() {
+		entry := specEntryMetadata{Labels: expressionLabels(declaration.Body())}
+		switch {
+		case strings.HasPrefix(declaration.Name(), NormalizedVCInvariantPrefix):
 			entry.Index = len(result.StateInvariants)
 			result.StateInvariants = append(result.StateInvariants, entry)
-		case ActionLevel:
+		case strings.HasPrefix(declaration.Name(), NormalizedVCActionPrefix):
 			entry.Index = len(result.ActionInvariants)
 			result.ActionInvariants = append(result.ActionInvariants, entry)
-		default:
-			return specParameters{}, fmt.Errorf("invariant %s is temporal", name)
 		}
 	}
 	return result, nil
 }
 
 func explorationInvariantViolations(prepared SafetyPipelineResult) (state, action []Expr, err error) {
-	levels := NewLevelFinder(prepared.Module)
-	for _, name := range prepared.Predicates.Invariants {
-		declaration, found := declarationNamed(prepared.Module, name)
-		operator, ok := declaration.(*OperDecl)
-		if !found || !ok || len(operator.FormalParams()) != 0 {
-			return nil, nil, fmt.Errorf("invariant %s was not found as a nullary operator", name)
-		}
-		body := invariantAssignmentsToEquality(operator.Body())
-		violation, violationErr := invariantViolationExpression(body)
-		if violationErr != nil {
-			return nil, nil, violationErr
-		}
-		switch levels.LevelOfExpression(body) {
-		case ConstantLevel, StateLevel:
-			state = append(state, violation)
-		case ActionLevel:
-			action = append(action, violation)
-		default:
-			return nil, nil, fmt.Errorf("invariant %s is temporal", name)
-		}
+	stateVCs, actionVCs, _, found, err := normalizedCheckerVCs(prepared.Module)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !found && len(prepared.Predicates.Invariants) > 0 {
+		return nil, nil, fmt.Errorf("normalized verification conditions were not found")
+	}
+	for _, invariant := range stateVCs {
+		state = append(state, invariant.expression)
+	}
+	for _, invariant := range actionVCs {
+		action = append(action, invariant.expression)
 	}
 	return state, action, nil
 }

@@ -29,6 +29,9 @@ type DerivedPredicates struct {
 	TemporalProperties []string
 	View               string
 	Persistent         []string
+	vcStateSources     []string
+	vcActionSources    []string
+	vcTraceSources     []string
 }
 
 // Configure atomically replaces the cross-pass predicate catalog. Empty
@@ -51,6 +54,9 @@ func (predicates *DerivedPredicates) Configure(
 	// previous specification when the shared catalog is reconfigured.
 	predicates.StateConstraints = nil
 	predicates.ActionConstraints = nil
+	predicates.vcStateSources = nil
+	predicates.vcActionSources = nil
+	predicates.vcTraceSources = nil
 }
 
 func (predicates *DerivedPredicates) SetConstantInit(name string) {
