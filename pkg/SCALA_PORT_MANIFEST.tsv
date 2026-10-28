@@ -466,7 +466,7 @@ tlair/src/main/scala/at/forsyte/apalache/tla/lir/oper/VariantOper.scala	partial	
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/oper/package.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/package.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/smt/SmtTools.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
-tlair/src/main/scala/at/forsyte/apalache/tla/lir/src/RegionTree.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/src/RegionTree.scala	ported	source_store.go;source_store_test.go	nested insertion, child reparenting, stable indices, duplicate reuse, partial-overlap rejection, size, and indexed lookup are ported; missing lookup uses Go's bool result instead of an exception
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/src/SaveToStoreTransformationListener.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/src/SourceLocation.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/src/SourcePosition.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
