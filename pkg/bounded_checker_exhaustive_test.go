@@ -568,3 +568,70 @@ Inv == %s
 		checkExhaustiveMachine(t, name, source, init, edges, invariant, len(values), bound)
 	}
 }
+
+func TestBoundedSafetyMatchesQuantifiedTransitionMachines(t *testing.T) {
+	type transitionTemplate struct {
+		expression string
+		next       func(int) []int
+	}
+	templates := []transitionTemplate{
+		{"(\\E i \\in {0, 1}: i = x % 2) /\\ x' = (x + 1) % 4", func(x int) []int {
+			return []int{(x + 1) % 4}
+		}},
+		{"(\\A i \\in {0, 1}: i <= x) /\\ x' = (x + 2) % 4", func(x int) []int {
+			if x >= 1 {
+				return []int{(x + 2) % 4}
+			}
+			return nil
+		}},
+		{"\\E i \\in {0, 1, 2, 3}: i = x /\\ x' = 3 - i", func(x int) []int {
+			return []int{3 - x}
+		}},
+		{"(\\A i \\in {1, 2}: x < i) /\\ x' = x + 1", func(x int) []int {
+			if x == 0 {
+				return []int{1}
+			}
+			return nil
+		}},
+		{"(\\E i \\in {0, 1, 2, 3}: i = x) /\\ x' = (x + 3) % 4", func(x int) []int {
+			return []int{(x + 3) % 4}
+		}},
+		{"(\\A i \\in {0, 1, 2, 3}: i <= x) /\\ x' = x", func(x int) []int {
+			if x == 3 {
+				return []int{3}
+			}
+			return nil
+		}},
+		{"(\\E i \\in {0, 1}: i = x % 2) /\\ x' = IF x = 3 THEN 0 ELSE x + 1", func(x int) []int {
+			return []int{(x + 1) % 4}
+		}},
+		{"\\E i \\in {0, 1, 2, 3}: /\\ i = (x + 1) % 4 /\\ x' = i /\\ \\A j \\in {i}: j = i", func(x int) []int {
+			return []int{(x + 1) % 4}
+		}},
+	}
+	values := []string{"0", "1", "2", "3"}
+	random := rand.New(rand.NewSource(0x0a11f1ed))
+	for number := 0; number < 24; number++ {
+		template := templates[number%len(templates)]
+		init := uint64(random.Intn(15) + 1)
+		invariant := uint64(random.Intn(16))
+		bound := random.Intn(4)
+		edges := uint64(0)
+		for from := range values {
+			for _, to := range template.next(from) {
+				edges |= 1 << (from*len(values) + to)
+			}
+		}
+		name := fmt.Sprintf("QuantifiedTransition%d", number)
+		source := fmt.Sprintf(`---- MODULE %s ----
+EXTENDS Integers
+\* @type: Int;
+VARIABLE x
+Init == %s
+Next == %s
+Inv == %s
+====`, name, valueMaskPredicate("x", values, init, false), template.expression,
+			valueMaskPredicate("x", values, invariant, false))
+		checkExhaustiveMachine(t, name, source, init, edges, invariant, len(values), bound)
+	}
+}
