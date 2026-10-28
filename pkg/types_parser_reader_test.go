@@ -29,7 +29,7 @@ func TestTypeTokenReaderCursorAndPositions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantKinds := []typeTokenKind{typeTokenIdentifier, typeTokenArrow, typeTokenIdentifier, typeTokenEOF}
+	wantKinds := []typeTokenKind{typeTokenInt, typeTokenArrow, typeTokenBool, typeTokenEOF}
 	wantText := []string{"Int", "->", "Bool", ""}
 	wantOffsets := []int{1, 5, 8, 12}
 	if len(tokens) != len(wantKinds) {
@@ -42,13 +42,13 @@ func TestTypeTokenReaderCursorAndPositions(t *testing.T) {
 	}
 
 	reader := &typeParser{tokens: tokens}
-	if reader.peek() != tokens[0] || !reader.accept(typeTokenIdentifier) || reader.peek() != tokens[1] {
+	if reader.peek() != tokens[0] || !reader.accept(typeTokenInt) || reader.peek() != tokens[1] {
 		t.Fatal("reader did not expose first/rest semantics")
 	}
 	if reader.accept(typeTokenIdentifier) || reader.peek() != tokens[1] {
 		t.Fatal("failed accept consumed a token")
 	}
-	if !reader.accept(typeTokenArrow) || !reader.accept(typeTokenIdentifier) || reader.peek().kind != typeTokenEOF {
+	if !reader.accept(typeTokenArrow) || !reader.accept(typeTokenBool) || reader.peek().kind != typeTokenEOF {
 		t.Fatal("reader did not reach the end token")
 	}
 }

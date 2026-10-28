@@ -5,7 +5,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"unicode"
 )
 
 type TypeParseError struct {
@@ -26,6 +25,15 @@ const (
 	typeTokenEOF typeTokenKind = iota
 	typeTokenIdentifier
 	typeTokenNumber
+	typeTokenStringLiteral
+	typeTokenInt
+	typeTokenReal
+	typeTokenBool
+	typeTokenStr
+	typeTokenSet
+	typeTokenSeq
+	typeTokenVariant
+	typeTokenRecord
 	typeTokenLParen
 	typeTokenRParen
 	typeTokenLRow
@@ -53,6 +61,20 @@ type typeToken struct {
 	offset int
 }
 
+// String mirrors the diagnostic spelling of the Scala Type1Token variants.
+func (token typeToken) String() string {
+	switch token.kind {
+	case typeTokenEOF:
+		return "end of input"
+	case typeTokenIdentifier:
+		return fmt.Sprintf("record field '%s'", token.text)
+	case typeTokenStringLiteral:
+		return `"` + token.text + `"`
+	default:
+		return token.text
+	}
+}
+
 func lexType(text string) ([]typeToken, error) {
 	tokens := make([]typeToken, 0)
 	for offset := 0; offset < len(text); {
@@ -63,7 +85,7 @@ func lexType(text string) ([]typeToken, error) {
 			}
 			continue
 		}
-		if unicode.IsSpace(rune(text[offset])) {
+		if isTypeWhitespace(text[offset]) {
 			offset++
 			continue
 		}
@@ -86,12 +108,29 @@ func lexType(text string) ([]typeToken, error) {
 		if matchedCompound {
 			continue
 		}
+		if text[offset] == '"' {
+			offset++
+			for offset < len(text) && text[offset] != '"' {
+				offset++
+			}
+			if offset == len(text) {
+				return nil, &TypeParseError{Offset: start, Message: "unterminated string literal"}
+			}
+			tokens = append(tokens, typeToken{kind: typeTokenStringLiteral, text: text[start+1 : offset], offset: start})
+			offset++
+			continue
+		}
 		if isTypeIdentifierStart(text[offset]) {
 			offset++
 			for offset < len(text) && isTypeIdentifierPart(text[offset]) {
 				offset++
 			}
-			tokens = append(tokens, typeToken{kind: typeTokenIdentifier, text: text[start:offset], offset: start})
+			word := text[start:offset]
+			kind := typeTokenIdentifier
+			if keywordKind, ok := typeKeywordKinds[word]; ok {
+				kind = keywordKind
+			}
+			tokens = append(tokens, typeToken{kind: kind, text: word, offset: start})
 			continue
 		}
 		if text[offset] >= '0' && text[offset] <= '9' {
@@ -99,7 +138,11 @@ func lexType(text string) ([]typeToken, error) {
 			for offset < len(text) && text[offset] >= '0' && text[offset] <= '9' {
 				offset++
 			}
-			tokens = append(tokens, typeToken{kind: typeTokenNumber, text: text[start:offset], offset: start})
+			fieldNumber, err := strconv.ParseInt(text[start:offset], 10, 32)
+			if err != nil {
+				return nil, &TypeParseError{Offset: start, Message: "field number is too large"}
+			}
+			tokens = append(tokens, typeToken{kind: typeTokenNumber, text: strconv.FormatInt(fieldNumber, 10), offset: start})
 			continue
 		}
 		kind, ok := map[byte]typeTokenKind{
@@ -115,6 +158,20 @@ func lexType(text string) ([]typeToken, error) {
 	}
 	tokens = append(tokens, typeToken{kind: typeTokenEOF, offset: len(text)})
 	return tokens, nil
+}
+
+var typeKeywordKinds = map[string]typeTokenKind{
+	"Int": typeTokenInt, "Real": typeTokenReal, "Bool": typeTokenBool, "Str": typeTokenStr,
+	"Set": typeTokenSet, "Seq": typeTokenSeq, "Variant": typeTokenVariant, "Rec": typeTokenRecord,
+}
+
+func isTypeWhitespace(value byte) bool {
+	switch value {
+	case ' ', '\t', '\r', '\f', '\n':
+		return true
+	default:
+		return false
+	}
 }
 
 func isTypeIdentifierStart(value byte) bool {
@@ -204,13 +261,7 @@ func (parser *typeParser) parseExpression() (Type, error) {
 		return result, constructorErr
 	}
 	if operatorArgs != nil {
-		if len(operatorArgs) == 0 {
-			return nil, parser.errorf("empty parenthesized type list must be followed by =>")
-		}
-		left, err = NewTupleType(operatorArgs...)
-		if err != nil {
-			return nil, err
-		}
+		return nil, parser.errorf("parenthesized type list must be followed by =>")
 	}
 	if parser.accept(typeTokenArrow) {
 		resultType, err := parser.parseExpression()
@@ -263,24 +314,29 @@ func (parser *typeParser) parseHead() (Type, []Type, error) {
 func (parser *typeParser) parseAtomic() (Type, error) {
 	token := parser.peek()
 	switch token.kind {
+	case typeTokenInt:
+		parser.index++
+		return IntT1, nil
+	case typeTokenReal:
+		parser.index++
+		return RealT1, nil
+	case typeTokenBool:
+		parser.index++
+		return BoolT1, nil
+	case typeTokenStr:
+		parser.index++
+		return StrT1, nil
+	case typeTokenSet:
+		parser.index++
+		return parser.parseUnaryTypeConstructor(func(element Type) (Type, error) { return NewSetType(element) })
+	case typeTokenSeq:
+		parser.index++
+		return parser.parseUnaryTypeConstructor(func(element Type) (Type, error) { return NewSeqType(element) })
+	case typeTokenVariant:
+		parser.index++
+		return parser.parseVariantConstructor()
 	case typeTokenIdentifier:
 		parser.index++
-		switch token.text {
-		case "Int":
-			return IntT1, nil
-		case "Real":
-			return RealT1, nil
-		case "Bool":
-			return BoolT1, nil
-		case "Str":
-			return StrT1, nil
-		case "Set":
-			return parser.parseUnaryTypeConstructor(func(element Type) (Type, error) { return NewSetType(element) })
-		case "Seq":
-			return parser.parseUnaryTypeConstructor(func(element Type) (Type, error) { return NewSeqType(element) })
-		case "Variant":
-			return parser.parseVariantConstructor()
-		}
 		if parser.peek().kind == typeTokenLParen {
 			return parser.parseVariant(token)
 		}
@@ -362,10 +418,8 @@ func (parser *typeParser) parseSparseTuple() (Type, error) {
 			if err != nil {
 				return nil, err
 			}
-			index, conversionErr := strconv.Atoi(number.text)
-			if conversionErr != nil {
-				return nil, parser.errorAt(number, "field number is too large")
-			}
+			parsedIndex, _ := strconv.ParseInt(number.text, 10, 32) // validated by lexType
+			index := int(parsedIndex)
 			if _, err := parser.expect(typeTokenColon, ":"); err != nil {
 				return nil, err
 			}
@@ -503,9 +557,6 @@ func (parser *typeParser) parseTypedField() (string, Type, error) {
 	if err != nil {
 		return "", nil, err
 	}
-	if isReservedTypeWord(name.text) {
-		return "", nil, parser.errorAt(name, "reserved type word cannot be a field name")
-	}
 	if _, err := parser.expect(typeTokenColon, ":"); err != nil {
 		return "", nil, err
 	}
@@ -580,15 +631,6 @@ func (parser *typeParser) parseVariantConstructor() (Type, error) {
 	}
 	row, _ := NewRowType(nil, tail)
 	return NewVariantType(row), nil
-}
-
-func isReservedTypeWord(text string) bool {
-	switch text {
-	case "Int", "Real", "Bool", "Str", "Set", "Seq", "Variant", "Rec":
-		return true
-	default:
-		return false
-	}
 }
 
 func (parser *typeParser) peek() typeToken { return parser.peekN(0) }

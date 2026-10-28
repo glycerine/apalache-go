@@ -17,15 +17,13 @@ func TestTypeParserScalaExamples(t *testing.T) {
 		{"Seq(Int)", mustSeqType(t, IntT1)},
 		{"<<Bool>>", mustTupleType(t, BoolT1)},
 		{"<<Bool, Int>>", mustTupleType(t, BoolT1, IntT1)},
-		{"(Bool, Int)", mustTupleType(t, BoolT1, IntT1)},
 		{"Set(Int) -> Bool", mustFunType(t, mustSetType(t, IntT1), BoolT1)},
-		{"(Bool, Int) -> Str", mustFunType(t, mustTupleType(t, BoolT1, IntT1), StrT1)},
 		{"Set(Int) -> Bool -> Str", mustFunType(t, mustSetType(t, IntT1), mustFunType(t, BoolT1, StrT1))},
 		{"(Set(Int) -> Bool) -> Str", mustFunType(t, mustFunType(t, mustSetType(t, IntT1), BoolT1), StrT1)},
 		{"(Set(Int), Bool) => Str", mustOperatorType(t, []Type{mustSetType(t, IntT1), BoolT1}, StrT1)},
 		{"(Set(Int) => Bool) => Str", mustOperatorType(t, []Type{mustOperatorType(t, []Type{mustSetType(t, IntT1)}, BoolT1)}, StrT1)},
 		{"() => Int", mustOperatorType(t, nil, IntT1)},
-		{"() => (Bool, Int)", mustOperatorType(t, nil, mustTupleType(t, BoolT1, IntT1))},
+		{"() => <<Bool, Int>>", mustOperatorType(t, nil, mustTupleType(t, BoolT1, IntT1))},
 	}
 	for _, test := range tests {
 		t.Run(test.text, func(t *testing.T) {
@@ -126,6 +124,7 @@ func TestTypeParserAliasesCommentsAndFailures(t *testing.T) {
 	for _, invalid := range []string{
 		"", "non-sense", "vc", "<<>>", "{ f: Int, f: Bool }",
 		"Tag(Int) | Tag(Bool)", "Variant(Int)", "$Uppercase", "Set()",
+		"(Bool, Int)", "(Bool, Int) -> Str", "() => (Bool, Int)",
 	} {
 		t.Run("reject_"+invalid, func(t *testing.T) {
 			if got, err := ParseType(invalid); err == nil {
@@ -157,4 +156,78 @@ func TestTypeParserRoundTripsCanonicalTypes(t *testing.T) {
 			t.Errorf("round trip %T %q = %v, %v", typ, text, parsed, err)
 		}
 	}
+}
+
+func TestTypeParserRemainingScalaSuiteRegressions(t *testing.T) {
+	a := mustNumberedVar(t, 0)
+	b := mustNumberedVar(t, 1)
+
+	tests := []struct {
+		text string
+		want Type
+	}{
+		{"[]", mustRecordType(t, nil)},
+		{"<||>", mustSparseTupleType(t, nil)},
+		{"(| a |)", mustRowType(t, nil, &a)},
+		{"{ }", NewRecordRowType(mustRowType(t, nil, nil))},
+		{"{ a }", NewRecordRowType(mustRowType(t, nil, &a))},
+		{"((Set(Int), Bool) => Str)", mustOperatorType(t, []Type{mustSetType(t, IntT1), BoolT1}, StrT1)},
+		{"(Set(Int) -> Bool) => Str", mustOperatorType(t, []Type{mustFunType(t, mustSetType(t, IntT1), BoolT1)}, StrT1)},
+		{"Tag1(Int) | Tag2({ g: Bool }) | b", NewVariantType(mustRowType(t, map[string]Type{
+			"Tag1": IntT1,
+			"Tag2": NewRecordRowType(mustRowType(t, map[string]Type{"g": BoolT1}, nil)),
+		}, &b))},
+		{"A(Int) | RecvNotification({election: Int, x: Int})", NewVariantType(mustRowType(t, map[string]Type{
+			"A":                IntT1,
+			"RecvNotification": NewRecordRowType(mustRowType(t, map[string]Type{"election": IntT1, "x": IntT1}, nil)),
+		}, nil))},
+	}
+	for _, test := range tests {
+		t.Run(test.text, func(t *testing.T) {
+			got, err := ParseType(test.text)
+			if err != nil || !EqualTypes(got, test.want) {
+				t.Fatalf("ParseType() = %v, %v; want %v", got, err, test.want)
+			}
+		})
+	}
+
+	deep := "(() => Tag1(Tag2(Tag3(Tag4(Tag5(Tag6(MODEL)))))))"
+	if _, err := ParseType(deep); err != nil {
+		t.Fatalf("deep variant regression failed: %v", err)
+	}
+
+	keywordPrefixes := "IntFoo(Int) | RealBar(Int) | BoolBaz(Int) | StrQux(Int) | SetX(Int) | SeqThing(Int) | VariantAlt(Int) | RecTag(Int)"
+	if _, err := ParseType(keywordPrefixes); err != nil {
+		t.Fatalf("keyword-prefix variant tags failed: %v", err)
+	}
+
+	for _, alias := range []struct{ text, want string }{
+		{"lowercase = Set(Int)", "$lowercase"},
+		{"uint32 = Int", "$uint32"},
+		{"camelCase32 = Int", "$camelCase32"},
+		{"ALIAS2 = Set(ALIAS1)", "ALIAS2"},
+	} {
+		name, _, err := ParseTypeAlias(alias.text)
+		if err != nil || name != alias.want {
+			t.Errorf("ParseTypeAlias(%q) = %q, %v; want %q", alias.text, name, err, alias.want)
+		}
+	}
+}
+
+func mustRecordType(t *testing.T, fields map[string]Type) RecordType {
+	t.Helper()
+	typ, err := NewRecordType(fields)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return typ
+}
+
+func mustSparseTupleType(t *testing.T, fields map[int]Type) SparseTupleType {
+	t.Helper()
+	typ, err := NewSparseTupleType(fields)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return typ
 }
