@@ -2,6 +2,15 @@ package apalache
 
 import "testing"
 
+func representativeOperatorArity(operator Operator) (int, bool) {
+	for count := 0; count <= 12; count++ {
+		if operator.IsCorrectArity(count) {
+			return count, true
+		}
+	}
+	return 0, false
+}
+
 func TestLevelOrderingAndNames(t *testing.T) {
 	levels := []Level{ConstantLevel, StateLevel, ActionLevel, TemporalLevel}
 	names := []string{"Constant", "State", "Action", "Temporal"}
@@ -81,5 +90,96 @@ func TestDeclarationLevelCompatibility(t *testing.T) {
 		finder.LevelOfDeclarationWithoutCache(theorem) != ConstantLevel ||
 		finder.LevelOfDeclarationWithoutCache(operator) != TemporalLevel {
 		t.Fatal("declaration levels differ from Scala behavior")
+	}
+}
+
+func TestLevelFinderExhaustiveScalaOperatorFamilies(t *testing.T) {
+	variable := NewVarDecl("x", Untyped())
+	finder := NewLevelFinder(NewModule("M", []Decl{variable}))
+	for _, operator := range AllOperators() {
+		wantBase := ConstantLevel
+		switch operator.Category() {
+		case CategoryAction:
+			wantBase = ActionLevel
+		case CategoryTemporal:
+			wantBase = TemporalLevel
+		}
+		if got := operatorLevel(operator); got != wantBase {
+			t.Errorf("operatorLevel(%s) = %v, want %v", operator, got, wantBase)
+		}
+
+		arity, ok := representativeOperatorArity(operator)
+		if !ok || !operator.Constructible() {
+			continue
+		}
+		constantArguments := make([]Expr, arity)
+		stateArguments := make([]Expr, arity)
+		for index := 0; index < arity; index++ {
+			constantArguments[index] = NewValueExpr(Int64Value(int64(index)), Untyped())
+			stateArguments[index] = NewNameExpr("x", Untyped())
+		}
+		if operator.Name() == "LABEL" {
+			for index := 1; index < arity; index++ {
+				constantArguments[index] = NewValueExpr(StringValue("label"), Untyped())
+				stateArguments[index] = NewValueExpr(StringValue("label"), Untyped())
+			}
+		}
+		constantExpression, err := NewOperExpr(operator, Untyped(), constantArguments...)
+		if err != nil {
+			t.Fatalf("construct %s/%d: %v", operator, arity, err)
+		}
+		if got := finder.LevelOfExpression(constantExpression); got != wantBase {
+			t.Errorf("constant %s expression = %v, want %v", operator, got, wantBase)
+		}
+		stateExpression, err := NewOperExpr(operator, Untyped(), stateArguments...)
+		if err != nil {
+			t.Fatalf("construct state %s/%d: %v", operator, arity, err)
+		}
+		wantState := wantBase
+		if arity > 0 {
+			wantState = wantState.Join(StateLevel)
+		}
+		if got := finder.LevelOfExpression(stateExpression); got != wantState {
+			t.Errorf("state %s expression = %v, want %v", operator, got, wantState)
+		}
+	}
+}
+
+func TestLevelFinderDeclarationAndCacheScalaCases(t *testing.T) {
+	variable := NewVarDecl("x", Untyped())
+	state := NewOperDecl("State", nil, NewNameExpr("x", Untyped()), Untyped())
+	action := NewOperDecl("Action", nil,
+		MustOperExpr(Op("PRIME"), Untyped(), NewNameExpr("State", Untyped())), Untyped())
+	temporal := NewOperDecl("Temporal", nil,
+		MustOperExpr(Op("GLOBALLY"), Untyped(), NewNameExpr("Action", Untyped())), Untyped())
+	left := NewOperDecl("Left", nil, NewNameExpr("Right", Untyped()), Untyped())
+	right := NewOperDecl("Right", nil,
+		MustOperExpr(Op("OR"), Untyped(), NewNameExpr("Left", Untyped()), NewNameExpr("x", Untyped())), Untyped())
+	module := NewModule("M", []Decl{variable, state, action, temporal, left, right})
+	finder := NewLevelFinder(module)
+	for _, test := range []struct {
+		declaration *OperDecl
+		want        Level
+	}{
+		{state, StateLevel},
+		{action, ActionLevel},
+		{temporal, TemporalLevel},
+		{left, StateLevel},
+		{right, StateLevel},
+	} {
+		if got := finder.LevelOfDeclaration(test.declaration); got != test.want {
+			t.Errorf("LevelOfDeclaration(%s) = %v, want %v", test.declaration.Name(), got, test.want)
+		}
+		if got := finder.LevelOfName(test.declaration.Name()); got != test.want {
+			t.Errorf("cached LevelOfName(%s) = %v, want %v", test.declaration.Name(), got, test.want)
+		}
+	}
+
+	localState := NewOperDecl("LocalState", nil, NewNameExpr("x", Untyped()), Untyped())
+	localTemporal := NewOperDecl("LocalTemporal", nil,
+		MustOperExpr(Op("EVENTUALLY"), Untyped(), NewValueExpr(BoolValue(true), Untyped())), Untyped())
+	let := NewLetInExpr(NewValueExpr(Int64Value(0), Untyped()), Untyped(), localState, localTemporal)
+	if got := finder.LevelOfExpression(let); got != TemporalLevel {
+		t.Fatalf("LET body/declaration join = %v, want Temporal", got)
 	}
 }

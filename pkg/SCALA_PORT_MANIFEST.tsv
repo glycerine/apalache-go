@@ -435,8 +435,8 @@ tlair/src/main/scala/at/forsyte/apalache/tla/lir/ModuleProperty.scala	partial	ir
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/OperParam.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/TlaDecl.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/TlaEx.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
-tlair/src/main/scala/at/forsyte/apalache/tla/lir/TlaLevel.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
-tlair/src/main/scala/at/forsyte/apalache/tla/lir/TlaLevelFinder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/TlaLevel.scala	ported	ir_level.go;ir_level_test.go	all four ordered levels, numeric and textual representations, maximum join in both operand orders, and invalid integer rejection match Scala
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/TlaLevelFinder.scala	ported	ir_level.go;ir_level_test.go	constant/state names, every registered action and temporal operator, argument-level joins, LET bodies and local declarations, direct and mutual recursion termination, declaration categories, unknown names, and cache reuse are covered
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/TlaType1.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/TlaValue.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/TypeTag.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
