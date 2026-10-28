@@ -17,6 +17,9 @@ import (
 )
 
 func TestExplorationJSONRPCHealthAndErrors(t *testing.T) {
+	if JSONRPCServerErrorMin != -32099 || JSONRPCServerErrorMax != -32000 || JSONRPCSessionMissing != -32404 {
+		t.Fatalf("server error codes = %d..%d, session=%d", JSONRPCServerErrorMin, JSONRPCServerErrorMax, JSONRPCSessionMissing)
+	}
 	handler := NewExplorationJSONRPCHandler()
 	tests := []struct {
 		name     string
@@ -62,6 +65,27 @@ func TestExplorationJSONRPCHealthAndErrors(t *testing.T) {
 				t.Fatalf("health response = %#v", document)
 			}
 		})
+	}
+}
+
+func TestExplorationSessionRecoveryDiscardsLaterSnapshots(t *testing.T) {
+	session := &explorationSession{
+		prepared:  SafetyPipelineResult{Module: NewModule("Empty", nil)},
+		snapshots: map[int][]explorationOperation{0: {}},
+	}
+	first := session.takeSnapshot()
+	second := session.takeSnapshot()
+	if first != 1 || second != 2 {
+		t.Fatalf("snapshot IDs = %d, %d", first, second)
+	}
+	if err := session.recoverSnapshot(first); err != nil {
+		t.Fatal(err)
+	}
+	if _, found := session.snapshots[second]; found {
+		t.Fatalf("snapshot %d survived recovery to %d", second, first)
+	}
+	if err := session.recoverSnapshot(second); err == nil {
+		t.Fatalf("recovered discarded snapshot %d", second)
 	}
 }
 

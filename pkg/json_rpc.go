@@ -20,6 +20,8 @@ const (
 	JSONRPCMethodNotFound = -32601
 	JSONRPCInvalidParams  = -32602
 	JSONRPCInternalError  = -32603
+	JSONRPCServerErrorMin = -32099
+	JSONRPCServerErrorMax = -32000
 	JSONRPCSessionMissing = -32404
 )
 
@@ -46,8 +48,7 @@ type jsonRPCResponse struct {
 }
 
 // ExplorationJSONRPCHandler implements the transport boundary of Scala's
-// explorer service. Stateful exploration methods are added to dispatch as the
-// replayable Go session engine is ported.
+// stateful explorer service.
 type ExplorationJSONRPCHandler struct{ service *ExplorationService }
 
 func NewExplorationJSONRPCHandler() http.Handler {

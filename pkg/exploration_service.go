@@ -952,6 +952,11 @@ func (session *explorationSession) recoverSnapshot(snapshotID int) error {
 	}
 	session.executor = executor
 	session.operations = append([]explorationOperation(nil), operations...)
+	for savedID := range session.snapshots {
+		if savedID > snapshotID {
+			delete(session.snapshots, savedID)
+		}
+	}
 	return nil
 }
 
