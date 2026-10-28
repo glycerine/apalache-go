@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"sort"
+	"strconv"
 )
 
 type quintJSONOutput struct {
@@ -28,13 +30,26 @@ type quintJSONScheme struct {
 }
 
 type quintJSONType struct {
-	ID   json.Number     `json:"id"`
-	Kind string          `json:"kind"`
-	Name string          `json:"name"`
-	Elem *quintJSONType  `json:"elem"`
-	Arg  *quintJSONType  `json:"arg"`
-	Res  *quintJSONType  `json:"res"`
-	Args []quintJSONType `json:"args"`
+	ID     json.Number     `json:"id"`
+	Kind   string          `json:"kind"`
+	Name   string          `json:"name"`
+	Elem   *quintJSONType  `json:"elem"`
+	Arg    *quintJSONType  `json:"arg"`
+	Res    *quintJSONType  `json:"res"`
+	Args   []quintJSONType `json:"args"`
+	Fields *quintJSONRow   `json:"fields"`
+}
+
+type quintJSONRow struct {
+	Kind   string                 `json:"kind"`
+	Name   string                 `json:"name"`
+	Fields []quintJSONRecordField `json:"fields"`
+	Other  *quintJSONRow          `json:"other"`
+}
+
+type quintJSONRecordField struct {
+	FieldName string        `json:"fieldName"`
+	FieldType quintJSONType `json:"fieldType"`
 }
 
 type quintJSONDef struct {
@@ -218,6 +233,24 @@ func (importer quintJSONImporter) typeOf(id json.Number) (Type, error) {
 }
 
 func convertQuintJSONType(source quintJSONType) (Type, error) {
+	return (&quintJSONTypeConverter{variables: make(map[string]int)}).convert(source)
+}
+
+type quintJSONTypeConverter struct {
+	variables map[string]int
+}
+
+func (converter *quintJSONTypeConverter) variable(name string) VarType {
+	number, found := converter.variables[name]
+	if !found {
+		number = len(converter.variables)
+		converter.variables[name] = number
+	}
+	variable, _ := NewVarType(number)
+	return variable
+}
+
+func (converter *quintJSONTypeConverter) convert(source quintJSONType) (Type, error) {
 	switch source.Kind {
 	case "bool":
 		return BoolT1, nil
@@ -225,11 +258,19 @@ func convertQuintJSONType(source quintJSONType) (Type, error) {
 		return IntT1, nil
 	case "str":
 		return StrT1, nil
+	case "const":
+		constant, err := NewConstType(source.Name)
+		if err != nil {
+			return nil, fmt.Errorf("invalid Quint constant type %q: %w", source.Name, err)
+		}
+		return constant, nil
+	case "var":
+		return converter.variable(source.Name), nil
 	case "set":
 		if source.Elem == nil {
 			return nil, fmt.Errorf("set type has no element")
 		}
-		element, err := convertQuintJSONType(*source.Elem)
+		element, err := converter.convert(*source.Elem)
 		if err != nil {
 			return nil, err
 		}
@@ -238,7 +279,7 @@ func convertQuintJSONType(source quintJSONType) (Type, error) {
 		if source.Elem == nil {
 			return nil, fmt.Errorf("list type has no element")
 		}
-		element, err := convertQuintJSONType(*source.Elem)
+		element, err := converter.convert(*source.Elem)
 		if err != nil {
 			return nil, err
 		}
@@ -247,11 +288,11 @@ func convertQuintJSONType(source quintJSONType) (Type, error) {
 		if source.Arg == nil || source.Res == nil {
 			return nil, fmt.Errorf("function type is incomplete")
 		}
-		argument, err := convertQuintJSONType(*source.Arg)
+		argument, err := converter.convert(*source.Arg)
 		if err != nil {
 			return nil, err
 		}
-		result, err := convertQuintJSONType(*source.Res)
+		result, err := converter.convert(*source.Res)
 		if err != nil {
 			return nil, err
 		}
@@ -259,7 +300,7 @@ func convertQuintJSONType(source quintJSONType) (Type, error) {
 	case "oper":
 		arguments := make([]Type, len(source.Args))
 		for index := range source.Args {
-			converted, err := convertQuintJSONType(source.Args[index])
+			converted, err := converter.convert(source.Args[index])
 			if err != nil {
 				return nil, err
 			}
@@ -268,12 +309,108 @@ func convertQuintJSONType(source quintJSONType) (Type, error) {
 		if source.Res == nil {
 			return nil, fmt.Errorf("operator type has no result")
 		}
-		result, err := convertQuintJSONType(*source.Res)
+		result, err := converter.convert(*source.Res)
 		if err != nil {
 			return nil, err
 		}
 		return NewOperatorType(arguments, result)
+	case "tup":
+		if source.Fields == nil {
+			return nil, fmt.Errorf("tuple type has no row")
+		}
+		return converter.tuple(*source.Fields)
+	case "rec", "sum":
+		if source.Fields == nil {
+			return nil, fmt.Errorf("%s type has no row", source.Kind)
+		}
+		row, err := converter.row(*source.Fields)
+		if err != nil {
+			return nil, err
+		}
+		if source.Kind == "rec" {
+			return NewRecordRowType(row), nil
+		}
+		return NewVariantType(row), nil
 	default:
 		return nil, fmt.Errorf("unsupported Quint type kind %q", source.Kind)
+	}
+}
+
+func (converter *quintJSONTypeConverter) row(source quintJSONRow) (RowType, error) {
+	fields := make(map[string]Type)
+	var other *VarType
+	for {
+		switch source.Kind {
+		case "empty":
+			return NewRowType(fields, other)
+		case "var":
+			variable := converter.variable(source.Name)
+			other = &variable
+			return NewRowType(fields, other)
+		case "row":
+			for _, field := range source.Fields {
+				converted, err := converter.convert(field.FieldType)
+				if err != nil {
+					return RowType{}, fmt.Errorf("convert row field %q: %w", field.FieldName, err)
+				}
+				fields[field.FieldName] = converted
+			}
+			if source.Other == nil {
+				return RowType{}, fmt.Errorf("row has no tail")
+			}
+			source = *source.Other
+		default:
+			return RowType{}, fmt.Errorf("unsupported Quint row kind %q", source.Kind)
+		}
+	}
+}
+
+func (converter *quintJSONTypeConverter) tuple(source quintJSONRow) (Type, error) {
+	// Quint's empty tuple is its unit type, encoded by Apalache as a record.
+	if source.Kind == "empty" || source.Kind == "row" && len(source.Fields) == 0 {
+		row, _ := NewRowType(map[string]Type{"tag": StrT1}, nil)
+		return NewRecordRowType(row), nil
+	}
+	fields := make(map[int]Type)
+	open := false
+	for {
+		switch source.Kind {
+		case "empty":
+			indices := make([]int, 0, len(fields))
+			for index := range fields {
+				indices = append(indices, index)
+			}
+			sort.Ints(indices)
+			elements := make([]Type, len(indices))
+			for offset, index := range indices {
+				elements[offset] = fields[index]
+			}
+			return NewTupleType(elements...)
+		case "var":
+			converter.variable(source.Name)
+			open = true
+		case "row":
+			for _, field := range source.Fields {
+				zeroBased, err := strconv.Atoi(field.FieldName)
+				if err != nil {
+					return nil, fmt.Errorf("tuple field %q is not an integer index", field.FieldName)
+				}
+				converted, err := converter.convert(field.FieldType)
+				if err != nil {
+					return nil, fmt.Errorf("convert tuple field %q: %w", field.FieldName, err)
+				}
+				fields[zeroBased+1] = converted
+			}
+			if source.Other == nil {
+				return nil, fmt.Errorf("tuple row has no tail")
+			}
+			source = *source.Other
+			continue
+		default:
+			return nil, fmt.Errorf("unsupported Quint row kind %q", source.Kind)
+		}
+		if open {
+			return NewSparseTupleType(fields)
+		}
 	}
 }

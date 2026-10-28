@@ -93,3 +93,75 @@ func TestExplorationJSONRPCLoadsQuintJSON(t *testing.T) {
 		t.Fatalf("auxiliary Quint input = %#v", envelope)
 	}
 }
+
+func TestConvertQuintJSONTypeAlgebra(t *testing.T) {
+	row := func(fields []quintJSONRecordField, other quintJSONRow) *quintJSONRow {
+		return &quintJSONRow{Kind: "row", Fields: fields, Other: &other}
+	}
+	field := func(name, kind string) quintJSONRecordField {
+		return quintJSONRecordField{FieldName: name, FieldType: quintJSONType{Kind: kind}}
+	}
+	empty := quintJSONRow{Kind: "empty"}
+	open := quintJSONRow{Kind: "var", Name: "r"}
+	a, _ := NewVarType(0)
+	b, _ := NewVarType(1)
+	closedRow, _ := NewRowType(map[string]Type{"f1": IntT1, "f2": StrT1}, nil)
+	openRow, _ := NewRowType(map[string]Type{"f1": IntT1, "f2": StrT1}, &a)
+	variantRow, _ := NewRowType(map[string]Type{"F1": IntT1, "F2": StrT1}, nil)
+	unitRow, _ := NewRowType(map[string]Type{"tag": StrT1}, nil)
+	sparse, _ := NewSparseTupleType(map[int]Type{1: IntT1, 2: StrT1})
+	constant, _ := NewConstType("VALUE")
+
+	tests := []struct {
+		name   string
+		source quintJSONType
+		want   Type
+	}{
+		{"constant", quintJSONType{Kind: "const", Name: "VALUE"}, constant},
+		{"variable", quintJSONType{Kind: "var", Name: "a"}, a},
+		{"named variables", quintJSONType{Kind: "fun", Arg: &quintJSONType{Kind: "var", Name: "a"}, Res: &quintJSONType{Kind: "var", Name: "b"}}, mustFun(a, b)},
+		{"repeated variable", quintJSONType{Kind: "fun", Arg: &quintJSONType{Kind: "var", Name: "a"}, Res: &quintJSONType{Kind: "var", Name: "a"}}, mustFun(a, a)},
+		{"closed tuple", quintJSONType{Kind: "tup", Fields: row([]quintJSONRecordField{field("1", "str"), field("0", "int")}, empty)}, mustTuple(IntT1, StrT1)},
+		{"open tuple", quintJSONType{Kind: "tup", Fields: row([]quintJSONRecordField{field("0", "int"), field("1", "str")}, open)}, sparse},
+		{"empty tuple", quintJSONType{Kind: "tup", Fields: &empty}, NewRecordRowType(unitRow)},
+		{"closed record", quintJSONType{Kind: "rec", Fields: row([]quintJSONRecordField{field("f1", "int"), field("f2", "str")}, empty)}, NewRecordRowType(closedRow)},
+		{"open record", quintJSONType{Kind: "rec", Fields: row([]quintJSONRecordField{field("f1", "int"), field("f2", "str")}, open)}, NewRecordRowType(openRow)},
+		{"sum", quintJSONType{Kind: "sum", Fields: row([]quintJSONRecordField{field("F1", "int"), field("F2", "str")}, empty)}, NewVariantType(variantRow)},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := convertQuintJSONType(test.source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !EqualTypes(got, test.want) {
+				t.Fatalf("converted type = %s, want %s", got, test.want)
+			}
+		})
+	}
+}
+
+func TestConvertAllQuintOracleTypes(t *testing.T) {
+	for _, path := range []string{
+		"../tla-io/src/test/resources/tictactoe.json",
+		"../tla-io/src/test/resources/clockSync3.json",
+	} {
+		t.Run(path, func(t *testing.T) {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			decoder := json.NewDecoder(strings.NewReader(string(data)))
+			decoder.UseNumber()
+			var output quintJSONOutput
+			if err = decoder.Decode(&output); err != nil {
+				t.Fatal(err)
+			}
+			for id, scheme := range output.Types {
+				if _, err = convertQuintJSONType(scheme.Type); err != nil {
+					t.Fatalf("type %s: %v", id, err)
+				}
+			}
+		})
+	}
+}
