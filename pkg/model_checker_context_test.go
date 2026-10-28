@@ -19,7 +19,7 @@ func TestModelCheckerParamsMatchesScalaDefaultsAndDerivedFields(t *testing.T) {
 		params.JailTimeoutMinSeconds != 1800 || params.JailTimeoutFactor != 200 ||
 		params.IdleTimeoutSeconds != 1800 || params.IdleTimeoutMilliseconds() != 1_800_000 ||
 		params.RandomSimulation || params.SimulationRuns != DefaultSimulationRuns || params.SaveRuns != DefaultOutputTraces ||
-		params.SMTEncoding != "OOPSLA19" {
+		params.SMTEncoding != SMTEncodingOOPSLA19 {
 		t.Fatalf("default params = %#v", params)
 	}
 	if !reflect.DeepEqual(params.Constants(), map[string]struct{}{"N": {}}) ||

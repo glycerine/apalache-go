@@ -37,7 +37,7 @@ type ModelCheckerParams struct {
 	InvariantMode     InvariantCheckingMode
 	MaxErrors         int
 	TimeoutSMTSeconds int
-	SMTEncoding       string
+	SMTEncoding       SMTEncoding
 
 	TransitionFilter      string
 	InvariantFilter       string
@@ -83,7 +83,7 @@ func NewModelCheckerParams(
 	params := &ModelCheckerParams{
 		CheckerInput: input, StepsBound: stepsBound, Tuning: tuning,
 		DiscardDisabled: true, CheckForDeadlocks: true, InvariantMode: mode,
-		MaxErrors: 1, SMTEncoding: "OOPSLA19",
+		MaxErrors: 1, SMTEncoding: SMTEncodingOOPSLA19,
 		TransitionFilter:      tuningOptions["search.transitionFilter"],
 		InvariantFilter:       tuningOptions["search.invariantFilter"],
 		JailTimeoutMinSeconds: minimum, JailTimeoutFactor: factor, IdleTimeoutSeconds: idle,
