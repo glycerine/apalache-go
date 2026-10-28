@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 type SafetyOutcome uint8
@@ -101,11 +102,38 @@ func CheckBoundedSafetyWithOptions(
 		return BoundedSafetyResult{}, fmt.Errorf("module has no normalized initial transitions")
 	}
 	nextTransitions := TransitionsFromModule(module, NormalizedNextPrefix)
-	stateInvariants := make([]namedExpression, 0, len(predicates.Invariants))
-	actionInvariants := make([]namedExpression, 0, len(predicates.Invariants))
-	traceInvariants := make([]namedTraceInvariant, 0, len(predicates.Invariants))
+	var stateInvariants []namedExpression
+	var actionInvariants []namedExpression
+	var traceInvariants []namedTraceInvariant
+	normalizedVCs := false
+	var err error
+	if len(predicates.Invariants) > 0 {
+		stateInvariants, actionInvariants, traceInvariants, normalizedVCs, err = normalizedCheckerVCs(module)
+		if err != nil {
+			return BoundedSafetyResult{}, err
+		}
+		if normalizedVCs && len(predicates.Invariants) == 1 {
+			for index := range stateInvariants {
+				stateInvariants[index].name = predicates.Invariants[0]
+			}
+			for index := range actionInvariants {
+				actionInvariants[index].name = predicates.Invariants[0]
+			}
+			for index := range traceInvariants {
+				traceInvariants[index].name = predicates.Invariants[0]
+			}
+		}
+	}
+	if !normalizedVCs {
+		stateInvariants = make([]namedExpression, 0, len(predicates.Invariants))
+		actionInvariants = make([]namedExpression, 0, len(predicates.Invariants))
+		traceInvariants = make([]namedTraceInvariant, 0, len(predicates.Invariants))
+	}
 	levelFinder := NewLevelFinder(module)
 	for _, name := range predicates.Invariants {
+		if normalizedVCs {
+			break
+		}
 		declaration, found := declarationNamed(module, name)
 		operator, ok := declaration.(*OperDecl)
 		if !found || !ok {
@@ -162,7 +190,9 @@ func CheckBoundedSafetyWithOptions(
 	constantInit, hasConstantInit := OperatorBody(module, NormalizedConstInit)
 	assumptions := module.AssumeDeclarations()
 	var view Expr
-	if predicates.View != "" {
+	if normalizedView, found := OperatorBody(module, NormalizedVCView); found {
+		view = normalizedView
+	} else if predicates.View != "" {
 		var found bool
 		view, found = OperatorBody(module, predicates.View)
 		if !found {
@@ -205,6 +235,63 @@ func CheckBoundedSafetyWithOptions(
 		queue = append(queue, children...)
 	}
 	return result, nil
+}
+
+func normalizedCheckerVCs(module *Module) (
+	[]namedExpression,
+	[]namedExpression,
+	[]namedTraceInvariant,
+	bool,
+	error,
+) {
+	operators := make(map[string]*OperDecl)
+	for _, declaration := range module.OperDeclarations() {
+		operators[declaration.Name()] = declaration
+	}
+	state := make([]namedExpression, 0)
+	action := make([]namedExpression, 0)
+	trace := make([]namedTraceInvariant, 0)
+	found := false
+	for _, positive := range module.OperDeclarations() {
+		prefix, negativePrefix := "", ""
+		kind := 0
+		switch {
+		case strings.HasPrefix(positive.Name(), NormalizedVCInvariantPrefix):
+			prefix, negativePrefix, kind = NormalizedVCInvariantPrefix, NormalizedVCNotInvariantPrefix, 1
+		case strings.HasPrefix(positive.Name(), NormalizedVCActionPrefix):
+			prefix, negativePrefix, kind = NormalizedVCActionPrefix, NormalizedVCNotActionPrefix, 2
+		case strings.HasPrefix(positive.Name(), NormalizedVCTracePrefix):
+			prefix, negativePrefix, kind = NormalizedVCTracePrefix, NormalizedVCNotTracePrefix, 3
+		default:
+			continue
+		}
+		found = true
+		suffix := strings.TrimPrefix(positive.Name(), prefix)
+		negative, ok := operators[negativePrefix+suffix]
+		if !ok {
+			return nil, nil, nil, true, fmt.Errorf("verification condition %s has no matching negation", positive.Name())
+		}
+		switch kind {
+		case 1:
+			state = append(state, namedExpression{name: positive.Name(), expression: negative.Body()})
+		case 2:
+			action = append(action, namedExpression{name: positive.Name(), expression: negative.Body()})
+		case 3:
+			parameters := positive.FormalParams()
+			if len(parameters) != 1 || parameters[0].Arity > 0 {
+				return nil, nil, nil, true, fmt.Errorf("trace verification condition %s has invalid parameters", positive.Name())
+			}
+			historyType, validationErr := validateTraceInvariantType(positive, module.VarDeclarations())
+			if validationErr != nil {
+				return nil, nil, nil, true, validationErr
+			}
+			trace = append(trace, namedTraceInvariant{
+				name: positive.Name(), parameter: parameters[0].Name,
+				expression: negative.Body(), historyType: historyType,
+			})
+		}
+	}
+	return state, action, trace, found, nil
 }
 
 func invariantAssignmentsToEquality(expression Expr) Expr {

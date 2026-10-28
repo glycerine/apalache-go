@@ -128,3 +128,42 @@ func TestVCGeneratorRejectsScalaInvalidCases(t *testing.T) {
 		t.Fatal("missing view was accepted")
 	}
 }
+
+func TestGenerateVerificationConditionsPassContract(t *testing.T) {
+	x := NewNameExpr("x", Typed(IntT1))
+	inv := vcOperator("Inv", nil, MustOperExpr(Op("EQ"), Typed(BoolT1), x, x))
+	viewType, _ := NewOperatorType(nil, IntT1)
+	view := NewOperDecl("View", nil, x, Typed(viewType))
+	module := NewModule("M", []Decl{NewVarDecl("x", Typed(IntT1)), inv, view})
+	if _, err := GenerateVerificationConditions(module, DerivedPredicates{Invariants: []string{"Inv"}}, nil); err == nil {
+		t.Fatal("VC pass accepted a module that was not inlined")
+	}
+	module.AddProperty(PropertyInlined)
+	result, err := GenerateVerificationConditions(module, DerivedPredicates{
+		Invariants: []string{"Inv"}, View: "View",
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.HasProperty(PropertyVCGenerated) || module.HasProperty(PropertyVCGenerated) {
+		t.Fatal("VCGenerated property was not applied immutably")
+	}
+	if _, found := OperatorBody(result, NormalizedVCInvariantPrefix+"0"); !found {
+		t.Fatal("configured invariant VC is missing")
+	}
+	if _, found := OperatorBody(result, NormalizedVCView); !found {
+		t.Fatal("configured normalized view is missing")
+	}
+	state, action, trace, found, err := normalizedCheckerVCs(result)
+	if err != nil || !found || len(state) != 1 || len(action) != 0 || len(trace) != 0 ||
+		state[0].expression.(*OperExpr).Operator().Name() != "NOT" {
+		t.Fatalf("normalized checker VCs = %#v/%#v/%#v, %v, %v", state, action, trace, found, err)
+	}
+
+	empty := NewModule("Empty", nil)
+	empty.AddProperty(PropertyInlined)
+	result, err = GenerateVerificationConditions(empty, DerivedPredicates{}, nil)
+	if err != nil || !result.HasProperty(PropertyVCGenerated) || len(result.Declarations()) != 0 {
+		t.Fatalf("empty VC pass = %#v, %v", result, err)
+	}
+}

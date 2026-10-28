@@ -52,7 +52,7 @@ func TestPrepareSafetyTransitionsEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, property := range []ModuleProperty{PropertyConfigured, PropertyDesugared, PropertyInlined, PropertyPrimed, PropertyPreprocessed, PropertyTransitionsFound, PropertyOptimized, PropertyAnalyzed} {
+	for _, property := range []ModuleProperty{PropertyConfigured, PropertyDesugared, PropertyInlined, PropertyPrimed, PropertyVCGenerated, PropertyPreprocessed, PropertyTransitionsFound, PropertyOptimized, PropertyAnalyzed} {
 		if !result.Module.HasProperty(property) {
 			t.Errorf("pipeline result lacks property %d", property)
 		}
@@ -65,8 +65,14 @@ func TestPrepareSafetyTransitionsEndToEnd(t *testing.T) {
 	if countOperator(initTransitions[0], "Apalache!:=") != 1 || countOperator(nextTransitions[0], "Apalache!:=") != 1 {
 		t.Fatalf("assignments were not introduced: init=%v next=%v", initTransitions[0], nextTransitions[0])
 	}
-	if _, found := OperatorBody(result.Module, "Inv"); !found {
-		t.Fatal("raw invariant was not retained without VC generation")
+	if _, found := OperatorBody(result.Module, "Inv"); found {
+		t.Fatal("raw invariant was retained after VC generation")
+	}
+	if _, found := OperatorBody(result.Module, NormalizedVCInvariantPrefix+"0"); !found {
+		t.Fatal("normalized invariant VC is missing")
+	}
+	if _, found := OperatorBody(result.Module, NormalizedVCNotInvariantPrefix+"0"); !found {
+		t.Fatal("normalized invariant negation is missing")
 	}
 }
 
@@ -89,9 +95,9 @@ Inv ==
 	if err != nil {
 		t.Fatal(err)
 	}
-	invariant, found := OperatorBody(prepared.Module, "Inv")
+	invariant, found := OperatorBody(prepared.Module, NormalizedVCInvariantPrefix+"0")
 	if !found {
-		t.Fatal("prepared module has no Inv declaration")
+		t.Fatal("prepared module has no normalized invariant declaration")
 	}
 	if constructors := countOperator(invariant, "FUN_CTOR"); constructors != 0 {
 		formatted, _ := FormatTLAExpression(invariant)

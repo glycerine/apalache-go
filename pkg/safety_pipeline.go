@@ -43,9 +43,7 @@ type SafetyPipelineResult struct {
 }
 
 // PrepareSafetyTransitions executes the ported Scala checker front half
-// through temporal encoding and optimized symbolic transitions. VC generation
-// remains a separate stage because the bounded checker evaluates invariants
-// directly against each symbolic state or action.
+// through VC generation and optimized symbolic transitions.
 func PrepareSafetyTransitions(module *Module, options SafetyPipelineOptions) (SafetyPipelineResult, error) {
 	tracker := options.Tracker
 	if tracker == nil {
@@ -95,7 +93,11 @@ func PrepareSafetyTransitions(module *Module, options SafetyPipelineOptions) (Sa
 	if err != nil {
 		return SafetyPipelineResult{}, err
 	}
-	preprocessed, err := PreprocessModule(primed, PreprocessOptions{Names: names, Renamer: renamer, Tracker: tracker, ConstantInitName: configured.Predicates.ConstantInit})
+	withVCs, err := GenerateVerificationConditions(primed, configured.Predicates, tracker)
+	if err != nil {
+		return SafetyPipelineResult{}, fmt.Errorf("verification conditions: %w", err)
+	}
+	preprocessed, err := PreprocessModule(withVCs, PreprocessOptions{Names: names, Renamer: renamer, Tracker: tracker, ConstantInitName: configured.Predicates.ConstantInit})
 	if err != nil {
 		return SafetyPipelineResult{}, err
 	}

@@ -11,6 +11,35 @@ func NewVCGenerator(tracker TransformationTracker) *VCGenerator {
 	return &VCGenerator{tracker: tracker}
 }
 
+// GenerateVerificationConditions is the Go pass boundary corresponding to
+// VCGenPassImpl. Invariants are expanded in configuration order, followed by
+// the optional normalized state view.
+func GenerateVerificationConditions(module *Module, predicates DerivedPredicates, tracker TransformationTracker) (*Module, error) {
+	if module == nil {
+		return nil, fmt.Errorf("cannot generate verification conditions for a nil module")
+	}
+	if !module.HasProperty(PropertyInlined) {
+		return nil, fmt.Errorf("VC generation requires an inlined module")
+	}
+	generator := NewVCGenerator(tracker)
+	current := module
+	var err error
+	for _, invariant := range predicates.Invariants {
+		current, err = generator.GenerateInvariant(current, invariant)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if predicates.View != "" {
+		current, err = generator.GenerateView(current, predicates.View)
+		if err != nil {
+			return nil, err
+		}
+	}
+	current.AddProperty(PropertyVCGenerated)
+	return current, nil
+}
+
 func (generator *VCGenerator) moduleWith(module *Module, declarations ...Decl) *Module {
 	result := NewModule(module.Name(), append(module.Declarations(), declarations...))
 	result.copyMetadataFrom(module)
