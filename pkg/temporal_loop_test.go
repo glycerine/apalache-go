@@ -70,6 +70,35 @@ func TestTemporalLoopEncoderRejectsMissingAndUntypedInputs(t *testing.T) {
 	}
 }
 
+func TestTemporalUtilitiesAppendAndFlattenDeclaration(t *testing.T) {
+	leftInit := temporalBool(true)
+	rightInit := temporalBool(false)
+	left := TemporalPredicateExpressions{Init: []Expr{leftInit}, Next: []Expr{temporalBool(true)}}
+	right := TemporalPredicateExpressions{Init: []Expr{rightInit}, LoopOK: []Expr{temporalBool(false)}}
+	combined := left.Append(right)
+	if len(combined.Init) != 2 || combined.Init[0] != leftInit || combined.Init[1] != rightInit ||
+		len(combined.Next) != 1 || len(combined.LoopOK) != 1 {
+		t.Fatalf("appended temporal predicates = %#v", combined)
+	}
+	combined.Init[0] = rightInit
+	if left.Init[0] != leftInit {
+		t.Fatal("temporal predicate append mutated its input")
+	}
+
+	p := NewNameExpr("p", Typed(BoolT1))
+	q := NewNameExpr("q", Typed(BoolT1))
+	r := NewNameExpr("r", Typed(BoolT1))
+	declaration := boolDefinition("Pred", temporalAnd(p, q))
+	extended := NewTemporalLoopEncoder(nil).extendDeclaration(declaration, r)
+	body, ok := extended.Body().(*OperExpr)
+	if !ok || body.Operator().Name() != "AND" || len(body.Arguments()) != 3 {
+		t.Fatalf("extended declaration was not flattened: %v", extended.Body())
+	}
+	if declaration == extended || len(declaration.Body().(*OperExpr).Arguments()) != 2 {
+		t.Fatal("extending a declaration mutated or reused the input")
+	}
+}
+
 func TestEncodeTemporalPropertiesChecksDependencyAndMarksNoOp(t *testing.T) {
 	module := NewModule("M", nil)
 	if _, _, err := EncodeTemporalProperties(module, DerivedPredicates{}, nil, nil, nil); err == nil {
