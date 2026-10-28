@@ -35,7 +35,10 @@ func TestPassChainExecutorRejectsBadlyOrderedChain(t *testing.T) {
 }
 
 func TestPassChainExecutorStopsOnPassFailure(t *testing.T) {
-	want := errors.New("pass failed")
+	want, err := NewPassFailure("TestPass", nil, ExitCodeError)
+	if err != nil {
+		t.Fatal(err)
+	}
 	first := testModulePass("TestPass", nil, nil, successfulTestPass)
 	failed := testModulePass("TestPass", nil, nil, func(*Module) (*Module, error) { return nil, want })
 	runAfterFailure := false
@@ -43,9 +46,10 @@ func TestPassChainExecutorStopsOnPassFailure(t *testing.T) {
 		runAfterFailure = true
 		return module, nil
 	})
-	_, err := NewPassChainExecutor(first, failed, last).Run()
-	if !errors.Is(err, want) || runAfterFailure {
-		t.Fatalf("failed chain = %v, later pass ran %v", err, runAfterFailure)
+	_, runErr := NewPassChainExecutor(first, failed, last).Run()
+	var structured *PassFailure
+	if !errors.As(runErr, &structured) || structured != want || runAfterFailure {
+		t.Fatalf("failed chain = %v, later pass ran %v", runErr, runAfterFailure)
 	}
 }
 
