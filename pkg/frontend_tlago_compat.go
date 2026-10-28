@@ -39,8 +39,8 @@ var tlagoInternalBuiltinCalls = map[string]struct{}{
 	"__ApalacheSeqCapacity": {}, "__NotSupportedByModelChecker": {},
 }
 
-func tlagoApalacheInstancePrefixes(spec *tlago.Spec) map[string]struct{} {
-	result := make(map[string]struct{})
+func tlagoBuiltinInstanceModules(spec *tlago.Spec) map[string][]string {
+	result := make(map[string][]string)
 	if spec == nil || spec.Root == nil {
 		return result
 	}
@@ -52,8 +52,8 @@ func tlagoApalacheInstancePrefixes(spec *tlago.Spec) map[string]struct{} {
 			return
 		}
 		seen[key] = true
-		if moduleName == "Apalache" && prefix != "" {
-			result[prefix] = struct{}{}
+		if _, builtin := tlagoOpaqueBuiltinModules[moduleName]; builtin && prefix != "" {
+			result[prefix] = append(result[prefix], moduleName)
 		}
 		module := spec.Modules[moduleName]
 		if module == nil {
@@ -606,6 +606,350 @@ func normalizeTlagoInstanceExtendedDefinitions(spec *tlago.Spec) {
 		if len(inherited) != 0 {
 			target.Definitions = append(inherited, target.Definitions...)
 		}
+	}
+}
+
+func tlagoModuleNamespace(spec *tlago.Spec, module *tlago.Module, visiting map[string]bool) map[string]struct{} {
+	result := make(map[string]struct{})
+	if module == nil || visiting[module.Name] {
+		return result
+	}
+	visiting[module.Name] = true
+	defer delete(visiting, module.Name)
+	for _, declaration := range module.Declarations {
+		for _, name := range declaration.Names {
+			result[name] = struct{}{}
+		}
+	}
+	for _, declaration := range module.Recursives {
+		for _, name := range declaration.Names {
+			result[name] = struct{}{}
+		}
+	}
+	for _, definition := range module.Definitions {
+		result[definition.Name] = struct{}{}
+	}
+	for _, parent := range module.Extends {
+		for name := range tlagoModuleNamespace(spec, spec.Modules[parent], visiting) {
+			result[name] = struct{}{}
+		}
+	}
+	for _, instance := range module.Instances {
+		for name := range tlagoModuleNamespace(spec, spec.Modules[instance.Module], visiting) {
+			if instance.Name != "" {
+				name = instance.Name + "!" + name
+			}
+			result[name] = struct{}{}
+		}
+	}
+	return result
+}
+
+func tlagoNameExpression(name string, position tlago.Position) tlago.Expr {
+	return &tlago.IdentExpr{Name: name, Pos: position}
+}
+
+func cloneTlagoEnvironment(environment map[string]tlago.Expr) map[string]tlago.Expr {
+	result := make(map[string]tlago.Expr, len(environment))
+	for name, expression := range environment {
+		result[name] = expression
+	}
+	return result
+}
+
+// rewriteTlagoInstanceExpression composes an INSTANCE replacement expression
+// with the substitutions and qualification introduced by its enclosing
+// instance. Shallow copies retain tlago's private semantic/source metadata.
+func rewriteTlagoInstanceExpression(expression tlago.Expr, environment map[string]tlago.Expr) tlago.Expr {
+	if expression == nil {
+		return nil
+	}
+	rewriteAll := func(expressions []tlago.Expr, scope map[string]tlago.Expr) []tlago.Expr {
+		result := append([]tlago.Expr(nil), expressions...)
+		for index := range result {
+			result[index] = rewriteTlagoInstanceExpression(result[index], scope)
+		}
+		return result
+	}
+	rewriteBounds := func(bounds []tlago.BoundVar, scope map[string]tlago.Expr) ([]tlago.BoundVar, map[string]tlago.Expr) {
+		result := append([]tlago.BoundVar(nil), bounds...)
+		inside := cloneTlagoEnvironment(scope)
+		for index := range result {
+			result[index].Set = rewriteTlagoInstanceExpression(result[index].Set, inside)
+			delete(inside, result[index].Name)
+		}
+		return result, inside
+	}
+	switch typed := expression.(type) {
+	case *tlago.IdentExpr:
+		if replacement, found := environment[typed.Name]; found {
+			return replacement
+		}
+		copy := *typed
+		return &copy
+	case *tlago.LiteralExpr:
+		copy := *typed
+		return &copy
+	case *tlago.UnaryExpr:
+		copy := *typed
+		copy.Expr = rewriteTlagoInstanceExpression(copy.Expr, environment)
+		return &copy
+	case *tlago.BinaryExpr:
+		copy := *typed
+		copy.Left = rewriteTlagoInstanceExpression(copy.Left, environment)
+		copy.Right = rewriteTlagoInstanceExpression(copy.Right, environment)
+		return &copy
+	case *tlago.CallExpr:
+		copy := *typed
+		copy.Callee = rewriteTlagoInstanceExpression(copy.Callee, environment)
+		copy.Args = rewriteAll(copy.Args, environment)
+		return &copy
+	case *tlago.IfExpr:
+		copy := *typed
+		copy.Cond = rewriteTlagoInstanceExpression(copy.Cond, environment)
+		copy.Then = rewriteTlagoInstanceExpression(copy.Then, environment)
+		copy.Else = rewriteTlagoInstanceExpression(copy.Else, environment)
+		return &copy
+	case *tlago.LetExpr:
+		copy := *typed
+		inside := cloneTlagoEnvironment(environment)
+		for _, definition := range copy.Definitions {
+			delete(inside, definition.Name)
+		}
+		copy.Definitions = append([]tlago.Definition(nil), copy.Definitions...)
+		for index := range copy.Definitions {
+			definitionScope := cloneTlagoEnvironment(inside)
+			for _, parameter := range copy.Definitions[index].Params {
+				delete(definitionScope, parameter)
+			}
+			copy.Definitions[index].Expr = rewriteTlagoInstanceExpression(copy.Definitions[index].Expr, definitionScope)
+		}
+		copy.Body = rewriteTlagoInstanceExpression(copy.Body, inside)
+		return &copy
+	case *tlago.QuantifierExpr:
+		copy := *typed
+		copy.Set = rewriteTlagoInstanceExpression(copy.Set, environment)
+		inside := cloneTlagoEnvironment(environment)
+		delete(inside, copy.Var)
+		copy.Body = rewriteTlagoInstanceExpression(copy.Body, inside)
+		return &copy
+	case *tlago.CaseExpr:
+		copy := *typed
+		copy.Arms = append([]tlago.CaseArm(nil), copy.Arms...)
+		for index := range copy.Arms {
+			copy.Arms[index].Test = rewriteTlagoInstanceExpression(copy.Arms[index].Test, environment)
+			copy.Arms[index].Value = rewriteTlagoInstanceExpression(copy.Arms[index].Value, environment)
+		}
+		copy.Other = rewriteTlagoInstanceExpression(copy.Other, environment)
+		return &copy
+	case *tlago.ChooseExpr:
+		copy := *typed
+		copy.Set = rewriteTlagoInstanceExpression(copy.Set, environment)
+		inside := cloneTlagoEnvironment(environment)
+		delete(inside, copy.Var)
+		copy.TupleVars = append([]tlago.BoundVar(nil), copy.TupleVars...)
+		for _, bound := range copy.TupleVars {
+			delete(inside, bound.Name)
+		}
+		copy.Body = rewriteTlagoInstanceExpression(copy.Body, inside)
+		return &copy
+	case *tlago.TupleExpr:
+		copy := *typed
+		copy.Elems = rewriteAll(copy.Elems, environment)
+		return &copy
+	case *tlago.SetExpr:
+		copy := *typed
+		copy.Elems = rewriteAll(copy.Elems, environment)
+		return &copy
+	case *tlago.RecordExpr:
+		copy := *typed
+		copy.Fields = append([]tlago.RecordField(nil), copy.Fields...)
+		for index := range copy.Fields {
+			copy.Fields[index].Value = rewriteTlagoInstanceExpression(copy.Fields[index].Value, environment)
+		}
+		return &copy
+	case *tlago.RecordComponentExpr:
+		copy := *typed
+		copy.Record = rewriteTlagoInstanceExpression(copy.Record, environment)
+		return &copy
+	case *tlago.RecordSetExpr:
+		copy := *typed
+		copy.Fields = append([]tlago.RecordSetField(nil), copy.Fields...)
+		for index := range copy.Fields {
+			copy.Fields[index].Set = rewriteTlagoInstanceExpression(copy.Fields[index].Set, environment)
+		}
+		return &copy
+	case *tlago.FunctionExpr:
+		copy := *typed
+		copy.Bounds, environment = rewriteBounds(copy.Bounds, environment)
+		copy.Body = rewriteTlagoInstanceExpression(copy.Body, environment)
+		return &copy
+	case *tlago.FunctionAppExpr:
+		copy := *typed
+		copy.Function = rewriteTlagoInstanceExpression(copy.Function, environment)
+		copy.Args = rewriteAll(copy.Args, environment)
+		return &copy
+	case *tlago.ExceptExpr:
+		copy := *typed
+		copy.Base = rewriteTlagoInstanceExpression(copy.Base, environment)
+		copy.Specs = append([]tlago.ExceptSpec(nil), copy.Specs...)
+		for specIndex := range copy.Specs {
+			copy.Specs[specIndex].Components = append([]tlago.ExceptComponent(nil), copy.Specs[specIndex].Components...)
+			for componentIndex := range copy.Specs[specIndex].Components {
+				component := &copy.Specs[specIndex].Components[componentIndex]
+				component.Indices = rewriteAll(component.Indices, environment)
+			}
+			copy.Specs[specIndex].Value = rewriteTlagoInstanceExpression(copy.Specs[specIndex].Value, environment)
+		}
+		return &copy
+	case *tlago.LabelExpr:
+		copy := *typed
+		inside := cloneTlagoEnvironment(environment)
+		for _, parameter := range copy.Params {
+			delete(inside, parameter)
+		}
+		copy.Body = rewriteTlagoInstanceExpression(copy.Body, inside)
+		return &copy
+	case *tlago.ActionExpr:
+		copy := *typed
+		copy.Action = rewriteTlagoInstanceExpression(copy.Action, environment)
+		copy.Subscript = rewriteTlagoInstanceExpression(copy.Subscript, environment)
+		return &copy
+	case *tlago.FairnessExpr:
+		copy := *typed
+		copy.Subscript = rewriteTlagoInstanceExpression(copy.Subscript, environment)
+		copy.Action = rewriteTlagoInstanceExpression(copy.Action, environment)
+		return &copy
+	case *tlago.FunctionSetExpr:
+		copy := *typed
+		copy.Domain = rewriteTlagoInstanceExpression(copy.Domain, environment)
+		copy.Range = rewriteTlagoInstanceExpression(copy.Range, environment)
+		return &copy
+	case *tlago.SetComprehensionExpr:
+		copy := *typed
+		copy.Bounds, environment = rewriteBounds(copy.Bounds, environment)
+		copy.Element = rewriteTlagoInstanceExpression(copy.Element, environment)
+		copy.Predicate = rewriteTlagoInstanceExpression(copy.Predicate, environment)
+		return &copy
+	default:
+		return expression
+	}
+}
+
+func tlagoInstanceSubstitutions(instance tlago.Instance) map[string]tlago.Expr {
+	result := make(map[string]tlago.Expr, len(instance.Substitutions)+len(instance.SubstitutionList))
+	for name, expression := range instance.Substitutions {
+		result[name] = expression
+	}
+	for _, substitution := range instance.SubstitutionList {
+		result[substitution.Name] = substitution.Expr
+	}
+	return result
+}
+
+func tlagoInstanceEnvironment(
+	spec *tlago.Spec,
+	instance tlago.Instance,
+	prefix string,
+	ownerEnvironment map[string]tlago.Expr,
+) map[string]tlago.Expr {
+	target := spec.Modules[instance.Module]
+	result := make(map[string]tlago.Expr)
+	for name := range tlagoModuleNamespace(spec, target, make(map[string]bool)) {
+		qualified := name
+		if prefix != "" {
+			qualified = prefix + "!" + name
+		}
+		result[name] = tlagoNameExpression(qualified, instance.SourcePosition())
+	}
+	explicit := tlagoInstanceSubstitutions(instance)
+	for _, declaration := range target.Declarations {
+		for _, name := range declaration.Names {
+			if replacement, found := explicit[name]; found {
+				result[name] = rewriteTlagoInstanceExpression(replacement, ownerEnvironment)
+			} else if replacement, found := ownerEnvironment[name]; found {
+				result[name] = replacement
+			}
+		}
+	}
+	for _, parameter := range instance.Params {
+		if replacement, found := ownerEnvironment[parameter]; found {
+			result[parameter] = replacement
+		}
+	}
+	return result
+}
+
+// normalizeTlagoNestedInstances promotes nested INSTANCE declarations into
+// equivalent root instances. tlago v0.1.9 otherwise omits their definitions
+// from Apalache IR. Explicit substitutions make every enclosing wrapper and
+// implicit same-name substitution visible to the exporter.
+func normalizeTlagoNestedInstances(spec *tlago.Spec) {
+	if spec == nil || spec.Root == nil {
+		return
+	}
+	rootEnvironment := make(map[string]tlago.Expr)
+	for name := range tlagoModuleNamespace(spec, spec.Root, make(map[string]bool)) {
+		rootEnvironment[name] = tlagoNameExpression(name, spec.Root.Pos)
+	}
+	original := append([]tlago.Instance(nil), spec.Root.Instances...)
+	var promote func(tlago.Instance, string, map[string]tlago.Expr, map[string]bool)
+	promote = func(instance tlago.Instance, prefix string, ownerEnvironment map[string]tlago.Expr, visiting map[string]bool) {
+		target := spec.Modules[instance.Module]
+		if target == nil || visiting[target.Name] {
+			return
+		}
+		environment := tlagoInstanceEnvironment(spec, instance, prefix, ownerEnvironment)
+		visiting = cloneMap(visiting)
+		visiting[target.Name] = true
+		for _, nested := range target.Instances {
+			if _, opaque := tlagoOpaqueBuiltinModules[nested.Module]; opaque {
+				continue
+			}
+			nestedPrefix := prefix
+			if nested.Name != "" {
+				if nestedPrefix != "" {
+					nestedPrefix += "!"
+				}
+				nestedPrefix += nested.Name
+			}
+			promoted := nested
+			promoted.Name = nestedPrefix
+			nestedTarget := spec.Modules[nested.Module]
+			if nestedTarget == nil {
+				continue
+			}
+			composed := tlagoInstanceSubstitutions(nested)
+			for _, declaration := range nestedTarget.Declarations {
+				for _, name := range declaration.Names {
+					replacement, explicit := composed[name]
+					if explicit {
+						replacement = rewriteTlagoInstanceExpression(replacement, environment)
+					} else {
+						replacement = environment[name]
+					}
+					if replacement != nil {
+						composed[name] = replacement
+					}
+				}
+			}
+			promoted.Substitutions = nil
+			promoted.SubstitutionList = promoted.SubstitutionList[:0]
+			for _, declaration := range nestedTarget.Declarations {
+				for _, name := range declaration.Names {
+					if replacement := composed[name]; replacement != nil {
+						promoted.SubstitutionList = append(promoted.SubstitutionList, tlago.Substitution{
+							Name: name, Expr: replacement, Pos: nested.SourcePosition(),
+						})
+					}
+				}
+			}
+			spec.Root.Instances = append(spec.Root.Instances, promoted)
+			promote(nested, nestedPrefix, environment, visiting)
+		}
+	}
+	for _, instance := range original {
+		promote(instance, instance.Name, rootEnvironment, make(map[string]bool))
 	}
 }
 
@@ -1494,7 +1838,7 @@ func normalizeTlagoLocalDeclarationTags(module *Module, sources *SourceStore) *M
 // normalizeTlagoApalacheBuiltinCalls repairs imported Apalache operators that
 // tlago v0.1.9 exports as unresolved OPER_APP calls instead of builtin IR
 // operators. A declaration in the root module intentionally shadows a builtin.
-func normalizeTlagoApalacheBuiltinCalls(module *Module, sources *SourceStore, instancePrefixes map[string]struct{}) *Module {
+func normalizeTlagoApalacheBuiltinCalls(module *Module, sources *SourceStore, instanceModules map[string][]string) *Module {
 	if module == nil {
 		return nil
 	}
@@ -1504,10 +1848,8 @@ func normalizeTlagoApalacheBuiltinCalls(module *Module, sources *SourceStore, in
 		separator := strings.LastIndex(declaration.Name(), "!")
 		qualifiedStub := false
 		if separator >= 0 {
-			prefix, base := declaration.Name()[:separator], declaration.Name()[separator+1:]
-			_, apalacheInstance := instancePrefixes[prefix]
-			_, nativeBuiltin := tlagoApalacheBuiltinCalls[base]
-			qualifiedStub = apalacheInstance && (nativeBuiltin || base == ":=" || base == "FunAsSeq")
+			prefix := declaration.Name()[:separator]
+			qualifiedStub = len(instanceModules[prefix]) != 0
 		}
 		if !qualifiedStub {
 			kept = append(kept, declaration)
@@ -1601,6 +1943,16 @@ func normalizeTlagoApalacheBuiltinCalls(module *Module, sources *SourceStore, in
 			}
 		}
 		if !found {
+			if separator := strings.LastIndex(callee.Name(), "!"); separator >= 0 {
+				prefix, base := callee.Name()[:separator], callee.Name()[separator+1:]
+				for _, instanceModule := range instanceModules[prefix] {
+					candidate := instanceModule + "!" + base
+					if operator, registered := LookupOperator(candidate); registered && operator.Constructible() &&
+						operator.IsCorrectArity(len(arguments)-1) {
+						return MustOperExpr(operator, operation.Tag(), arguments[1:]...), true
+					}
+				}
+			}
 			if changed {
 				return MustOperExpr(operation.Operator(), operation.Tag(), arguments...), true
 			}

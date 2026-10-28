@@ -117,10 +117,11 @@ func ParseSource(ctx context.Context, filename, source string, opts FrontendOpti
 	}
 
 	normalizeTlagoRootLocalInstances(spec)
+	normalizeTlagoNestedInstances(spec)
 	instantiatedLocals := exposeTlagoInstantiatedLocalDefinitions(spec)
 	normalizeTlagoLambdas(spec)
 	binderLayouts := normalizeTlagoApalacheAssignments(spec)
-	apalacheInstancePrefixes := tlagoApalacheInstancePrefixes(spec)
+	builtinInstanceModules := tlagoBuiltinInstanceModules(spec)
 	recursiveScopes := tlagoRecursiveOperatorScopes(spec)
 	instantiatedScopes := tlagoInstantiatedOperatorScopes(spec)
 	ir, irDiags := tlago.ApalacheIRJSON(spec, tlago.ApalacheIROptions{IncludeSource: opts.IncludeSource})
@@ -137,7 +138,7 @@ func ParseSource(ctx context.Context, filename, source string, opts FrontendOpti
 		tlcImported := spec.Modules["TLC"] != nil
 		result.Native = removeTlagoNativeVariantDeclarations(result.Native, result.Sources, variantsImported)
 		result.Native = normalizeTlagoTLCCalls(result.Native, result.Sources, tlcImported)
-		result.Native = normalizeTlagoApalacheBuiltinCalls(result.Native, result.Sources, apalacheInstancePrefixes)
+		result.Native = normalizeTlagoApalacheBuiltinCalls(result.Native, result.Sources, builtinInstanceModules)
 		result.Native = normalizeTlagoInstantiatedOperatorCalls(result.Native, result.Sources, instantiatedScopes)
 		result.Native = normalizeTlagoInstantiatedLocalDefinitions(result.Native, result.Sources, instantiatedLocals)
 		result.Native = normalizeTlagoLocalDeclarationTags(result.Native, result.Sources)

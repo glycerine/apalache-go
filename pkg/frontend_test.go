@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -405,6 +406,181 @@ Both == I!b = J!b
 		if !found || !ok || len(let.Declarations()) != 1 || let.Declarations()[0].Name() != "LOCAL$"+prefix+"a" {
 			t.Fatalf("%sb body = %#v", prefix, body)
 		}
+	}
+}
+
+func TestParseSourceResolvesNestedInstanceSubstitutions(t *testing.T) {
+	result := ParseSource(context.Background(), "NestedSubstitution.tla", `---- MODULE NestedSubstitution ----
+---- MODULE Vot ----
+---- MODULE Cons ----
+VARIABLE chosen
+Init == chosen = {}
+Next == chosen = {2}
+====
+chosen == {2}
+C == INSTANCE Cons
+====
+V == INSTANCE Vot
+====
+`, FrontendOptions{IncludeSource: true})
+	if !result.OK() {
+		t.Fatalf("ParseSource() diagnostics = %v", result.Diagnostics)
+	}
+	body, found := OperatorBody(result.Native, "V!C!Next")
+	if !found || countOperator(body, "EQ") != 1 || countOperator(body, "SET_ENUM") != 1 ||
+		countNamed(body, "V!chosen") != 1 || countNamed(body, "chosen") != 0 {
+		t.Fatalf("V!C!Next body = %#v; declarations = %v", body, declarationNames(result.Native))
+	}
+	if _, found := result.Sources.Find(body.ID()); !found {
+		t.Fatal("nested substituted operator has no source location")
+	}
+}
+
+func TestParseSourceExportsNestedInstanceDefinitions(t *testing.T) {
+	result := ParseSource(context.Background(), "NestedInstance.tla", `---- MODULE NestedInstance ----
+---- MODULE B ----
+---- MODULE C ----
+H(x) == x
+====
+C2 == INSTANCE C
+F(x) == C2!H(x)
+====
+B2 == INSTANCE B
+====
+`, FrontendOptions{IncludeSource: true})
+	if !result.OK() {
+		t.Fatalf("ParseSource() diagnostics = %v", result.Diagnostics)
+	}
+	body, found := OperatorBody(result.Native, "B2!C2!H")
+	if !found || countNamed(body, "x") != 1 {
+		t.Fatalf("B2!C2!H body = %#v; declarations = %v", body, declarationNames(result.Native))
+	}
+	declaration, found := declarationNamed(result.Native, "B2!C2!H")
+	operator, ok := declaration.(*OperDecl)
+	if !found || !ok || len(operator.FormalParams()) != 1 || operator.FormalParams()[0].Name != "x" {
+		t.Fatalf("B2!C2!H declaration = %#v", declaration)
+	}
+	if _, found := result.Sources.Find(body.ID()); !found {
+		t.Fatal("nested instance operator has no source location")
+	}
+}
+
+func TestParseSourceQualifiesHigherOrderInstanceArguments(t *testing.T) {
+	result := ParseSource(context.Background(), "HigherOrderInstance.tla", `---- MODULE HigherOrderInstance ----
+---- MODULE Base ----
+FF(a) == TRUE
+Check(a, func(_)) == func(a)
+B == Check(1, FF)
+====
+BASE == INSTANCE Base
+====
+`, FrontendOptions{})
+	if !result.OK() {
+		t.Fatalf("ParseSource() diagnostics = %v", result.Diagnostics)
+	}
+	body, found := OperatorBody(result.Native, "BASE!B")
+	if !found || countNamed(body, "BASE!Check") != 1 || countNamed(body, "BASE!FF") != 1 ||
+		countNamed(body, "Check") != 0 || countNamed(body, "FF") != 0 {
+		t.Fatalf("BASE!B body = %#v", body)
+	}
+}
+
+func TestParseSourceComposesSeriesOfInstanceSubstitutions(t *testing.T) {
+	result := ParseSource(context.Background(), "SeriesSubstitution.tla", `---- MODULE SeriesSubstitution ----
+---- MODULE B ----
+---- MODULE C ----
+VARIABLE x
+magic == x /= 2
+====
+VARIABLE y
+C1 == INSTANCE C WITH x <- y
+====
+VARIABLE z
+B1 == INSTANCE B WITH y <- z
+====
+`, FrontendOptions{})
+	if !result.OK() {
+		t.Fatalf("ParseSource() diagnostics = %v", result.Diagnostics)
+	}
+	body, found := OperatorBody(result.Native, "B1!C1!magic")
+	if !found || countOperator(body, "NE") != 1 || countNamed(body, "z") != 1 ||
+		countNamed(body, "x") != 0 || countNamed(body, "y") != 0 {
+		t.Fatalf("B1!C1!magic body = %#v; declarations = %v", body, declarationNames(result.Native))
+	}
+}
+
+func TestParseSourceNormalizesStandardModuleInstances(t *testing.T) {
+	tests := []struct {
+		name     string
+		source   string
+		operator string
+		value    Value
+	}{
+		{
+			name: "named sequence instance",
+			source: `---- MODULE StandardInstance ----
+I == INSTANCE Sequences
+A == I!Append(<<>>, {})
+====`,
+			operator: "Sequences!Append",
+		},
+		{
+			name: "local sequence instance",
+			source: `---- MODULE StandardInstance ----
+---- MODULE A ----
+LOCAL INSTANCE Sequences
+A == Append(<<>>, {})
+====
+INSTANCE A
+====`,
+			operator: "Sequences!Append",
+		},
+		{
+			name: "local integer value instance",
+			source: `---- MODULE StandardInstance ----
+---- MODULE A ----
+LOCAL INSTANCE Integers
+A == Int
+====
+INSTANCE A
+====`,
+			value: IntSet,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result := ParseSource(context.Background(), "StandardInstance.tla", test.source, FrontendOptions{})
+			if !result.OK() {
+				t.Fatalf("ParseSource() diagnostics = %v", result.Diagnostics)
+			}
+			body, found := OperatorBody(result.Native, "A")
+			if !found {
+				t.Fatalf("missing A in %v", declarationNames(result.Native))
+			}
+			if test.operator != "" && countOperator(body, test.operator) != 1 {
+				formatted, _ := FormatTLAExpression(body)
+				var callee string
+				if application, ok := body.(*OperExpr); ok && len(application.Arguments()) > 0 {
+					if name, ok := application.Arguments()[0].(*NameExpr); ok {
+						callee = name.Name()
+					}
+				}
+				t.Fatalf("A body = %s (%#v), callee %q, want %s", formatted, body, callee, test.operator)
+			}
+			if test.name == "named sequence instance" {
+				for _, name := range declarationNames(result.Native) {
+					if strings.HasPrefix(name, "I!") {
+						t.Fatalf("standard-module stub leaked into declarations: %s", name)
+					}
+				}
+			}
+			if test.value != nil {
+				literal, ok := body.(*ValueExpr)
+				if !ok || literal.Value() != test.value {
+					t.Fatalf("A body = %#v, want %v", body, test.value)
+				}
+			}
+		})
 	}
 }
 
