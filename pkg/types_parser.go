@@ -14,8 +14,11 @@ type TypeParseError struct {
 }
 
 func (err *TypeParseError) Error() string {
-	return fmt.Sprintf("type parse error at offset %d: %s", err.Offset, err.Message)
+	return fmt.Sprintf("Type parse error at col %d: %s", err.Column(), err.Message)
 }
+
+// Column is one-based, matching scala.util.parsing.input.Position.
+func (err *TypeParseError) Column() int { return err.Offset + 1 }
 
 type typeTokenKind uint8
 

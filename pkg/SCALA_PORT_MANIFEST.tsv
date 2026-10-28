@@ -559,7 +559,7 @@ tlair/src/main/scala/at/forsyte/apalache/tla/types/TypeVarPool.scala	partial	ir_
 tlair/src/main/scala/at/forsyte/apalache/tla/types/package.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/types/parser/DefaultType1Parser.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/types/parser/Type1Lexer.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
-tlair/src/main/scala/at/forsyte/apalache/tla/types/parser/Type1ParseError.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/types/parser/Type1ParseError.scala	ported	types_parser.go;types_parser_reader_test.go	structured message and zero-based offset payload, derived one-based column, exact Scala-style rendering, lexer/parser production sites, and errors.As classification are ported
 tlair/src/main/scala/at/forsyte/apalache/tla/types/parser/Type1Parser.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
-tlair/src/main/scala/at/forsyte/apalache/tla/types/parser/Type1TokenReader.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/types/parser/Type1TokenReader.scala	ported	types_parser.go;types_parser_reader_test.go	ordered token cursor, first/advance/end behavior, failed-consume stability, exact source offsets, whitespace skipping, compound tokens, and explicit EOF position are ported
 tlair/src/main/scala/at/forsyte/apalache/tla/types/parser/tokens.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
