@@ -116,3 +116,81 @@ func TestSolverContextFactoryRejectsUnsupportedBackend(t *testing.T) {
 		t.Fatal("CVC5 factory construction succeeded")
 	}
 }
+
+func TestSolverContextConstrainsCanonicalBooleanCells(t *testing.T) {
+	solver, err := CreateSolverContext(DefaultSolverConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer solver.Dispose()
+	falseCell := NewArenaCell(0, BasicCellType{Type: BoolT1})
+	trueCell := NewArenaCell(1, BasicCellType{Type: BoolT1})
+	if err = solver.DeclareCell(falseCell); err != nil {
+		t.Fatal(err)
+	}
+	if err = solver.DeclareCell(trueCell); err != nil {
+		t.Fatal(err)
+	}
+	if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTSatisfiable {
+		t.Fatalf("canonical Boolean cells = %v, %v", status, checkErr)
+	}
+	for _, test := range []struct {
+		cell ArenaCell
+		want bool
+	}{{falseCell, false}, {trueCell, true}} {
+		got, evalErr := solver.Evaluate(test.cell.NameExpr())
+		if evalErr != nil {
+			t.Fatal(evalErr)
+		}
+		if value, ok := boolConstant(got); !ok || value != test.want {
+			t.Fatalf("canonical cell %s = %#v", test.cell, got)
+		}
+	}
+	if solver.Metrics() != (SolverContextMetrics{NCells: 2, NConstants: 2, NSMTExpressions: 2}) {
+		t.Fatalf("canonical-cell metrics = %#v", solver.Metrics())
+	}
+	if err = solver.Assert(falseCell.NameExpr()); err != nil {
+		t.Fatal(err)
+	}
+	if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTUnsatisfiable {
+		t.Fatalf("asserted FALSE cell = %v, %v", status, checkErr)
+	}
+}
+
+func TestSolverContextRestoresScopedDeclarations(t *testing.T) {
+	solver, err := CreateSolverContext(DefaultSolverConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer solver.Dispose()
+	element := NewArenaCell(5, BasicCellType{Type: IntT1})
+	set := NewArenaCell(6, BasicCellType{Type: mustSet(IntT1)})
+	if err = solver.DeclareCell(element); err != nil {
+		t.Fatal(err)
+	}
+	if err = solver.DeclareCell(NewArenaCell(4, BasicCellType{Type: IntT1})); err == nil {
+		t.Fatal("out-of-order cell declaration succeeded")
+	}
+	if err = solver.DeclareCell(set); err != nil {
+		t.Fatal(err)
+	}
+	if err = solver.Push(); err != nil {
+		t.Fatal(err)
+	}
+	if err = solver.DeclareMembership(set, element); err != nil {
+		t.Fatal(err)
+	}
+	scoped := NewArenaCell(7, BasicCellType{Type: IntT1})
+	if err = solver.DeclareCell(scoped); err != nil {
+		t.Fatal(err)
+	}
+	if err = solver.Pop(); err != nil {
+		t.Fatal(err)
+	}
+	if err = solver.DeclareMembership(set, element); err != nil {
+		t.Fatalf("redeclare popped membership: %v", err)
+	}
+	if err = solver.DeclareCell(scoped); err != nil {
+		t.Fatalf("redeclare popped cell: %v", err)
+	}
+}

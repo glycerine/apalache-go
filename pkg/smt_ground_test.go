@@ -110,3 +110,33 @@ func TestG3GroundEncoderRejectsMissingAndUnsupportedTerms(t *testing.T) {
 		t.Fatal("duplicate cell declaration was accepted")
 	}
 }
+
+func TestG3GroundEncoderUsesOOPSLAEdgesForFunctionMembership(t *testing.T) {
+	solver := newTestG3Solver(t)
+	encoder, err := NewG3GroundEncoder(solver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	element := NewArenaCell(0, BasicCellType{Type: IntT1})
+	function := NewArenaCell(1, BasicCellType{Type: mustFunType(t, IntT1, BoolT1)})
+	if err = encoder.DeclareCell(element); err != nil {
+		t.Fatal(err)
+	}
+	if err = encoder.DeclareCell(function); err != nil {
+		t.Fatal(err)
+	}
+	if err = encoder.DeclareMembership(function, element); err != nil {
+		t.Fatal(err)
+	}
+	selected := MustOperExpr(Op("Apalache!SelectInFun"), Typed(BoolT1), element.NameExpr(), function.NameExpr())
+	notStored := MustOperExpr(Op("Apalache!storeNotInFun"), Typed(BoolT1), element.NameExpr(), function.NameExpr())
+	if err = encoder.Assert(selected); err != nil {
+		t.Fatal(err)
+	}
+	if err = encoder.Assert(notStored); err != nil {
+		t.Fatal(err)
+	}
+	if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTUnsatisfiable {
+		t.Fatalf("function edge contradiction = %v, %v", status, checkErr)
+	}
+}

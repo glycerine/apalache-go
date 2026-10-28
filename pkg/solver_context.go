@@ -29,14 +29,17 @@ type GroundSolverContext interface {
 // SolverContext exposes the arena-cell/TLA-expression solver boundary used by
 // rewriting and exploration while delegating SMT terms to pure-Go g3.
 type SolverContext struct {
-	config      SolverConfig
-	solver      *G3SolverContext
-	encoder     *G3GroundEncoder
-	level       int
-	metrics     SolverContextMetrics
-	listener    SMTListener
-	logs        []string
-	memberships map[[2]int]struct{}
+	config          SolverConfig
+	solver          *G3SolverContext
+	encoder         *G3GroundEncoder
+	level           int
+	metrics         SolverContextMetrics
+	listener        SMTListener
+	logs            []string
+	memberships     map[[2]int]struct{}
+	membershipStack []map[[2]int]struct{}
+	maxCellID       int
+	maxCellStack    []int
 }
 
 func CreateSolverContext(config SolverConfig) (*SolverContext, error) {
@@ -51,7 +54,7 @@ func CreateSolverContext(config SolverConfig) (*SolverContext, error) {
 	}
 	return &SolverContext{
 		config: config, solver: solver, encoder: encoder, listener: IdleSMTListener{},
-		memberships: make(map[[2]int]struct{}),
+		memberships: make(map[[2]int]struct{}), maxCellID: -1,
 	}, nil
 }
 
@@ -68,12 +71,24 @@ func (solver *SolverContext) SetSMTListener(listener SMTListener) {
 }
 
 func (solver *SolverContext) DeclareCell(cell ArenaCell) error {
+	if cell.ID <= solver.maxCellID {
+		return fmt.Errorf("declaring cell %d while cell %d has already been declared: damaged arena", cell.ID, solver.maxCellID)
+	}
 	if err := solver.encoder.DeclareCell(cell); err != nil {
 		return err
 	}
+	solver.maxCellID = cell.ID
 	solver.metrics = solver.metrics.AddCells(1).AddConstants(1)
 	solver.listener.OnIntroduceCell(int64(cell.ID))
 	solver.listener.OnIntroduceSMTConstant(cell.String())
+	if (cell.ID == 0 || cell.ID == 1) && EqualTypes(cell.Type.TLAType(), BoolT1) {
+		truth := cell.ID == 1
+		constraint := MustOperExpr(Op("EQ"), Typed(BoolT1), cell.NameExpr(), boolExpr(truth))
+		if err := solver.encoder.Assert(constraint); err != nil {
+			return fmt.Errorf("constrain canonical Boolean cell %s: %w", cell, err)
+		}
+		solver.metrics = solver.metrics.AddSMTExpressions(1)
+	}
 	return nil
 }
 
@@ -189,6 +204,9 @@ func (solver *SolverContext) Push() error {
 	if err := solver.solver.Push(); err != nil {
 		return err
 	}
+	solver.encoder.Push()
+	solver.membershipStack = append(solver.membershipStack, cloneMap(solver.memberships))
+	solver.maxCellStack = append(solver.maxCellStack, solver.maxCellID)
 	solver.level++
 	return nil
 }
@@ -208,6 +226,15 @@ func (solver *SolverContext) Pop(count ...int) error {
 		if err := solver.solver.Pop(); err != nil {
 			return err
 		}
+	}
+	if err := solver.encoder.Pop(n); err != nil {
+		return err
+	}
+	if n > 0 {
+		solver.memberships = solver.membershipStack[len(solver.membershipStack)-n]
+		solver.membershipStack = solver.membershipStack[:len(solver.membershipStack)-n]
+		solver.maxCellID = solver.maxCellStack[len(solver.maxCellStack)-n]
+		solver.maxCellStack = solver.maxCellStack[:len(solver.maxCellStack)-n]
 	}
 	solver.level -= n
 	return nil

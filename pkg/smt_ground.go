@@ -14,6 +14,8 @@ type G3GroundEncoder struct {
 	solver      *G3SolverContext
 	cells       map[string]SMTTerm
 	memberships map[[2]int]SMTTerm
+	cellStack   []map[string]SMTTerm
+	inStack     []map[[2]int]SMTTerm
 }
 
 func NewG3GroundEncoder(solver *G3SolverContext) (*G3GroundEncoder, error) {
@@ -71,6 +73,33 @@ func (encoder *G3GroundEncoder) DeclareMembership(set, element ArenaCell) error 
 		return fmt.Errorf("declare membership %s in %s: %w", element, set, err)
 	}
 	encoder.memberships[key] = term
+	return nil
+}
+
+func cloneSMTTerms[K comparable](terms map[K]SMTTerm) map[K]SMTTerm {
+	cloned := make(map[K]SMTTerm, len(terms))
+	for key, term := range terms {
+		cloned[key] = term
+	}
+	return cloned
+}
+
+func (encoder *G3GroundEncoder) Push() {
+	encoder.cellStack = append(encoder.cellStack, cloneSMTTerms(encoder.cells))
+	encoder.inStack = append(encoder.inStack, cloneSMTTerms(encoder.memberships))
+}
+
+func (encoder *G3GroundEncoder) Pop(count int) error {
+	if count < 0 || count > len(encoder.cellStack) {
+		return fmt.Errorf("cannot pop %d levels from ground encoder at level %d", count, len(encoder.cellStack))
+	}
+	if count == 0 {
+		return nil
+	}
+	encoder.cells = encoder.cellStack[len(encoder.cellStack)-count]
+	encoder.memberships = encoder.inStack[len(encoder.inStack)-count]
+	encoder.cellStack = encoder.cellStack[:len(encoder.cellStack)-count]
+	encoder.inStack = encoder.inStack[:len(encoder.inStack)-count]
 	return nil
 }
 
@@ -194,11 +223,12 @@ func (encoder *G3GroundEncoder) encodeOperator(expression *OperExpr) (SMTTerm, e
 }
 
 func isMembershipOperator(name string) bool {
-	return name == "SET_IN" || name == "Apalache!SelectInSet" || name == "Apalache!StoreInSet"
+	return name == "SET_IN" || name == "Apalache!SelectInSet" || name == "Apalache!SelectInFun" ||
+		name == "Apalache!StoreInSet"
 }
 
 func isNegatedMembershipOperator(name string) bool {
-	return name == "SET_NOT_IN" || name == "Apalache!storeNotInSet"
+	return name == "SET_NOT_IN" || name == "Apalache!storeNotInSet" || name == "Apalache!storeNotInFun"
 }
 
 func (encoder *G3GroundEncoder) encodeMembership(arguments []Expr) (SMTTerm, error) {
