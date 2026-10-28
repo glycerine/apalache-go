@@ -11,8 +11,8 @@ mod-infra/src/main/scala/at/forsyte/apalache/infra/ExitCodes.scala	partial	diagn
 mod-infra/src/main/scala/at/forsyte/apalache/infra/exceptions.scala	partial	diagnostic.go;configuration_pass.go;cmd/apalache	logging and pass-framework parity is partial
 mod-infra/src/main/scala/at/forsyte/apalache/infra/log/LogbackConfigurator.scala	partial	diagnostic.go;configuration_pass.go;cmd/apalache	logging and pass-framework parity is partial
 mod-infra/src/main/scala/at/forsyte/apalache/infra/passes/DerivedPredicates.scala	partial	diagnostic.go;configuration_pass.go;cmd/apalache	logging and pass-framework parity is partial
-mod-infra/src/main/scala/at/forsyte/apalache/infra/passes/Pass.scala	partial	diagnostic.go;configuration_pass.go;cmd/apalache	logging and pass-framework parity is partial
-mod-infra/src/main/scala/at/forsyte/apalache/infra/passes/PassChainExecutor.scala	partial	diagnostic.go;configuration_pass.go;cmd/apalache	logging and pass-framework parity is partial
+mod-infra/src/main/scala/at/forsyte/apalache/infra/passes/Pass.scala	partial	pass_chain.go;diagnostic.go	pass metadata and execution are ported; Scala's structured JSON PassFailure with exit codes remains
+mod-infra/src/main/scala/at/forsyte/apalache/infra/passes/PassChainExecutor.scala	partial	pass_chain.go;pass_chain_test.go	ordered dependency checks, transformation propagation, failure short-circuiting, and single-use execution are ported; exception adaptation and pass logging remain
 mod-infra/src/main/scala/at/forsyte/apalache/infra/passes/ToolModule.scala	partial	diagnostic.go;configuration_pass.go;cmd/apalache	logging and pass-framework parity is partial
 mod-tool/src/main/scala/at/forsyte/apalache/tla/Tool.scala	partial	cmd/apalache;config_json.go	remaining CLI controls are open
 mod-tool/src/main/scala/at/forsyte/apalache/tla/tooling/opt/AbstractCheckerCmd.scala	partial	cmd/apalache;config_json.go	remaining CLI controls are open
