@@ -98,5 +98,7 @@ type SymbolicStateRewriterListener interface {
 // Rewriter is the solver-independent stratified rewriting boundary.
 type Rewriter interface {
 	Rewrite(expression Expr, startingScope RewriterScope) (RewriterScope, ArenaCell, error)
+	RewriteSequence(expressions []Expr, startingScope RewriterScope) (RewriterScope, []ArenaCell, error)
+	RewriteBoundSequence(expressions []BoundRewriteExpression, startingScope RewriterScope) (RewriterScope, []ArenaCell, error)
 	Assert(expression Expr)
 }

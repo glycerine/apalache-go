@@ -105,6 +105,48 @@ func (rewriter *StratifiedRewriter) assert(expression Expr) {
 // Assert records one Boolean constraint as a rewriter side effect.
 func (rewriter *StratifiedRewriter) Assert(expression Expr) { rewriter.assert(expression) }
 
+// BoundRewriteExpression pairs an expression with the lexical binding under
+// which it must be rewritten.
+type BoundRewriteExpression struct {
+	Binding    Binding
+	Expression Expr
+}
+
+// RewriteSequence rewrites expressions left-to-right while propagating the
+// arena and binding produced by every preceding expression.
+func (rewriter *StratifiedRewriter) RewriteSequence(
+	expressions []Expr, scope RewriterScope,
+) (RewriterScope, []ArenaCell, error) {
+	results := make([]ArenaCell, len(expressions))
+	for index, expression := range expressions {
+		var err error
+		scope, results[index], err = rewriter.Rewrite(expression, scope)
+		if err != nil {
+			return scope, nil, fmt.Errorf("rewrite expression %d: %w", index+1, err)
+		}
+	}
+	return scope, results, nil
+}
+
+// RewriteBoundSequence is RewriteSequence with a distinct binding for each
+// expression. Arena growth is threaded between entries, and the final scope
+// retains the final entry's binding, matching Scala's state propagation.
+func (rewriter *StratifiedRewriter) RewriteBoundSequence(
+	expressions []BoundRewriteExpression, scope RewriterScope,
+) (RewriterScope, []ArenaCell, error) {
+	results := make([]ArenaCell, len(expressions))
+	for index, entry := range expressions {
+		current := RewriterScope{Arena: scope.Arena, Binding: entry.Binding}
+		var err error
+		current, results[index], err = rewriter.Rewrite(entry.Expression, current)
+		if err != nil {
+			return scope, nil, fmt.Errorf("rewrite bound expression %d: %w", index+1, err)
+		}
+		scope = current
+	}
+	return scope, results, nil
+}
+
 func (rewriter *StratifiedRewriter) Rewrite(expression Expr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
 	if expression == nil || scope.Arena == nil {
 		return scope, ArenaCell{}, fmt.Errorf("stratified rewriting requires an expression and arena")

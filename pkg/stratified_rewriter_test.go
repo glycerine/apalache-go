@@ -90,6 +90,29 @@ func TestStratifiedRewriterSnapshotRestoresAllMutableContexts(t *testing.T) {
 	}
 }
 
+func TestStratifiedRewriterSequenceAndBoundSequencePropagateArena(t *testing.T) {
+	rewriter := NewStratifiedRewriter()
+	base := InitialRewriterScope()
+	scope, cells, err := rewriter.RewriteSequence([]Expr{intLiteral(1), intLiteral(2)}, base)
+	if err != nil || len(cells) != 2 || scope.Arena.CellCount() != base.Arena.CellCount()+2 {
+		t.Fatalf("rewrite sequence = scope %v, cells %v, error %v", scope, cells, err)
+	}
+	firstBinding := BindingOf(BindingEntry{Name: "x", Cell: cells[0]})
+	secondBinding := BindingOf(BindingEntry{Name: "x", Cell: cells[1]})
+	scope, bound, err := rewriter.RewriteBoundSequence([]BoundRewriteExpression{
+		{Binding: firstBinding, Expression: NewNameExpr("x", Typed(IntT1))},
+		{Binding: secondBinding, Expression: NewNameExpr("x", Typed(IntT1))},
+	}, scope)
+	if err != nil || len(bound) != 2 || !bound[0].Equal(cells[0]) || !bound[1].Equal(cells[1]) ||
+		!scope.Binding.MustGet("x").Equal(cells[1]) {
+		t.Fatalf("bound sequence = scope %v, cells %v, error %v", scope, bound, err)
+	}
+	failedScope, results, err := rewriter.RewriteSequence([]Expr{intLiteral(3), NewNameExpr("missing", Typed(IntT1))}, scope)
+	if err == nil || results != nil || failedScope.Arena.CellCount() != scope.Arena.CellCount()+1 {
+		t.Fatalf("failed sequence = scope %v, cells %v, error %v", failedScope, results, err)
+	}
+}
+
 func TestStratifiedRewriterAssignmentAndBooleanRules(t *testing.T) {
 	rewriter := NewStratifiedRewriter()
 	scope := InitialRewriterScope()
