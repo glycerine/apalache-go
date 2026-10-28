@@ -59,3 +59,12 @@ func TestStratifiedUnaryUnionPreservesOuterAndInnerGuards(t *testing.T) {
 	}
 	checkRewrittenTruth(t, rewriter, scope, result, true)
 }
+
+func TestStratifiedUnaryUnionRejectsNonSetOperand(t *testing.T) {
+	expression := MustOperExpr(Op("SET_UNARY_UNION"), Typed(mustSet(IntT1)), intLiteral(1))
+	base := InitialRewriterScope()
+	returned, _, err := NewStratifiedRewriter().Rewrite(expression, base)
+	if err == nil || returned.Arena.CellCount() != base.Arena.CellCount()+1 {
+		t.Fatalf("non-set unary union returned scope=%v, err=%v", returned, err)
+	}
+}

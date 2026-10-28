@@ -631,6 +631,43 @@ func TestStratifiedRewriterSetConstructionUnionAndFilter(t *testing.T) {
 	}
 }
 
+func TestStratifiedSetUnionMergesSharedGuardedPointers(t *testing.T) {
+	intSetType := mustSet(IntT1)
+	setTag := Typed(intSetType)
+	domain := MustOperExpr(Op("SET_ENUM"), setTag, intLiteral(1), intLiteral(2))
+	filtered := func(name string, selected int64) Expr {
+		binder := NewNameExpr(name, Typed(IntT1))
+		return MustOperExpr(Op("SET_FILTER"), setTag, binder, domain,
+			MustOperExpr(Op("EQ"), Typed(BoolT1), binder, intLiteral(selected)))
+	}
+	union := MustOperExpr(Op("SET_UNION2"), setTag, filtered("x", 1), filtered("y", 2))
+	rewriter := NewStratifiedRewriter()
+	scope, unionCell, err := rewriter.Rewrite(union, InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	pointers := scope.Arena.GetHas(unionCell)
+	if len(pointers) != 2 {
+		t.Fatalf("guarded union pointers = %#v", pointers)
+	}
+	for _, pointer := range pointers {
+		guarded, ok := pointer.(SMTElementPointer)
+		if !ok {
+			t.Fatalf("guarded union member became %#v", pointer)
+		}
+		operation, ok := guarded.ToSMT().(*OperExpr)
+		if !ok || operation.Operator().Name() != "OR" || len(operation.Arguments()) != 2 {
+			t.Fatalf("merged union guard = %v", guarded.ToSMT())
+		}
+	}
+	expected := MustOperExpr(Op("SET_ENUM"), setTag, intLiteral(1), intLiteral(2))
+	scope, equal, err := rewriter.Rewrite(MustOperExpr(Op("EQ"), Typed(BoolT1), unionCell.NameExpr(), expected), scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkRewrittenTruth(t, rewriter, scope, equal, true)
+}
+
 func TestStratifiedRewriterRejectsInfiniteSetFilter(t *testing.T) {
 	rewriter := NewStratifiedRewriter()
 	intSet := Typed(mustSet(IntT1))
