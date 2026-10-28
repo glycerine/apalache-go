@@ -62,7 +62,7 @@ func SortDeclarations(module *Module) (*Module, error) {
 		sorted[index] = idToDeclaration[id]
 	}
 	result := NewModule(module.Name(), sorted)
-	result.properties = cloneMap(module.properties)
+	result.copyMetadataFrom(module)
 	return result, nil
 }
 

@@ -292,7 +292,7 @@ func (inliner *Inliner) Module(module *Module) (*Module, error) {
 		}
 	}
 	result := NewModule(module.Name(), output)
-	result.properties = cloneMap(module.properties)
+	result.copyMetadataFrom(module)
 	return result, nil
 }
 

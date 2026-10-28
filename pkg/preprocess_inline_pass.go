@@ -63,7 +63,7 @@ func InlineConfiguredModule(module *Module, options InlinePassOptions) (*Module,
 	}
 	if constantInit == "" {
 		result := NewModule(module.Name(), inlined.Declarations())
-		result.properties = cloneMap(module.properties)
+		result.copyMetadataFrom(module)
 		result.AddProperty(PropertyInlined)
 		return result, nil
 	}
@@ -91,7 +91,7 @@ func InlineConfiguredModule(module *Module, options InlinePassOptions) (*Module,
 		declarations[index] = tracker.TrackDeclaration(func(Decl) Decl { return copy })(operator)
 	}
 	result := NewModule(module.Name(), declarations)
-	result.properties = cloneMap(module.properties)
+	result.copyMetadataFrom(module)
 	result.AddProperty(PropertyInlined)
 	return result, nil
 }

@@ -83,7 +83,7 @@ func ImportTLCConfig(module *Module, config TLCConfig) (*Module, error) {
 		return nil, &TLCConfigurationError{Message: "neither INIT and NEXT, nor SPECIFICATION found in the TLC configuration"}
 	}
 	result := NewModule(module.Name(), declarations)
-	result.properties = cloneMap(module.properties)
+	result.copyMetadataFrom(module)
 	return result, nil
 }
 

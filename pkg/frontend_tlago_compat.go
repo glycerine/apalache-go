@@ -231,7 +231,7 @@ func normalizeTlagoInstantiatedOperatorCalls(module *Module, sources *SourceStor
 		return module
 	}
 	result := NewModule(module.Name(), declarations)
-	result.properties = cloneMap(module.properties)
+	result.copyMetadataFrom(module)
 	return result
 }
 
@@ -275,7 +275,7 @@ func normalizeTlagoRecursiveOperators(module *Module, sources *SourceStore, scop
 		return module
 	}
 	result := NewModule(module.Name(), declarations)
-	result.properties = cloneMap(module.properties)
+	result.copyMetadataFrom(module)
 	return result
 }
 
@@ -579,7 +579,7 @@ func normalizeTlagoInstantiatedLocalDefinitions(
 		kept = append(kept, tracker.TrackOperatorDeclaration(func(*OperDecl) *OperDecl { return copy })(operator))
 	}
 	result := NewModule(module.Name(), kept)
-	result.properties = cloneMap(module.properties)
+	result.copyMetadataFrom(module)
 	return result
 }
 
@@ -1392,7 +1392,7 @@ func normalizeTlagoRecursiveFunctions(module *Module, sources *SourceStore) *Mod
 		return module
 	}
 	result := NewModule(module.Name(), declarations)
-	result.properties = cloneMap(module.properties)
+	result.copyMetadataFrom(module)
 	return result
 }
 
@@ -1593,7 +1593,7 @@ func removeTlagoNativeVariantDeclarations(module *Module, sources *SourceStore, 
 		kept = append(kept, declaration)
 	}
 	result := NewModule(module.Name(), kept)
-	result.properties = cloneMap(module.properties)
+	result.copyMetadataFrom(module)
 	return result
 }
 
@@ -1676,7 +1676,7 @@ func normalizeTlagoTLCCalls(module *Module, sources *SourceStore, tlcImported bo
 		kept = append(kept, declaration)
 	}
 	result := NewModule(transformed.Name(), kept)
-	result.properties = cloneMap(transformed.properties)
+	result.copyMetadataFrom(transformed)
 	return result
 }
 

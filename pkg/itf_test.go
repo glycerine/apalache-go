@@ -30,6 +30,25 @@ func TestMarshalITFTraceMergesConstantInitialization(t *testing.T) {
 	}
 }
 
+func TestMarshalITFTraceIncludesModuleNameReplacements(t *testing.T) {
+	module := NewModule("M", []Decl{NewVarDecl("x", Typed(IntT1))})
+	module.AddNameReplacement("generated", "[] (x = 1)")
+	data, err := MarshalITFTrace(module, []TraceState{{}, {"x": intLiteral(1)}}, ITFOptions{
+		NameReplacements: map[string]string{"explicit": "x + 1", "generated": "override"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var root map[string]any
+	if err = json.Unmarshal(data, &root); err != nil {
+		t.Fatal(err)
+	}
+	replacements := root[ITFMetaField].(map[string]any)["variables-to-expressions"].(map[string]any)
+	if replacements["generated"] != "override" || replacements["explicit"] != "x + 1" || len(replacements) != 2 {
+		t.Fatalf("ITF name replacements = %#v", replacements)
+	}
+}
+
 func TestTlaToITFJSONMatchesScalaTraceShapeAndRoundTrips(t *testing.T) {
 	module := NewModule("test", []Decl{NewVarDecl("x", Typed(IntT1))})
 	states := []TraceState{

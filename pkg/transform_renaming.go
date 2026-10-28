@@ -428,6 +428,6 @@ func (renamer *IncrementalRenamer) RenameModule(module *Module) (*Module, error)
 		return nil, err
 	}
 	result := NewModule(module.Name(), declarations)
-	result.properties = cloneMap(module.properties)
+	result.copyMetadataFrom(module)
 	return result, nil
 }

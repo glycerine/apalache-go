@@ -192,7 +192,7 @@ func FindTransitions(module *Module, options TransitionPassOptions) (*Module, er
 	if err != nil {
 		return nil, fmt.Errorf("renaming extracted transitions: %w", err)
 	}
-	result.properties = cloneMap(module.properties)
+	result.copyMetadataFrom(module)
 	result.AddProperty(PropertyTransitionsFound)
 	return result, nil
 }

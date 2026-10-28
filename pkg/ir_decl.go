@@ -213,9 +213,10 @@ const (
 )
 
 type Module struct {
-	name         string
-	declarations []Decl
-	properties   map[ModuleProperty]struct{}
+	name             string
+	declarations     []Decl
+	properties       map[ModuleProperty]struct{}
+	nameReplacements map[string]string
 }
 
 func NewModule(name string, declarations []Decl) *Module {
@@ -224,7 +225,10 @@ func NewModule(name string, declarations []Decl) *Module {
 			panic("NewModule requires non-nil declarations")
 		}
 	}
-	return &Module{name: name, declarations: append([]Decl(nil), declarations...), properties: make(map[ModuleProperty]struct{})}
+	return &Module{
+		name: name, declarations: append([]Decl(nil), declarations...),
+		properties: make(map[ModuleProperty]struct{}), nameReplacements: make(map[string]string),
+	}
 }
 func (module *Module) Name() string { return module.name }
 func (module *Module) Declarations() []Decl {
@@ -272,4 +276,23 @@ func (module *Module) AddProperty(property ModuleProperty) {
 func (module *Module) HasProperty(property ModuleProperty) bool {
 	_, ok := module.properties[property]
 	return ok
+}
+
+func (module *Module) AddNameReplacement(name, expression string) {
+	if module.nameReplacements == nil {
+		module.nameReplacements = make(map[string]string)
+	}
+	module.nameReplacements[name] = expression
+}
+
+func (module *Module) NameReplacements() map[string]string {
+	return cloneMap(module.nameReplacements)
+}
+
+func (module *Module) copyMetadataFrom(source *Module) {
+	if source == nil {
+		return
+	}
+	module.properties = cloneMap(source.properties)
+	module.nameReplacements = cloneMap(source.nameReplacements)
 }

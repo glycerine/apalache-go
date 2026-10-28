@@ -107,8 +107,12 @@ func MarshalITFTrace(module *Module, states []TraceState, options ITFOptions) ([
 		options.Description = "Created by Apalache Go"
 	}
 	meta["description"] = options.Description
-	if len(options.NameReplacements) > 0 {
-		meta["variables-to-expressions"] = cloneMap(options.NameReplacements)
+	replacements := module.NameReplacements()
+	for name, expression := range options.NameReplacements {
+		replacements[name] = expression
+	}
+	if len(replacements) > 0 {
+		meta["variables-to-expressions"] = replacements
 	}
 	root := map[string]any{ITFMetaField: meta, ITFVarsField: variables}
 	if len(parameters) > 0 {

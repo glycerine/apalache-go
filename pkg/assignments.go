@@ -154,7 +154,7 @@ func InsertTransitions(module *Module, prefix string, transitions []SymbolicTran
 	}
 	declarations = append(declarations, module.Declarations()...)
 	result := NewModule(module.Name(), declarations)
-	result.properties = cloneMap(module.properties)
+	result.copyMetadataFrom(module)
 	return result
 }
 

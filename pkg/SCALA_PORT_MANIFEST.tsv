@@ -315,7 +315,7 @@ tla-io/src/main/scala/at/forsyte/apalache/io/config/RemoteConfigValidator.scala	
 tla-io/src/main/scala/at/forsyte/apalache/io/config/ValidatedOptions.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
 tla-io/src/main/scala/at/forsyte/apalache/io/exceptions.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
 tla-io/src/main/scala/at/forsyte/apalache/io/itf/ItfJsonToTla.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
-tla-io/src/main/scala/at/forsyte/apalache/io/itf/TlaToItfJson.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/itf/TlaToItfJson.scala	ported	itf.go;itf_test.go	constant/init merging, indexed states, params/vars/types/description/replacement metadata, arbitrary integers, Booleans, strings, sequences, tuples, sets, records, variants, set-as-function maps, deterministic fields, and unserializable fallbacks are covered
 tla-io/src/main/scala/at/forsyte/apalache/io/itf/package.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
 tla-io/src/main/scala/at/forsyte/apalache/io/json/DefaultTagJsonReader.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
 tla-io/src/main/scala/at/forsyte/apalache/io/json/JsonDecoder.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
@@ -341,7 +341,7 @@ tla-io/src/main/scala/at/forsyte/apalache/io/json/ujsonimpl/UJsonToTla.scala	par
 tla-io/src/main/scala/at/forsyte/apalache/io/json/ujsonimpl/UJsonToTlaViaBuilder.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
 tla-io/src/main/scala/at/forsyte/apalache/io/lir/CounterexampleWriter.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
 tla-io/src/main/scala/at/forsyte/apalache/io/lir/ItfCounterexampleWriter.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
-tla-io/src/main/scala/at/forsyte/apalache/io/lir/NameReplacementMap.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
+tla-io/src/main/scala/at/forsyte/apalache/io/lir/NameReplacementMap.scala	ported	ir_decl.go;temporal_tableau.go;itf.go;temporal_tableau_test.go;itf_test.go	readable temporal-node and saved-node expressions are recorded, copied immutably through every module rebuilding pass, isolated per module, exposed defensively, and emitted in ITF with explicit overrides
 tla-io/src/main/scala/at/forsyte/apalache/io/lir/PrettyWriter.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
 tla-io/src/main/scala/at/forsyte/apalache/io/lir/TextLayout.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open
 tla-io/src/main/scala/at/forsyte/apalache/io/lir/TlaDeclAnnotator.scala	partial	ir_json.go;itf.go;tlc_config*.go;type_annotations.go	Quint and remaining I/O edges are open

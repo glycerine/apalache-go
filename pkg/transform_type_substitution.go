@@ -160,6 +160,6 @@ func (substitutor *TypeSubstitutor) Module(module *Module) (*Module, error) {
 		declarations[index] = result
 	}
 	result := NewModule(module.Name(), declarations)
-	result.properties = cloneMap(module.properties)
+	result.copyMetadataFrom(module)
 	return result, nil
 }

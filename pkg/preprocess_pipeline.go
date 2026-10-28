@@ -167,6 +167,6 @@ func transformModuleExpressionsWithError(
 		}
 	}
 	result := NewModule(module.Name(), declarations)
-	result.properties = cloneMap(module.properties)
+	result.copyMetadataFrom(module)
 	return result, nil
 }

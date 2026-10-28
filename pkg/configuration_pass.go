@@ -154,7 +154,7 @@ func ConfigureModule(module *Module, options SpecificationConfiguration) (Config
 	}
 	declarations = append(declarations, otherOverrides...)
 	current := NewModule(module.Name(), declarations)
-	current.properties = cloneMap(module.properties)
+	current.copyMetadataFrom(module)
 	checks := []struct {
 		role  string
 		names []string

@@ -57,7 +57,7 @@ func PrimeInitializers(module *Module, options PrimingOptions) (*Module, error) 
 	}
 	declarations = append(declarations, primedInit)
 	result := NewModule(module.Name(), declarations)
-	result.properties = cloneMap(module.properties)
+	result.copyMetadataFrom(module)
 	result.AddProperty(PropertyPrimed)
 	return result, nil
 }

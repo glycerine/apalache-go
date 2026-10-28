@@ -177,6 +177,6 @@ func (encoder *TemporalLoopEncoder) AddLoopLogic(module *Module, initName, nextN
 	}
 	declarations = append(declarations, loopOK)
 	encoded := NewModule(module.Name(), declarations)
-	encoded.properties = cloneMap(module.properties)
+	encoded.copyMetadataFrom(module)
 	return TemporalLoopEncoding{Module: encoded, Init: newInit, Next: newNext, LoopOK: loopOK}, nil
 }

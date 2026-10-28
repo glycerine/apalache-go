@@ -86,7 +86,7 @@ func RewriteOverrides(module *Module, tracker TransformationTracker) (*Module, e
 	// Module properties are Go's pass-order contract and have no Scala IR
 	// counterpart. Configuration still requires the input's TypeChecked marker
 	// after applying overrides, so preserve these adaptation-level properties.
-	result.properties = cloneMap(module.properties)
+	result.copyMetadataFrom(module)
 	return result, nil
 }
 
@@ -115,6 +115,6 @@ func transformAllModuleExpressions(module *Module, transform ExprTransform, trac
 		declarations[index] = result
 	}
 	result := NewModule(module.Name(), declarations)
-	result.properties = cloneMap(module.properties)
+	result.copyMetadataFrom(module)
 	return result
 }

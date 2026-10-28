@@ -1,6 +1,9 @@
 package apalache
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 const (
 	TemporalTableauPrefix  = "__temporal_"
@@ -37,11 +40,12 @@ type temporalFormulaEncoding struct {
 // TemporalTableauEncoder ports the lasso tableau construction of the Scala
 // TableauEncoder for Boolean structure and the [] and <> operators.
 type TemporalTableauEncoder struct {
-	module  *Module
-	names   *UniqueNameGenerator
-	loop    *TemporalLoopEncoder
-	tracker TransformationTracker
-	levels  *LevelFinder
+	module           *Module
+	names            *UniqueNameGenerator
+	loop             *TemporalLoopEncoder
+	tracker          TransformationTracker
+	levels           *LevelFinder
+	nameReplacements map[string]string
 }
 
 func NewTemporalTableauEncoder(
@@ -62,7 +66,10 @@ func NewTemporalTableauEncoder(
 	if loop == nil {
 		loop = NewTemporalLoopEncoder(tracker)
 	}
-	return &TemporalTableauEncoder{module: module, names: names, loop: loop, tracker: tracker, levels: NewLevelFinder(module)}, nil
+	return &TemporalTableauEncoder{
+		module: module, names: names, loop: loop, tracker: tracker, levels: NewLevelFinder(module),
+		nameReplacements: make(map[string]string),
+	}, nil
 }
 
 func temporalBooleanSetMembership(expression Expr) Expr {
@@ -135,6 +142,13 @@ func (encoder *TemporalTableauEncoder) EncodeSyntaxTree(expression Expr) (Tempor
 	node := NewVarDecl(TemporalTableauPrefix+encoder.names.NewName(), Typed(BoolT1))
 	node.MarkInternal()
 	saved := encoder.loop.SavedVariable(node)
+	formatted, err := FormatTLAExpression(expression)
+	if err != nil {
+		return TemporalSyntaxEncoding{}, fmt.Errorf("format temporal expression for trace metadata: %w", err)
+	}
+	formatted = strings.ReplaceAll(formatted, `"`, `'`)
+	encoder.nameReplacements[node.Name()] = formatted
+	encoder.nameReplacements[saved.Name()] = TemporalSavedPrefix + formatted
 	nodeExpression := temporalName(node)
 	predicates := encoder.genericPredicates(node, saved)
 	variables := []*VarDecl{node, saved}
@@ -282,7 +296,10 @@ func (encoder *TemporalTableauEncoder) TemporalsToInvariants(
 	}
 	declarations = append(declarations, newFormulas...)
 	result := NewModule(loop.Module.Name(), declarations)
-	result.properties = cloneMap(loop.Module.properties)
+	result.copyMetadataFrom(loop.Module)
+	for name, expression := range encoder.nameReplacements {
+		result.AddNameReplacement(name, expression)
+	}
 	return SortDeclarations(result)
 }
 

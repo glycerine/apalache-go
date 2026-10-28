@@ -116,7 +116,7 @@ func (executor *PassChainExecutor) run() (*Module, error) {
 			return nil, fmt.Errorf("pass %s returned a nil module", pass.Name())
 		}
 		next := NewModule(transformed.Name(), transformed.Declarations())
-		next.properties = cloneMap(module.properties)
+		next.copyMetadataFrom(module)
 		for _, property := range pass.Transformations() {
 			next.AddProperty(property)
 		}

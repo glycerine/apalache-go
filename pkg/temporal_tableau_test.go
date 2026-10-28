@@ -12,7 +12,7 @@ func temporalFormulaModule(operator string) (*Module, *OperDecl) {
 	formula := boolDefinition("Live", MustOperExpr(Op(operator), Typed(BoolT1), atom))
 	declarations := append(module.Declarations(), formula)
 	result := NewModule(module.Name(), declarations)
-	result.properties = cloneMap(module.properties)
+	result.copyMetadataFrom(module)
 	return result, formula
 }
 
@@ -61,6 +61,19 @@ func TestTemporalTableauReplacesPropertiesAndPreprocesses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	formatted, err := FormatTLAExpression(formula.Body())
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacements := encoded.NameReplacements()
+	if replacements["__temporal_t_1"] != formatted ||
+		replacements["__saved___temporal_t_1"] != TemporalSavedPrefix+formatted {
+		t.Fatalf("tableau name replacements = %#v, want expression %q", replacements, formatted)
+	}
+	replacements["__temporal_t_1"] = "mutated"
+	if encoded.NameReplacements()["__temporal_t_1"] != formatted {
+		t.Fatal("module exposed name replacements mutably")
+	}
 	property, found := declarationNamed(encoded, "Live")
 	if !found {
 		t.Fatal("encoded property is missing")
@@ -86,6 +99,9 @@ func TestTemporalTableauReplacesPropertiesAndPreprocesses(t *testing.T) {
 	preprocessed, err := PreprocessModule(inlined, PreprocessOptions{})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if got := preprocessed.NameReplacements()["__temporal_t_1"]; got != formatted {
+		t.Fatalf("preprocessing lost tableau name replacement: %q", got)
 	}
 	for _, declaration := range preprocessed.OperDeclarations() {
 		if countOperator(declaration.Body(), "GLOBALLY") != 0 || countOperator(declaration.Body(), "EVENTUALLY") != 0 ||
