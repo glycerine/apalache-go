@@ -259,6 +259,15 @@ func TestEncodeRewriterScopeStoresDynamicSetMembership(t *testing.T) {
 	if len(pointers) != 2 {
 		t.Fatalf("filtered set pointers = %v", pointers)
 	}
+	foundMap := false
+	for _, constraint := range rewriter.Constraints() {
+		if oper, ok := constraint.(*OperExpr); ok && oper.Operator().Name() == "Apalache!SmtMap_AND" {
+			foundMap = true
+		}
+	}
+	if !foundMap {
+		t.Fatalf("native filter constraints contain no AND map: %v", rewriter.Constraints())
+	}
 	solver := newTestG3Solver(t)
 	encoder, err := EncodeRewriterScopeWithEncoding(solver, scope, rewriter.Constraints(), SMTEncodingArrays)
 	if err != nil {
@@ -278,6 +287,44 @@ func TestEncodeRewriterScopeStoresDynamicSetMembership(t *testing.T) {
 	}
 	if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTUnsatisfiable {
 		t.Fatalf("dynamic stored memberships = %v, %v", status, checkErr)
+	}
+}
+
+func TestEncodeRewriterScopeMapsNativeSetUnion(t *testing.T) {
+	setType := mustSet(IntT1)
+	left := MustOperExpr(Op("SET_ENUM"), Typed(setType), intLiteral(1))
+	right := MustOperExpr(Op("SET_ENUM"), Typed(setType), intLiteral(2))
+	union := MustOperExpr(Op("SET_UNION2"), Typed(setType), left, right)
+	claim := MustOperExpr(Op("AND"), Typed(BoolT1),
+		MustOperExpr(Op("SET_IN"), Typed(BoolT1), intLiteral(1), union),
+		MustOperExpr(Op("SET_IN"), Typed(BoolT1), intLiteral(2), union))
+	rewriter := NewStratifiedRewriterWithOptions(StratifiedRewriterOptions{SMTEncoding: SMTEncodingArrays})
+	scope, result, err := rewriter.Rewrite(claim, InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundMap := false
+	for _, constraint := range rewriter.Constraints() {
+		if oper, ok := constraint.(*OperExpr); ok && oper.Operator().Name() == "Apalache!SmtMap_OR" {
+			foundMap = true
+		}
+	}
+	if !foundMap {
+		t.Fatalf("native union constraints contain no OR map: %v", rewriter.Constraints())
+	}
+	solver := newTestG3Solver(t)
+	encoder, err := EncodeRewriterScopeWithEncoding(solver, scope, rewriter.Constraints(), SMTEncodingArrays)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTSatisfiable {
+		t.Fatalf("native mapped union scope = %v, %v", status, checkErr)
+	}
+	if err = encoder.Assert(MustOperExpr(Op("NOT"), Typed(BoolT1), result.NameExpr())); err != nil {
+		t.Fatal(err)
+	}
+	if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTUnsatisfiable {
+		t.Fatalf("native mapped union = %v, %v", status, checkErr)
 	}
 }
 
@@ -418,4 +465,48 @@ func TestG3GroundEncoderArraySSAStoresAndUnconstraining(t *testing.T) {
 			t.Fatalf("unconstrained set array = %v, %v", status, checkErr)
 		}
 	})
+}
+
+func TestG3GroundEncoderBooleanArrayMaps(t *testing.T) {
+	for _, operator := range []string{"AND", "OR"} {
+		t.Run(operator, func(t *testing.T) {
+			solver := newTestG3Solver(t)
+			encoder, err := NewG3GroundEncoderWithEncoding(solver, SMTEncodingArrays)
+			if err != nil {
+				t.Fatal(err)
+			}
+			element := NewArenaCell(0, BasicCellType{Type: IntT1})
+			input := NewArenaCell(1, BasicCellType{Type: mustSet(IntT1)})
+			result := NewArenaCell(2, BasicCellType{Type: mustSet(IntT1)})
+			for _, cell := range []ArenaCell{element, input, result} {
+				if err = encoder.DeclareCell(cell); err != nil {
+					t.Fatal(err)
+				}
+			}
+			store := func(set ArenaCell) Expr {
+				return MustOperExpr(Op("Apalache!StoreInSet"), Typed(BoolT1), element.NameExpr(), set.NameExpr())
+			}
+			if err = encoder.Assert(store(input)); err != nil {
+				t.Fatal(err)
+			}
+			if operator == "AND" {
+				if err = encoder.Assert(store(result)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			mapped := MustOperExpr(NewSMTMapOperator(Op(operator)), Typed(mustSet(IntT1)),
+				input.NameExpr(), result.NameExpr())
+			if err = encoder.Assert(mapped); err != nil {
+				t.Fatal(err)
+			}
+			selected := MustOperExpr(Op("Apalache!SelectInSet"), Typed(BoolT1),
+				element.NameExpr(), result.NameExpr())
+			if err = encoder.Assert(MustOperExpr(Op("NOT"), Typed(BoolT1), selected)); err != nil {
+				t.Fatal(err)
+			}
+			if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTUnsatisfiable {
+				t.Fatalf("array map %s = %v, %v", operator, status, checkErr)
+			}
+		})
+	}
 }

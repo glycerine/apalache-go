@@ -172,6 +172,69 @@ func TestG3SolverArrayStoreSelect(t *testing.T) {
 	}
 }
 
+func TestG3SolverBooleanArrayMap(t *testing.T) {
+	solver := newTestG3Solver(t)
+	falsehood, err := solver.Bool(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	truth, err := solver.Bool(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	left, err := solver.ConstantArray(SMTInt, "", falsehood)
+	if err != nil {
+		t.Fatal(err)
+	}
+	right, err := solver.ConstantArray(SMTInt, "", falsehood)
+	if err != nil {
+		t.Fatal(err)
+	}
+	one, _ := solver.Int(1)
+	two, _ := solver.Int(2)
+	left, err = solver.Store(left, one, truth)
+	if err != nil {
+		t.Fatal(err)
+	}
+	right, err = solver.Store(right, one, truth)
+	if err != nil {
+		t.Fatal(err)
+	}
+	right, err = solver.Store(right, two, truth)
+	if err != nil {
+		t.Fatal(err)
+	}
+	intersection, err := solver.ArrayMapBoolean("AND", left, right)
+	if err != nil {
+		t.Fatal(err)
+	}
+	union, err := solver.ArrayMapBoolean("OR", left, right)
+	if err != nil {
+		t.Fatal(err)
+	}
+	atIntersection, _ := solver.Select(intersection, one)
+	atUnion, _ := solver.Select(union, two)
+	notIntersection, _ := solver.Not(atIntersection)
+	notUnion, _ := solver.Not(atUnion)
+	bad, _ := solver.Or(notIntersection, notUnion)
+	if err = solver.Assert(bad); err != nil {
+		t.Fatal(err)
+	}
+	if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTUnsatisfiable {
+		t.Fatalf("Boolean array maps = %v, %v", status, checkErr)
+	}
+	integerArray, err := solver.DeclareArray("integer_map", SMTInt, SMTInt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = solver.ArrayMapBoolean("AND", integerArray, integerArray); err == nil {
+		t.Fatal("Boolean map accepted integer-valued arrays")
+	}
+	if _, err = solver.ArrayMapBoolean("XOR", left, right); err == nil {
+		t.Fatal("unsupported Boolean map operator was accepted")
+	}
+}
+
 func TestG3SolverUninterpretedAndConstantArrays(t *testing.T) {
 	solver := newTestG3Solver(t)
 	element, err := solver.DeclareUninterpreted("array_element", "Elem")

@@ -321,6 +321,33 @@ func (encoder *G3GroundEncoder) encodeOperator(expression *OperExpr) (SMTTerm, e
 		}
 		return encoder.solver.Bool(true)
 	}
+	if (expression.Operator().Name() == "Apalache!SmtMap_AND" ||
+		expression.Operator().Name() == "Apalache!SmtMap_OR") && encoder.encoding == SMTEncodingArrays {
+		if len(arguments) != 2 {
+			return SMTTerm{}, fmt.Errorf("array map requires two arguments")
+		}
+		input, err := encoder.Encode(arguments[0])
+		if err != nil {
+			return SMTTerm{}, err
+		}
+		constraints, err := encoder.Encode(arguments[1])
+		if err != nil {
+			return SMTTerm{}, err
+		}
+		operator := "AND"
+		if expression.Operator().Name() == "Apalache!SmtMap_OR" {
+			operator = "OR"
+		}
+		mapped, err := encoder.solver.ArrayMapBoolean(operator, input, constraints)
+		if err != nil {
+			return SMTTerm{}, err
+		}
+		updated, err := encoder.freshArrayVersion(arguments[1])
+		if err != nil {
+			return SMTTerm{}, err
+		}
+		return encoder.solver.Equal(updated, mapped)
+	}
 	if isMembershipOperator(expression.Operator().Name()) {
 		return encoder.encodeMembership(arguments)
 	}

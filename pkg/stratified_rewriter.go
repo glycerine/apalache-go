@@ -2318,9 +2318,16 @@ func (rewriter *StratifiedRewriter) rewriteSetUnion(expression *OperExpr, scope 
 	if err != nil {
 		return scope, ArenaCell{}, err
 	}
-	newArena, setCell := rightScope.Arena.AppendCellType(cellType)
+	arrayEncoding := rewriter.smtEncoding == SMTEncodingArrays
+	newArena, setCell := rightScope.Arena.AppendCellType(cellType, arrayEncoding)
 	rightScope.Arena = newArena.AppendHas(setCell, pointers...)
-	rewriter.addMembershipConstraints(rightScope.Arena, setCell)
+	if arrayEncoding {
+		rewriter.assert(MustOperExpr(Op("EQ"), Typed(BoolT1), setCell.NameExpr(), left.NameExpr()))
+		rewriter.assert(MustOperExpr(NewSMTMapOperator(Op("OR")), Typed(resultType),
+			right.NameExpr(), setCell.NameExpr()))
+	} else {
+		rewriter.addMembershipConstraints(rightScope.Arena, setCell)
+	}
 	return rightScope, setCell, nil
 }
 
@@ -2368,6 +2375,7 @@ func (rewriter *StratifiedRewriter) rewriteSetFilter(expression *OperExpr, scope
 	baseBinding := setScope.Binding
 	pointers := setScope.Arena.GetHas(setCell)
 	restricted := make([]ElementPointer, len(pointers))
+	predicates := make([]ArenaCell, len(pointers))
 	for index, pointer := range pointers {
 		predicateScope := RewriterScope{Arena: setScope.Arena, Binding: baseBinding.With(variable.Name(), pointer.Element())}
 		predicateScope, predicateCell, rewriteErr := rewriter.Rewrite(arguments[2], predicateScope)
@@ -2379,6 +2387,7 @@ func (rewriter *StratifiedRewriter) rewriteSetFilter(expression *OperExpr, scope
 		}
 		setScope.Arena = predicateScope.Arena
 		restricted[index] = pointer.Restrict(predicateCell.NameExpr())
+		predicates[index] = predicateCell
 	}
 	setScope.Binding = baseBinding
 	cellType, err := CellTypeFromTag(arguments[1].Tag())
@@ -2387,7 +2396,18 @@ func (rewriter *StratifiedRewriter) rewriteSetFilter(expression *OperExpr, scope
 	}
 	newArena, result := setScope.Arena.AppendCellType(cellType)
 	setScope.Arena = newArena.AppendHas(result, restricted...)
-	rewriter.addMembershipConstraints(setScope.Arena, result)
+	if rewriter.smtEncoding == SMTEncodingArrays {
+		rewriter.assert(MustOperExpr(Op("Apalache!UnconstrainArray"), Typed(BoolT1), result.NameExpr()))
+		for index, pointer := range pointers {
+			selection := MustOperExpr(Op("Apalache!SelectInSet"), Typed(BoolT1),
+				pointer.Element().NameExpr(), result.NameExpr())
+			rewriter.assert(MustOperExpr(Op("EQ"), Typed(BoolT1), selection, predicates[index].NameExpr()))
+		}
+		rewriter.assert(MustOperExpr(NewSMTMapOperator(Op("AND")), Typed(cellType.TLAType()),
+			setCell.NameExpr(), result.NameExpr()))
+	} else {
+		rewriter.addMembershipConstraints(setScope.Arena, result)
+	}
 	return setScope, result, nil
 }
 

@@ -617,6 +617,38 @@ func (solver *G3SolverContext) Store(array, index, value SMTTerm) (SMTTerm, erro
 	return result, err
 }
 
+// ArrayMapBoolean applies Boolean AND or OR pointwise to two Boolean-valued
+// arrays. It is the pinned-g3 counterpart of Z3's ((_ map and/or) ...).
+func (solver *G3SolverContext) ArrayMapBoolean(operator string, left, right SMTTerm) (SMTTerm, error) {
+	if err := solver.validateTerm(left, SMTArray); err != nil {
+		return SMTTerm{}, err
+	}
+	if err := solver.validateSameSort(left, right); err != nil {
+		return SMTTerm{}, err
+	}
+	if left.arrayValueSort != SMTBool {
+		return SMTTerm{}, fmt.Errorf("Boolean array map requires Boolean-valued arrays")
+	}
+	var declaration ast.ASTHandle
+	var err error
+	switch operator {
+	case "AND":
+		declaration, err = solver.manager.MkAndDecl()
+	case "OR":
+		declaration, err = solver.manager.MkOrDecl()
+	default:
+		return SMTTerm{}, fmt.Errorf("unsupported Boolean array map operator %s", operator)
+	}
+	if err != nil {
+		return SMTTerm{}, err
+	}
+	handle, err := solver.manager.MkArrayMap(
+		declaration, ast.SliceArguments([]ast.ASTHandle{left.handle, right.handle}))
+	result := left
+	result.handle = handle
+	return result, err
+}
+
 func (solver *G3SolverContext) Add(left, right SMTTerm) (SMTTerm, error) {
 	if err := solver.validateTerm(left, SMTInt); err != nil {
 		return SMTTerm{}, err
