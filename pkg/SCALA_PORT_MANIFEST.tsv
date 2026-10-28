@@ -534,7 +534,7 @@ tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/subbuilder/FunBuilder.scal
 tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/subbuilder/LiteralAndNameBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/subbuilder/SeqBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/subbuilder/SetBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
-tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/subbuilder/TemporalBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/subbuilder/TemporalBuilder.scala	ported	temporal_builder.go;temporal_builder_test.go	scope-safe Box, Diamond, LeadsTo, Guarantees, WF, SF, AA, and EE are ported with single-name temporal binding, free-name consistency, and nested-shadowing rejection
 tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/subbuilder/VariantBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/unsafe/ProtoBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/unsafe/UnsafeActionBuilder.scala	ported	action_builder.go;action_builder_test.go	typed direct builders cover all six action operators with polymorphic result propagation, exact argument order, signature inference, and structured type errors
@@ -549,7 +549,7 @@ tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/unsafe/UnsafeFunBuilder.sc
 tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/unsafe/UnsafeLiteralAndNameBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/unsafe/UnsafeSeqBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/unsafe/UnsafeSetBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
-tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/unsafe/UnsafeTemporalBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/unsafe/UnsafeTemporalBuilder.scala	ported	temporal_builder.go;temporal_builder_test.go	typed direct builders cover all eight temporal operators with exact argument order, polymorphic signature inference, Boolean enforcement, and name-only quantified variables
 tlair/src/main/scala/at/forsyte/apalache/tla/typecomp/unsafe/UnsafeVariantBuilder.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/types/EqClass.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/types/ModelValueHandler.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
