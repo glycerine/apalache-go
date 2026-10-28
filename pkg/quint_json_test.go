@@ -413,3 +413,41 @@ func TestParseQuintTicTacToeOracle(t *testing.T) {
 		t.Fatalf("parsed module contains untyped IR: %+v", result.Failures)
 	}
 }
+
+func TestExplorationLoadsQuintTicTacToeOracle(t *testing.T) {
+	data, err := os.ReadFile("../tla-io/src/test/resources/tictactoe.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	params, err := json.Marshal(loadSpecParams{
+		Sources: []string{base64.StdEncoding.EncodeToString(data)},
+		Init:    "init", Next: "step", Invariants: []string{"inv"}, Format: "qnt",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewExplorationService()
+	result, rpcErr := service.loadSpec(context.Background(), params)
+	if rpcErr != nil {
+		t.Fatalf("loadSpec failed: %+v", rpcErr)
+	}
+	loaded := result.(loadSpecResult)
+	if len(loaded.SpecParameters.InitTransitions) == 0 || len(loaded.SpecParameters.NextTransitions) == 0 ||
+		len(loaded.SpecParameters.StateInvariants) != 1 {
+		t.Fatalf("loaded parameters = %#v", loaded.SpecParameters)
+	}
+	assume, err := json.Marshal(assumeTransitionParams{
+		SessionID: loaded.SessionID, TransitionID: 0, CheckEnabled: true, TimeoutSec: 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assumed, rpcErr := service.assumeTransition(context.Background(), assume)
+	if rpcErr != nil {
+		t.Fatalf("assumeTransition failed: %+v", rpcErr)
+	}
+	status := assumed.(assumeTransitionResult).Status
+	if status != "ENABLED" {
+		t.Fatalf("initial transition status = %q, want ENABLED", status)
+	}
+}
