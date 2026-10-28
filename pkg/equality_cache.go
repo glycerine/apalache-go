@@ -27,6 +27,8 @@ type equalityPair struct {
 type equalityCacheValue struct {
 	entry EqualityCacheEntry
 	level int
+	left  ArenaCell
+	right ArenaCell
 }
 
 // EqualityCacheSnapshot is an immutable, level-squashed copy of an equality
@@ -60,7 +62,12 @@ func (cache *EqualityCache) Put(left, right ArenaCell, entry EqualityCacheEntry)
 	if expression, ok := entry.(EqualityExpression); ok && expression.Expression == nil {
 		return fmt.Errorf("cached equality expression cannot be nil")
 	}
-	cache.entries[canonicalEqualityPair(left, right)] = equalityCacheValue{entry: entry, level: cache.level}
+	if left.ID > right.ID {
+		left, right = right, left
+	}
+	cache.entries[canonicalEqualityPair(left, right)] = equalityCacheValue{
+		entry: entry, level: cache.level, left: left, right: right,
+	}
 	return nil
 }
 
@@ -115,7 +122,7 @@ func (cache *EqualityCache) Pop(count ...int) error {
 func (cache *EqualityCache) Snapshot() EqualityCacheSnapshot {
 	entries := make(map[equalityPair]equalityCacheValue, len(cache.entries))
 	for pair, value := range cache.entries {
-		entries[pair] = equalityCacheValue{entry: value.entry, level: 0}
+		entries[pair] = equalityCacheValue{entry: value.entry, level: 0, left: value.left, right: value.right}
 	}
 	return EqualityCacheSnapshot{entries: entries}
 }
@@ -123,7 +130,7 @@ func (cache *EqualityCache) Snapshot() EqualityCacheSnapshot {
 func (cache *EqualityCache) Recover(snapshot EqualityCacheSnapshot) {
 	cache.entries = make(map[equalityPair]equalityCacheValue, len(snapshot.entries))
 	for pair, value := range snapshot.entries {
-		cache.entries[pair] = equalityCacheValue{entry: value.entry, level: 0}
+		cache.entries[pair] = equalityCacheValue{entry: value.entry, level: 0, left: value.left, right: value.right}
 	}
 }
 

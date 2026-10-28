@@ -12,6 +12,13 @@ type LazyEquality struct {
 	computing map[equalityPair]bool
 }
 
+type ArenaCellPair struct {
+	Left  ArenaCell
+	Right ArenaCell
+}
+
+const unsafeEqualityMessage = "VORSICHT! SMT equality should be used only after calling cacheEqualities, unless you know what you are doing."
+
 func NewLazyEquality(assert func(Expr), stringTags ...func(string) (ArenaCell, bool)) *LazyEquality {
 	if assert == nil {
 		assert = func(Expr) {}
@@ -42,6 +49,75 @@ func (equality *LazyEquality) Dispose() {
 	clear(equality.computing)
 }
 
+// SafeEqual returns a cached equality and rejects pairs whose defining
+// constraints have not been generated. CachedEqual is the expression-level
+// counterpart; Go's native IR does not need Scala's BuilderT distinction.
+func (equality *LazyEquality) SafeEqual(left, right ArenaCell) (Expr, error) {
+	return equality.CachedEqual(left, right)
+}
+
+func (equality *LazyEquality) CachedEqual(left, right ArenaCell) (Expr, error) {
+	if left.Equal(right) {
+		return boolExpr(true), nil
+	}
+	entry, found := equality.cache.Get(left, right)
+	if !found {
+		return nil, fmt.Errorf("%s", unsafeEqualityMessage)
+	}
+	return equality.cache.ToExpr(left, right, entry)
+}
+
+func (equality *LazyEquality) CacheAsSMTEqualityByMagic(left, right ArenaCell) error {
+	return equality.cache.Put(left, right, EqualityDirect{})
+}
+
+func (equality *LazyEquality) CacheEqualities(arena *PureArena, pairs []ArenaCellPair) error {
+	for _, pair := range pairs {
+		if _, err := equality.Equal(arena, pair.Left, pair.Right); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (equality *LazyEquality) CacheOneEquality(arena *PureArena, left, right ArenaCell) error {
+	_, err := equality.Equal(arena, left, right)
+	return err
+}
+
+// CountConstantEqualities applies the caller's solver-backed constant test to
+// every non-static cache entry and returns (constant, non-static).
+func (equality *LazyEquality) CountConstantEqualities(
+	isConstant func(Expr) (bool, error),
+) (int, int, error) {
+	if isConstant == nil {
+		return 0, 0, fmt.Errorf("constant-equality predicate is required")
+	}
+	constant, nonStatic := 0, 0
+	for _, value := range equality.cache.entries {
+		var expression Expr
+		switch entry := value.entry.(type) {
+		case EqualityFalse, EqualityTrue:
+			continue
+		case EqualityDirect:
+			expression = directEquality(value.left, value.right)
+		case EqualityExpression:
+			expression = entry.Expression
+		default:
+			return 0, 0, fmt.Errorf("unknown equality cache entry %T", value.entry)
+		}
+		nonStatic++
+		fixed, err := isConstant(expression)
+		if err != nil {
+			return 0, 0, err
+		}
+		if fixed {
+			constant++
+		}
+	}
+	return constant, nonStatic, nil
+}
+
 // Equal returns a ground Boolean expression for equality between two cells.
 // Structural constraints are emitted only on the first comparison of a pair.
 func (equality *LazyEquality) Equal(arena *PureArena, left, right ArenaCell) (Expr, error) {
@@ -51,18 +127,19 @@ func (equality *LazyEquality) Equal(arena *PureArena, left, right ArenaCell) (Ex
 	if left.Equal(right) {
 		return boolExpr(true), nil
 	}
-	if !EqualCellTypes(left.Type, right.Type) {
-		return nil, fmt.Errorf("cannot compare cells of types %s and %s", left.Type, right.Type)
-	}
 	if entry, found := equality.cache.Get(left, right); found {
 		return equality.cache.ToExpr(left, right, entry)
+	}
+	if !EqualCellTypes(left.Type, right.Type) {
+		return nil, fmt.Errorf("cannot compare cells of types %s and %s", left.Type, right.Type)
 	}
 
 	pair := canonicalEqualityPair(left, right)
 	if equality.computing[pair] {
 		return nil, fmt.Errorf("cyclic structural equality between %s and %s", left, right)
 	}
-	if isDirectSMTCellType(left.Type) {
+	_, unknown := left.Type.(UnknownCellType)
+	if unknown || isDirectSMTCellType(left.Type) {
 		if err := equality.cache.Put(left, right, EqualityDirect{}); err != nil {
 			return nil, err
 		}
@@ -84,6 +161,8 @@ func (equality *LazyEquality) Equal(arena *PureArena, left, right ArenaCell) (Ex
 		condition, err = equality.functionEqualityCondition(arena, left, right)
 	case isVariantCellType(left.Type):
 		condition, err = equality.variantEqualityCondition(arena, left, right)
+	case isFiniteFunctionSetCellType(left.Type):
+		condition, err = equality.functionSetEqualityCondition(arena, left, right)
 	default:
 		err = fmt.Errorf("structural equality is not yet implemented for %s", left.Type)
 	}
@@ -97,6 +176,49 @@ func (equality *LazyEquality) Equal(arena *PureArena, left, right ArenaCell) (Ex
 		return nil, err
 	}
 	return rawEquality, nil
+}
+
+func isFiniteFunctionSetCellType(cellType CellType) bool {
+	_, ok := cellType.(FiniteFunctionSetCellType)
+	return ok
+}
+
+func (equality *LazyEquality) functionSetEqualityCondition(arena *PureArena, left, right ArenaCell) (Expr, error) {
+	leftDomain, err := arena.Domain(left)
+	if err != nil {
+		return nil, err
+	}
+	rightDomain, err := arena.Domain(right)
+	if err != nil {
+		return nil, err
+	}
+	leftCodomain, err := arena.Codomain(left)
+	if err != nil {
+		return nil, err
+	}
+	rightCodomain, err := arena.Codomain(right)
+	if err != nil {
+		return nil, err
+	}
+	domainsEqual, err := equality.Equal(arena, leftDomain, rightDomain)
+	if err != nil {
+		return nil, err
+	}
+	codomainsEqual, err := equality.Equal(arena, leftCodomain, rightCodomain)
+	if err != nil {
+		return nil, err
+	}
+	return booleanAnd(domainsEqual, codomainsEqual), nil
+}
+
+func (equality *LazyEquality) SubsetEqual(arena *PureArena, left, right ArenaCell) (Expr, error) {
+	if arena == nil {
+		return nil, fmt.Errorf("lazy equality requires an arena")
+	}
+	if !isFiniteSetCellType(left.Type) || !isFiniteSetCellType(right.Type) {
+		return nil, fmt.Errorf("subset equality requires finite sets, found %s and %s", left.Type, right.Type)
+	}
+	return equality.subsetCondition(arena, left, right)
 }
 
 func (equality *LazyEquality) variantEqualityCondition(arena *PureArena, left, right ArenaCell) (Expr, error) {
