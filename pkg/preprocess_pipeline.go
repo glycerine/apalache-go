@@ -76,6 +76,54 @@ func PreprocessModule(module *Module, options PreprocessOptions) (*Module, error
 	return current, nil
 }
 
+// PreprocessReTLAModule runs the restricted preprocessing sequence used by
+// Scala's ReTLAPreproPassImpl before VMT generation.
+func PreprocessReTLAModule(module *Module, options PreprocessOptions) (*Module, error) {
+	if module == nil {
+		return nil, fmt.Errorf("cannot preprocess a nil ReTLA module")
+	}
+	if !module.HasProperty(PropertyInlined) {
+		return nil, fmt.Errorf("ReTLA preprocessing requires an inlined module")
+	}
+	tracker, _, renamer := preprocessingState(options)
+	current, err := transformModuleExpressionsWithError(module, "UNCHANGED unrolling", nil,
+		func(expression Expr) (Expr, error) { return UnrollSimpleUnchanged(tracker)(expression), nil })
+	if err != nil {
+		return nil, err
+	}
+	stateVariables := make(map[string]struct{}, len(module.VarDeclarations()))
+	for _, declaration := range module.VarDeclarations() {
+		stateVariables[declaration.Name()] = struct{}{}
+	}
+	constantInitName := options.ConstantInitName
+	if constantInitName == "" {
+		constantInitName = "CInit"
+	}
+	include := func(declaration Decl) bool {
+		operator, ok := declaration.(*OperDecl)
+		return !ok || operator.Name() != constantInitName+"Primed"
+	}
+	current, err = transformModuleExpressionsWithError(current, "prime propagation", include,
+		func(expression Expr) (Expr, error) { return PropagatePrimes(tracker, stateVariables)(expression), nil })
+	if err != nil {
+		return nil, err
+	}
+	current, err = renamer.RenameModule(current)
+	if err != nil {
+		return nil, fmt.Errorf("unique renaming: %w", err)
+	}
+	current, err = transformModuleExpressionsWithError(current, "normalization", nil,
+		func(expression Expr) (Expr, error) { return NormalizeNNF(expression, tracker) })
+	if err != nil {
+		return nil, err
+	}
+	if err = WatchModule(ReTLALanguagePredicate{}, current); err != nil {
+		return nil, fmt.Errorf("ReTLA preprocessing language check: %w", err)
+	}
+	current.AddProperty(PropertyPreprocessed)
+	return current, nil
+}
+
 // OptimizeModule runs the same expression sequence as Scala's OptPassImpl.
 func OptimizeModule(module *Module, options PreprocessOptions) (*Module, error) {
 	if module == nil {
