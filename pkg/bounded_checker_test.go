@@ -348,6 +348,41 @@ Next == A \/ B
 	}
 }
 
+func TestCheckBoundedSafetyDetectsDeadlockInsideFiniteExistentialChoice(t *testing.T) {
+	frontend := ParseAndTypeCheckSource(context.Background(), "ExistentialDeadlock.tla", `---- MODULE ExistentialDeadlock ----
+EXTENDS Integers
+\* @type: Int;
+VARIABLE x
+Init == x = 0
+Next == \E i \in {0, 1, 2, 3}: i > x /\ x' = i
+====
+`, FrontendOptions{}, TypeCheckOptions{})
+	if !frontend.OK() {
+		t.Fatalf("frontend diagnostics = %v", frontend.Diagnostics)
+	}
+	prepared, err := PrepareSafetyTransitions(frontend.Native, SafetyPipelineOptions{
+		Specification: SpecificationConfiguration{Behavior: InitNextSpec{Init: "Init", Next: "Next"}},
+		Sources:       frontend.Sources,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if transitions := TransitionsFromModule(prepared.Module, NormalizedNextPrefix); len(transitions) != 4 {
+		t.Fatalf("normalized existential transitions = %d, want 4", len(transitions))
+	}
+	result, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Outcome != SafetyDeadlock || result.Depth != 1 || len(result.States) != 2 {
+		t.Fatalf("existential deadlock result = %#v", result)
+	}
+	value, err := FormatTLAExpression(result.States[1].Values["x"])
+	if err != nil || value != "3" {
+		t.Fatalf("existential deadlocked state x = %q, %v", value, err)
+	}
+}
+
 func TestCheckBoundedSafetyRejectsChooseOverSymbolicIntegerRange(t *testing.T) {
 	frontend := ParseAndTypeCheckSource(context.Background(), "SymbolicRangeChoose.tla", `---- MODULE SymbolicRangeChoose ----
 EXTENDS Integers
@@ -514,7 +549,7 @@ func TestCheckBoundedSafetyChecksTraceInvariantsOverStateHistory(t *testing.T) {
 	}
 }
 
-func TestCheckBoundedSafetySkolemizesExistentialAssignments(t *testing.T) {
+func TestCheckBoundedSafetyExpandsFiniteExistentialAssignments(t *testing.T) {
 	x := NewNameExpr("x", Typed(IntT1))
 	prime := MustOperExpr(Op("PRIME"), Typed(IntT1), NewNameExpr("x", Typed(IntT1)))
 	binder := NewNameExpr("i", Typed(IntT1))
@@ -535,8 +570,8 @@ func TestCheckBoundedSafetySkolemizesExistentialAssignments(t *testing.T) {
 		t.Fatal(err)
 	}
 	nextTransitions := TransitionsFromModule(prepared.Module, NormalizedNextPrefix)
-	if len(nextTransitions) != 1 || countOperator(nextTransitions[0], "Apalache!Skolem") != 1 {
-		t.Fatalf("analyzed Next transitions = %v", nextTransitions)
+	if len(nextTransitions) != 2 {
+		t.Fatalf("analyzed Next transition count = %d, want 2", len(nextTransitions))
 	}
 	result, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, 1)
 	if err != nil {

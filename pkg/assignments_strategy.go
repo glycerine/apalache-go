@@ -67,6 +67,106 @@ func (extractor *SMTFreeSymbolicTransitionExtractor) Extract(
 	return NewSymbolicTransitionGenerator(extractor.tracker).Generate(action, strategy)
 }
 
+// expandFiniteQuantifiers exposes choices over explicit finite sets before
+// transition slicing. In particular, an existential whose body assigns a
+// primed variable must produce one symbolic transition per possible value;
+// otherwise deadlock checking can mistake "some target is enabled" for
+// "every target is enabled" on a symbolic path.
+func expandFiniteQuantifiers(expression Expr, tracker TransformationTracker) Expr {
+	if tracker == nil {
+		tracker = IdleTracker{}
+	}
+	return RewriteExpressions(tracker, func(current Expr) (Expr, bool) {
+		quantifier, ok := current.(*OperExpr)
+		if !ok || len(quantifier.Arguments()) != 3 {
+			return nil, false
+		}
+		name := quantifier.Operator().Name()
+		if name != "EXISTS3" && name != "FORALL3" {
+			return nil, false
+		}
+		arguments := quantifier.Arguments()
+		binder, ok := arguments[0].(*NameExpr)
+		if !ok {
+			return nil, false
+		}
+		set, ok := arguments[1].(*OperExpr)
+		if !ok || set.Operator().Name() != "SET_ENUM" {
+			return nil, false
+		}
+		members := set.Arguments()
+		if len(members) == 0 {
+			return NewValueExpr(BoolValue(name == "FORALL3"), quantifier.Tag()), true
+		}
+		branches := make([]Expr, len(members))
+		for index, member := range members {
+			branches[index] = substituteBoundName(arguments[2], binder.Name(), member, tracker)
+		}
+		operator := "OR"
+		if name == "FORALL3" {
+			operator = "AND"
+		}
+		if len(branches) == 1 {
+			return branches[0], true
+		}
+		return MustOperExpr(Op(operator), quantifier.Tag(), branches...), true
+	})(expression)
+}
+
+func substituteBoundName(expression Expr, name string, replacement Expr, tracker TransformationTracker) Expr {
+	if tracker == nil {
+		tracker = IdleTracker{}
+	}
+	var substitute func(Expr) Expr
+	substitute = func(current Expr) Expr {
+		if named, ok := current.(*NameExpr); ok && named.Name() == name {
+			return replacement
+		}
+		switch typed := current.(type) {
+		case *OperExpr:
+			arguments := typed.Arguments()
+			isQuantifier := typed.Operator().Name() == "EXISTS3" || typed.Operator().Name() == "FORALL3"
+			for index := range arguments {
+				if isQuantifier && index == 0 {
+					continue
+				}
+				// A nested binder does not scope over its own domain, but it
+				// shadows the outer name in its predicate.
+				if isQuantifier && index == 2 {
+					binder, _ := arguments[0].(*NameExpr)
+					if binder != nil && binder.Name() == name {
+						continue
+					}
+				}
+				arguments[index] = substitute(arguments[index])
+			}
+			result := MustOperExpr(typed.Operator(), typed.Tag(), arguments...)
+			return tracker.TrackExpression(func(Expr) Expr { return result })(current)
+		case *LetInExpr:
+			declarations := typed.Declarations()
+			for index, declaration := range declarations {
+				copy := declaration.copyWithTag(declaration.Tag())
+				shadowed := false
+				for _, parameter := range declaration.FormalParams() {
+					if parameter.Name == name {
+						shadowed = true
+						break
+					}
+				}
+				if !shadowed {
+					copy.SetBody(substitute(declaration.Body()))
+				}
+				declarations[index] = copy
+			}
+			result := NewLetInExpr(substitute(typed.Body()), typed.Tag(), declarations...)
+			return tracker.TrackExpression(func(Expr) Expr { return result })(current)
+		default:
+			return current
+		}
+	}
+	return substitute(expression)
+}
+
 func (extractor *SMTFreeSymbolicTransitionExtractor) strategy(
 	state assignmentPartialState,
 	operators map[string]*OperDecl,

@@ -155,3 +155,73 @@ func TestSMTFreeExtractorProducesTransitionsAndHandlesStatelessSpecs(t *testing.
 		t.Fatalf("stateless transitions = %#v, %v", transitions, err)
 	}
 }
+
+func TestSMTFreeExtractorSplitsFiniteExistentialAssignments(t *testing.T) {
+	extractor := NewSMTFreeSymbolicTransitionExtractor(nil, nil)
+	binder := NewNameExpr("i", Typed(IntT1))
+	domain := MustOperExpr(Op("SET_ENUM"), Typed(mustSet(IntT1)), intLiteral(1), intLiteral(2), intLiteral(3))
+	action := MustOperExpr(Op("EXISTS3"), Typed(BoolT1), binder, domain, assignmentCandidate("x", binder))
+
+	transitions, err := extractor.Extract(assignmentVariables("x"), expandFiniteQuantifiers(action, nil), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(transitions) != 3 {
+		t.Fatalf("finite existential transition count = %d, want 3", len(transitions))
+	}
+	values := make(map[int64]bool)
+	for _, transition := range transitions {
+		assignment, ok := transition.Expression.(*OperExpr)
+		if !ok || assignment.Operator().Name() != "Apalache!:=" {
+			t.Fatalf("finite existential transition = %#v", transition)
+		}
+		value, ok := assignment.Arguments()[1].(*ValueExpr)
+		if !ok {
+			t.Fatalf("finite existential assignment RHS = %T", assignment.Arguments()[1])
+		}
+		integer, ok := value.Value().(IntValue)
+		if !ok {
+			t.Fatalf("finite existential assignment value = %T", value.Value())
+		}
+		values[integer.BigInt().Int64()] = true
+	}
+	for _, want := range []int64{1, 2, 3} {
+		if !values[want] {
+			t.Fatalf("finite existential values = %v, missing %d", values, want)
+		}
+	}
+}
+
+func TestExpandFiniteQuantifiersHandlesUniversalsEmptyDomainsAndShadowing(t *testing.T) {
+	binder := NewNameExpr("i", Typed(IntT1))
+	domain := MustOperExpr(Op("SET_ENUM"), Typed(mustSet(IntT1)), intLiteral(1), intLiteral(2))
+	predicate := MustOperExpr(Op("GT"), Typed(BoolT1), binder, intLiteral(0))
+	forall := MustOperExpr(Op("FORALL3"), Typed(BoolT1), binder, domain, predicate)
+	expanded := expandFiniteQuantifiers(forall, nil)
+	conjunction, ok := expanded.(*OperExpr)
+	if !ok || conjunction.Operator().Name() != "AND" || len(conjunction.Arguments()) != 2 || countOperator(expanded, "FORALL3") != 0 {
+		t.Fatalf("expanded universal = %v", expanded)
+	}
+
+	empty := MustOperExpr(Op("SET_ENUM"), Typed(mustSet(IntT1)))
+	for _, test := range []struct {
+		operator string
+		want     bool
+	}{{"EXISTS3", false}, {"FORALL3", true}} {
+		quantifier := MustOperExpr(Op(test.operator), Typed(BoolT1), binder, empty, predicate)
+		value, ok := expandFiniteQuantifiers(quantifier, nil).(*ValueExpr)
+		if !ok || value.Value() != BoolValue(test.want) {
+			t.Fatalf("%s over empty set = %v, want %v", test.operator, value, test.want)
+		}
+	}
+
+	innerDomain := MustOperExpr(Op("SET_ENUM"), Typed(mustSet(IntT1)), NewNameExpr("i", Typed(IntT1)))
+	innerBody := MustOperExpr(Op("EQ"), Typed(BoolT1), NewNameExpr("i", Typed(IntT1)), intLiteral(1))
+	inner := MustOperExpr(Op("EXISTS3"), Typed(BoolT1), NewNameExpr("i", Typed(IntT1)), innerDomain, innerBody)
+	substituted := substituteBoundName(inner, "i", intLiteral(2), nil).(*OperExpr)
+	if substituted.Arguments()[0].(*NameExpr).Name() != "i" ||
+		substituted.Arguments()[1].(*OperExpr).Arguments()[0].(*ValueExpr).Value().(IntValue).BigInt().Int64() != 2 ||
+		substituted.Arguments()[2].(*OperExpr).Arguments()[0].(*NameExpr).Name() != "i" {
+		t.Fatalf("shadow-aware substitution = %v", substituted)
+	}
+}

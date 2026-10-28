@@ -575,14 +575,11 @@ func TestBoundedSafetyMatchesQuantifiedTransitionMachines(t *testing.T) {
 		next       func(int) []int
 	}
 	templates := []transitionTemplate{
-		{"(\\E i \\in {0, 1}: i = x % 2) /\\ x' = (x + 1) % 4", func(x int) []int {
-			return []int{(x + 1) % 4}
+		{"\\E i \\in {0, 1}: x' = (x + i) % 4", func(x int) []int {
+			return []int{x, (x + 1) % 4}
 		}},
-		{"(\\A i \\in {0, 1}: i <= x) /\\ x' = (x + 2) % 4", func(x int) []int {
-			if x >= 1 {
-				return []int{(x + 2) % 4}
-			}
-			return nil
+		{"\\E i \\in {1, 2}: x' = (x + i) % 4", func(x int) []int {
+			return []int{(x + 1) % 4, (x + 2) % 4}
 		}},
 		{"\\E i \\in {0, 1, 2, 3}: i = x /\\ x' = 3 - i", func(x int) []int {
 			return []int{3 - x}
@@ -593,8 +590,12 @@ func TestBoundedSafetyMatchesQuantifiedTransitionMachines(t *testing.T) {
 			}
 			return nil
 		}},
-		{"(\\E i \\in {0, 1, 2, 3}: i = x) /\\ x' = (x + 3) % 4", func(x int) []int {
-			return []int{(x + 3) % 4}
+		{"\\E i \\in {0, 1, 2, 3}: i > x /\\ x' = i", func(x int) []int {
+			next := make([]int, 0, 3-x)
+			for i := x + 1; i < 4; i++ {
+				next = append(next, i)
+			}
+			return next
 		}},
 		{"(\\A i \\in {0, 1, 2, 3}: i <= x) /\\ x' = x", func(x int) []int {
 			if x == 3 {
@@ -602,8 +603,8 @@ func TestBoundedSafetyMatchesQuantifiedTransitionMachines(t *testing.T) {
 			}
 			return nil
 		}},
-		{"(\\E i \\in {0, 1}: i = x % 2) /\\ x' = IF x = 3 THEN 0 ELSE x + 1", func(x int) []int {
-			return []int{(x + 1) % 4}
+		{"\\E i \\in {0, 1}: x' = IF i = 0 THEN x ELSE (x + 1) % 4", func(x int) []int {
+			return []int{x, (x + 1) % 4}
 		}},
 		{"\\E i \\in {0, 1, 2, 3}: /\\ i = (x + 1) % 4 /\\ x' = i /\\ \\A j \\in {i}: j = i", func(x int) []int {
 			return []int{(x + 1) % 4}

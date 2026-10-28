@@ -93,12 +93,16 @@ func FindTransitions(module *Module, options TransitionPassOptions) (*Module, er
 	for _, declaration := range module.VarDeclarations() {
 		stateVariables[declaration.Name()] = struct{}{}
 	}
-	extract := func(variables map[string]struct{}, inputName, outputPrefix string) ([]*OperDecl, error) {
+	extract := func(variables map[string]struct{}, inputName, outputPrefix string, expandChoices bool) ([]*OperDecl, error) {
 		declaration, found := operators[inputName]
 		if !found {
 			return nil, fmt.Errorf("operator %s was not found", inputName)
 		}
-		transitions, err := extractor.Extract(variables, declaration.Body(), operators)
+		action := declaration.Body()
+		if expandChoices {
+			action = expandFiniteQuantifiers(action, tracker)
+		}
+		transitions, err := extractor.Extract(variables, action, operators)
 		if err != nil {
 			return nil, fmt.Errorf("extracting %s: %w", inputName, err)
 		}
@@ -112,11 +116,11 @@ func FindTransitions(module *Module, options TransitionPassOptions) (*Module, er
 		return ExpressionsToOperatorDefinitions(outputPrefix, expressions), nil
 	}
 
-	initDeclarations, err := extract(stateVariables, options.Init+"Primed", NormalizedInitPrefix)
+	initDeclarations, err := extract(stateVariables, options.Init+"Primed", NormalizedInitPrefix, false)
 	if err != nil {
 		return nil, err
 	}
-	nextDeclarations, err := extract(stateVariables, options.Next, NormalizedNextPrefix)
+	nextDeclarations, err := extract(stateVariables, options.Next, NormalizedNextPrefix, true)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +131,7 @@ func FindTransitions(module *Module, options TransitionPassOptions) (*Module, er
 		for _, declaration := range module.ConstDeclarations() {
 			constants[declaration.Name()] = struct{}{}
 		}
-		parts, extractionErr := extract(constants, options.ConstantInit+"Primed", "")
+		parts, extractionErr := extract(constants, options.ConstantInit+"Primed", "", false)
 		if extractionErr != nil {
 			return nil, extractionErr
 		}
