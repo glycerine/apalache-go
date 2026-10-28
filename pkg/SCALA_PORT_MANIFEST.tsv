@@ -449,7 +449,7 @@ tlair/src/main/scala/at/forsyte/apalache/tla/lir/formulas/Booleans.scala	partial
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/formulas/EUF.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/formulas/Integers.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/identifiers.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
-tlair/src/main/scala/at/forsyte/apalache/tla/lir/io/Printer.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
+tlair/src/main/scala/at/forsyte/apalache/tla/lir/io/Printer.scala	ported	utf_printer.go;utf_printer_test.go;tla_format.go;tla_format_test.go	Scala-exact UTF expression/declaration rendering and SimplePrinter transliteration cover every operator family, structural parenthesization, labels, LET/CASE regression, whitespace removal, declaration arities and theorem rejection; parseable ASCII/module formatting remains a separate fully tested mode
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/oper/ApalacheInternalOper.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/oper/ApalacheOper.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
 tlair/src/main/scala/at/forsyte/apalache/tla/lir/oper/TlaActionOper.scala	partial	ir_*.go;types_*.go;operator.go;transform_*.go	exact Scala-suite mapping remains
