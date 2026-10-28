@@ -2050,6 +2050,26 @@ func TestStratifiedFiniteFunctionsThroughG3(t *testing.T) {
 	}
 }
 
+func TestStratifiedFunctionConstructorTypeErrorsDoNotMutateArena(t *testing.T) {
+	functionType := mustFun(IntT1, IntT1)
+	setType := mustSet(IntT1)
+	binder := NewNameExpr("x", Typed(IntT1))
+	domain := MustOperExpr(Op("SET_ENUM"), Typed(setType), intLiteral(1))
+	for _, invalid := range []Expr{
+		MustOperExpr(Op("FUN_CTOR"), Untyped(), binder, binder, domain),
+		MustOperExpr(Op("FUN_CTOR"), Typed(IntT1), binder, binder, domain),
+		MustOperExpr(Op("FUN_CTOR"), Typed(functionType), binder, binder, intLiteral(1)),
+		MustOperExpr(Op("FUN_CTOR"), Typed(functionType), boolExpr(true), binder, domain),
+		MustOperExpr(Op("FUN_CTOR"), Typed(functionType), binder, NewNameExpr("x", Untyped()), domain),
+	} {
+		base := InitialRewriterScope()
+		returned, _, err := NewStratifiedRewriter().Rewrite(invalid, base)
+		if err == nil || returned.Arena != base.Arena {
+			t.Fatalf("invalid function constructor returned scope=%v, err=%v", returned, err)
+		}
+	}
+}
+
 func TestStratifiedStructuralDomainsThroughG3(t *testing.T) {
 	tupleType, _ := NewTupleType(IntT1, BoolT1)
 	tuple := MustOperExpr(Op("TUPLE"), Typed(tupleType),

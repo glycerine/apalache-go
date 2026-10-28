@@ -342,6 +342,21 @@ func (rewriter *StratifiedRewriter) rewriteFunctionConstructor(expression *OperE
 	if !ok {
 		return scope, ArenaCell{}, fmt.Errorf("function constructor has non-function type %s", typ)
 	}
+	argumentTypes := make([]Type, len(arguments))
+	for index, argument := range arguments {
+		argumentType, argumentTyped := argument.Tag().Type()
+		if !argumentTyped {
+			return scope, ArenaCell{}, fmt.Errorf("function constructor argument %d must be typed", index+1)
+		}
+		argumentTypes[index] = argumentType
+	}
+	inferred, err := InferOperatorType(expression.Operator(), argumentTypes)
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	if !CompatibleTypes(inferred, functionType) {
+		return scope, ArenaCell{}, fmt.Errorf("function constructor has type %s, incompatible with %s", functionType, inferred)
+	}
 	scope, domain, err := rewriter.Rewrite(arguments[2], scope)
 	if err != nil {
 		return scope, ArenaCell{}, err
