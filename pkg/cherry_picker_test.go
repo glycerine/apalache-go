@@ -261,3 +261,20 @@ func TestCherryPickerScalaVariantCase(t *testing.T) {
 		testVariantExpression(variantType, "B", NewValueExpr(BoolValue(false), Typed(BoolT1))),
 	})
 }
+
+func TestCherryPickerScalaFunctionCase(t *testing.T) {
+	functionType, err := NewFunType(IntT1, IntT1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	function := func(operation string, domainValues ...int64) Expr {
+		binder := NewNameExpr("x", Typed(IntT1))
+		return MustOperExpr(Op("FUN_CTOR"), Typed(functionType),
+			MustOperExpr(Op(operation), Typed(IntT1), cherryInt(2), binder),
+			binder, cherrySet(IntT1, cherryInt(domainValues[0]), cherryInt(domainValues[1])))
+	}
+	assertCherryPickerCandidates(t, "finite functions", []Expr{
+		function("PLUS", 1, 2),
+		function("MULT", 2, 3),
+	})
+}
