@@ -36,6 +36,12 @@ func TestStratifiedRewriterBuiltinsSubstitutionIntegersAndAssignment(t *testing.
 	if _, _, err := rewriter.Rewrite(NewNameExpr("missing", Typed(BoolT1)), scope); err == nil {
 		t.Fatal("unbound name was accepted")
 	}
+	arenaName := scope.Arena.FalseCell().String()
+	scope.Binding = scope.Binding.With(arenaName, scope.Arena.TrueCell())
+	_, arenaCell, err := rewriter.Rewrite(NewNameExpr(arenaName, Typed(BoolT1)), scope)
+	if err != nil || !arenaCell.Equal(scope.Arena.FalseCell()) {
+		t.Fatalf("arena-cell name resolved through binding: %v, %v", arenaCell, err)
+	}
 	intExpr := NewValueExpr(Int64Value(42), Typed(IntT1))
 	intScope, intCell, err := rewriter.Rewrite(intExpr, scope)
 	if err != nil || intScope.Arena.CellCount() != 6 || len(rewriter.Constraints()) != 1 {
