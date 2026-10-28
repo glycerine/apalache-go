@@ -172,6 +172,92 @@ func TestG3SolverArrayStoreSelect(t *testing.T) {
 	}
 }
 
+func TestG3SolverUninterpretedAndConstantArrays(t *testing.T) {
+	solver := newTestG3Solver(t)
+	element, err := solver.DeclareUninterpreted("array_element", "Elem")
+	if err != nil {
+		t.Fatal(err)
+	}
+	array, err := solver.DeclareArrayWithSortIDs("membership", SMTUninterpreted, "Elem", SMTBool, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	truth, err := solver.Bool(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := solver.Store(array, element, truth)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selected, err := solver.Select(stored, element)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = solver.Assert(selected); err != nil {
+		t.Fatal(err)
+	}
+	if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTSatisfiable {
+		t.Fatalf("uninterpreted-index array = %v, %v", status, checkErr)
+	}
+
+	falsehood, err := solver.Bool(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	constant, err := solver.ConstantArray(SMTUninterpreted, "Elem", falsehood)
+	if err != nil {
+		t.Fatal(err)
+	}
+	constantValue, err := solver.Select(constant, element)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = solver.Assert(constantValue); err != nil {
+		t.Fatal(err)
+	}
+	if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTUnsatisfiable {
+		t.Fatalf("constant false array = %v, %v", status, checkErr)
+	}
+
+	functionSolver := newTestG3Solver(t)
+	functionElement, err := functionSolver.DeclareUninterpreted("function_element", "Elem")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := functionSolver.DeclareUninterpreted("array_result", "Result")
+	if err != nil {
+		t.Fatal(err)
+	}
+	function, err := functionSolver.DeclareArrayWithSortIDs(
+		"function", SMTUninterpreted, "Elem", SMTUninterpreted, "Result")
+	if err != nil {
+		t.Fatal(err)
+	}
+	function, err = functionSolver.Store(function, functionElement, result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	application, err := functionSolver.Select(function, functionElement)
+	if err != nil {
+		t.Fatal(err)
+	}
+	equal, err := functionSolver.Equal(application, result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	negated, err := functionSolver.Not(equal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = functionSolver.Assert(negated); err != nil {
+		t.Fatal(err)
+	}
+	if status, checkErr := functionSolver.Check(context.Background()); checkErr != nil || status != SMTUnsatisfiable {
+		t.Fatalf("uninterpreted function array = %v, %v", status, checkErr)
+	}
+}
+
 func TestG3SolverQuantifiers(t *testing.T) {
 	for _, test := range []struct {
 		name       string

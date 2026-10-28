@@ -288,11 +288,24 @@ func (solver *G3SolverContext) DeclareUninterpreted(name, sortName string) (SMTT
 
 // DeclareArray declares a one-dimensional SMT array over scalar sorts.
 func (solver *G3SolverContext) DeclareArray(name string, indexSort, valueSort SMTSort) (SMTTerm, error) {
-	indexHandle, err := solver.lookupSort(indexSort, "")
+	return solver.DeclareArrayWithSortIDs(name, indexSort, "", valueSort, "")
+}
+
+// DeclareArrayWithSortIDs declares an array whose scalar index or value sort
+// may be uninterpreted. Sort identifiers are required exactly for
+// SMTUninterpreted and ignored for the built-in Boolean and integer sorts.
+func (solver *G3SolverContext) DeclareArrayWithSortIDs(
+	name string,
+	indexSort SMTSort,
+	indexSortID string,
+	valueSort SMTSort,
+	valueSortID string,
+) (SMTTerm, error) {
+	indexHandle, err := solver.lookupOrDeclareScalarSort(indexSort, indexSortID)
 	if err != nil {
 		return SMTTerm{}, fmt.Errorf("array index sort: %w", err)
 	}
-	valueHandle, err := solver.lookupSort(valueSort, "")
+	valueHandle, err := solver.lookupOrDeclareScalarSort(valueSort, valueSortID)
 	if err != nil {
 		return SMTTerm{}, fmt.Errorf("array value sort: %w", err)
 	}
@@ -304,14 +317,67 @@ func (solver *G3SolverContext) DeclareArray(name string, indexSort, valueSort SM
 		return SMTTerm{}, err
 	}
 	handle, err := solver.context.MakeApp(name, nil, nil, ast.ASTHandle{})
-	indexSortID := scalarSortID(indexSort)
-	valueSortID := scalarSortID(valueSort)
+	indexSortID = normalizedScalarSortID(indexSort, indexSortID)
+	valueSortID = normalizedScalarSortID(valueSort, valueSortID)
 	return SMTTerm{
 		owner: solver, handle: handle, sort: SMTArray,
 		sortID:         fmt.Sprintf("(Array %s %s)", indexSortID, valueSortID),
 		arrayIndexSort: indexSort, arrayIndexSortID: indexSortID,
 		arrayValueSort: valueSort, arrayValueSortID: valueSortID,
 	}, err
+}
+
+func (solver *G3SolverContext) lookupOrDeclareScalarSort(sort SMTSort, sortID string) (ast.ASTHandle, error) {
+	handle, err := solver.lookupSort(sort, sortID)
+	if err == nil || sort != SMTUninterpreted || sortID == "" {
+		return handle, err
+	}
+	return solver.context.DeclareSort(sortID)
+}
+
+func normalizedScalarSortID(sort SMTSort, sortID string) string {
+	if builtIn := scalarSortID(sort); builtIn != "" {
+		return builtIn
+	}
+	return sortID
+}
+
+// ConstantArray constructs an immutable SMT array that maps every index to
+// value. It is the basis of sound function equality in the array encodings.
+func (solver *G3SolverContext) ConstantArray(
+	indexSort SMTSort,
+	indexSortID string,
+	value SMTTerm,
+) (SMTTerm, error) {
+	if err := solver.validateTerm(value, value.sort); err != nil {
+		return SMTTerm{}, err
+	}
+	if value.sort == SMTArray {
+		return SMTTerm{}, fmt.Errorf("nested constant arrays are not yet supported")
+	}
+	indexHandle, err := solver.lookupOrDeclareScalarSort(indexSort, indexSortID)
+	if err != nil {
+		return SMTTerm{}, fmt.Errorf("constant array index sort: %w", err)
+	}
+	valueHandle, err := solver.lookupOrDeclareScalarSort(value.sort, value.sortID)
+	if err != nil {
+		return SMTTerm{}, fmt.Errorf("constant array value sort: %w", err)
+	}
+	arrayHandle, err := solver.manager.MkArraySort(ast.SliceArguments([]ast.ASTHandle{indexHandle}), valueHandle)
+	if err != nil {
+		return SMTTerm{}, err
+	}
+	handle, err := solver.manager.MkConstArray(arrayHandle, value.handle)
+	if err != nil {
+		return SMTTerm{}, err
+	}
+	indexSortID = normalizedScalarSortID(indexSort, indexSortID)
+	return SMTTerm{
+		owner: solver, handle: handle, sort: SMTArray,
+		sortID:         fmt.Sprintf("(Array %s %s)", indexSortID, value.sortID),
+		arrayIndexSort: indexSort, arrayIndexSortID: indexSortID,
+		arrayValueSort: value.sort, arrayValueSortID: value.sortID,
+	}, nil
 }
 
 func scalarSortID(sort SMTSort) string {
