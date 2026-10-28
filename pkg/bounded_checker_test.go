@@ -56,6 +56,49 @@ func TestCheckBoundedSafetyFindsFirstBadDepth(t *testing.T) {
 	}
 }
 
+func TestCheckBoundedSafetyRunsNativeArrayEncodings(t *testing.T) {
+	x := NewNameExpr("x", Typed(IntT1))
+	prime := MustOperExpr(Op("PRIME"), Typed(IntT1), NewNameExpr("x", Typed(IntT1)))
+	functionType, err := NewFunType(IntT1, IntT1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	binder := NewNameExpr("i", Typed(IntT1))
+	domain := MustOperExpr(Op("SET_ENUM"), Typed(mustSet(IntT1)), intLiteral(1))
+	function := MustOperExpr(Op("FUN_CTOR"), Typed(functionType),
+		MustOperExpr(Op("PLUS"), Typed(IntT1), binder, intLiteral(1)), binder, domain)
+	application := MustOperExpr(Op("FUN_APP"), Typed(IntT1), function, intLiteral(1))
+	module := configuredTestModule(
+		NewVarDecl("x", Typed(IntT1)),
+		boolDefinition("Init", MustOperExpr(Op("EQ"), Typed(BoolT1), x, intLiteral(0))),
+		boolDefinition("Next", MustOperExpr(Op("EQ"), Typed(BoolT1), prime, x)),
+		boolDefinition("Inv", MustOperExpr(Op("EQ"), Typed(BoolT1), application, intLiteral(2))),
+	)
+	prepared, err := PrepareSafetyTransitions(module, SafetyPipelineOptions{Specification: SpecificationConfiguration{
+		Behavior: InitNextSpec{Init: "Init", Next: "Next"}, Invariants: []string{"Inv"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, encoding := range []SMTEncoding{SMTEncodingArrays, SMTEncodingFunArrays} {
+		t.Run(string(encoding), func(t *testing.T) {
+			result, checkErr := CheckBoundedSafetyWithOptions(context.Background(), prepared.Module, prepared.Predicates,
+				BoundedSafetyOptions{MaxSteps: 1, CheckDeadlocks: false, SMTEncoding: encoding})
+			if checkErr != nil {
+				t.Fatal(checkErr)
+			}
+			if result.Outcome != SafetyNoCounterexample || result.ExploredExecutions != 2 {
+				t.Fatalf("native %s checker result = %#v", encoding, result)
+			}
+		})
+	}
+	if _, checkErr := CheckBoundedSafetyWithOptions(context.Background(), prepared.Module, prepared.Predicates,
+		BoundedSafetyOptions{SMTEncoding: SMTEncoding("unknown")}); checkErr == nil ||
+		!strings.Contains(checkErr.Error(), "unsupported checker SMT encoding") {
+		t.Fatalf("unknown checker encoding error = %v", checkErr)
+	}
+}
+
 func TestCheckBoundedSafetyFindsShallowViolationAcrossBranches(t *testing.T) {
 	x := NewNameExpr("x", Typed(IntT1))
 	prime := MustOperExpr(Op("PRIME"), Typed(IntT1), NewNameExpr("x", Typed(IntT1)))

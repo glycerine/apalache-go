@@ -90,6 +90,9 @@ func newTransitionExecutorWithEncodingAndSolverOptions(
 	constants, variables []string, solverUIntOptions map[string]uint32, solverTextOptions map[string]string,
 	shortCircuit bool, smtEncoding SMTEncoding,
 ) *TransitionExecutor {
+	if smtEncoding == "" {
+		smtEncoding = SMTEncodingOOPSLA19
+	}
 	return &TransitionExecutor{
 		constants: stringSet(constants),
 		variables: stringSet(variables),

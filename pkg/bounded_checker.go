@@ -20,6 +20,7 @@ type BoundedSafetyOptions struct {
 	MaxSteps              int
 	CheckDeadlocks        bool
 	DiscardDisabled       *bool
+	SMTEncoding           SMTEncoding
 	InvariantMinimumDepth int
 	Tuning                CheckerTuning
 	MaxErrors             int
@@ -94,6 +95,13 @@ func CheckBoundedSafetyWithOptions(
 	}
 	if options.MaxErrors > 1 && predicates.View == "" {
 		return BoundedSafetyResult{}, fmt.Errorf("maximum error count greater than one requires a state view")
+	}
+	smtEncoding := options.SMTEncoding
+	if smtEncoding == "" {
+		smtEncoding = SMTEncodingOOPSLA19
+	}
+	if smtEncoding != SMTEncodingOOPSLA19 && smtEncoding != SMTEncodingArrays && smtEncoding != SMTEncodingFunArrays {
+		return BoundedSafetyResult{}, fmt.Errorf("unsupported checker SMT encoding %s", smtEncoding)
 	}
 	if ctx == nil {
 		ctx = context.Background()
@@ -227,6 +235,7 @@ func CheckBoundedSafetyWithOptions(
 		traceInvariants: traceInvariants, variableDeclarations: variableDeclarations,
 		maxSteps: options.MaxSteps, checkDeadlocks: options.CheckDeadlocks,
 		discardDisabled:       options.DiscardDisabled == nil || *options.DiscardDisabled,
+		smtEncoding:           smtEncoding,
 		invariantMinimumDepth: options.InvariantMinimumDepth,
 		stateConstraints:      stateConstraints, actionConstraints: actionConstraints,
 		tuning: options.Tuning,
@@ -419,6 +428,7 @@ type modulePathInputs struct {
 	maxSteps              int
 	checkDeadlocks        bool
 	discardDisabled       bool
+	smtEncoding           SMTEncoding
 	invariantMinimumDepth int
 	tuning                CheckerTuning
 	view                  Expr
@@ -712,9 +722,9 @@ func replayPendingNext(inputs modulePathInputs, path boundedPath, nextNumber int
 }
 
 func replaySafetyPath(inputs modulePathInputs, path boundedPath) (*TransitionExecutor, error) {
-	executor := newTransitionExecutorWithSolverOptions(
+	executor := newTransitionExecutorWithEncodingAndSolverOptions(
 		inputs.constants, inputs.variables, inputs.tuning.solverUIntOptions, inputs.tuning.solverTextOptions,
-		inputs.tuning.shortCircuit)
+		inputs.tuning.shortCircuit, inputs.smtEncoding)
 	if inputs.hasConstantInit {
 		if err := executor.InitializeConstants(inputs.constantInit); err != nil {
 			return nil, err
