@@ -56,9 +56,9 @@ passes/src/main/scala/at/forsyte/apalache/tla/passes/typecheck/EtcTypeCheckerPas
 passes/src/main/scala/at/forsyte/apalache/tla/passes/typecheck/LoggingTypeCheckerListener.scala	partial	safety_pipeline.go;configuration_pass.go;preprocess_*.go	remaining orchestration parity is open
 passes/src/main/scala/at/forsyte/apalache/tla/passes/typecheck/TypeCheckerModule.scala	partial	safety_pipeline.go;configuration_pass.go;preprocess_*.go	remaining orchestration parity is open
 passes/src/main/scala/at/forsyte/apalache/tla/typecheck/TypeCheckerTool.scala	partial	safety_pipeline.go;configuration_pass.go;preprocess_*.go	remaining orchestration parity is open
-shai/src/main/scala/at/forsyte/apalache/shai/v1/CmdExecutorService.scala	open	no Go implementation	gRPC checker service is not ported
-shai/src/main/scala/at/forsyte/apalache/shai/v1/RpcServer.scala	open	no Go implementation	gRPC checker service is not ported
-shai/src/main/scala/at/forsyte/apalache/shai/v1/TransExplorerService.scala	open	no Go implementation	gRPC checker service is not ported
+shai/src/main/scala/at/forsyte/apalache/shai/v1/CmdExecutorService.scala	open	shai/cmdexecutor generated protocol	command execution service is not ported
+shai/src/main/scala/at/forsyte/apalache/shai/v1/RpcServer.scala	partial	shai/cmdexecutor;shai/transexplorer generated protocols	gRPC listener and service registration are not ported
+shai/src/main/scala/at/forsyte/apalache/shai/v1/TransExplorerService.scala	partial	shai/trans_explorer_service.go	model loading is ported; transition execution RPCs remain absent from the v1 protocol
 tla-assignments/src/main/scala/at/forsyte/apalache/tla/assignments/AssignmentOperatorIntroduction.scala	partial	assignments*.go	remaining assignment suite mapping is open
 tla-assignments/src/main/scala/at/forsyte/apalache/tla/assignments/ModuleAdapter.scala	partial	assignments*.go	remaining assignment suite mapping is open
 tla-assignments/src/main/scala/at/forsyte/apalache/tla/assignments/SmtFreeSymbolicTransitionExtractor.scala	partial	assignments*.go	remaining assignment suite mapping is open
