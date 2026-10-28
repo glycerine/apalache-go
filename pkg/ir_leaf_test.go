@@ -86,7 +86,7 @@ func TestLiteralValues(t *testing.T) {
 	}
 
 	decimal, err := NewDecimalValue("12.50")
-	if err != nil || decimal.String() != "25/2" {
+	if err != nil || decimal.String() != "12.50" {
 		t.Fatalf("decimal = (%v, %v)", decimal, err)
 	}
 	if _, err := NewDecimalValue("not-a-decimal"); err == nil {
@@ -98,6 +98,13 @@ func TestLiteralValues(t *testing.T) {
 	if StringValue("hello").Value() != "hello" {
 		t.Fatal("string value is wrong")
 	}
+	equivalentDecimal, err := NewDecimalValue("12.500")
+	if err != nil || !EqualValues(decimal, equivalentDecimal) || EqualValues(decimal, Int64Value(12)) {
+		t.Fatal("decimal numeric equality differs from Scala BigDecimal")
+	}
+	if !EqualValues(Real(), Real()) || EqualValues(Real(), RealInfinity()) || !RealInfinity().IsInfinity() {
+		t.Fatal("real/infinity values differ from Scala")
+	}
 }
 
 func TestPredefinedSetNames(t *testing.T) {
@@ -108,6 +115,9 @@ func TestPredefinedSetNames(t *testing.T) {
 		if got := set.Name(); got != want {
 			t.Errorf("Name() = %q, want %q", got, want)
 		}
+	}
+	if EqualValues(BoolSet, StringSet) || !EqualValues(RealSet, RealSet) || PredefinedSet(255).Name() != "" {
+		t.Fatal("predefined-set identity or unknown handling is wrong")
 	}
 }
 

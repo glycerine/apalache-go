@@ -31,7 +31,10 @@ func (v IntValue) integer() *big.Int {
 }
 
 // DecimalValue stores an exact rational parsed from a finite decimal literal.
-type DecimalValue struct{ value *big.Rat }
+type DecimalValue struct {
+	value *big.Rat
+	text  string
+}
 
 func (DecimalValue) tlaValue() {}
 func NewDecimalValue(text string) (DecimalValue, error) {
@@ -39,11 +42,18 @@ func NewDecimalValue(text string) (DecimalValue, error) {
 	if !ok {
 		return DecimalValue{}, fmt.Errorf("invalid decimal %q", text)
 	}
-	return DecimalValue{value: value}, nil
+	return DecimalValue{value: value, text: text}, nil
 }
 func (v DecimalValue) Rat() *big.Rat { return new(big.Rat).Set(v.rat()) }
 func (v DecimalValue) String() string {
-	return v.rat().RatString()
+	if v.text != "" {
+		return v.text
+	}
+	text, err := finiteDecimalString(v.rat())
+	if err != nil {
+		return v.rat().RatString()
+	}
+	return text
 }
 func (v DecimalValue) rat() *big.Rat {
 	if v.value == nil {
