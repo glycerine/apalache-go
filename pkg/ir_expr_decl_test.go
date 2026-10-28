@@ -1,6 +1,7 @@
 package apalache
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -47,6 +48,69 @@ func TestOperatorExpressionInvariants(t *testing.T) {
 	}
 	if _, err := NewOperExpr(Op("LABEL"), Untyped(), x, NewNameExpr("not-a-string-literal", Untyped())); err == nil {
 		t.Fatal("LABEL accepted a non-string label")
+	}
+}
+
+func TestRawSetOperatorsAndDeclarationApplicationsMatchScala(t *testing.T) {
+	one := NewValueExpr(Int64Value(1), Untyped())
+	two := NewValueExpr(Int64Value(2), Untyped())
+	text := NewValueExpr(StringValue("hello"), Untyped())
+	x := MustOperExpr(Op("SET_ENUM"), Untyped(), one, two, text)
+	y := MustOperExpr(Op("SET_ENUM"), Untyped(), NewValueExpr(Int64Value(4), Untyped()))
+	i := NewNameExpr("i", Untyped())
+	for _, test := range []struct {
+		operator string
+		args     []Expr
+	}{
+		{"SET_UNION2", []Expr{x, y}}, {"SET_INTERSECT", []Expr{x, y}},
+		{"SET_IN", []Expr{x, y}}, {"SET_NOT_IN", []Expr{x, y}}, {"SET_MINUS", []Expr{x, y}},
+		{"SET_SUBSET_EQ", []Expr{x, y}}, {"SET_POWERSET", []Expr{y}}, {"SET_UNARY_UNION", []Expr{x}},
+		{"SET_FILTER", []Expr{i, x, MustOperExpr(Op("SET_IN"), Untyped(), i, y)}},
+		{"SET_MAP", []Expr{MustOperExpr(Op("SET_UNION2"), Untyped(), i, y), i, x}},
+	} {
+		expression, err := NewOperExpr(Op(test.operator), Untyped(), test.args...)
+		if err != nil {
+			t.Fatalf("%s: %v", test.operator, err)
+		}
+		if expression.Operator().Name() != test.operator || len(expression.Arguments()) != len(test.args) {
+			t.Fatalf("%s shape was not preserved", test.operator)
+		}
+	}
+	if empty, err := NewOperExpr(Op("SET_ENUM"), Untyped()); err != nil || len(empty.Arguments()) != 0 {
+		t.Fatalf("empty set = %v, %v", empty, err)
+	}
+	if mixed, err := NewOperExpr(Op("SET_UNION2"), Untyped(), one, y); err != nil || mixed.Arguments()[0] != one {
+		t.Fatalf("raw constructor enforced operand types: %v, %v", mixed, err)
+	}
+
+	for arity := 0; arity <= 3; arity++ {
+		parameters := make([]OperatorParam, arity)
+		arguments := make([]Expr, arity)
+		for index := range parameters {
+			parameters[index] = OperatorParam{Name: fmt.Sprintf("p%d", index), Arity: index}
+			arguments[index] = NewNameExpr(fmt.Sprintf("a%d", index), Untyped())
+		}
+		declaration := NewOperDecl("A", parameters, NewNameExpr("body", Untyped()), Untyped())
+		application, err := ApplyDeclarationUntyped(declaration, arguments...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := application.Arguments()
+		if got[0].(*NameExpr).Name() != "A" || len(got) != arity+1 {
+			t.Fatalf("arity %d application = %#v", arity, got)
+		}
+		if arity > 0 {
+			// Operator-valued formals deliberately accept ordinary names here.
+			if got[arity] != arguments[arity-1] {
+				t.Fatal("unchecked higher-order argument was changed")
+			}
+		}
+		if _, err = ApplyDeclarationUntyped(declaration, append(arguments, one)...); err == nil {
+			t.Fatalf("declaration arity %d accepted %d arguments", arity, arity+1)
+		}
+	}
+	if _, err := ApplyDeclarationUntyped(nil); err == nil {
+		t.Fatal("nil declaration was accepted")
 	}
 }
 

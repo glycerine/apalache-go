@@ -141,6 +141,20 @@ func (expr *OperExpr) WithTag(tag TypeTag) Expr {
 	return MustOperExpr(expr.operator, tag, expr.args...)
 }
 
+// ApplyDeclarationUntyped constructs the raw OPER_APP shape used before type
+// checking. Like Scala's untyped appDecl, it validates only formal arity.
+func ApplyDeclarationUntyped(declaration *OperDecl, arguments ...Expr) (*OperExpr, error) {
+	if declaration == nil {
+		return nil, fmt.Errorf("cannot apply a nil declaration")
+	}
+	if len(arguments) != len(declaration.FormalParams()) {
+		return nil, fmt.Errorf("operator %s of %d parameters is applied to %d arguments",
+			declaration.Name(), len(declaration.FormalParams()), len(arguments))
+	}
+	all := append([]Expr{NewNameExpr(declaration.Name(), Untyped())}, arguments...)
+	return NewOperExpr(Op("OPER_APP"), Untyped(), all...)
+}
+
 // EqualExpr compares expression structure, like Scala case-class equality.
 // Node IDs and type tags are intentionally excluded; use EqualTypedExpr when
 // the root type tag is significant.
