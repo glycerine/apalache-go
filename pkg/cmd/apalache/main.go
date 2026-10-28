@@ -330,7 +330,7 @@ func runTranspile(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	}
 	frontend := pal.ParseAndTypeCheckFile(ctx, sourcePath, pal.FrontendOptions{
 		LibraryPaths: libraryPaths,
-	}, pal.TypeCheckOptions{UseRows: rows, DisablePolytypes: *disablePolytypes})
+	}, pal.TypeCheckOptions{UseRows: rows, NoRows: *features == "no-rows", DisablePolytypes: *disablePolytypes})
 	for _, diagnostic := range frontend.Diagnostics {
 		fmt.Fprintln(stderr, diagnostic.Error())
 	}
@@ -471,7 +471,7 @@ func runTracee(ctx context.Context, args []string, stdout, stderr io.Writer) int
 	}
 	frontend := pal.ParseAndTypeCheckFile(ctx, sourcePath, pal.FrontendOptions{
 		LibraryPaths: libraryPaths,
-	}, pal.TypeCheckOptions{UseRows: rows, DisablePolytypes: *disablePolytypes})
+	}, pal.TypeCheckOptions{UseRows: rows, NoRows: *features == "no-rows", DisablePolytypes: *disablePolytypes})
 	for _, diagnostic := range frontend.Diagnostics {
 		fmt.Fprintln(stderr, diagnostic.Error())
 	}
@@ -678,7 +678,7 @@ func runTest(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	}
 	frontend := pal.ParseAndTypeCheckFile(ctx, path, pal.FrontendOptions{
 		LibraryPaths: libraryPaths,
-	}, pal.TypeCheckOptions{UseRows: rows, DisablePolytypes: *disablePolytypes})
+	}, pal.TypeCheckOptions{UseRows: rows, NoRows: *features == "no-rows", DisablePolytypes: *disablePolytypes})
 	for _, diagnostic := range frontend.Diagnostics {
 		fmt.Fprintln(stderr, diagnostic.Error())
 	}
@@ -907,7 +907,7 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 
 	frontend := pal.ParseAndTypeCheckFile(ctx, sourcePath, pal.FrontendOptions{
 		LibraryPaths: libraryPaths,
-	}, pal.TypeCheckOptions{UseRows: rows, DisablePolytypes: *disablePolytypes})
+	}, pal.TypeCheckOptions{UseRows: rows, NoRows: *features == "no-rows", DisablePolytypes: *disablePolytypes})
 	for _, diagnostic := range frontend.Diagnostics {
 		fmt.Fprintln(stderr, diagnostic.Error())
 	}
@@ -1282,7 +1282,7 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 
 	frontend := pal.ParseAndTypeCheckFile(ctx, sourcePath, pal.FrontendOptions{
 		LibraryPaths: libraryPaths,
-	}, pal.TypeCheckOptions{UseRows: rows, DisablePolytypes: *disablePolytypes})
+	}, pal.TypeCheckOptions{UseRows: rows, NoRows: *features == "no-rows", DisablePolytypes: *disablePolytypes})
 	for _, diagnostic := range frontend.Diagnostics {
 		fmt.Fprintln(stderr, diagnostic.Error())
 	}
@@ -1478,7 +1478,7 @@ func runTypeCheck(ctx context.Context, args []string, stdout, stderr io.Writer) 
 
 	result := pal.ParseAndTypeCheckFile(ctx, sourcePath, pal.FrontendOptions{
 		LibraryPaths: libraryPaths,
-	}, pal.TypeCheckOptions{UseRows: rows, DisablePolytypes: *disablePolytypes})
+	}, pal.TypeCheckOptions{UseRows: rows, NoRows: *features == "no-rows", DisablePolytypes: *disablePolytypes})
 	for _, diagnostic := range result.Diagnostics {
 		fmt.Fprintln(stderr, diagnostic.Error())
 	}

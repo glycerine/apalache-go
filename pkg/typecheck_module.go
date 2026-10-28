@@ -54,8 +54,12 @@ type TypeCheckOptions struct {
 	Aliases          *TypeAliasSubstitution
 	DisablePolytypes bool
 	UseRows          bool
-	VariableStart    int
-	Sources          *SourceStore
+	// NoRows records an explicit legacy-mode request. When both UseRows and
+	// NoRows are false, annotations from either type-system generation are
+	// accepted for compatibility with programmatic callers.
+	NoRows        bool
+	VariableStart int
+	Sources       *SourceStore
 }
 
 type TypeCheckResult struct {
@@ -76,6 +80,21 @@ func TypeCheckModule(module *Module, options TypeCheckOptions) TypeCheckResult {
 			Code: "E-TYPE", Severity: SeverityError, Message: "cannot type-check a nil module",
 		}}}
 	}
+	if options.UseRows && options.NoRows {
+		return TypeCheckResult{Diagnostics: []Diagnostic{{
+			Code: "E-TYPE-INPUT", Severity: SeverityError, Message: "row types and no-rows mode cannot both be enabled",
+		}}}
+	}
+	if id, typ, invalid := incompatibleAnnotationType(options); invalid {
+		message := "Found row types, while Type System 1.2 is disabled. Do not use --features=no-rows."
+		if options.UseRows {
+			message = "Found imprecise record types, while Type System 1.2 is enabled. Either update the annotations, or use --features=no-rows."
+		}
+		return TypeCheckResult{Diagnostics: []Diagnostic{{
+			Code: "E-TYPE-INPUT", Severity: SeverityError,
+			Message: message, Position: positionForID(options.Sources, id),
+		}}, Types: map[UID]Type{id: typ}}
+	}
 	sorted, err := SortDeclarations(module)
 	if err != nil {
 		return TypeCheckResult{Diagnostics: []Diagnostic{{
@@ -85,7 +104,7 @@ func TypeCheckModule(module *Module, options TypeCheckOptions) TypeCheckResult {
 	module = sorted
 	start := options.VariableStart
 	if start <= 0 {
-		start = 1000
+		start = maxUsedTypeVariable(module) + 1
 	}
 	pool := NewTypeVarPool(start)
 	translator := NewToEtcExpr(options.Annotations, options.Aliases, pool, options.UseRows)
@@ -126,6 +145,128 @@ func TypeCheckModule(module *Module, options TypeCheckOptions) TypeCheckResult {
 	}
 	typedModule.AddProperty(PropertyTypeChecked)
 	return TypeCheckResult{Module: typedModule, Types: types, Diagnostics: diagnostics}
+}
+
+func incompatibleAnnotationType(options TypeCheckOptions) (UID, Type, bool) {
+	for id, typ := range options.Annotations {
+		if !annotationTypeMatchesRowsMode(typ, options.UseRows, options.NoRows) {
+			return id, typ, true
+		}
+	}
+	if options.Aliases != nil {
+		for _, typ := range options.Aliases.Context() {
+			if !annotationTypeMatchesRowsMode(typ, options.UseRows, options.NoRows) {
+				return NullUID(), typ, true
+			}
+		}
+	}
+	return NullUID(), nil, false
+}
+
+func annotationTypeMatchesRowsMode(typ Type, useRows, noRows bool) bool {
+	if typ == nil {
+		return false
+	}
+	switch typed := typ.(type) {
+	case primitiveType, ConstType, VarType:
+		return true
+	case SparseTupleType:
+		for _, field := range typed.Fields() {
+			if !annotationTypeMatchesRowsMode(field, useRows, noRows) {
+				return false
+			}
+		}
+		return true
+	case SetType:
+		return annotationTypeMatchesRowsMode(typed.Element(), useRows, noRows)
+	case SeqType:
+		return annotationTypeMatchesRowsMode(typed.Element(), useRows, noRows)
+	case FunType:
+		return annotationTypeMatchesRowsMode(typed.Argument(), useRows, noRows) && annotationTypeMatchesRowsMode(typed.Result(), useRows, noRows)
+	case TupleType:
+		for _, element := range typed.Elements() {
+			if !annotationTypeMatchesRowsMode(element, useRows, noRows) {
+				return false
+			}
+		}
+		return true
+	case RecordType:
+		if useRows {
+			return false
+		}
+		for _, field := range typed.Fields() {
+			if !annotationTypeMatchesRowsMode(field, useRows, noRows) {
+				return false
+			}
+		}
+		return true
+	case RowType:
+		if noRows {
+			return false
+		}
+		for _, field := range typed.Fields() {
+			if !annotationTypeMatchesRowsMode(field, useRows, noRows) {
+				return false
+			}
+		}
+		if other, open := typed.Other(); open {
+			return annotationTypeMatchesRowsMode(other, useRows, noRows)
+		}
+		return true
+	case RecordRowType:
+		return !noRows && annotationTypeMatchesRowsMode(typed.Row(), useRows, noRows)
+	case VariantType:
+		return !noRows && annotationTypeMatchesRowsMode(typed.Row(), useRows, noRows)
+	case OperatorType:
+		for _, argument := range typed.Arguments() {
+			if !annotationTypeMatchesRowsMode(argument, useRows, noRows) {
+				return false
+			}
+		}
+		return annotationTypeMatchesRowsMode(typed.Result(), useRows, noRows)
+	default:
+		return false
+	}
+}
+
+func maxUsedTypeVariable(module *Module) int {
+	maximum := -1
+	visitTag := func(tag TypeTag) {
+		if typ, typed := tag.Type(); typed {
+			for _, variable := range typ.UsedNames() {
+				if variable > maximum {
+					maximum = variable
+				}
+			}
+		}
+	}
+	var visitExpression func(Expr)
+	var visitDeclaration func(Decl)
+	visitExpression = func(expression Expr) {
+		switch typed := expression.(type) {
+		case *OperExpr:
+			for _, argument := range typed.Arguments() {
+				visitExpression(argument)
+			}
+		case *LetInExpr:
+			visitExpression(typed.Body())
+			for _, declaration := range typed.Declarations() {
+				visitDeclaration(declaration)
+			}
+		}
+	}
+	visitDeclaration = func(declaration Decl) {
+		visitTag(declaration.Tag())
+		if operator, ok := declaration.(*OperDecl); ok {
+			visitExpression(operator.Body())
+		}
+	}
+	if module != nil {
+		for _, declaration := range module.Declarations() {
+			visitDeclaration(declaration)
+		}
+	}
+	return maximum
 }
 
 func positionForID(store *SourceStore, id UID) Position {

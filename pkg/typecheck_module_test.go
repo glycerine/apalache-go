@@ -98,6 +98,81 @@ func TestTypeCheckModuleSortsDeclarationsBeforeChecking(t *testing.T) {
 	}
 }
 
+func TestTypeCheckerVariablePoolStartsAboveExistingDeclarationTags(t *testing.T) {
+	high, _ := NewVarType(2500)
+	constant := NewConstDecl("Existing", Typed(high))
+	localHigh, _ := NewVarType(4100)
+	local := NewOperDecl("Local", nil, NewValueExpr(Int64Value(1), Untyped()), Typed(localHigh))
+	body := NewLetInExpr(NewValueExpr(BoolValue(true), Untyped()), Untyped(), local)
+	operator := NewOperDecl("Outer", nil, body, Untyped())
+	module := NewModule("Pool", []Decl{constant, operator})
+	if got := maxUsedTypeVariable(module); got != 4100 {
+		t.Fatalf("maxUsedTypeVariable() = %d, want 4100", got)
+	}
+	if got := maxUsedTypeVariable(NewModule("Empty", nil)); got != -1 {
+		t.Fatalf("empty maxUsedTypeVariable() = %d, want -1", got)
+	}
+	emptySet := tlaOper("SET_ENUM")
+	checked := TypeCheckModule(NewModule("Above", []Decl{
+		NewConstDecl("Existing", Typed(high)),
+		NewOperDecl("Empty", nil, emptySet, Untyped()),
+	}), TypeCheckOptions{})
+	if !checked.OK() {
+		t.Fatalf("automatic-start typecheck diagnostics = %+v", checked.Diagnostics)
+	}
+	inferred := checked.Types[emptySet.ID()]
+	used := inferred.UsedNames()
+	if len(used) != 1 || used[0] <= 2500 {
+		t.Fatalf("empty-set type = %s with variables %v, want a variable above 2500", inferred, used)
+	}
+
+	// Explicit caller starts remain authoritative for deterministic embedding.
+	result := TypeCheckModule(NewModule("Explicit", []Decl{NewOperDecl("Value", nil, tlaInt(1), Untyped())}),
+		TypeCheckOptions{VariableStart: 7000})
+	if !result.OK() {
+		t.Fatalf("explicit-start typecheck diagnostics = %+v", result.Diagnostics)
+	}
+}
+
+func TestTypeCheckModuleRejectsAnnotationRecordModeMismatch(t *testing.T) {
+	declaration := NewConstDecl("R", Untyped())
+	module := NewModule("Rows", []Decl{declaration})
+	legacy := parsedType(t, "[field: Int]")
+	row := parsedType(t, "{ field: Int }")
+	tests := []struct {
+		name    string
+		useRows bool
+		noRows  bool
+		typ     Type
+		want    string
+	}{
+		{"legacy in rows", true, false, legacy, "Found imprecise record types, while Type System 1.2 is enabled. Either update the annotations, or use --features=no-rows."},
+		{"row in legacy", false, true, row, "Found row types, while Type System 1.2 is disabled. Do not use --features=no-rows."},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result := TypeCheckModule(module, TypeCheckOptions{UseRows: test.useRows, NoRows: test.noRows, Annotations: map[UID]Type{declaration.ID(): test.typ}})
+			if result.OK() || len(result.Diagnostics) != 1 || result.Diagnostics[0].Message != test.want {
+				t.Fatalf("TypeCheckModule() = %+v", result)
+			}
+		})
+	}
+	if result := TypeCheckModule(module, TypeCheckOptions{NoRows: true, Annotations: map[UID]Type{declaration.ID(): legacy}}); !result.OK() {
+		t.Fatalf("legacy annotation rejected in no-rows mode: %+v", result.Diagnostics)
+	}
+	if result := TypeCheckModule(module, TypeCheckOptions{UseRows: true, Annotations: map[UID]Type{declaration.ID(): row}}); !result.OK() {
+		t.Fatalf("row annotation rejected in rows mode: %+v", result.Diagnostics)
+	}
+	for name, typ := range map[string]Type{"legacy": legacy, "row": row} {
+		if result := TypeCheckModule(module, TypeCheckOptions{Annotations: map[UID]Type{declaration.ID(): typ}}); !result.OK() {
+			t.Fatalf("%s annotation rejected in compatibility mode: %+v", name, result.Diagnostics)
+		}
+	}
+	if result := TypeCheckModule(module, TypeCheckOptions{UseRows: true, NoRows: true}); result.OK() || len(result.Diagnostics) != 1 {
+		t.Fatalf("conflicting row modes accepted: %+v", result)
+	}
+}
+
 func TestTypeCheckModuleReportsSourceAwareFailure(t *testing.T) {
 	variable := NewVarDecl("x", Untyped())
 	bad := NewOperDecl("Bad", nil, tlaOper("PLUS", tlaName("x"), NewValueExpr(BoolValue(true), Untyped())), Untyped())

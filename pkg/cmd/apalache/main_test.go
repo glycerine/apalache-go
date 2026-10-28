@@ -680,6 +680,11 @@ GetA(r) == r.a
 	}
 	stdout.Reset()
 	stderr.Reset()
+	if code := run(context.Background(), []string{"typecheck", "--features=no-rows", rowsPath}, &stdout, &stderr); code != exitFrontend || !strings.Contains(stderr.String(), "Found row types") {
+		t.Fatalf("no-rows feature was not propagated = %d, stderr = %q", code, &stderr)
+	}
+	stdout.Reset()
+	stderr.Reset()
 	if code := run(context.Background(), []string{"typecheck", "-rows", "--features=no-rows", rowsPath}, &stdout, &stderr); code != exitUsage || !strings.Contains(stderr.String(), "conflicts") {
 		t.Fatalf("row feature conflict = %d, stderr = %q", code, &stderr)
 	}
