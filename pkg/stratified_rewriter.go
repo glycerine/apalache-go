@@ -896,6 +896,14 @@ func (rewriter *StratifiedRewriter) rewriteCardinality(expression *OperExpr, sco
 	if len(arguments) != 1 {
 		return scope, ArenaCell{}, fmt.Errorf("cardinality requires one operand")
 	}
+	resultType, resultTyped := expression.Tag().Type()
+	if !resultTyped || !EqualTypes(resultType, IntT1) {
+		return scope, ArenaCell{}, fmt.Errorf("cardinality must have type Int, found %v", resultType)
+	}
+	setType, setTyped := arguments[0].Tag().Type()
+	if _, isSet := setType.(SetType); !setTyped || !isSet {
+		return scope, ArenaCell{}, fmt.Errorf("cardinality requires a set operand, found %v", setType)
+	}
 	scope, setCell, err := rewriter.Rewrite(arguments[0], scope)
 	if err != nil {
 		return scope, ArenaCell{}, err

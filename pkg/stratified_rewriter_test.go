@@ -1345,6 +1345,78 @@ func TestStratifiedFiniteCardinalityThroughG3(t *testing.T) {
 	}
 }
 
+func TestStratifiedCardinalityScalaOracleCases(t *testing.T) {
+	setType := mustSet(IntT1)
+	setTag := Typed(setType)
+	set := func(values ...int64) Expr {
+		elements := make([]Expr, len(values))
+		for index, value := range values {
+			elements[index] = NewValueExpr(Int64Value(value), Typed(IntT1))
+		}
+		return MustOperExpr(Op("SET_ENUM"), setTag, elements...)
+	}
+	cardinality := func(value Expr) Expr {
+		return MustOperExpr(Op("FiniteSets!Cardinality"), Typed(IntT1), value)
+	}
+	integer := func(value int64) Expr { return NewValueExpr(Int64Value(value), Typed(IntT1)) }
+	bound := NewNameExpr("x", Typed(IntT1))
+	filteredEmpty := MustOperExpr(Op("SET_FILTER"), setTag, bound, set(), boolExpr(false))
+	withoutTwo := MustOperExpr(Op("SET_FILTER"), setTag, bound, set(1, 2, 3),
+		MustOperExpr(Op("NOT"), Typed(BoolT1),
+			MustOperExpr(Op("EQ"), Typed(BoolT1), bound, integer(2))))
+
+	for _, test := range []struct {
+		name       string
+		expression Expr
+		want       bool
+	}{
+		{name: "three elements", expression: MustOperExpr(Op("EQ"), Typed(BoolT1), cardinality(set(1, 2, 3)), integer(3)), want: true},
+		{name: "duplicate elements", expression: MustOperExpr(Op("EQ"), Typed(BoolT1), cardinality(set(1, 2, 2, 2, 3, 3)), integer(3)), want: true},
+		{name: "constant threshold met", expression: MustOperExpr(Op("Apalache!ConstCardinality"), Typed(BoolT1),
+			MustOperExpr(Op("GE"), Typed(BoolT1), cardinality(set(1, 2, 3)), integer(3))), want: true},
+		{name: "constant threshold too large", expression: MustOperExpr(Op("Apalache!ConstCardinality"), Typed(BoolT1),
+			MustOperExpr(Op("GE"), Typed(BoolT1), cardinality(set(1, 2, 3)), integer(4))), want: false},
+		{name: "constant threshold with one duplicate", expression: MustOperExpr(Op("Apalache!ConstCardinality"), Typed(BoolT1),
+			MustOperExpr(Op("GE"), Typed(BoolT1), cardinality(set(1, 2, 2, 3)), integer(4))), want: false},
+		{name: "constant threshold with duplicates", expression: MustOperExpr(Op("Apalache!ConstCardinality"), Typed(BoolT1),
+			MustOperExpr(Op("GE"), Typed(BoolT1), cardinality(set(1, 2, 2, 3, 3)), integer(4))), want: false},
+		{name: "empty at least zero", expression: MustOperExpr(Op("Apalache!ConstCardinality"), Typed(BoolT1),
+			MustOperExpr(Op("GE"), Typed(BoolT1), cardinality(set()), integer(0))), want: true},
+		{name: "empty at least one", expression: MustOperExpr(Op("Apalache!ConstCardinality"), Typed(BoolT1),
+			MustOperExpr(Op("GE"), Typed(BoolT1), cardinality(set()), integer(1))), want: false},
+		{name: "filtered empty at least zero", expression: MustOperExpr(Op("Apalache!ConstCardinality"), Typed(BoolT1),
+			MustOperExpr(Op("GE"), Typed(BoolT1), cardinality(filteredEmpty), integer(0))), want: true},
+		{name: "filtered empty at least one", expression: MustOperExpr(Op("Apalache!ConstCardinality"), Typed(BoolT1),
+			MustOperExpr(Op("GE"), Typed(BoolT1), cardinality(filteredEmpty), integer(1))), want: false},
+		{name: "filtered subtraction", expression: MustOperExpr(Op("EQ"), Typed(BoolT1), cardinality(withoutTwo), integer(2)), want: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			rewriter := NewStratifiedRewriter()
+			scope, result, err := rewriter.Rewrite(test.expression, InitialRewriterScope())
+			if err != nil {
+				t.Fatal(err)
+			}
+			checkRewrittenTruth(t, rewriter, scope, result, test.want)
+		})
+	}
+
+	powerSet := MustOperExpr(Op("SET_POWERSET"), Typed(mustSet(setType)), set(1, 2))
+	if _, _, err := NewStratifiedRewriter().Rewrite(cardinality(powerSet), InitialRewriterScope()); err == nil {
+		t.Fatal("cardinality accepted a compact powerset")
+	}
+
+	for _, invalid := range []Expr{
+		MustOperExpr(Op("FiniteSets!Cardinality"), Typed(BoolT1), set(1)),
+		MustOperExpr(Op("FiniteSets!Cardinality"), Typed(IntT1), integer(1)),
+	} {
+		base := InitialRewriterScope()
+		returned, _, err := NewStratifiedRewriter().Rewrite(invalid, base)
+		if err == nil || returned.Arena != base.Arena {
+			t.Fatalf("invalid cardinality returned scope=%v, err=%v", returned, err)
+		}
+	}
+}
+
 func TestStratifiedSequenceConstructionLengthAndEqualityThroughG3(t *testing.T) {
 	sequenceType, err := NewSeqType(IntT1)
 	if err != nil {
