@@ -162,3 +162,32 @@ func TestTypeConstructorsRejectNil(t *testing.T) {
 		t.Fatal("NewRecordType() accepted nil field")
 	}
 }
+
+func TestTypeFromTagAndSchemeMatchScala(t *testing.T) {
+	if got, err := TypeFromTag(Typed(IntT1)); err != nil || !EqualTypes(got, IntT1) {
+		t.Fatalf("TypeFromTag = %v, %v", got, err)
+	}
+	if _, err := TypeFromTag(Untyped()); err == nil {
+		t.Fatal("TypeFromTag accepted Untyped")
+	}
+	a := mustVar(t, "a")
+	c := mustVar(t, "c")
+	principal := mustType(NewFunType(a, mustType(NewSetType(c))))
+	quantified := []int{2, 0, 2}
+	scheme, err := NewTypeScheme(principal, quantified...)
+	if err != nil || !EqualTypes(scheme.Principal(), principal) || !reflect.DeepEqual(scheme.Quantified(), []int{0, 2}) {
+		t.Fatalf("scheme = %v, %v, %v", scheme.Principal(), scheme.Quantified(), err)
+	}
+	quantified[0] = 99
+	copy := scheme.Quantified()
+	copy[0] = 99
+	if !reflect.DeepEqual(scheme.Quantified(), []int{0, 2}) {
+		t.Fatal("type scheme exposed quantified variables")
+	}
+	if _, err := NewTypeScheme(principal, -1); err == nil {
+		t.Fatal("negative quantified variable was accepted")
+	}
+	if _, err := NewTypeScheme(nil); err == nil {
+		t.Fatal("nil principal type was accepted")
+	}
+}

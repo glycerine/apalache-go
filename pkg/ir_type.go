@@ -18,6 +18,14 @@ type Type interface {
 	tlaType1()
 }
 
+func TypeFromTag(tag TypeTag) (Type, error) {
+	typ, ok := tag.Type()
+	if !ok {
+		return nil, fmt.Errorf("expected Typed(Type), found %s", tag)
+	}
+	return typ, nil
+}
+
 type primitiveType string
 
 func (primitiveType) tlaType1()        {}
