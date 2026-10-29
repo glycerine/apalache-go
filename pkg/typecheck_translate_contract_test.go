@@ -349,6 +349,100 @@ func TestToEtcExprStringIndexRespectsRowsMode(t *testing.T) {
 	}
 }
 
+func TestToEtcExprScalaRowsExactSignatures(t *testing.T) {
+	fresh := func(number int) Type {
+		variable, err := NewVarType(number)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return variable
+	}
+	rowType := func(fields map[string]Type, tailNumber int) Type {
+		var tail *VarType
+		if tailNumber >= 0 {
+			variable, err := NewVarType(tailNumber)
+			if err != nil {
+				t.Fatal(err)
+			}
+			tail = &variable
+		}
+		row, err := NewRowType(fields, tail)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return NewRecordRowType(row)
+	}
+	translate := func(expression Expr) EtcExpr {
+		translated, err := NewToEtcExpr(nil, nil, NewTypeVarPool(1000), true).TranslateExpression(expression)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return translated
+	}
+
+	recordSet := tlaOper("RECORD_SET", tlaString("x"), tlaName("S"), tlaString("y"), tlaName("T"))
+	got := translate(recordSet)
+	want := NewUniqueEtcApp([]Type{mustOperator(
+		[]Type{mustSet(fresh(1000)), mustSet(fresh(1001))},
+		mustSet(rowType(map[string]Type{"x": fresh(1000), "y": fresh(1001)}, -1)))},
+		NewUniqueEtcName("S"), NewUniqueEtcName("T"))
+	if !EqualEtcExpr(got, want) {
+		t.Fatalf("row record set = %v, want %v", got, want)
+	}
+
+	record := tlaOper("RECORD", tlaString("f1"), tlaBool(true), tlaString("f2"), tlaInt(1))
+	got = translate(record)
+	want = NewUniqueEtcApp([]Type{mustOperator(
+		[]Type{fresh(1000), fresh(1001)}, rowType(map[string]Type{"f1": fresh(1000), "f2": fresh(1001)}, -1))},
+		NewUniqueEtcConst(BoolT1), NewUniqueEtcConst(IntT1))
+	if !EqualEtcExpr(got, want) {
+		t.Fatalf("row record = %v, want %v", got, want)
+	}
+
+	access := tlaOper("FUN_APP", tlaName("f"), tlaString("foo"))
+	got = translate(access)
+	want = NewUniqueEtcApp([]Type{
+		mustOperator([]Type{mustFun(StrT1, fresh(1000)), StrT1}, fresh(1000)),
+		mustOperator([]Type{rowType(map[string]Type{"foo": fresh(1000)}, 1001), StrT1}, fresh(1000)),
+	}, NewUniqueEtcName("f"), NewUniqueEtcConst(StrT1))
+	if !EqualEtcExpr(got, want) {
+		t.Fatalf("row field access = %v, want %v", got, want)
+	}
+	if _, explained := got.Explain(nil, nil); !explained {
+		t.Fatal("row field access lost its custom type error explanation")
+	}
+
+	got = translate(tlaOper("DOMAIN", tlaName("f")))
+	emptySparse, _ := NewSparseTupleType(nil)
+	want = NewUniqueEtcApp([]Type{
+		mustOperator([]Type{mustFun(fresh(1000), fresh(1001))}, mustSet(fresh(1000))),
+		mustOperator([]Type{mustSeq(fresh(1002))}, mustSet(IntT1)),
+		mustOperator([]Type{rowType(nil, 1003)}, mustSet(StrT1)),
+		mustOperator([]Type{emptySparse}, mustSet(IntT1)),
+	}, NewUniqueEtcName("f"))
+	if !EqualEtcExpr(got, want) {
+		t.Fatalf("row DOMAIN = %v, want %v", got, want)
+	}
+
+	except := tlaOper("EXCEPT", tlaName("f"), tlaOper("TUPLE", tlaString("foo")), tlaName("e2"))
+	got = translate(except)
+	update := NewUniqueEtcApp([]Type{
+		mustOperator([]Type{StrT1, fresh(1000)}, mustFun(StrT1, fresh(1000))),
+		mustOperator([]Type{StrT1, fresh(1000)}, rowType(map[string]Type{"foo": fresh(1000)}, 1001)),
+	}, NewUniqueEtcConst(StrT1), NewUniqueEtcName("e2"))
+	want = NewUniqueEtcApp([]Type{mustOperator([]Type{fresh(1002), fresh(1002)}, fresh(1002))},
+		NewUniqueEtcName("f"), update)
+	if !EqualEtcExpr(got, want) {
+		t.Fatalf("row EXCEPT = %v, want %v", got, want)
+	}
+
+	invalid := tlaOper("RECORD_SET", tlaName("invalidName"), tlaString("x"))
+	if _, err := NewToEtcExpr(nil, nil, NewTypeVarPool(1000), true).TranslateExpression(invalid); err == nil ||
+		err.Error() != "record key is *apalache.NameExpr" {
+		t.Fatalf("invalid row record-set key error = %v", err)
+	}
+}
+
 func TestToEtcExprDeclarationAnnotationContracts(t *testing.T) {
 	tests := []struct {
 		name        string
