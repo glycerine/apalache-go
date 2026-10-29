@@ -49,6 +49,35 @@ func TestStratifiedRewriterBuiltinsSubstitutionIntegersAndAssignment(t *testing.
 	}
 }
 
+func TestStratifiedIntegerRewriteMatchesScalaConstraintOrder(t *testing.T) {
+	rewriter := NewStratifiedRewriter()
+	scope := InitialRewriterScope()
+	scope, zero, err := rewriter.Rewrite(intLiteral(0), scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, fortyTwo, err := rewriter.Rewrite(intLiteral(42), scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if zero.ID != 5 || fortyTwo.ID != 6 {
+		t.Fatalf("integer cells = %s and %s, want $C$5 and $C$6", zero, fortyTwo)
+	}
+	want := []Expr{
+		MustOperExpr(Op("EQ"), Typed(BoolT1), zero.NameExpr(), intLiteral(0)),
+		MustOperExpr(Op("EQ"), Typed(BoolT1), fortyTwo.NameExpr(), intLiteral(42)),
+	}
+	constraints := rewriter.Constraints()
+	if len(constraints) != len(want) {
+		t.Fatalf("integer constraints = %v", constraints)
+	}
+	for index := range want {
+		if !EqualTypedExpr(constraints[index], want[index]) {
+			t.Fatalf("integer constraint %d = %v, want %v", index, constraints[index], want[index])
+		}
+	}
+}
+
 func TestStratifiedRewriterSnapshotRestoresAllMutableContexts(t *testing.T) {
 	rewriter := NewStratifiedRewriter()
 	scope, seven, err := rewriter.Rewrite(intLiteral(7), InitialRewriterScope())
