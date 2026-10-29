@@ -139,6 +139,89 @@ func TestPrettyTLAWriterWithAnnotationsWritesTypedModule(t *testing.T) {
 	}
 }
 
+func TestPrettyTLAWriterStoredAnnotationsMatchScalaLayouts(t *testing.T) {
+	boolean := NewValueExpr(BoolValue(true), Typed(BoolT1))
+	variable := NewVarDecl("myFun", Untyped())
+	operator := NewOperDecl("MyOper", []OperatorParam{ValueParam("x"), ValueParam("y")}, boolean, Untyped())
+	recursive := NewOperDecl("RecOper", []OperatorParam{ValueParam("x"), ValueParam("y")}, boolean, Untyped())
+	recursive.SetRecursive(true)
+
+	tests := []struct {
+		name        string
+		declaration Decl
+		annotations []Annotation
+		set         bool
+		want        string
+	}{
+		{
+			"variable", variable,
+			[]Annotation{NewTypeAnnotation("Int -> Bool")}, true,
+			"VARIABLE\n  (*\n    @type: Int -> Bool;\n  *)\n  myFun\n\n",
+		},
+		{
+			"operator", operator,
+			[]Annotation{NewTypeAnnotation("(Int, Str) -> Bool")}, true,
+			"(*\n  @type: (Int, Str) -> Bool;\n*)\nMyOper(x, y) == TRUE\n\n",
+		},
+		{
+			"recursive operator", recursive,
+			[]Annotation{NewTypeAnnotation("(Int, Str) -> Bool")}, true,
+			"RECURSIVE RecOper(_, _)\n(*\n  @type: (Int, Str) -> Bool;\n*)\nRecOper(x, y) == TRUE\n\n",
+		},
+		{"operator without entry", operator, nil, false, "MyOper(x, y) == TRUE\n\n"},
+		{"operator with empty entry", operator, []Annotation{}, true, "MyOper(x, y) == TRUE\n\n"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			store := NewAnnotationStore()
+			if test.set {
+				store.Set(test.declaration.ID(), test.annotations)
+			}
+			var output bytes.Buffer
+			if err := NewPrettyTLAWriterWithAnnotations(&output, store).WriteDeclaration(test.declaration); err != nil {
+				t.Fatal(err)
+			}
+			if output.String() != test.want {
+				t.Fatalf("stored annotation layout:\n%s\nwant:\n%s", output.String(), test.want)
+			}
+		})
+	}
+}
+
+func TestPrettyTLAWriterSynthesizedTypesMatchScalaLayouts(t *testing.T) {
+	boolean := NewValueExpr(BoolValue(true), Typed(BoolT1))
+	operatorType := Typed(mustOperator([]Type{IntT1, StrT1}, BoolT1))
+	operator := NewOperDecl("MyOper", []OperatorParam{ValueParam("x"), ValueParam("y")}, boolean, operatorType)
+	recursive := NewOperDecl("RecOper", []OperatorParam{ValueParam("x"), ValueParam("y")}, boolean, operatorType)
+	recursive.SetRecursive(true)
+	namedAssumption := NewAssumeDecl(stringPointer("myAssume"),
+		MustOperExpr(Op("EQ"), Typed(BoolT1), NewNameExpr("x", Untyped()), boolean), Typed(BoolT1))
+
+	tests := []struct {
+		name        string
+		declaration Decl
+		want        string
+	}{
+		{"constant", NewConstDecl("N", Typed(IntT1)), "CONSTANT\n  (*\n    @type: Int;\n  *)\n  N\n\n"},
+		{"operator", operator, "(*\n  @type: ((Int, Str) => Bool);\n*)\nMyOper(x, y) == TRUE\n\n"},
+		{"recursive operator", recursive, "RECURSIVE RecOper(_, _)\n(*\n  @type: ((Int, Str) => Bool);\n*)\nRecOper(x, y) == TRUE\n\n"},
+		{"named assumption", namedAssumption, "(*\n  @type: Bool;\n*)\nASSUME myAssume == (x = TRUE)\n\n"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var output bytes.Buffer
+			if err := NewPrettyTLAWriterWithAnnotations(&output, NewAnnotationStore()).WriteDeclaration(test.declaration); err != nil {
+				t.Fatal(err)
+			}
+			if output.String() != test.want {
+				t.Fatalf("synthesized type layout:\n%s\nwant:\n%s", output.String(), test.want)
+			}
+		})
+	}
+}
+
+func stringPointer(value string) *string { return &value }
+
 func TestTLADeclarationAnnotatorDecoratesDirectAndModuleOutput(t *testing.T) {
 	declaration := NewOperDecl("Flag", nil, NewValueExpr(BoolValue(true), Typed(BoolT1)), Untyped())
 	layout := TextLayout{TextWidth: 41, Indent: 3}
