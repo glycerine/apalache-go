@@ -97,6 +97,24 @@ func TestParseCheckerTuningMatchesFineTuningParserOptions(t *testing.T) {
 	}
 }
 
+func TestParseCheckerTuningMatchesScalaCardinalityEncodingContract(t *testing.T) {
+	for _, value := range []string{"grouped", "bimander", "ordered", "unate", "circuit"} {
+		tuning, err := ParseCheckerTuning(map[string]string{"z3.sat.cardinality.encoding": value})
+		if err != nil {
+			t.Fatalf("valid cardinality encoding %q: %v", value, err)
+		}
+		if got := tuning.solverCompatibilityOptions["z3.sat.cardinality.encoding"]; got != value {
+			t.Fatalf("cardinality encoding = %q, want %q", got, value)
+		}
+		if _, forwarded := tuning.solverTextOptions["sat.cardinality.encoding"]; forwarded {
+			t.Fatalf("unsupported g3 cardinality encoding %q was forwarded", value)
+		}
+	}
+	if _, err := ParseCheckerTuning(map[string]string{"z3.sat.cardinality.encoding": "aaaa"}); err == nil {
+		t.Fatal("invalid cardinality encoding was accepted")
+	}
+}
+
 func TestParseCheckerTuningMapsIntegerSolverOptionsToG3(t *testing.T) {
 	tuning, err := ParseCheckerTuning(map[string]string{
 		"smt.randomSeed":     "17",

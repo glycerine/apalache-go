@@ -23,14 +23,19 @@ type CheckerTuning struct {
 	shortCircuit      bool
 	solverUIntOptions map[string]uint32
 	solverTextOptions map[string]string
-	outputTraces      bool
-	hasOutputTraces   bool
-	simulation        bool
-	simulationRuns    int
-	hasSimulation     bool
-	jailTimeoutMinSec int64
-	jailTimeoutFactor int64
-	idleTimeoutSec    int64
+	// solverCompatibilityOptions retains Scala tuning fields whose values are
+	// part of the public configuration contract but whose corresponding Z3
+	// implementation detail is not exposed by g3. Keeping these separate from
+	// solverTextOptions prevents us from pretending that g3 applied them.
+	solverCompatibilityOptions map[string]string
+	outputTraces               bool
+	hasOutputTraces            bool
+	simulation                 bool
+	simulationRuns             int
+	hasSimulation              bool
+	jailTimeoutMinSec          int64
+	jailTimeoutFactor          int64
+	idleTimeoutSec             int64
 }
 
 // ParseCheckerTuning validates checker tuning accepted by the Go backend.
@@ -39,6 +44,7 @@ type CheckerTuning struct {
 func ParseCheckerTuning(values map[string]string) (CheckerTuning, error) {
 	result := CheckerTuning{
 		invariantMode: "before", solverUIntOptions: make(map[string]uint32), solverTextOptions: make(map[string]string),
+		solverCompatibilityOptions: make(map[string]string),
 	}
 	keys := make([]string, 0, len(values))
 	for key := range values {
@@ -135,6 +141,17 @@ func ParseCheckerTuning(values map[string]string) (CheckerTuning, error) {
 				return CheckerTuning{}, err
 			}
 			result.solverUIntOptions["memory_high_watermark"] = parsed
+		case "z3.sat.cardinality.encoding":
+			switch value {
+			case "grouped", "bimander", "ordered", "unate", "circuit":
+				// g3 v0.0.7 exposes generic typed symbol parameters, but its
+				// retained SAT catalog does not expose this Z3 encoding selector.
+				// Validate and retain the Scala option without forwarding a
+				// solver setting that g3 would reject or silently ignore.
+				result.solverCompatibilityOptions[key] = value
+			default:
+				return CheckerTuning{}, fmt.Errorf("invalid value %s for %s, expected one of grouped, bimander, ordered, unate, circuit", value, key)
+			}
 		default:
 			if strings.HasPrefix(key, "z3.") {
 				result.solverTextOptions[key[len("z3."):]] = value
