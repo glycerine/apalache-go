@@ -2,6 +2,7 @@ package apalache
 
 import (
 	"context"
+	"fmt"
 	"testing"
 )
 
@@ -33,6 +34,174 @@ func TestStratifiedGenBuildsBoundedStructures(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestStratifiedGenScalaOracleCases(t *testing.T) {
+	integer := func(value int64) Expr { return NewValueExpr(Int64Value(value), Typed(IntT1)) }
+	stringValue := func(value string) Expr { return NewValueExpr(StringValue(value), Typed(StrT1)) }
+	equal := func(left, right Expr) Expr { return MustOperExpr(Op("EQ"), Typed(BoolT1), left, right) }
+	set := func(values ...int64) Expr {
+		elements := make([]Expr, len(values))
+		for index, value := range values {
+			elements[index] = integer(value)
+		}
+		return MustOperExpr(Op("SET_ENUM"), Typed(mustSet(IntT1)), elements...)
+	}
+	check := func(t *testing.T, typ Type, bound int64, claim func(Expr) Expr, want SMTStatus) {
+		t.Helper()
+		rewriter := NewStratifiedRewriter()
+		scope, generated, err := rewriter.Rewrite(
+			MustOperExpr(Op("Apalache!Gen"), Typed(typ), integer(bound)), InitialRewriterScope())
+		if err != nil {
+			t.Fatal(err)
+		}
+		scope, result, err := rewriter.Rewrite(claim(generated.NameExpr()), scope)
+		if err != nil {
+			t.Fatal(err)
+		}
+		solver := newTestG3Solver(t)
+		encoder, err := EncodeRewriterScope(solver, scope, rewriter.Constraints())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = encoder.Assert(result.NameExpr()); err != nil {
+			t.Fatal(err)
+		}
+		if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != want {
+			t.Fatalf("generated %s claim = %v, want %v, error %v", typ, status, want, checkErr)
+		}
+	}
+
+	t.Run("integer admits large value", func(t *testing.T) {
+		check(t, IntT1, 1, func(generated Expr) Expr {
+			return MustOperExpr(Op("GE"), Typed(BoolT1), generated, integer(10))
+		}, SMTSatisfiable)
+	})
+	for _, test := range []struct {
+		name    string
+		typ     Type
+		negated bool
+	}{
+		{name: "string admits literal", typ: StrT1},
+		{name: "string admits other literal", typ: StrT1, negated: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			check(t, test.typ, 1, func(generated Expr) Expr {
+				comparison := equal(generated.WithTag(Typed(StrT1)), stringValue("foo"))
+				if test.negated {
+					return MustOperExpr(Op("NOT"), Typed(BoolT1), comparison)
+				}
+				return comparison
+			}, SMTSatisfiable)
+		})
+	}
+	constantType, err := NewConstType("PID")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, negated := range []bool{false, true} {
+		t.Run(fmt.Sprintf("constant literal negated=%v", negated), func(t *testing.T) {
+			rewriter := NewStratifiedRewriter()
+			scope, generated, rewriteErr := rewriter.Rewrite(
+				MustOperExpr(Op("Apalache!Gen"), Typed(constantType), integer(1)), InitialRewriterScope())
+			if rewriteErr != nil {
+				t.Fatal(rewriteErr)
+			}
+			scope, literal, rewriteErr := rewriter.Rewrite(stringValue("foo"), scope)
+			if rewriteErr != nil {
+				t.Fatal(rewriteErr)
+			}
+			solver := newTestG3Solver(t)
+			encoder, encodeErr := EncodeRewriterScope(solver, scope, rewriter.Constraints())
+			if encodeErr != nil {
+				t.Fatal(encodeErr)
+			}
+			claim := equal(generated.NameExpr().WithTag(Typed(StrT1)), literal.NameExpr())
+			if negated {
+				claim = MustOperExpr(Op("NOT"), Typed(BoolT1), claim)
+			}
+			if assertErr := encoder.Assert(claim); assertErr != nil {
+				t.Fatal(assertErr)
+			}
+			if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTSatisfiable {
+				t.Fatalf("generated PID literal claim = %v, %v", status, checkErr)
+			}
+		})
+	}
+	for _, value := range []bool{false, true} {
+		t.Run(fmt.Sprintf("boolean admits %v", value), func(t *testing.T) {
+			check(t, BoolT1, 1, func(generated Expr) Expr {
+				if value {
+					return generated
+				}
+				return MustOperExpr(Op("NOT"), Typed(BoolT1), generated)
+			}, SMTSatisfiable)
+		})
+	}
+	for _, values := range [][]int64{{1, 2, 3}, {}} {
+		t.Run(fmt.Sprintf("set admits %v", values), func(t *testing.T) {
+			check(t, mustSet(IntT1), 3, func(generated Expr) Expr {
+				return equal(generated, set(values...))
+			}, SMTSatisfiable)
+		})
+	}
+
+	recordType, _ := NewRecordType(map[string]Type{"i": IntT1, "b": BoolT1})
+	row, _ := NewRowType(map[string]Type{"i": IntT1, "b": BoolT1}, nil)
+	rowRecordType := NewRecordRowType(row)
+	for _, typ := range []Type{recordType, rowRecordType} {
+		t.Run("record "+typ.String(), func(t *testing.T) {
+			check(t, typ, 3, func(generated Expr) Expr {
+				field := MustOperExpr(Op("FUN_APP"), Typed(IntT1), generated, stringValue("i"))
+				return equal(field, integer(10))
+			}, SMTSatisfiable)
+		})
+	}
+
+	variantRow, _ := NewRowType(map[string]Type{"Foo": IntT1, "Bar": BoolT1}, nil)
+	variantType := NewVariantType(variantRow)
+	for _, test := range []struct {
+		name    string
+		witness Expr
+	}{
+		{name: "Foo", witness: testVariantExpression(variantType, "Foo", integer(3))},
+		{name: "Bar", witness: testVariantExpression(variantType, "Bar", boolExpr(true))},
+	} {
+		t.Run("variant admits "+test.name, func(t *testing.T) {
+			check(t, variantType, 3, func(generated Expr) Expr { return equal(generated, test.witness) }, SMTSatisfiable)
+		})
+	}
+
+	tupleType, _ := NewTupleType(IntT1, BoolT1)
+	t.Run("tuple field admits value", func(t *testing.T) {
+		check(t, tupleType, 3, func(generated Expr) Expr {
+			return equal(MustOperExpr(Op("FUN_APP"), Typed(IntT1), generated, integer(1)), integer(10))
+		}, SMTSatisfiable)
+	})
+
+	functionType, _ := NewFunType(IntT1, BoolT1)
+	t.Run("function domain witness", func(t *testing.T) {
+		check(t, functionType, 4, func(generated Expr) Expr {
+			return equal(MustOperExpr(Op("DOMAIN"), Typed(mustSet(IntT1)), generated), set(1, 3))
+		}, SMTSatisfiable)
+	})
+	t.Run("function is single valued", func(t *testing.T) {
+		check(t, functionType, 4, func(generated Expr) Expr {
+			domain := equal(MustOperExpr(Op("DOMAIN"), Typed(mustSet(IntT1)), generated), set(1, 3))
+			one := MustOperExpr(Op("FUN_APP"), Typed(BoolT1), generated, integer(1))
+			oneAgain := MustOperExpr(Op("FUN_APP"), Typed(BoolT1), generated,
+				MustOperExpr(Op("MINUS"), Typed(IntT1), integer(2), integer(1)))
+			return MustOperExpr(Op("AND"), Typed(BoolT1), domain,
+				MustOperExpr(Op("NOT"), Typed(BoolT1), equal(one, oneAgain)))
+		}, SMTUnsatisfiable)
+	})
+
+	sequenceType, _ := NewSeqType(BoolT1)
+	t.Run("sequence domain witness", func(t *testing.T) {
+		check(t, sequenceType, 4, func(generated Expr) Expr {
+			return equal(MustOperExpr(Op("DOMAIN"), Typed(mustSet(IntT1)), generated), set(1, 2, 3))
+		}, SMTSatisfiable)
+	})
 }
 
 func TestStratifiedGenEnforcesSetAndSequenceBounds(t *testing.T) {

@@ -1760,6 +1760,9 @@ func (rewriter *StratifiedRewriter) rewriteNegatedMembership(
 }
 
 func isDirectSMTCellType(cellType CellType) bool {
+	if _, generatedConstant := cellType.(generatedConstCellType); generatedConstant {
+		return true
+	}
 	basic, ok := cellType.(BasicCellType)
 	if !ok {
 		return false

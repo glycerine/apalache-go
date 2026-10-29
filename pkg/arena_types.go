@@ -66,7 +66,17 @@ func (cell BasicCellType) Signature() string {
 	}
 	return "U"
 }
-func (cell BasicCellType) TLAType() Type { return cell.Type }
+
+// generatedConstCellType preserves the declared model-value type while using
+// Scala Apalache's string-like SMT representation for Apalache!Gen(ConstT1).
+// Ordinary ConstT1 arena cells retain their named uninterpreted sorts.
+type generatedConstCellType struct{ Type ConstType }
+
+func (generatedConstCellType) cellTypeNode()       {}
+func (generatedConstCellType) Signature() string   { return BasicCellType{Type: StrT1}.Signature() }
+func (cell generatedConstCellType) TLAType() Type  { return cell.Type }
+func (cell generatedConstCellType) String() string { return cell.Type.String() }
+func (cell BasicCellType) TLAType() Type           { return cell.Type }
 func (cell BasicCellType) String() string {
 	if cell.Type == nil {
 		return "<nil>"

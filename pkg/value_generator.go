@@ -27,6 +27,9 @@ func (rewriter *StratifiedRewriter) generateBoundedValue(scope RewriterScope, ty
 	if err != nil {
 		return scope, ArenaCell{}, err
 	}
+	if constantType, constant := typ.(ConstType); constant {
+		cellType = generatedConstCellType{Type: constantType}
+	}
 	if isDirectSMTCellType(cellType) {
 		newArena, cell := scope.Arena.AppendCellType(cellType, true)
 		scope.Arena = newArena
