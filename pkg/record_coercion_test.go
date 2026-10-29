@@ -229,6 +229,37 @@ func TestStratifiedWidensMappedAndFunctionResults(t *testing.T) {
 	})
 }
 
+func TestStratifiedLegacyRecordFilterMapScalaOracle(t *testing.T) {
+	recordType, err := NewRecordType(map[string]Type{"a": IntT1, "c": IntT1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	recordTag := Typed(recordType)
+	key := func(name string) Expr { return NewValueExpr(StringValue(name), Typed(StrT1)) }
+	first := MustOperExpr(Op("RECORD"), recordTag, key("a"), intLiteral(1))
+	second := MustOperExpr(Op("RECORD"), recordTag,
+		key("a"), intLiteral(2), key("c"), intLiteral(3))
+	recordSetType := mustSet(recordType)
+	candidates := MustOperExpr(Op("SET_ENUM"), Typed(recordSetType), first, second)
+
+	filterBinder := NewNameExpr("r2", recordTag)
+	filterField := MustOperExpr(Op("FUN_APP"), Typed(IntT1), filterBinder, key("c"))
+	filtered := MustOperExpr(Op("SET_FILTER"), Typed(recordSetType), filterBinder, candidates,
+		MustOperExpr(Op("EQ"), Typed(BoolT1), filterField, intLiteral(3)))
+	mapBinder := NewNameExpr("r", recordTag)
+	mapped := MustOperExpr(Op("SET_MAP"), Typed(mustSet(IntT1)),
+		MustOperExpr(Op("FUN_APP"), Typed(IntT1), mapBinder, key("c")), mapBinder, filtered)
+	want := MustOperExpr(Op("SET_ENUM"), Typed(mustSet(IntT1)), intLiteral(3))
+	claim := MustOperExpr(Op("EQ"), Typed(BoolT1), mapped, want)
+
+	rewriter := NewStratifiedRewriter()
+	scope, result, err := rewriter.Rewrite(claim, InitialRewriterScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkRewrittenTruth(t, rewriter, scope, result, true)
+}
+
 func TestStratifiedWidensTupleElements(t *testing.T) {
 	narrowType, _ := NewRecordType(map[string]Type{"a": IntT1})
 	wideType, _ := NewRecordType(map[string]Type{"a": IntT1, "b": BoolT1})
