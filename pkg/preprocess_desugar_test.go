@@ -367,3 +367,78 @@ func TestExceptAccessResultTypeSupportsCompositeContainers(t *testing.T) {
 		}
 	}
 }
+
+func TestDesugarerScalaCompositeAndThreeDimensionalExcept(t *testing.T) {
+	record, err := NewRecordType(map[string]Type{"field": BoolT1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	row, err := NewRowType(map[string]Type{"field": BoolT1}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name      string
+		container Type
+		key       Expr
+	}{
+		{"record", record, NewValueExpr(StringValue("field"), Typed(StrT1))},
+		{"row record", NewRecordRowType(row), NewValueExpr(StringValue("field"), Typed(StrT1))},
+		{"tuple", mustTuple(IntT1, BoolT1), intLiteral(2)},
+		{"sequence", mustSeq(BoolT1), intLiteral(1)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			outerType := mustFun(IntT1, test.container)
+			path := MustOperExpr(Op("TUPLE"), Typed(mustTuple(IntT1, mustTagType(test.key.Tag()))), intLiteral(1), test.key)
+			input := MustOperExpr(Op("EXCEPT"), Typed(outerType), NewNameExpr("f", Typed(outerType)), path, temporalBool(true))
+			got, transformErr := NewDesugarer(NewUniqueNameGenerator(), nil, nil, nil).Expression(input)
+			if transformErr != nil {
+				t.Fatal(transformErr)
+			}
+			let, ok := got.(*LetInExpr)
+			if !ok || len(let.Declarations()) != 3 {
+				t.Fatalf("nested %s EXCEPT = %v", test.name, got)
+			}
+			expectedNames := []string{"t_1", "t_2", "t_3"}
+			for index, declaration := range let.Declarations() {
+				if declaration.Name() != expectedNames[index] {
+					t.Fatalf("nested %s EXCEPT declaration %d = %s", test.name, index, declaration.Name())
+				}
+			}
+			if let.Declarations()[1].Body().(*OperExpr).Operator().Name() != "EXCEPT" ||
+				let.Declarations()[2].Body().(*OperExpr).Operator().Name() != "EXCEPT" {
+				t.Fatalf("nested %s update bodies = %v", test.name, let)
+			}
+		})
+	}
+
+	innerType := mustSeq(BoolT1)
+	middleType := mustFun(StrT1, innerType)
+	outerType := mustFun(IntT1, middleType)
+	path := MustOperExpr(Op("TUPLE"), Typed(mustTuple(IntT1, StrT1, IntT1)),
+		intLiteral(1), NewValueExpr(StringValue("key"), Typed(StrT1)), intLiteral(1))
+	threeDimensional := MustOperExpr(Op("EXCEPT"), Typed(outerType), NewNameExpr("f", Typed(outerType)), path, temporalBool(false))
+	got, err := NewDesugarer(NewUniqueNameGenerator(), nil, nil, nil).Expression(threeDimensional)
+	if err != nil {
+		t.Fatal(err)
+	}
+	let, ok := got.(*LetInExpr)
+	if !ok || len(let.Declarations()) != 4 || countOperator(got, "EXCEPT") != 3 {
+		t.Fatalf("three-dimensional EXCEPT = %v", got)
+	}
+}
+
+func TestDesugarerScalaTupleMismatchAndNestedEmptyUnchanged(t *testing.T) {
+	left := MustOperExpr(Op("TUPLE"), Typed(mustTuple(IntT1, IntT1)), intLiteral(1), intLiteral(2))
+	right := MustOperExpr(Op("TUPLE"), Typed(mustTuple(IntT1, IntT1, IntT1)), intLiteral(1), intLiteral(2), intLiteral(3))
+	got, err := NewDesugarer(nil, nil, nil, nil).Expression(MustOperExpr(Op("NE"), Typed(BoolT1), left, right))
+	if err != nil || !EqualTypedExpr(got, temporalBool(true)) {
+		t.Fatalf("unequal tuple arity NE = %v, %v", got, err)
+	}
+	empty := MustOperExpr(Op("TUPLE"), Typed(mustTuple()))
+	nested := MustOperExpr(Op("TUPLE"), Typed(mustTuple(mustTuple(), mustTuple())), empty, empty)
+	got, err = NewDesugarer(nil, nil, nil, nil).Expression(MustOperExpr(Op("UNCHANGED"), Typed(BoolT1), nested))
+	if err != nil || !EqualTypedExpr(got, temporalBool(true)) {
+		t.Fatalf("nested empty UNCHANGED = %v, %v", got, err)
+	}
+}
