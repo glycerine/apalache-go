@@ -9,14 +9,13 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 )
 
 var scalaTypeDiagnostic = regexp.MustCompile(`(?m)^\[Bug914\.tla:(\d+):(\d+)-(\d+):(\d+)\]: (.*?)\s+E@`)
 
-func TestFrontendTypeDiagnosticsMatchScalaRangesAndHeadlines(t *testing.T) {
+func TestFrontendTypeDiagnosticsMatchScalaExactly(t *testing.T) {
 	scalaExecutable := os.Getenv("APALACHE_SCALA")
 	if scalaExecutable == "" {
 		t.Skip("set APALACHE_SCALA to run the live frontend diagnostic oracle")
@@ -54,17 +53,8 @@ func TestFrontendTypeDiagnosticsMatchScalaRangesAndHeadlines(t *testing.T) {
 		if result.Diagnostics[index].Position != want {
 			t.Errorf("diagnostic %d range = %+v, Scala %+v", index, result.Diagnostics[index].Position, want)
 		}
-		if diagnosticHeadline(result.Diagnostics[index].Message) != diagnosticHeadline(match[5]) {
-			t.Errorf("diagnostic %d headline = %q, Scala %q", index,
-				diagnosticHeadline(result.Diagnostics[index].Message), diagnosticHeadline(match[5]))
+		if result.Diagnostics[index].Message != match[5] {
+			t.Errorf("diagnostic %d message = %q, Scala %q", index, result.Diagnostics[index].Message, match[5])
 		}
 	}
-}
-
-func diagnosticHeadline(message string) string {
-	message = strings.TrimSpace(message)
-	if end := strings.Index(message, ". "); end >= 0 {
-		return message[:end+1]
-	}
-	return message
 }

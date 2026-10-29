@@ -706,6 +706,26 @@ func TestToEtcExprPreservesCustomExplanationContracts(t *testing.T) {
 	if !found || message != "Arguments to = should have the same type. For arguments 1, TRUE with types Int, Bool, in expression 1 = TRUE" {
 		t.Fatalf("equality explanation = %q, %v", message, found)
 	}
+	emptyRecord, err := NewRecordType(map[string]Type{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	booleanRecord, err := NewRecordType(map[string]Type{"foo": BoolT1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := tlaOper("RECORD", tlaString("foo"), tlaBool(true))
+	equality = tlaOper("EQ", tlaName("m"), record)
+	translated, err = newTranslator().TranslateExpression(equality)
+	if err != nil {
+		t.Fatal(err)
+	}
+	application = translated.(*EtcApp)
+	message, found = application.Explain(nil, []Type{emptyRecord, booleanRecord})
+	wantRecord := `Arguments to = should have the same type. For arguments m, ["foo" ↦ TRUE] with types {  }, { foo: Bool }, in expression m = (["foo" ↦ TRUE])`
+	if !found || message != wantRecord {
+		t.Fatalf("record equality explanation = %q, %v", message, found)
+	}
 
 	call := tlaOper("OPER_APP", tlaName("F"), tlaInt(1))
 	translated, err = newTranslator().TranslateExpression(call)

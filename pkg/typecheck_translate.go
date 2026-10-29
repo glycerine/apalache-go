@@ -2,6 +2,7 @@ package apalache
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -199,7 +200,7 @@ func (translator *ToEtcExpr) translateOperator(expression *OperExpr) (EtcExpr, e
 					operation = "/="
 				}
 				return fmt.Sprintf("Arguments to %s should have the same type. For arguments %s with types %s, in expression %s",
-					operation, formatExpressionList(args), joinTypeList(actual, ", "), formatExpression(expression)), true
+					operation, formatExpressionList(args), joinDiagnosticTypeList(actual, ", "), formatExpression(expression)), true
 			})
 		}
 		return result, err
@@ -910,10 +911,39 @@ func deinterleaveBindings(expressions []Expr) ([]bindingPair, error) {
 
 func formatExpression(expression Expr) string {
 	formatted, err := FormatTLAExpression(expression)
+	if _, composite := expression.(*OperExpr); composite {
+		formatted, err = FormatUTFExpression(expression)
+	}
 	if err != nil {
 		return fmt.Sprintf("<%T>", expression)
 	}
 	return formatted
+}
+
+func formatDiagnosticType(typ Type) string {
+	record, ok := typ.(RecordType)
+	if !ok {
+		return typ.String()
+	}
+	fields := record.Fields()
+	keys := make([]string, 0, len(fields))
+	for key := range fields {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	parts := make([]string, len(keys))
+	for index, key := range keys {
+		parts[index] = key + ": " + formatDiagnosticType(fields[key])
+	}
+	return "{ " + strings.Join(parts, ", ") + " }"
+}
+
+func joinDiagnosticTypeList(types []Type, separator string) string {
+	formatted := make([]string, len(types))
+	for index, typ := range types {
+		formatted[index] = formatDiagnosticType(typ)
+	}
+	return strings.Join(formatted, separator)
 }
 
 func formatExpressionList(expressions []Expr) string {
