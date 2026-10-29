@@ -719,3 +719,94 @@ func TestToEtcExprPreservesCustomExplanationContracts(t *testing.T) {
 		t.Fatalf("operator-application explanation = %q, %v", message, found)
 	}
 }
+
+func TestToEtcExprScalaEmptyRecursiveAndLetShapes(t *testing.T) {
+	varType := func(number int) Type {
+		variable, err := NewVarType(number)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return variable
+	}
+	translate := func(expression Expr, annotations map[UID]Type) EtcExpr {
+		translated, err := NewToEtcExpr(annotations, nil, NewTypeVarPool(1000), false).TranslateExpression(expression)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return translated
+	}
+
+	if got, want := translate(tlaOper("SET_ENUM"), nil), EtcExpr(NewUniqueEtcConst(mustSet(varType(1000)))); !EqualEtcExpr(got, want) {
+		t.Fatalf("empty set = %v, want %v", got, want)
+	}
+	if got, want := translate(tlaOper("TUPLE"), nil), EtcExpr(NewUniqueEtcConst(mustSeq(varType(1000)))); !EqualEtcExpr(got, want) {
+		t.Fatalf("empty tuple = %v, want %v", got, want)
+	}
+	if got := translate(tlaOper("FUN_REC_REF"), nil); !EqualEtcExpr(got, NewUniqueEtcName("$RecursiveFunction")) {
+		t.Fatalf("recursive function reference = %v", got)
+	}
+
+	for _, test := range []struct {
+		name        string
+		declaration func() *OperDecl
+		annotation  func(*OperDecl) map[UID]Type
+		want        func(*OperDecl) EtcExpr
+	}{
+		{
+			"simple",
+			func() *OperDecl {
+				return NewOperDecl("Foo", []OperatorParam{ValueParam("x")}, tlaName("x"), Untyped())
+			},
+			func(*OperDecl) map[UID]Type { return nil },
+			func(*OperDecl) EtcExpr {
+				abstraction := NewUniqueEtcAbs(NewUniqueEtcName("x"), EtcBinding{
+					Name: NewUniqueEtcName("x"), Domain: NewUniqueEtcConst(mustSet(varType(1000))),
+				})
+				let := NewUniqueEtcLet("Foo", abstraction, NewUniqueEtcConst(BoolT1))
+				return NewUniqueEtcApp([]Type{mustOperator([]Type{varType(1001)}, varType(1001))}, let)
+			},
+		},
+		{
+			"annotated",
+			func() *OperDecl {
+				return NewOperDecl("Foo", []OperatorParam{ValueParam("x")}, tlaName("x"), Untyped())
+			},
+			func(declaration *OperDecl) map[UID]Type {
+				return map[UID]Type{declaration.ID(): mustOperator([]Type{IntT1}, IntT1)}
+			},
+			func(*OperDecl) EtcExpr {
+				abstraction := NewUniqueEtcAbs(NewUniqueEtcName("x"), EtcBinding{
+					Name: NewUniqueEtcName("x"), Domain: NewUniqueEtcConst(mustSet(varType(1000))),
+				})
+				let := NewUniqueEtcLet("Foo", abstraction, NewUniqueEtcConst(BoolT1))
+				declared := NewUniqueEtcTypeDecl("Foo", mustOperator([]Type{IntT1}, IntT1), let)
+				return NewUniqueEtcApp([]Type{mustOperator([]Type{varType(1001)}, varType(1001))}, declared)
+			},
+		},
+		{
+			"higher order",
+			func() *OperDecl {
+				return NewOperDecl("Foo", []OperatorParam{{Name: "Bar", Arity: 1}}, tlaInt(1), Untyped())
+			},
+			func(*OperDecl) map[UID]Type { return nil },
+			func(*OperDecl) EtcExpr {
+				parameterType := mustOperator([]Type{varType(1000)}, varType(1001))
+				abstraction := NewUniqueEtcAbs(NewUniqueEtcConst(IntT1), EtcBinding{
+					Name: NewUniqueEtcName("Bar"), Domain: NewUniqueEtcConst(mustSet(parameterType)),
+				})
+				let := NewUniqueEtcLet("Foo", abstraction, NewUniqueEtcConst(BoolT1))
+				return NewUniqueEtcApp([]Type{mustOperator([]Type{varType(1002)}, varType(1002))}, let)
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			declaration := test.declaration()
+			input := NewLetInExpr(tlaBool(true), Untyped(), declaration)
+			got := translate(input, test.annotation(declaration))
+			want := test.want(declaration)
+			if !EqualEtcExpr(got, want) {
+				t.Fatalf("LET translation = %v, want %v", got, want)
+			}
+		})
+	}
+}
