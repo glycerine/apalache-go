@@ -323,7 +323,8 @@ func (checker *EtcTypeChecker) computeLet(context TypeContext, outerSolver *Cons
 	reportDefinitionError := func(solution *Substitution, types []Type) {
 		resolved := applyTypes(solution, types)
 		expected, _ := solution.ApplyRecursive(scheme.Principal())
-		checker.onTypeError(abstraction.SourceRef(), fmt.Sprintf("Expected %s in %s. Found: %s", expected, let.Name(), joinTypeList(resolved, " and ")))
+		checker.onTypeError(abstraction.SourceRef(), fmt.Sprintf("Expected %s in %s. Found: %s",
+			formatDiagnosticType(expected), let.Name(), joinDiagnosticTypeList(resolved, " and ")))
 	}
 	operatorVar := checker.pool.Fresh()
 	if err = definitionSolver.Add(&EqClause{Unknown: operatorVar, Term: scheme.Principal(), OnTypeError: reportDefinitionError}); err != nil {

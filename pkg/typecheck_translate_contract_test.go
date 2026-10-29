@@ -726,6 +726,25 @@ func TestToEtcExprPreservesCustomExplanationContracts(t *testing.T) {
 	if !found || message != wantRecord {
 		t.Fatalf("record equality explanation = %q, %v", message, found)
 	}
+	a, err := NewVarType(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	setA, err := NewSetType(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resultRecord, err := NewRecordType(map[string]Type{"f": setA})
+	if err != nil {
+		t.Fatal(err)
+	}
+	annotatedOperator, err := NewOperatorType([]Type{a}, resultRecord)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := formatDiagnosticType(annotatedOperator), "((a) => { f: Set(a) })"; got != want {
+		t.Fatalf("annotated operator diagnostic type = %q, want %q", got, want)
+	}
 
 	call := tlaOper("OPER_APP", tlaName("F"), tlaInt(1))
 	translated, err = newTranslator().TranslateExpression(call)

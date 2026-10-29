@@ -921,11 +921,25 @@ func formatExpression(expression Expr) string {
 }
 
 func formatDiagnosticType(typ Type) string {
-	record, ok := typ.(RecordType)
-	if !ok {
+	switch typed := typ.(type) {
+	case FunType:
+		return "(" + formatDiagnosticType(typed.Argument()) + " -> " + formatDiagnosticType(typed.Result()) + ")"
+	case SetType:
+		return "Set(" + formatDiagnosticType(typed.Element()) + ")"
+	case SeqType:
+		return "Seq(" + formatDiagnosticType(typed.Element()) + ")"
+	case TupleType:
+		return "<<" + joinDiagnosticTypeList(typed.Elements(), ", ") + ">>"
+	case OperatorType:
+		return "((" + joinDiagnosticTypeList(typed.Arguments(), ", ") + ") => " + formatDiagnosticType(typed.Result()) + ")"
+	case RecordType:
+		return formatDiagnosticRecordFields(typed.Fields())
+	default:
 		return typ.String()
 	}
-	fields := record.Fields()
+}
+
+func formatDiagnosticRecordFields(fields map[string]Type) string {
 	keys := make([]string, 0, len(fields))
 	for key := range fields {
 		keys = append(keys, key)
