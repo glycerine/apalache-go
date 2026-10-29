@@ -2,6 +2,7 @@ package apalache
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 )
 
@@ -195,5 +196,93 @@ func TestKeramelizerScalaLETOrderMalformedSetAndTracking(t *testing.T) {
 	rewritten, err := NewKeramelizer(nil, NewListenerTracker(changes)).Expression(original)
 	if err != nil || changes.TraceBack(rewritten.ID()) != original.ID() {
 		t.Fatalf("tracked rewrite = %v, %v, origin %s", rewritten, err, changes.TraceBack(rewritten.ID()))
+	}
+}
+
+func TestKeramelizerScalaPrimedMembershipFamilies(t *testing.T) {
+	set := NewNameExpr("S", Typed(mustSet(IntT1)))
+	powerset := MustOperExpr(Op("SET_POWERSET"), Typed(mustSet(mustSet(IntT1))), NewNameExpr("Sets", Typed(mustSet(IntT1))))
+	functionType := mustFun(IntT1, IntT1)
+	functionSet := MustOperExpr(Op("FUN_SET"), Typed(mustSet(functionType)), set, set)
+	for _, test := range []struct {
+		leftType Type
+		right    Expr
+	}{
+		{IntT1, set},
+		{mustSet(IntT1), powerset},
+		{functionType, functionSet},
+	} {
+		prime := MustOperExpr(Op("PRIME"), Typed(test.leftType), NewNameExpr("x", Typed(test.leftType)))
+		got, err := NewKeramelizer(NewUniqueNameGenerator(), nil).Expression(
+			MustOperExpr(Op("SET_IN"), Typed(BoolT1), prime, test.right))
+		if err != nil {
+			t.Fatal(err)
+		}
+		exists, ok := got.(*OperExpr)
+		if !ok || exists.Operator().Name() != "EXISTS3" || exists.Arguments()[0].(*NameExpr).Name() != "t_1" ||
+			!EqualTypedExpr(exists.Arguments()[1], test.right) || exists.Arguments()[2].(*OperExpr).Operator().Name() != "EQ" {
+			t.Fatalf("primed membership in %v = %v", test.right, got)
+		}
+	}
+}
+
+func TestKeramelizerScalaGeneratedOutputsAreKera(t *testing.T) {
+	inputPredicate := KeramelizerInputLanguagePredicate{}
+	outputPredicate := KeraLanguagePredicate{}
+	for sample := 0; sample < 500; sample++ {
+		name := fmt.Sprintf("x_%d", sample)
+		integer := NewNameExpr(name, Typed(IntT1))
+		intSetType := mustSet(IntT1)
+		left := NewNameExpr("A_"+name, Typed(intSetType))
+		right := NewNameExpr("B_"+name, Typed(intSetType))
+		p := NewNameExpr("P_"+name, Typed(BoolT1))
+		q := NewNameExpr("Q_"+name, Typed(BoolT1))
+		var input Expr
+		switch sample % 12 {
+		case 0:
+			input = MustOperExpr(Op("SET_INTERSECT"), Typed(intSetType), left, right)
+		case 1:
+			input = MustOperExpr(Op("SET_MINUS"), Typed(intSetType), left, right)
+		case 2:
+			input = MustOperExpr(Op("SET_NOT_IN"), Typed(BoolT1), integer, left)
+		case 3:
+			input = MustOperExpr(Op("EQUIV"), Typed(BoolT1), p, q)
+		case 4:
+			input = MustOperExpr(Op("IMPLIES"), Typed(BoolT1), p, q)
+		case 5:
+			input = MustOperExpr(Op("NE"), Typed(BoolT1), integer, intLiteral(int64(sample)))
+		case 6:
+			input = MustOperExpr(Op("SET_SUBSET_EQ"), Typed(BoolT1), left, right)
+		case 7:
+			input = MustOperExpr(Op("SET_IN"), Typed(BoolT1),
+				MustOperExpr(Op("PRIME"), Typed(IntT1), integer), left)
+		case 8:
+			tupleType := mustTuple(IntT1, IntT1)
+			input = MustOperExpr(Op("SET_TIMES"), Typed(mustSet(tupleType)), left, right)
+		case 9:
+			recordType, err := NewRecordType(map[string]Type{"a": IntT1})
+			if err != nil {
+				t.Fatal(err)
+			}
+			input = MustOperExpr(Op("RECORD_SET"), Typed(mustSet(recordType)),
+				NewValueExpr(StringValue("a"), Typed(StrT1)), left)
+		case 10:
+			functionType := mustFun(IntT1, IntT1)
+			input = MustOperExpr(Op("SET_IN"), Typed(BoolT1), NewNameExpr("f_"+name, Typed(functionType)),
+				MustOperExpr(Op("FUN_SET"), Typed(mustSet(functionType)), left, right))
+		default:
+			input = MustOperExpr(Op("CASE_OTHER"), Typed(BoolT1), q, p, q)
+		}
+
+		if result := inputPredicate.CheckExpression(input); !result.OK() {
+			t.Fatalf("sample %d input rejected: %+v; expression %v", sample, result.Failures, input)
+		}
+		got, err := NewKeramelizer(NewUniqueNameGenerator(), nil).Expression(input)
+		if err != nil {
+			t.Fatalf("sample %d: %v", sample, err)
+		}
+		if result := outputPredicate.CheckExpression(got); !result.OK() {
+			t.Fatalf("sample %d output is not KerA+: %+v; input %v; output %v", sample, result.Failures, input, got)
+		}
 	}
 }
