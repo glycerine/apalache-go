@@ -21,7 +21,7 @@ func TestTypeAliasSubstitutionScalaCases(t *testing.T) {
 		t.Fatalf("camel-case Apply() = %v, %v, %v", result, changed, err)
 	}
 	missing, _ := NewConstType("$camlCaseMissing")
-	if _, _, err = substitution.Apply(missing); err == nil || !strings.Contains(err.Error(), "missing @typeAlias") {
+	if _, _, err = substitution.Apply(missing); err == nil || !strings.Contains(err.Error(), "Missing @typeAlias") {
 		t.Fatalf("missing alias error = %v", err)
 	}
 }

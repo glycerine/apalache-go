@@ -20,7 +20,7 @@ func TestAnnotatedTopLevelScalaFixtureCorpus(t *testing.T) {
 		"Bug925.tla":              "Error when computing the type of Optional",
 		"FormulaRefs.tla":         "subformula references are not supported: A!1",
 		"ModelValFail.tla":        "types UT, Str",
-		"TestAliasNewMissing.tla": "typeAlias",
+		"TestAliasNewMissing.tla": "Missing @typeAlias",
 		"UntypedConst.tla":        "type annotation for CONSTANT",
 		"UntypedVar.tla":          "type annotation for VARIABLE",
 	}

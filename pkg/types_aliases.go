@@ -77,7 +77,7 @@ func (substitution *TypeAliasSubstitution) Apply(typ Type) (Type, bool, error) {
 		}
 		if IsAliasReference(typed.Name()) {
 			name, _ := AliasName(typed.Name())
-			return nil, false, fmt.Errorf("missing @typeAlias: %s = <type>;", name)
+			return nil, false, fmt.Errorf("Missing @typeAlias: %s = <type>;", name)
 		}
 		return typ, false, nil
 	case primitiveType, VarType:
