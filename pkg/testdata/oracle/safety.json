@@ -189,6 +189,15 @@
       "go_args": ["check", "--length=1", "--no-deadlock", "--inv=Inv", "pkg/testdata/oracle/StructuredTrace.tla"]
     },
     {
+      "name": "nondeterministic-structured-trace",
+      "dir": "..",
+      "source": "pkg/testdata/oracle/NondeterministicStructuredTrace.tla",
+      "rows": true,
+      "validate_behavior": true,
+      "scala_args": ["check", "--features=rows", "--length=1", "--no-deadlock", "--inv=Inv", "pkg/testdata/oracle/NondeterministicStructuredTrace.tla"],
+      "go_args": ["check", "-rows", "-length", "1", "-deadlock=false", "-inv", "Inv", "pkg/testdata/oracle/NondeterministicStructuredTrace.tla"]
+    },
+    {
       "name": "variants",
       "dir": "..",
       "scala_args": ["check", "--features=rows", "--length=0", "--no-deadlock", "--inv=AllTests", "test/tla/TestVariants.tla"],

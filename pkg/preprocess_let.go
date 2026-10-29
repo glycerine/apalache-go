@@ -2,8 +2,9 @@ package apalache
 
 // OptimizeLetIn removes unused LET definitions. It assumes globally unique
 // names, as established by IncrementalRenaming. The analysis intentionally
-// matches Scala's conservative one-pass behavior rather than computing a full
-// def-use closure.
+// matches Scala's conservative behavior: every retained or discarded
+// definition is visited before the final unused-name filter, so dependencies
+// are never dropped merely because they occur in a later definition body.
 func OptimizeLetIn(input TouchExpr, tracker TransformationTracker) TouchExpr {
 	if tracker == nil {
 		tracker = IdleTracker{}
@@ -40,7 +41,7 @@ func OptimizeLetIn(input TouchExpr, tracker TransformationTracker) TouchExpr {
 				declaration *OperDecl
 				changed     bool
 			}
-			transformed := make([]declarationResult, 0, len(declarations))
+			results := make([]declarationResult, 0, len(declarations))
 			for _, declaration := range declarations {
 				newBody := transform(TouchExpr{Expr: declaration.Body(), Changed: true})
 				newDeclaration := declaration
@@ -49,8 +50,12 @@ func OptimizeLetIn(input TouchExpr, tracker TransformationTracker) TouchExpr {
 					copy.SetBody(newBody.Expr)
 					newDeclaration = tracker.TrackOperatorDeclaration(func(*OperDecl) *OperDecl { return copy })(declaration)
 				}
-				if _, isUnused := unused[newDeclaration.Name()]; !isUnused {
-					transformed = append(transformed, declarationResult{declaration: newDeclaration, changed: newBody.Changed})
+				results = append(results, declarationResult{declaration: newDeclaration, changed: newBody.Changed})
+			}
+			transformed := make([]declarationResult, 0, len(results))
+			for _, result := range results {
+				if _, isUnused := unused[result.declaration.Name()]; !isUnused {
+					transformed = append(transformed, result)
 				}
 			}
 			changed := body.Changed || len(transformed) != len(declarations)

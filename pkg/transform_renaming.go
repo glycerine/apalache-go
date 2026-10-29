@@ -9,15 +9,13 @@ import (
 func MakeRenamedName(base string, counter int) string { return fmt.Sprintf("%s$%d", base, counter) }
 
 func ParseRenamedName(name string) (base string, counter int, renamed bool, err error) {
-	if strings.Count(name, "$") > 1 {
-		return "", 0, false, fmt.Errorf("variable name %q contains more than one separator", name)
-	}
-	before, after, found := strings.Cut(name, "$")
-	if !found {
+	separator := strings.LastIndexByte(name, '$')
+	if separator < 0 {
 		return "", 0, false, nil
 	}
+	before, after := name[:separator], name[separator+1:]
 	if after == "" {
-		return "", 0, false, fmt.Errorf("renamed variable %q has no counter", name)
+		return "", 0, false, nil
 	}
 	for _, digit := range after {
 		if digit < '0' || digit > '9' {

@@ -388,16 +388,19 @@ func (rewriter *StratifiedRewriter) rewriteNullaryOperatorApplication(
 
 func (rewriter *StratifiedRewriter) rewriteLetIn(expression *LetInExpr, scope RewriterScope) (RewriterScope, ArenaCell, error) {
 	baseBinding := scope.Binding
-	localNames := make([]string, 0, len(expression.Declarations()))
-	for _, declaration := range expression.Declarations() {
+	declarations, err := orderNullaryLetDeclarations(expression.Declarations())
+	if err != nil {
+		return scope, ArenaCell{}, err
+	}
+	localNames := make([]string, 0, len(declarations))
+	for _, declaration := range declarations {
 		if len(declaration.FormalParams()) != 0 {
 			return scope, ArenaCell{}, fmt.Errorf("cannot directly rewrite parameterized LET operator %s", declaration.Name())
 		}
 		var value ArenaCell
-		var err error
 		scope, value, err = rewriter.Rewrite(declaration.Body(), scope)
 		if err != nil {
-			return scope, ArenaCell{}, fmt.Errorf("rewrite LET operator %s: %w", declaration.Name(), err)
+			return scope, ArenaCell{}, fmt.Errorf("rewrite LET operator %s after %v: %w", declaration.Name(), localNames, err)
 		}
 		scope.Binding = scope.Binding.With(declaration.Name(), value)
 		localNames = append(localNames, declaration.Name())
@@ -413,6 +416,58 @@ func (rewriter *StratifiedRewriter) rewriteLetIn(expression *LetInExpr, scope Re
 	}
 	resultScope.Binding = NewBinding(binding)
 	return resultScope, result, err
+}
+
+func orderNullaryLetDeclarations(declarations []*OperDecl) ([]*OperDecl, error) {
+	byName := make(map[string]*OperDecl, len(declarations))
+	names := make([]string, len(declarations))
+	incoming := make(map[string]map[string]struct{}, len(declarations))
+	for index, declaration := range declarations {
+		if len(declaration.FormalParams()) != 0 {
+			return nil, fmt.Errorf("cannot directly rewrite parameterized LET operator %s", declaration.Name())
+		}
+		name := declaration.Name()
+		byName[name] = declaration
+		names[index] = name
+		incoming[name] = make(map[string]struct{})
+	}
+	for _, declaration := range declarations {
+		collectNullaryLetDependencies(declaration.Body(), byName, incoming[declaration.Name()])
+	}
+	orderedNames, cycle, err := StableTopologicalSort(incoming, names)
+	if err != nil {
+		return nil, fmt.Errorf("order LET operators: %w", err)
+	}
+	if len(cycle) != 0 {
+		return nil, fmt.Errorf("recursive nullary LET operators are unsupported")
+	}
+	ordered := make([]*OperDecl, len(orderedNames))
+	for index, name := range orderedNames {
+		ordered[index] = byName[name]
+	}
+	return ordered, nil
+}
+
+func collectNullaryLetDependencies(expression Expr, locals map[string]*OperDecl, result map[string]struct{}) {
+	switch typed := expression.(type) {
+	case *OperExpr:
+		arguments := typed.Arguments()
+		if typed.Operator().Name() == "OPER_APP" && len(arguments) == 1 {
+			if callee, ok := arguments[0].(*NameExpr); ok {
+				if _, local := locals[callee.Name()]; local {
+					result[callee.Name()] = struct{}{}
+				}
+			}
+		}
+		for _, argument := range arguments {
+			collectNullaryLetDependencies(argument, locals, result)
+		}
+	case *LetInExpr:
+		collectNullaryLetDependencies(typed.Body(), locals, result)
+		for _, declaration := range typed.Declarations() {
+			collectNullaryLetDependencies(declaration.Body(), locals, result)
+		}
+	}
 }
 
 func (rewriter *StratifiedRewriter) rewriteTransparentUnary(

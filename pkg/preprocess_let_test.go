@@ -50,6 +50,15 @@ func TestOptimizeLetInScalaCases(t *testing.T) {
 	if !mixed.Changed || !EqualTypedExpr(mixed.Expr, want) {
 		t.Fatalf("mixed LET = %v", mixed.Expr)
 	}
+
+	base := declaration("Base", "base")
+	middle := NewOperDecl("Middle", nil, application("Base"), Typed(stringOperator))
+	top := NewOperDecl("Top", nil, application("Middle"), Typed(stringOperator))
+	chain := NewLetInExpr(application("Top"), Typed(StrT1), base, middle, top)
+	retained := OptimizeLetIn(TouchExpr{Expr: chain, Changed: true}, nil)
+	if retained.Changed || retained.Expr != chain {
+		t.Fatalf("transitive LET dependencies were removed: %v", retained.Expr)
+	}
 }
 
 func TestOptimizeLetInNestedAndLambdaForms(t *testing.T) {

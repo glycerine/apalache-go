@@ -3124,7 +3124,9 @@ func TestStratifiedLetRuleSequentialScopeShadowingAndParameterizedRejection(t *t
 	aCall := MustOperExpr(Op("OPER_APP"), Typed(IntT1), NewNameExpr("a", Typed(nullaryInt)))
 	b := NewOperDecl("b", nil, aCall, Typed(nullaryInt))
 	bCall := MustOperExpr(Op("OPER_APP"), Typed(IntT1), NewNameExpr("b", Typed(nullaryInt)))
-	let := NewLetInExpr(bCall, Typed(IntT1), a, b)
+	// Sibling LET operators are mutually visible regardless of declaration
+	// order; b deliberately precedes the a definition it references.
+	let := NewLetInExpr(bCall, Typed(IntT1), b, a)
 
 	rewriter := NewStratifiedRewriter()
 	scope := InitialRewriterScope()
@@ -3147,6 +3149,15 @@ func TestStratifiedLetRuleSequentialScopeShadowingAndParameterizedRejection(t *t
 	}
 	if _, leaked := resultScope.Binding.Get("b"); leaked {
 		t.Fatal("local LET binding b escaped")
+	}
+
+	selfCall := MustOperExpr(Op("OPER_APP"), Typed(IntT1), NewNameExpr("self", Typed(nullaryInt)))
+	self := NewOperDecl("self", nil, selfCall, Typed(nullaryInt))
+	cycleBase := InitialRewriterScope()
+	if returned, _, cycleErr := NewStratifiedRewriter().Rewrite(
+		NewLetInExpr(selfCall, Typed(IntT1), self), cycleBase,
+	); cycleErr == nil || returned.Arena != cycleBase.Arena {
+		t.Fatalf("recursive LET returned scope=%v, err=%v", returned, cycleErr)
 	}
 
 	parameterizedType := mustOperator([]Type{IntT1}, IntT1)

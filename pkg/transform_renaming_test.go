@@ -14,8 +14,12 @@ func TestRenamedNameUtilities(t *testing.T) {
 	if _, _, renamed, err = ParseRenamedName("plain"); err != nil || renamed {
 		t.Fatalf("plain name parsed as renamed: renamed=%v err=%v", renamed, err)
 	}
-	if _, _, _, err = ParseRenamedName("x$1$2"); err == nil {
-		t.Fatal("accepted a name with multiple separators")
+	base, counter, renamed, err = ParseRenamedName("x$1$2")
+	if err != nil || !renamed || base != "x$1" || counter != 2 {
+		t.Fatalf("parse source name with separator = (%q, %d, %v, %v)", base, counter, renamed, err)
+	}
+	if _, _, renamed, err = ParseRenamedName("source$"); err != nil || renamed {
+		t.Fatalf("source name ending in separator parsed as renamed: renamed=%v err=%v", renamed, err)
 	}
 	max := MergeNameCounters(map[string]int{"x": 1}, map[string]int{"x": 2, "y": 3}, true)
 	min := MergeNameCounters(map[string]int{"x": 1}, map[string]int{"x": 2, "y": 3}, false)
