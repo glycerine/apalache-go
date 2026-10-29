@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -12,17 +13,20 @@ import (
 type commonOutputFlags struct {
 	debug             optionalBoolFlag
 	writeIntermediate optionalBoolFlag
+	profiling         optionalBoolFlag
 }
 
 type commonOutputOptions struct {
 	debug             bool
 	writeIntermediate bool
+	profiling         bool
 }
 
 func addCommonOutputFlags(flags *flag.FlagSet) *commonOutputFlags {
 	options := &commonOutputFlags{}
 	flags.Var(&options.debug, "debug", "write the resolved application configuration to the run directory")
 	flags.Var(&options.writeIntermediate, "write-intermediate", "write intermediate representations to the run directory")
+	flags.Var(&options.profiling, "profiling", "write rewriting-rule statistics to profile-rules.txt")
 	return options
 }
 
@@ -44,7 +48,41 @@ func (flags *commonOutputFlags) resolve(config jsonCommandConfig, visited map[st
 		}
 		options.writeIntermediate = parsed.value
 	}
+	if visited["profiling"] {
+		options.profiling = flags.profiling.value
+	} else if config.Profiling != nil {
+		options.profiling = *config.Profiling
+	} else if value, found := os.LookupEnv("PROFILING"); found {
+		var parsed optionalBoolFlag
+		if err := parsed.Set(value); err != nil {
+			return commonOutputOptions{}, fmt.Errorf("invalid PROFILING environment value %q: %w", value, err)
+		}
+		options.profiling = parsed.value
+	}
 	return options, nil
+}
+
+func newRuleProfiler(enabled bool) *pal.RuleStatListener {
+	if !enabled {
+		return nil
+	}
+	return pal.NewRuleStatListener()
+}
+
+func writeRuleProfile(paths commandOutputPaths, listener *pal.RuleStatListener) error {
+	if listener == nil {
+		return nil
+	}
+	var report bytes.Buffer
+	if err := listener.Locator().WriteStats(&report); err != nil {
+		return fmt.Errorf("format rule profile: %w", err)
+	}
+	for _, path := range paths.implicitFiles("profile-rules.txt") {
+		if err := os.WriteFile(path, report.Bytes(), 0o644); err != nil {
+			return fmt.Errorf("write rule profile to %s: %w", path, err)
+		}
+	}
+	return nil
 }
 
 func writeDebugApplicationConfig(
@@ -70,9 +108,7 @@ func writeDebugApplicationConfig(
 	if config.SMTProfile == nil {
 		config.SMTProfile = boolPointer(false)
 	}
-	if config.Profiling == nil {
-		config.Profiling = boolPointer(false)
-	}
+	config.Profiling = boolPointer(options.profiling)
 	if config.Features == nil {
 		empty := []string{}
 		config.Features = &empty

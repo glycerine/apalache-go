@@ -90,6 +90,14 @@ func newTransitionExecutorWithEncodingAndSolverOptions(
 	constants, variables []string, solverUIntOptions map[string]uint32, solverTextOptions map[string]string,
 	shortCircuit bool, smtEncoding SMTEncoding,
 ) *TransitionExecutor {
+	return newTransitionExecutorWithProfiler(
+		constants, variables, solverUIntOptions, solverTextOptions, shortCircuit, smtEncoding, nil)
+}
+
+func newTransitionExecutorWithProfiler(
+	constants, variables []string, solverUIntOptions map[string]uint32, solverTextOptions map[string]string,
+	shortCircuit bool, smtEncoding SMTEncoding, ruleStats *RuleStatListener,
+) *TransitionExecutor {
 	if smtEncoding == "" {
 		smtEncoding = SMTEncodingOOPSLA19
 	}
@@ -97,7 +105,7 @@ func newTransitionExecutorWithEncodingAndSolverOptions(
 		constants: stringSet(constants),
 		variables: stringSet(variables),
 		rewriter: NewStratifiedRewriterWithOptions(StratifiedRewriterOptions{
-			ShortCircuit: shortCircuit, SMTEncoding: smtEncoding,
+			ShortCircuit: shortCircuit, SMTEncoding: smtEncoding, RuleStats: ruleStats,
 		}),
 		scope:             InitialRewriterScope(),
 		prepared:          make(map[int]EncodedTransition),

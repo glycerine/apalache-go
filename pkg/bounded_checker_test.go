@@ -197,6 +197,30 @@ func TestCheckBoundedSafetyCanDelayInvariantChecking(t *testing.T) {
 	}
 }
 
+func TestCheckBoundedSafetyAggregatesRuleProfileAcrossExecutors(t *testing.T) {
+	module, configuration := counterSafetyModule(2)
+	prepared, err := PrepareSafetyTransitions(module, SafetyPipelineOptions{Specification: configuration})
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener := NewRuleStatListener()
+	_, err = CheckBoundedSafetyWithOptions(context.Background(), prepared.Module, prepared.Predicates,
+		BoundedSafetyOptions{MaxSteps: 1, CheckDeadlocks: true, RuleStats: listener})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls, cells, assertions int64
+	for _, stat := range listener.Locator().Stats() {
+		calls += stat.Calls
+		cells += stat.CellsSelf
+		assertions += stat.SMTAssertionsSelf
+	}
+	if calls == 0 || cells == 0 || assertions == 0 || len(listener.Locator().Stats()) < 2 {
+		t.Fatalf("bounded rule profile totals = calls %d, cells %d, assertions %d, stats %+v",
+			calls, cells, assertions, listener.Locator().Stats())
+	}
+}
+
 func TestCheckBoundedSafetyEnumeratesTransitionAlternatives(t *testing.T) {
 	x := NewNameExpr("x", Typed(IntT1))
 	constantInit := boolDefinition("CInit", NewValueExpr(BoolValue(true), Typed(BoolT1)))

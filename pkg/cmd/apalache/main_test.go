@@ -777,7 +777,7 @@ Inv == x < 2
 	runDir := filepath.Join(dir, "custom-run")
 	stdout.Reset()
 	stderr.Reset()
-	directoryTraceArgs := append([]string{"check", "--output-traces", "--out-dir=" + outDir, "--run-dir=" + runDir}, direct[1:]...)
+	directoryTraceArgs := append([]string{"check", "--output-traces", "--profiling", "--out-dir=" + outDir, "--run-dir=" + runDir}, direct[1:]...)
 	if code := run(context.Background(), directoryTraceArgs, &stdout, &stderr); code != exitOK {
 		t.Fatalf("directory trace check = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
 	}
@@ -803,9 +803,17 @@ Inv == x < 2
 		!strings.Contains(string(data), "check --output-traces") || !strings.Contains(string(data), path) {
 		t.Fatalf("custom run metadata = %q, %v", data, err)
 	}
+	if data, err := os.ReadFile(filepath.Join(runDir, "profile-rules.txt")); err != nil ||
+		!bytes.Contains(data, []byte("Rule profiling statistics")) || !bytes.Contains(data, []byte("PLUS")) {
+		t.Fatalf("custom rule profile = %q, %v", data, err)
+	}
 	generated, err := filepath.Glob(filepath.Join(outDir, filepath.Base(path), "*", "example.itf.json"))
 	if err != nil || len(generated) != 1 {
 		t.Fatalf("generated run traces = %v, %v", generated, err)
+	}
+	generatedProfiles, err := filepath.Glob(filepath.Join(outDir, filepath.Base(path), "*", "profile-rules.txt"))
+	if err != nil || len(generatedProfiles) != 1 {
+		t.Fatalf("generated rule profiles = %v, %v", generatedProfiles, err)
 	}
 	jsonPath := filepath.Join(dir, "Counter.json")
 	stdout.Reset()

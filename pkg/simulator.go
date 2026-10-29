@@ -50,6 +50,7 @@ type SimulationOptions struct {
 	SMTEncoding SMTEncoding
 	Tuning      CheckerTuning
 	MaxErrors   int
+	RuleStats   *RuleStatListener
 }
 
 // SimulateBehaviorWithOptions finds one behavior while honoring the same
@@ -137,6 +138,7 @@ func SimulateAndCheckWithOptions(
 				MaxSteps: len(result.NextTransitions), CheckDeadlocks: false, MaxErrors: remaining,
 				SMTEncoding: options.SMTEncoding,
 				Tuning:      options.Tuning.withExactTransitionPath(result.InitTransition, result.NextTransitions),
+				RuleStats:   options.RuleStats,
 			})
 			if checkErr != nil {
 				return SimulationReport{}, fmt.Errorf("check simulation run %d: %w", run+1, checkErr)
@@ -199,6 +201,7 @@ func simulateBehavior(
 		stateConstraints: stateConstraints, actionConstraints: actionConstraints,
 		smtEncoding: smtEncoding,
 		tuning:      options.Tuning,
+		ruleStats:   options.RuleStats,
 	}
 	if len(inputs.initTransitions) == 0 {
 		return SimulationResult{}, fmt.Errorf("module has no normalized initial transitions")

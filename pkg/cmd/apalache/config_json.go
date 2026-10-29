@@ -394,7 +394,7 @@ func (config jsonCommandConfig) validateForModelCommand(command string, checkSpe
 		{false, "debug"},
 		{config.SMTProfile != nil, "smtprof"},
 		{false, "write-intermediate"},
-		{config.Profiling != nil, "profiling"},
+		{false, "profiling"},
 		{config.Output != nil, "output"},
 	}
 	for _, field := range unsupported {

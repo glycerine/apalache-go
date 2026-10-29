@@ -94,3 +94,32 @@ func TestRuleStatLocatorIdentityOrderingAndReport(t *testing.T) {
 		t.Fatal("accepted nil profiling writer")
 	}
 }
+
+func TestStratifiedRewriterProfilesNestedRulesInProduction(t *testing.T) {
+	listener := NewRuleStatListener()
+	rewriter := NewStratifiedRewriterWithOptions(StratifiedRewriterOptions{RuleStats: listener})
+	addition := MustOperExpr(Op("PLUS"), Typed(IntT1), intLiteral(1), intLiteral(2))
+	expression := MustOperExpr(Op("EQ"), Typed(BoolT1), addition, intLiteral(3))
+	if _, _, err := rewriter.Rewrite(expression, InitialRewriterScope()); err != nil {
+		t.Fatal(err)
+	}
+	stats := listener.Locator()
+	if stats.RuleStat("EQ").Calls != 1 || stats.RuleStat("PLUS").Calls != 1 ||
+		stats.RuleStat("Value").Calls == 0 {
+		t.Fatalf("production rewrite calls = EQ %+v, PLUS %+v, Value %+v",
+			stats.RuleStat("EQ"), stats.RuleStat("PLUS"), stats.RuleStat("Value"))
+	}
+	var calls, cells, assertions int64
+	for _, stat := range stats.Stats() {
+		calls += stat.Calls
+		cells += stat.CellsSelf
+		assertions += stat.SMTAssertionsSelf
+	}
+	if calls < 3 || cells == 0 || assertions == 0 {
+		t.Fatalf("production rewrite totals = calls %d, cells %d, assertions %d", calls, cells, assertions)
+	}
+	var report bytes.Buffer
+	if err := stats.WriteStats(&report); err != nil || !strings.Contains(report.String(), "PLUS") {
+		t.Fatalf("production profile report = %q, %v", report.String(), err)
+	}
+}

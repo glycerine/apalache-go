@@ -104,29 +104,36 @@ func TestResolveOutputDirectoryOptionsPrecedence(t *testing.T) {
 }
 
 func TestCommonOutputOptionsPrecedenceAndEnvironmentValidation(t *testing.T) {
-	jsonDebug, jsonIntermediate := true, false
-	config := jsonCommandConfig{Debug: &jsonDebug, WriteIntermediate: &jsonIntermediate}
+	jsonDebug, jsonIntermediate, jsonProfiling := true, false, true
+	config := jsonCommandConfig{Debug: &jsonDebug, WriteIntermediate: &jsonIntermediate, Profiling: &jsonProfiling}
 	flags := flag.NewFlagSet("common-output", flag.ContinueOnError)
 	common := addCommonOutputFlags(flags)
-	if err := flags.Parse([]string{"--debug=false", "--write-intermediate=yes"}); err != nil {
+	if err := flags.Parse([]string{"--debug=false", "--write-intermediate=yes", "--profiling=false"}); err != nil {
 		t.Fatal(err)
 	}
 	visited := make(map[string]bool)
 	flags.Visit(func(flag *flag.Flag) { visited[flag.Name] = true })
 	resolved, err := common.resolve(config, visited)
-	if err != nil || resolved.debug || !resolved.writeIntermediate {
+	if err != nil || resolved.debug || !resolved.writeIntermediate || resolved.profiling {
 		t.Fatalf("CLI common output options = %#v, %v", resolved, err)
 	}
 
 	t.Setenv("WRITE_INTERMEDIATE", "no")
+	t.Setenv("PROFILING", "yes")
 	resolved, err = (&commonOutputFlags{}).resolve(jsonCommandConfig{}, map[string]bool{})
-	if err != nil || resolved.writeIntermediate {
+	if err != nil || resolved.writeIntermediate || !resolved.profiling {
 		t.Fatalf("environment common output options = %#v, %v", resolved, err)
 	}
 	t.Setenv("WRITE_INTERMEDIATE", "sometimes")
 	if _, err = (&commonOutputFlags{}).resolve(jsonCommandConfig{}, map[string]bool{}); err == nil ||
 		!strings.Contains(err.Error(), "invalid WRITE_INTERMEDIATE") {
 		t.Fatalf("invalid environment common output option = %v", err)
+	}
+	t.Setenv("WRITE_INTERMEDIATE", "no")
+	t.Setenv("PROFILING", "sometimes")
+	if _, err = (&commonOutputFlags{}).resolve(jsonCommandConfig{}, map[string]bool{}); err == nil ||
+		!strings.Contains(err.Error(), "invalid PROFILING") {
+		t.Fatalf("invalid profiling environment option = %v", err)
 	}
 }
 

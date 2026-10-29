@@ -781,8 +781,14 @@ func runTest(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 			return exitTool
 		}
 	}
+	ruleStats := newRuleProfiler(commonOptions.profiling)
 	result, err := pal.CheckBoundedSafetyWithOptions(ctx, prepared.Module, prepared.Predicates,
-		pal.BoundedSafetyOptions{MaxSteps: 1, CheckDeadlocks: true, InvariantMinimumDepth: 1, Tuning: checkerTuning})
+		pal.BoundedSafetyOptions{MaxSteps: 1, CheckDeadlocks: true, InvariantMinimumDepth: 1, Tuning: checkerTuning,
+			RuleStats: ruleStats})
+	if profileErr := writeRuleProfile(outputPaths, ruleStats); profileErr != nil {
+		fmt.Fprintf(stderr, "cannot write test rule profile: %v\n", profileErr)
+		return exitTool
+	}
 	if err != nil {
 		fmt.Fprintf(stderr, "test failed: %v\n", err)
 		return exitTool
@@ -1046,9 +1052,14 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 			return exitTool
 		}
 	}
+	ruleStats := newRuleProfiler(commonOptions.profiling)
 	report, err := pal.SimulateAndCheckWithOptions(ctx, prepared.Module, prepared.Predicates,
 		pal.SimulationOptions{MaxSteps: *length, MaxRuns: *maxRun, MaxErrors: *maxErrors, Tuning: checkerTuning,
-			SMTEncoding: pal.SMTEncoding(backend.encoding)})
+			SMTEncoding: pal.SMTEncoding(backend.encoding), RuleStats: ruleStats})
+	if profileErr := writeRuleProfile(outputPaths, ruleStats); profileErr != nil {
+		fmt.Fprintf(stderr, "cannot write simulation rule profile: %v\n", profileErr)
+		return exitTool
+	}
 	if err != nil {
 		fmt.Fprintf(stderr, "simulation failed: %v\n", err)
 		return exitTool
@@ -1534,10 +1545,15 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		return exitUsage
 	}
 	checkerTuning = checkerTuning.WithOutputTraces(*outputTraces)
+	ruleStats := newRuleProfiler(commonOptions.profiling)
 	result, err := pal.CheckBoundedSafetyWithOptions(ctx, prepared.Module, prepared.Predicates, pal.BoundedSafetyOptions{
 		MaxSteps: *length, CheckDeadlocks: checkDeadlocks, Tuning: checkerTuning, MaxErrors: *maxErrors,
-		DiscardDisabled: &discardDisabled, SMTEncoding: pal.SMTEncoding(backend.encoding),
+		DiscardDisabled: &discardDisabled, SMTEncoding: pal.SMTEncoding(backend.encoding), RuleStats: ruleStats,
 	})
+	if profileErr := writeRuleProfile(outputPaths, ruleStats); profileErr != nil {
+		fmt.Fprintf(stderr, "cannot write check rule profile: %v\n", profileErr)
+		return exitTool
+	}
 	if err != nil {
 		fmt.Fprintf(stderr, "bounded safety check failed: %v\n", err)
 		return exitTool

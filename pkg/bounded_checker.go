@@ -25,6 +25,7 @@ type BoundedSafetyOptions struct {
 	Tuning                CheckerTuning
 	MaxErrors             int
 	Listeners             []ModelCheckerListener
+	RuleStats             *RuleStatListener
 }
 
 type BoundedCounterexample struct {
@@ -241,6 +242,7 @@ func CheckBoundedSafetyWithOptions(
 		tuning: options.Tuning,
 		view:   view, maxErrors: options.MaxErrors,
 		listeners: append([]ModelCheckerListener(nil), options.Listeners...),
+		ruleStats: options.RuleStats,
 	}
 	queue := make([]boundedPath, 0, len(initTransitions))
 	for initNumber := range initTransitions {
@@ -434,6 +436,7 @@ type modulePathInputs struct {
 	view                  Expr
 	maxErrors             int
 	listeners             []ModelCheckerListener
+	ruleStats             *RuleStatListener
 }
 
 func searchSafetyPath(
@@ -722,9 +725,9 @@ func replayPendingNext(inputs modulePathInputs, path boundedPath, nextNumber int
 }
 
 func replaySafetyPath(inputs modulePathInputs, path boundedPath) (*TransitionExecutor, error) {
-	executor := newTransitionExecutorWithEncodingAndSolverOptions(
+	executor := newTransitionExecutorWithProfiler(
 		inputs.constants, inputs.variables, inputs.tuning.solverUIntOptions, inputs.tuning.solverTextOptions,
-		inputs.tuning.shortCircuit, inputs.smtEncoding)
+		inputs.tuning.shortCircuit, inputs.smtEncoding, inputs.ruleStats)
 	if inputs.hasConstantInit {
 		if err := executor.InitializeConstants(inputs.constantInit); err != nil {
 			return nil, err
