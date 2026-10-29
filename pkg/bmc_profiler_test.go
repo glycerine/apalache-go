@@ -123,3 +123,20 @@ func TestStratifiedRewriterProfilesNestedRulesInProduction(t *testing.T) {
 		t.Fatalf("production profile report = %q, %v", report.String(), err)
 	}
 }
+
+func TestStratifiedRewriterReportsOneWholeExpressionMetricDelta(t *testing.T) {
+	listener := &recordingRewriterListener{}
+	rewriter := NewStratifiedRewriterWithOptions(StratifiedRewriterOptions{RewriteStats: listener})
+	addition := MustOperExpr(Op("PLUS"), Typed(IntT1), intLiteral(11), intLiteral(12))
+	expression := MustOperExpr(Op("EQ"), Typed(BoolT1), addition, intLiteral(23))
+	if _, _, err := rewriter.Rewrite(expression, InitialRewriterScope()); err != nil {
+		t.Fatal(err)
+	}
+	if len(listener.expressions) != 1 || listener.expressions[0] != expression {
+		t.Fatalf("metric expressions = %#v", listener.expressions)
+	}
+	metrics := listener.metrics[0]
+	if metrics.NCells == 0 || metrics.NConstants == 0 || metrics.NSMTExpressions == 0 {
+		t.Fatalf("whole-expression metrics = %+v", metrics)
+	}
+}

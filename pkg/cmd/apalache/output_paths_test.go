@@ -104,24 +104,28 @@ func TestResolveOutputDirectoryOptionsPrecedence(t *testing.T) {
 }
 
 func TestCommonOutputOptionsPrecedenceAndEnvironmentValidation(t *testing.T) {
-	jsonDebug, jsonIntermediate, jsonProfiling := true, false, true
-	config := jsonCommandConfig{Debug: &jsonDebug, WriteIntermediate: &jsonIntermediate, Profiling: &jsonProfiling}
+	jsonDebug, jsonIntermediate, jsonProfiling, jsonSMTProfile := true, false, true, true
+	config := jsonCommandConfig{Debug: &jsonDebug, WriteIntermediate: &jsonIntermediate, Profiling: &jsonProfiling,
+		SMTProfile: &jsonSMTProfile}
+	if err := config.validateForModelCommand("check", true); err != nil {
+		t.Fatalf("model profiling JSON configuration = %v", err)
+	}
 	flags := flag.NewFlagSet("common-output", flag.ContinueOnError)
 	common := addCommonOutputFlags(flags)
-	if err := flags.Parse([]string{"--debug=false", "--write-intermediate=yes", "--profiling=false"}); err != nil {
+	if err := flags.Parse([]string{"--debug=false", "--write-intermediate=yes", "--profiling=false", "--smtprof=false"}); err != nil {
 		t.Fatal(err)
 	}
 	visited := make(map[string]bool)
 	flags.Visit(func(flag *flag.Flag) { visited[flag.Name] = true })
 	resolved, err := common.resolve(config, visited)
-	if err != nil || resolved.debug || !resolved.writeIntermediate || resolved.profiling {
+	if err != nil || resolved.debug || !resolved.writeIntermediate || resolved.profiling || resolved.smtProfile {
 		t.Fatalf("CLI common output options = %#v, %v", resolved, err)
 	}
 
 	t.Setenv("WRITE_INTERMEDIATE", "no")
 	t.Setenv("PROFILING", "yes")
 	resolved, err = (&commonOutputFlags{}).resolve(jsonCommandConfig{}, map[string]bool{})
-	if err != nil || resolved.writeIntermediate || !resolved.profiling {
+	if err != nil || resolved.writeIntermediate || !resolved.profiling || resolved.smtProfile {
 		t.Fatalf("environment common output options = %#v, %v", resolved, err)
 	}
 	t.Setenv("WRITE_INTERMEDIATE", "sometimes")

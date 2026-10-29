@@ -43,14 +43,15 @@ func SimulateBehavior(
 }
 
 type SimulationOptions struct {
-	MaxSteps    int
-	MaxRuns     int
-	Randomize   bool
-	RandomSeed  int64
-	SMTEncoding SMTEncoding
-	Tuning      CheckerTuning
-	MaxErrors   int
-	RuleStats   *RuleStatListener
+	MaxSteps     int
+	MaxRuns      int
+	Randomize    bool
+	RandomSeed   int64
+	SMTEncoding  SMTEncoding
+	Tuning       CheckerTuning
+	MaxErrors    int
+	RuleStats    *RuleStatListener
+	RewriteStats SymbolicStateRewriterListener
 }
 
 // SimulateBehaviorWithOptions finds one behavior while honoring the same
@@ -136,9 +137,10 @@ func SimulateAndCheckWithOptions(
 			remaining := options.MaxErrors - len(report.Counterexamples)
 			checked, checkErr := CheckBoundedSafetyWithOptions(ctx, module, predicates, BoundedSafetyOptions{
 				MaxSteps: len(result.NextTransitions), CheckDeadlocks: false, MaxErrors: remaining,
-				SMTEncoding: options.SMTEncoding,
-				Tuning:      options.Tuning.withExactTransitionPath(result.InitTransition, result.NextTransitions),
-				RuleStats:   options.RuleStats,
+				SMTEncoding:  options.SMTEncoding,
+				Tuning:       options.Tuning.withExactTransitionPath(result.InitTransition, result.NextTransitions),
+				RuleStats:    options.RuleStats,
+				RewriteStats: options.RewriteStats,
 			})
 			if checkErr != nil {
 				return SimulationReport{}, fmt.Errorf("check simulation run %d: %w", run+1, checkErr)
@@ -199,9 +201,10 @@ func simulateBehavior(
 		initTransitions:  TransitionsFromModule(module, NormalizedInitPrefix),
 		nextTransitions:  TransitionsFromModule(module, NormalizedNextPrefix),
 		stateConstraints: stateConstraints, actionConstraints: actionConstraints,
-		smtEncoding: smtEncoding,
-		tuning:      options.Tuning,
-		ruleStats:   options.RuleStats,
+		smtEncoding:  smtEncoding,
+		tuning:       options.Tuning,
+		ruleStats:    options.RuleStats,
+		rewriteStats: options.RewriteStats,
 	}
 	if len(inputs.initTransitions) == 0 {
 		return SimulationResult{}, fmt.Errorf("module has no normalized initial transitions")

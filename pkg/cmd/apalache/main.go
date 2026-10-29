@@ -764,12 +764,18 @@ func runTest(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 			return exitTool
 		}
 	}
+	changes := pal.NewChangeListener()
+	metricStats := newMetricProfiler(commonOptions.smtProfile, outputPaths, frontend.Sources, changes)
+	var tracker pal.TransformationTracker
+	if metricStats != nil {
+		tracker = pal.NewTransformationTrackerProvider(changes).Get()
+	}
 	prepared, err := pal.PrepareSafetyTransitions(frontend.Native, pal.SafetyPipelineOptions{
 		Specification: pal.SpecificationConfiguration{
 			Behavior: pal.InitNextSpec{Init: before, Next: action}, ConstantInit: *constantInit,
 			Invariants: []string{assertion},
 		},
-		Sources: frontend.Sources,
+		Sources: frontend.Sources, Tracker: tracker,
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "cannot prepare test: %v\n", err)
@@ -784,9 +790,13 @@ func runTest(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	ruleStats := newRuleProfiler(commonOptions.profiling)
 	result, err := pal.CheckBoundedSafetyWithOptions(ctx, prepared.Module, prepared.Predicates,
 		pal.BoundedSafetyOptions{MaxSteps: 1, CheckDeadlocks: true, InvariantMinimumDepth: 1, Tuning: checkerTuning,
-			RuleStats: ruleStats})
+			RuleStats: ruleStats, RewriteStats: metricStats})
 	if profileErr := writeRuleProfile(outputPaths, ruleStats); profileErr != nil {
 		fmt.Fprintf(stderr, "cannot write test rule profile: %v\n", profileErr)
+		return exitTool
+	}
+	if profileErr := writeMetricProfile(outputPaths, metricStats); profileErr != nil {
+		fmt.Fprintf(stderr, "cannot write test SMT profile: %v\n", profileErr)
 		return exitTool
 	}
 	if err != nil {
@@ -1039,8 +1049,14 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 			return exitTool
 		}
 	}
+	changes := pal.NewChangeListener()
+	metricStats := newMetricProfiler(commonOptions.smtProfile, outputPaths, frontend.Sources, changes)
+	var tracker pal.TransformationTracker
+	if metricStats != nil {
+		tracker = pal.NewTransformationTrackerProvider(changes).Get()
+	}
 	prepared, err := pal.PrepareSafetyTransitions(frontend.Native, pal.SafetyPipelineOptions{
-		Specification: configuration, Sources: frontend.Sources,
+		Specification: configuration, Sources: frontend.Sources, Tracker: tracker,
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "cannot prepare simulation: %v\n", err)
@@ -1055,9 +1071,13 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	ruleStats := newRuleProfiler(commonOptions.profiling)
 	report, err := pal.SimulateAndCheckWithOptions(ctx, prepared.Module, prepared.Predicates,
 		pal.SimulationOptions{MaxSteps: *length, MaxRuns: *maxRun, MaxErrors: *maxErrors, Tuning: checkerTuning,
-			SMTEncoding: pal.SMTEncoding(backend.encoding), RuleStats: ruleStats})
+			SMTEncoding: pal.SMTEncoding(backend.encoding), RuleStats: ruleStats, RewriteStats: metricStats})
 	if profileErr := writeRuleProfile(outputPaths, ruleStats); profileErr != nil {
 		fmt.Fprintf(stderr, "cannot write simulation rule profile: %v\n", profileErr)
+		return exitTool
+	}
+	if profileErr := writeMetricProfile(outputPaths, metricStats); profileErr != nil {
+		fmt.Fprintf(stderr, "cannot write simulation SMT profile: %v\n", profileErr)
 		return exitTool
 	}
 	if err != nil {
@@ -1526,9 +1546,16 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 			return exitTool
 		}
 	}
+	changes := pal.NewChangeListener()
+	metricStats := newMetricProfiler(commonOptions.smtProfile, outputPaths, frontend.Sources, changes)
+	var tracker pal.TransformationTracker
+	if metricStats != nil {
+		tracker = pal.NewTransformationTrackerProvider(changes).Get()
+	}
 	prepared, err := pal.PrepareSafetyTransitions(frontend.Native, pal.SafetyPipelineOptions{
 		Specification: configuration,
 		Sources:       frontend.Sources,
+		Tracker:       tracker,
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "cannot prepare safety transitions: %v\n", err)
@@ -1549,9 +1576,14 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	result, err := pal.CheckBoundedSafetyWithOptions(ctx, prepared.Module, prepared.Predicates, pal.BoundedSafetyOptions{
 		MaxSteps: *length, CheckDeadlocks: checkDeadlocks, Tuning: checkerTuning, MaxErrors: *maxErrors,
 		DiscardDisabled: &discardDisabled, SMTEncoding: pal.SMTEncoding(backend.encoding), RuleStats: ruleStats,
+		RewriteStats: metricStats,
 	})
 	if profileErr := writeRuleProfile(outputPaths, ruleStats); profileErr != nil {
 		fmt.Fprintf(stderr, "cannot write check rule profile: %v\n", profileErr)
+		return exitTool
+	}
+	if profileErr := writeMetricProfile(outputPaths, metricStats); profileErr != nil {
+		fmt.Fprintf(stderr, "cannot write check SMT profile: %v\n", profileErr)
 		return exitTool
 	}
 	if err != nil {

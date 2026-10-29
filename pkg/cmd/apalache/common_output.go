@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	pal "github.com/glycerine/apalache-go"
 )
@@ -14,12 +15,14 @@ type commonOutputFlags struct {
 	debug             optionalBoolFlag
 	writeIntermediate optionalBoolFlag
 	profiling         optionalBoolFlag
+	smtProfile        optionalBoolFlag
 }
 
 type commonOutputOptions struct {
 	debug             bool
 	writeIntermediate bool
 	profiling         bool
+	smtProfile        bool
 }
 
 func addCommonOutputFlags(flags *flag.FlagSet) *commonOutputFlags {
@@ -27,6 +30,7 @@ func addCommonOutputFlags(flags *flag.FlagSet) *commonOutputFlags {
 	flags.Var(&options.debug, "debug", "write the resolved application configuration to the run directory")
 	flags.Var(&options.writeIntermediate, "write-intermediate", "write intermediate representations to the run directory")
 	flags.Var(&options.profiling, "profiling", "write rewriting-rule statistics to profile-rules.txt")
+	flags.Var(&options.smtProfile, "smtprof", "write source-attributed SMT construction statistics to profile.csv")
 	return options
 }
 
@@ -59,6 +63,11 @@ func (flags *commonOutputFlags) resolve(config jsonCommandConfig, visited map[st
 		}
 		options.profiling = parsed.value
 	}
+	if visited["smtprof"] {
+		options.smtProfile = flags.smtProfile.value
+	} else if config.SMTProfile != nil {
+		options.smtProfile = *config.SMTProfile
+	}
 	return options, nil
 }
 
@@ -85,6 +94,36 @@ func writeRuleProfile(paths commandOutputPaths, listener *pal.RuleStatListener) 
 	return nil
 }
 
+func newMetricProfiler(
+	enabled bool, paths commandOutputPaths, sources *pal.SourceStore, changes *pal.ChangeListener,
+) *pal.MetricProfilerListener {
+	if !enabled {
+		return nil
+	}
+	files := paths.implicitFiles(pal.MetricProfilerFilename)
+	return pal.NewMetricProfilerListener(filepath.Dir(files[0]), sources, changes)
+}
+
+func writeMetricProfile(paths commandOutputPaths, listener *pal.MetricProfilerListener) error {
+	if listener == nil {
+		return nil
+	}
+	if err := listener.DumpToFile(); err != nil {
+		return fmt.Errorf("write SMT metric profile: %w", err)
+	}
+	files := paths.implicitFiles(pal.MetricProfilerFilename)
+	data, err := os.ReadFile(files[0])
+	if err != nil {
+		return fmt.Errorf("read SMT metric profile %s: %w", files[0], err)
+	}
+	for _, path := range files[1:] {
+		if err = os.WriteFile(path, data, 0o644); err != nil {
+			return fmt.Errorf("mirror SMT metric profile to %s: %w", path, err)
+		}
+	}
+	return nil
+}
+
 func writeDebugApplicationConfig(
 	paths commandOutputPaths,
 	config jsonCommandConfig,
@@ -105,9 +144,7 @@ func writeDebugApplicationConfig(
 	}
 	config.Debug = boolPointer(true)
 	config.WriteIntermediate = boolPointer(options.writeIntermediate)
-	if config.SMTProfile == nil {
-		config.SMTProfile = boolPointer(false)
-	}
+	config.SMTProfile = boolPointer(options.smtProfile)
 	config.Profiling = boolPointer(options.profiling)
 	if config.Features == nil {
 		empty := []string{}

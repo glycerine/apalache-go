@@ -18,10 +18,14 @@ type StratifiedRewriter struct {
 	constraints  []Expr
 	messages     *MapMessageStorage
 	ruleStats    *RuleStatListener
+	rewriteStats SymbolicStateRewriterListener
 	profileStack []rewriteProfileFrame
 }
 
-type rewriteProfileFrame struct{ childCells int64 }
+type rewriteProfileFrame struct {
+	childCells   int64
+	assertionSMT int64
+}
 
 // StratifiedRewriterSnapshot is an immutable copy of every mutable rewriting
 // context. Arena state lives in RewriterScope and is snapshotted by callers.
@@ -45,6 +49,7 @@ type StratifiedRewriterOptions struct {
 	ShortCircuit bool
 	SMTEncoding  SMTEncoding
 	RuleStats    *RuleStatListener
+	RewriteStats SymbolicStateRewriterListener
 }
 
 func NewStratifiedRewriterWithOptions(options StratifiedRewriterOptions) *StratifiedRewriter {
@@ -54,6 +59,7 @@ func NewStratifiedRewriterWithOptions(options StratifiedRewriterOptions) *Strati
 	result := &StratifiedRewriter{
 		integers: NewIntValueCache(), literals: NewUninterpretedLiteralCache(), shortCircuit: options.ShortCircuit,
 		smtEncoding: options.SMTEncoding, messages: NewMessageStorage(), ruleStats: options.RuleStats,
+		rewriteStats: options.RewriteStats,
 	}
 	result.ranges = NewIntRangeCache(result.integers)
 	result.equality = NewLazyEquality(result.assert, func(tag string) (ArenaCell, bool) {
@@ -110,8 +116,12 @@ func (rewriter *StratifiedRewriter) Recover(snapshot StratifiedRewriterSnapshot)
 
 func (rewriter *StratifiedRewriter) assert(expression Expr) {
 	rewriter.constraints = append(rewriter.constraints, expression)
+	size := int64(smtProfileExpressionSize(expression))
 	if rewriter.ruleStats != nil {
-		rewriter.ruleStats.OnSMTAssert(expression, int64(smtProfileExpressionSize(expression)))
+		rewriter.ruleStats.OnSMTAssert(expression, size)
+	}
+	if rewriter.rewriteStats != nil && len(rewriter.profileStack) != 0 {
+		rewriter.profileStack[len(rewriter.profileStack)-1].assertionSMT += size
 	}
 }
 
@@ -163,11 +173,13 @@ func (rewriter *StratifiedRewriter) RewriteBoundSequence(
 func (rewriter *StratifiedRewriter) Rewrite(
 	expression Expr, scope RewriterScope,
 ) (resultScope RewriterScope, result ArenaCell, err error) {
-	if rewriter.ruleStats == nil {
+	if rewriter.ruleStats == nil && rewriter.rewriteStats == nil {
 		return rewriter.rewrite(expression, scope)
 	}
 	ruleName := rewriteProfileRuleName(expression)
-	rewriter.ruleStats.EnterRule(ruleName)
+	if rewriter.ruleStats != nil {
+		rewriter.ruleStats.EnterRule(ruleName)
+	}
 	beforeCells := int64(0)
 	if scope.Arena != nil {
 		beforeCells = int64(scope.Arena.CellCount())
@@ -189,14 +201,24 @@ func (rewriter *StratifiedRewriter) Rewrite(
 		if selfCells < 0 {
 			selfCells = 0
 		}
-		for index := int64(0); index < selfCells; index++ {
-			rewriter.ruleStats.OnIntroduceCell(0)
-			rewriter.ruleStats.OnIntroduceSMTConstant("")
+		if rewriter.ruleStats != nil {
+			for index := int64(0); index < selfCells; index++ {
+				rewriter.ruleStats.OnIntroduceCell(0)
+				rewriter.ruleStats.OnIntroduceSMTConstant("")
+			}
+		}
+		if rewriter.rewriteStats != nil && frameIndex == 0 {
+			rewriter.rewriteStats.OnRewrite(expression, SolverContextMetrics{
+				NCells: totalCells, NConstants: totalCells, NSMTExpressions: frame.assertionSMT,
+			})
 		}
 		if len(rewriter.profileStack) != 0 {
 			rewriter.profileStack[len(rewriter.profileStack)-1].childCells += totalCells
+			rewriter.profileStack[len(rewriter.profileStack)-1].assertionSMT += frame.assertionSMT
 		}
-		rewriter.ruleStats.ExitRule()
+		if rewriter.ruleStats != nil {
+			rewriter.ruleStats.ExitRule()
+		}
 	}()
 	return rewriter.rewrite(expression, scope)
 }
