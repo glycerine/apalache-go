@@ -42,8 +42,14 @@ func TestResolveCheckAndServerUseStaticDefaults(t *testing.T) {
 	options := result.RequireValue()
 	defaults := DefaultApalacheConfig()
 	if options.Common.Debug != *defaults.Common.Debug || !reflect.DeepEqual(options.Common.Features, *defaults.Common.Features) ||
-		options.Common.OutDir != *defaults.Common.OutDir || options.Typechecker.InferPoly != *defaults.Typechecker.InferPoly ||
-		options.Checker.Algorithm != *defaults.Checker.Algorithm || options.Checker.Length != *defaults.Checker.Length ||
+		options.Common.OutDir != *defaults.Common.OutDir || options.Common.Profiling != *defaults.Common.Profiling ||
+		options.Common.SMTProfiling != *defaults.Common.SMTProfiling ||
+		options.Common.WriteIntermediate != *defaults.Common.WriteIntermediate ||
+		options.Typechecker.InferPoly != *defaults.Typechecker.InferPoly ||
+		options.Checker.Algorithm != *defaults.Checker.Algorithm ||
+		options.Checker.DiscardDisabled != *defaults.Checker.DiscardDisabled ||
+		options.Checker.Length != *defaults.Checker.Length || options.Checker.MaxError != *defaults.Checker.MaxError ||
+		options.Checker.TimeoutSMTSeconds != *defaults.Checker.TimeoutSMTSeconds ||
 		options.Checker.CheckDeadlocks != DefaultCheckDeadlocks || options.Checker.SMTSolver != *defaults.Checker.SMTSolver ||
 		options.Checker.SMTEncoding != *defaults.Checker.SMTEncoding || !reflect.DeepEqual(options.Checker.Tuning, *defaults.Checker.Tuning) {
 		t.Fatalf("resolved defaults = %#v", options)
@@ -52,6 +58,36 @@ func TestResolveCheckAndServerUseStaticDefaults(t *testing.T) {
 	if !server.IsSuccess() || server.RequireValue().Server.Port != *defaults.Server.Port ||
 		server.RequireValue().Server.ServerType != *defaults.Server.ServerType {
 		t.Fatalf("server = %#v, %#v", server.Errors(), server.RequireValue())
+	}
+}
+
+func TestResolveCheckSolverEncodingCompatibilityMatchesScala(t *testing.T) {
+	encodings := []SMTEncoding{SMTEncodingOOPSLA19, SMTEncodingArrays, SMTEncodingFunArrays}
+	for _, encoding := range encodings {
+		config := resolverCheckConfig()
+		config.Checker.SMTSolver = pointer(SMTSolverZ3)
+		config.Checker.SMTEncoding = pointer(encoding)
+		if result := ResolveCheckOptions(config); !result.IsSuccess() {
+			t.Errorf("z3/%s = %#v", encoding, result.Errors())
+		}
+	}
+	for _, encoding := range encodings {
+		config := resolverCheckConfig()
+		config.Checker.SMTSolver = pointer(SMTSolverCVC5)
+		config.Checker.SMTEncoding = pointer(encoding)
+		result := ResolveCheckOptions(config)
+		if encoding == SMTEncodingOOPSLA19 {
+			if !result.IsSuccess() {
+				t.Errorf("cvc5/%s = %#v", encoding, result.Errors())
+			}
+			continue
+		}
+		joined := strings.Join(result.Errors(), "\n")
+		for _, fragment := range []string{"checker.smt-solver=cvc5", "checker.smt-encoding=oopsla19", string(encoding)} {
+			if result.IsSuccess() || !strings.Contains(joined, fragment) {
+				t.Errorf("cvc5/%s errors %q do not contain %q", encoding, joined, fragment)
+			}
+		}
 	}
 }
 

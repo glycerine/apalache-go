@@ -24,6 +24,11 @@ func TestConfigurationEnumsMatchScalaValuesOrderAndParsing(t *testing.T) {
 	if _, err := ParseSMTEncoding("FUNARRAYS"); err == nil || err.Error() != "Unexpected SMT encoding: FUNARRAYS" {
 		t.Fatalf("case-sensitive encoding error = %v", err)
 	}
+	for _, deprecated := range []string{"fun-arrays", "oopsla-19"} {
+		if _, err := ParseSMTEncoding(deprecated); err == nil {
+			t.Fatalf("deprecated SMT encoding alias %q was accepted", deprecated)
+		}
+	}
 	if solver, err := ParseSMTSolver("Z3"); err != nil || solver != SMTSolverZ3 {
 		t.Fatalf("solver = %q, %v", solver, err)
 	}
