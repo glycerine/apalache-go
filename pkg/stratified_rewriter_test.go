@@ -1205,6 +1205,101 @@ func TestStratifiedStructuralConditionalsThroughG3(t *testing.T) {
 	}
 }
 
+func TestStratifiedControlScalaOracleCases(t *testing.T) {
+	integer := func(value int64) Expr { return NewValueExpr(Int64Value(value), Typed(IntT1)) }
+	comparison := func(operator string, left, right int64) Expr {
+		return MustOperExpr(Op(operator), Typed(BoolT1), integer(left), integer(right))
+	}
+	conditional := func(tag TypeTag, predicate, thenExpr, elseExpr Expr) Expr {
+		return MustOperExpr(Op("IF_THEN_ELSE"), tag, predicate, thenExpr, elseExpr)
+	}
+	equal := func(left, right Expr) Expr {
+		return MustOperExpr(Op("EQ"), Typed(BoolT1), left, right)
+	}
+	setType := mustSet(IntT1)
+	setTag := Typed(setType)
+	set := func(values ...int64) Expr {
+		elements := make([]Expr, len(values))
+		for index, value := range values {
+			elements[index] = integer(value)
+		}
+		return MustOperExpr(Op("SET_ENUM"), setTag, elements...)
+	}
+
+	truePredicate := comparison("GT", 3, 2)
+	falsePredicate := comparison("LT", 3, 2)
+	for _, test := range []struct {
+		name  string
+		claim Expr
+	}{
+		{
+			name: "true Boolean branch",
+			claim: conditional(Typed(BoolT1), truePredicate,
+				comparison("LT", 2, 4), comparison("LT", 5, 1)),
+		},
+		{
+			name: "false Boolean branch",
+			claim: MustOperExpr(Op("NOT"), Typed(BoolT1),
+				conditional(Typed(BoolT1), falsePredicate,
+					comparison("LT", 2, 4), comparison("LT", 5, 1))),
+		},
+		{
+			name:  "true integer branch",
+			claim: equal(conditional(Typed(IntT1), truePredicate, integer(4), integer(1)), integer(4)),
+		},
+		{
+			name:  "false integer branch",
+			claim: equal(conditional(Typed(IntT1), falsePredicate, integer(4), integer(1)), integer(1)),
+		},
+		{
+			name:  "false set branch",
+			claim: equal(conditional(setTag, falsePredicate, set(1, 2), set(2, 3)), set(2, 3)),
+		},
+		{
+			name:  "equality selects singleton set",
+			claim: equal(set(2), conditional(setTag, comparison("EQ", 1, 1), set(2), set(1))),
+		},
+		{
+			name:  "comparison selects finite set",
+			claim: equal(conditional(setTag, comparison("LT", 2, 3), set(1, 2), set(2, 3)), set(1, 2)),
+		},
+		{
+			name: "conditional nested in arithmetic",
+			claim: equal(MustOperExpr(Op("PLUS"), Typed(IntT1), integer(1),
+				conditional(Typed(IntT1), falsePredicate, integer(4), integer(1))), integer(2)),
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			rewriter := NewStratifiedRewriter()
+			scope, result, err := rewriter.Rewrite(test.claim, InitialRewriterScope())
+			if err != nil {
+				t.Fatal(err)
+			}
+			checkRewrittenTruth(t, rewriter, scope, result, true)
+		})
+	}
+
+	t.Run("LET caches arithmetic computation", func(t *testing.T) {
+		operatorType := mustOperator(nil, IntT1)
+		declaration := NewOperDecl("A", nil,
+			MustOperExpr(Op("PLUS"), Typed(IntT1), integer(1), integer(2)), Typed(operatorType))
+		application := MustOperExpr(Op("OPER_APP"), Typed(IntT1), NewNameExpr("A", Typed(operatorType)))
+		let := NewLetInExpr(
+			MustOperExpr(Op("PLUS"), Typed(IntT1), integer(1), application), Typed(IntT1), declaration)
+
+		rewriter := NewStratifiedRewriter()
+		scope, result, err := rewriter.Rewrite(let, InitialRewriterScope())
+		if err != nil {
+			t.Fatal(err)
+		}
+		scope, equality, err := rewriter.Rewrite(equal(result.NameExpr(), integer(4)), scope)
+		if err != nil {
+			t.Fatal(err)
+		}
+		checkRewrittenTruth(t, rewriter, scope, equality, true)
+	})
+}
+
 func TestStratifiedConditionalPrunedBranchWideningAndTypeErrors(t *testing.T) {
 	narrowType, err := NewRecordType(map[string]Type{"a": IntT1})
 	if err != nil {
