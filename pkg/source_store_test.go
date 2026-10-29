@@ -135,3 +135,93 @@ func TestSourceStoreConcurrentAccess(t *testing.T) {
 		t.Fatalf("source map size = %d, want %d", len(store.SourceMap()), len(expressions))
 	}
 }
+
+func TestSourceLocatorPreservesEveryScalaTransformationShape(t *testing.T) {
+	makeExpression := func() Expr {
+		integer := func(value int64) Expr { return NewValueExpr(Int64Value(value), Typed(IntT1)) }
+		x := NewNameExpr("x", Typed(IntT1))
+		y := NewNameExpr("y", Typed(IntT1))
+		parameter := NewNameExpr("p", Typed(IntT1))
+		localType := mustOperator([]Type{IntT1}, IntT1)
+		local := NewOperDecl("A", []OperatorParam{ValueParam("p")},
+			MustOperExpr(Op("PLUS"), Typed(IntT1), parameter, integer(1)), Typed(localType))
+		application := MustOperExpr(Op("OPER_APP"), Typed(IntT1),
+			NewNameExpr("A", Typed(localType)), integer(1))
+		condition := MustOperExpr(Op("GE"), Typed(BoolT1), application, integer(0))
+		nested := MustOperExpr(Op("AND"), Typed(BoolT1),
+			MustOperExpr(Op("EQ"), Typed(BoolT1), x, x),
+			MustOperExpr(Op("EQ"), Typed(BoolT1), y, y))
+		body := MustOperExpr(Op("AND"), Typed(BoolT1),
+			MustOperExpr(Op("EQ"), Typed(BoolT1), MustOperExpr(Op("PRIME"), Typed(IntT1), x), x),
+			condition, nested)
+		return NewLetInExpr(body, Typed(BoolT1), local)
+	}
+
+	collect := func(root Expr) []Expr {
+		var result []Expr
+		var visit func(Expr)
+		visit = func(expression Expr) {
+			result = append(result, expression)
+			switch typed := expression.(type) {
+			case *OperExpr:
+				for _, argument := range typed.Arguments() {
+					visit(argument)
+				}
+			case *LetInExpr:
+				for _, declaration := range typed.Declarations() {
+					visit(declaration.Body())
+				}
+				visit(typed.Body())
+			}
+		}
+		visit(root)
+		return result
+	}
+
+	tests := []struct {
+		name      string
+		transform func(TransformationTracker, Expr) (Expr, error)
+	}{
+		{"deep copy", func(tracker TransformationTracker, expression Expr) (Expr, error) {
+			return NewDeepCopier(tracker).Expression(expression), nil
+		}},
+		{"flatten", func(tracker TransformationTracker, expression Expr) (Expr, error) {
+			return FlattenBooleanConnectives(tracker)(expression), nil
+		}},
+		{"incremental renaming", func(tracker TransformationTracker, expression Expr) (Expr, error) {
+			return NewIncrementalRenamer(tracker).Rename(expression), nil
+		}},
+		{"inline", func(tracker TransformationTracker, expression Expr) (Expr, error) {
+			return NewInliner(tracker, NewIncrementalRenamer(tracker), true, nil).Transform(expression)
+		}},
+		{"no-op", func(tracker TransformationTracker, expression Expr) (Expr, error) {
+			return RewriteExpressions(tracker, func(Expr) (Expr, bool) { return nil, false })(expression), nil
+		}},
+		{"prime", func(tracker TransformationTracker, expression Expr) (Expr, error) {
+			return DecorateWithPrime(tracker, map[string]struct{}{"x": {}, "y": {}})(expression), nil
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			original := makeExpression()
+			store := NewSourceStore()
+			for index, expression := range collect(original) {
+				line := index + 1
+				if err := store.Add(expression.ID(), SourceLocation{
+					Filename: "SourceLocator", Region: NewSourceRegion(line, 1, line, 20),
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			transformed, err := test.transform(NewListenerTracker(store), original)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, expression := range collect(transformed) {
+				if _, found := store.Find(expression.ID()); !found {
+					t.Errorf("transformed %T %s has no source location", expression, expression.ID())
+				}
+			}
+		})
+	}
+}
