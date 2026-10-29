@@ -388,6 +388,81 @@ func TestToEtcExprDeclarationAnnotationContracts(t *testing.T) {
 	}
 }
 
+func TestToEtcExprScalaDeclarationShapes(t *testing.T) {
+	terminal := EtcExpr(NewUniqueEtcConst(BoolT1))
+	positiveType := mustOperator([]Type{IntT1}, BoolT1)
+	positive := NewOperDecl("Positive", []OperatorParam{ValueParam("x")},
+		MustOperExpr(Op("LT"), Untyped(), NewNameExpr("x", Untyped()), tlaInt(0)), Untyped())
+	translator := NewToEtcExpr(map[UID]Type{positive.ID(): positiveType}, nil, NewTypeVarPool(1000), false)
+	translated, err := translator.TranslateDeclaration(positive, terminal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	typeDeclaration, ok := translated.(*EtcTypeDecl)
+	if !ok || typeDeclaration.Name() != "Positive" || !EqualTypes(typeDeclaration.DeclaredType(), positiveType) {
+		t.Fatalf("annotated operator declaration = %v", translated)
+	}
+	let, ok := typeDeclaration.Scoped().(*EtcLet)
+	if !ok || let.Name() != "Positive" || !EqualEtcExpr(let.Body(), terminal) {
+		t.Fatalf("annotated operator LET = %v", typeDeclaration.Scoped())
+	}
+	abstraction, ok := let.Bound().(*EtcAbs)
+	if !ok || len(abstraction.Bindings()) != 1 || abstraction.Bindings()[0].Name.Name() != "x" {
+		t.Fatalf("annotated operator abstraction = %v", let.Bound())
+	}
+	variableType, _ := NewVarType(1000)
+	if domain, ok := abstraction.Bindings()[0].Domain.(*EtcConst); !ok || !EqualTypes(domain.Polytype(), mustSet(variableType)) {
+		t.Fatalf("annotated operator parameter domain = %v", abstraction.Bindings()[0].Domain)
+	}
+	application, ok := abstraction.Body().(*EtcApp)
+	if !ok || len(application.OperatorTypes()) != 1 ||
+		!EqualTypes(application.OperatorTypes()[0], mustOperator([]Type{IntT1, IntT1}, BoolT1)) || len(application.Arguments()) != 2 {
+		t.Fatalf("annotated operator body = %v", abstraction.Body())
+	}
+	if application.Arguments()[0].(*EtcName).Name() != "x" ||
+		!EqualTypes(application.Arguments()[1].(*EtcConst).Polytype(), IntT1) {
+		t.Fatalf("annotated operator arguments = %v", application.Arguments())
+	}
+
+	entry := NewVarDecl("entry", Untyped())
+	set := NewVarDecl("set", Untyped())
+	entryAlias, _ := NewConstType("ENTRY")
+	aliases := NewTypeAliasSubstitution(map[string]Type{"ENTRY": IntT1})
+	translator = NewToEtcExpr(map[UID]Type{
+		entry.ID(): entryAlias,
+		set.ID():   mustSet(entryAlias),
+	}, aliases, NewTypeVarPool(1000), false)
+	translated, err = translator.TranslateDeclaration(set, terminal)
+	if err == nil {
+		translated, err = translator.TranslateDeclaration(entry, translated)
+	}
+	wantAliases := NewUniqueEtcTypeDecl("entry", IntT1,
+		NewUniqueEtcTypeDecl("set", mustSet(IntT1), terminal))
+	if err != nil || !EqualEtcExpr(translated, wantAliases) {
+		t.Fatalf("aliased declarations = %v, want %v, error = %v", translated, wantAliases, err)
+	}
+
+	assumption := NewUnnamedAssumeDecl(NewNameExpr("x", Untyped()), Untyped())
+	translated, err = newTranslator().TranslateDeclaration(assumption, terminal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assumeLet, ok := translated.(*EtcLet)
+	if !ok || assumeLet.Name() != assumption.Name() || !EqualEtcExpr(assumeLet.Body(), terminal) {
+		t.Fatalf("assumption LET = %v", translated)
+	}
+	assumeAbs, ok := assumeLet.Bound().(*EtcAbs)
+	if !ok || len(assumeAbs.Bindings()) != 0 {
+		t.Fatalf("assumption abstraction = %v", assumeLet.Bound())
+	}
+	assumeApp, ok := assumeAbs.Body().(*EtcApp)
+	if !ok || len(assumeApp.OperatorTypes()) != 1 ||
+		!EqualTypes(assumeApp.OperatorTypes()[0], mustOperator([]Type{BoolT1}, BoolT1)) ||
+		len(assumeApp.Arguments()) != 1 || assumeApp.Arguments()[0].(*EtcName).Name() != "x" {
+		t.Fatalf("assumption Boolean wrapper = %v", assumeAbs.Body())
+	}
+}
+
 func TestToEtcExprTagPrecedenceAliasesAndFreshAnnotationVariables(t *testing.T) {
 	declaration := NewConstDecl("C", Typed(BoolT1))
 	translator := NewToEtcExpr(map[UID]Type{declaration.ID(): IntT1}, nil, NewTypeVarPool(1000), false)
