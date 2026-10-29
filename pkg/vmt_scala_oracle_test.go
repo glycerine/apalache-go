@@ -121,6 +121,54 @@ func TestReTLAVMTScalaOracleQuantifiedMultiArgumentShape(t *testing.T) {
 	}
 }
 
+func TestReTLAVMTScalaOracleBooleanFunctionShape(t *testing.T) {
+	scalaExecutable := os.Getenv("APALACHE_SCALA")
+	goExecutable := os.Getenv("APALACHE_GO")
+	if scalaExecutable == "" || goExecutable == "" {
+		t.Skip("set APALACHE_SCALA and APALACHE_GO to run the live ReTLA/VMT differential")
+	}
+	source, err := filepath.Abs("testdata/oracle/ReTLAVMTBooleanFunction.tla")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	scalaRun := filepath.Join(t.TempDir(), "scala-run")
+	runOracleCommand(t, ctx, scalaExecutable,
+		"--run-dir="+scalaRun, "transpile", "--inv=Inv", source)
+	scalaDocument, err := os.ReadFile(filepath.Join(scalaRun, "output.vmt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	goOutput := filepath.Join(t.TempDir(), "go.vmt")
+	runOracleCommand(t, ctx, goExecutable,
+		"transpile", "-inv", "Inv", "-output", goOutput, source)
+	goDocument, err := os.ReadFile(goOutput)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sharedFragments := []string{
+		"(declare-fun flag () Bool)",
+		"(declare-fun n () Int)",
+		"(declare-fun pred (Int) Bool)",
+		"(and (= flag false) (= n 0) (forall ((t_2 Int)) (= (pred t_2) (t_1 t_2))))",
+		"(and (= flag^ (not flag)) (= n^ (ite flag 1 0)) (forall ((t_5 Int)) (= (pred^ t_5) (t_4 t_5))))",
+		"(! (= (pred n) flag) :invar-property 0)",
+		"(! (forall ((q$1 Bool)) (or q$1 (not q$1))) :invar-property 1)",
+		"(! (exists ((i$2 Int)) (pred i$2)) :invar-property 2)",
+	}
+	for _, fragment := range sharedFragments {
+		if !strings.Contains(string(scalaDocument), fragment) || !strings.Contains(string(goDocument), fragment) {
+			t.Errorf("Scala and Go Boolean-function VMT must both contain %q", fragment)
+		}
+	}
+	if missing := undefinedVMTGeneratedFunctions(goDocument); len(missing) != 0 {
+		t.Fatalf("Go Boolean-function VMT has undefined generated functions: %v", missing)
+	}
+}
+
 func runOracleCommand(t *testing.T, ctx context.Context, executable string, arguments ...string) {
 	t.Helper()
 	command := exec.CommandContext(ctx, executable, arguments...)

@@ -111,6 +111,11 @@ func TestVMTRewriterBooleanAndQuantifierRules(t *testing.T) {
 			NewValueExpr(IntSet, Typed(mustSet(IntT1))), q), "(forall ((y Int)) q)"},
 		{"skolem-marker-is-erased", MustOperExpr(Op("Apalache!Skolem"), Typed(BoolT1),
 			MustOperExpr(Op("EXISTS3"), Typed(BoolT1), x, set, p)), "(exists ((x SSORT)) p)"},
+		{"forall-Booleans", MustOperExpr(Op("FORALL3"), Typed(BoolT1),
+			NewNameExpr("b", Typed(BoolT1)), NewValueExpr(BoolSet, Typed(mustSet(BoolT1))),
+			MustOperExpr(Op("OR"), Typed(BoolT1), NewNameExpr("b", Typed(BoolT1)),
+				MustOperExpr(Op("NOT"), Typed(BoolT1), NewNameExpr("b", Typed(BoolT1))))),
+			"(forall ((b Bool)) (or b (not b)))"},
 	}
 	for _, test := range quantifierCases {
 		t.Run(test.name, func(t *testing.T) {
@@ -209,6 +214,39 @@ func TestVMTRewriterLowersNormalizedMultiArgumentFunctionConstructor(t *testing.
 	want := "(define-fun t_1 ((x SSORT) (y Int)) SSORT (ite (= y 0) x fallback))"
 	if got, err := FormatVMTFunctionDefinition(definition); err != nil || got != want {
 		t.Fatalf("normalized function definition = %q, %v; want %q", got, err, want)
+	}
+}
+
+func TestVMTRewriterBooleanResultFunctionConstructionApplicationAndExcept(t *testing.T) {
+	rewriter, _, _ := newTestVMTRewriter(t)
+	functionType := mustFun(IntT1, BoolT1)
+	i := NewNameExpr("i", Typed(IntT1))
+	zero := NewValueExpr(Int64Value(0), Typed(IntT1))
+	body := MustOperExpr(Op("EQ"), Typed(BoolT1), i, zero)
+	constructor := MustOperExpr(Op("FUN_CTOR"), Typed(functionType), body,
+		i, NewValueExpr(IntSet, Typed(mustSet(IntT1))))
+	if got := rewriteVMTText(t, rewriter, constructor); got != "t_1" {
+		t.Fatalf("Boolean function constructor = %q", got)
+	}
+	if got, err := FormatVMTFunctionDefinition(rewriter.Declarations().DefinedFunctions["t_1"]); err != nil ||
+		got != "(define-fun t_1 ((i Int)) Bool (= i 0))" {
+		t.Fatalf("Boolean function definition = %q, %v", got, err)
+	}
+
+	pred := NewNameExpr("pred", Typed(functionType))
+	n := NewNameExpr("n", Typed(IntT1))
+	application := MustOperExpr(Op("FUN_APP"), Typed(BoolT1), pred, n)
+	if got := rewriteVMTText(t, rewriter, application); got != "(pred n)" {
+		t.Fatalf("Boolean function application = %q", got)
+	}
+	path := MustOperExpr(Op("TUPLE"), Typed(mustTuple(IntT1)), n)
+	except := MustOperExpr(Op("EXCEPT"), Typed(functionType), pred, path, NewNameExpr("flag", Typed(BoolT1)))
+	if got := rewriteVMTText(t, rewriter, except); got != "t_3" {
+		t.Fatalf("Boolean function EXCEPT = %q", got)
+	}
+	want := "(define-fun t_3 ((t_2 Int)) Bool (ite (= t_2 n) flag (pred t_2)))"
+	if got, err := FormatVMTFunctionDefinition(rewriter.Declarations().DefinedFunctions["t_3"]); err != nil || got != want {
+		t.Fatalf("Boolean EXCEPT definition = %q, %v; want %q", got, err, want)
 	}
 }
 
