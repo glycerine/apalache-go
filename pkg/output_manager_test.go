@@ -183,3 +183,100 @@ func TestOutputManagersAreConcurrentInvocationIsolated(t *testing.T) {
 		}
 	}
 }
+
+func TestOutputManagersHaveFreshSequentialState(t *testing.T) {
+	root := t.TempDir()
+	first := NewOutputManager()
+	firstSource := NewStringInputSource("---- MODULE First ----\n====", nil, InputFormatTLA)
+	if err := first.Configure(OutputManagerOptions{
+		OutDir:            filepath.Join(root, "first-out"),
+		CustomRunDir:      filepath.Join(root, "first-custom"),
+		Command:           "first",
+		WriteIntermediate: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := first.InitSourceLines(firstSource); err != nil {
+		t.Fatal(err)
+	}
+
+	second := NewOutputManager()
+	if second.IsConfigured() {
+		t.Fatal("fresh manager retained configured state")
+	}
+	if _, found := second.RunDirPath(); found {
+		t.Fatal("fresh manager retained a run directory")
+	}
+	if _, found := second.CustomRunDirPath(); found {
+		t.Fatal("fresh manager retained a custom run directory")
+	}
+	if _, found := second.AllSource(); found {
+		t.Fatal("fresh manager retained source text")
+	}
+	if err := second.Configure(OutputManagerOptions{
+		OutDir:  filepath.Join(root, "second-out"),
+		Command: "second",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if wrote, err := second.WithWriterInIntermediateDir([]string{"second.txt"}, func(io.Writer) error {
+		t.Fatal("disabled intermediate writer was called")
+		return nil
+	}); err != nil || wrote {
+		t.Fatalf("second intermediate writer = %v, %v", wrote, err)
+	}
+	if source, found := first.AllSource(); !found || !strings.Contains(source, "MODULE First") {
+		t.Fatalf("first manager was disturbed: %q, %v", source, found)
+	}
+}
+
+func TestExplicitNestedOutputManagersLeaveOuterStateIntact(t *testing.T) {
+	root := t.TempDir()
+	outer := NewOutputManager()
+	if err := outer.Configure(OutputManagerOptions{OutDir: filepath.Join(root, "outer"), Command: "outer"}); err != nil {
+		t.Fatal(err)
+	}
+	outerDir, err := outer.OutDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	func() {
+		inner := NewOutputManager()
+		if inner.IsConfigured() {
+			t.Fatal("nested manager inherited outer configuration")
+		}
+		if err := inner.Configure(OutputManagerOptions{OutDir: filepath.Join(root, "inner"), Command: "inner"}); err != nil {
+			t.Fatal(err)
+		}
+		innerDir, err := inner.OutDir()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if innerDir == outerDir {
+			t.Fatal("nested manager reused the outer output directory")
+		}
+	}()
+
+	got, err := outer.OutDir()
+	if err != nil || got != outerDir {
+		t.Fatalf("outer state after nested invocation = %q, %v", got, err)
+	}
+}
+
+func TestNilOutputManagerOptionalWritersAreDisabled(t *testing.T) {
+	var manager *OutputManager
+	write := func(io.Writer) error {
+		t.Fatal("unbound optional writer was called")
+		return nil
+	}
+	if manager.IsConfigured() {
+		t.Fatal("nil manager is configured")
+	}
+	if wrote, err := manager.WithProfilingWriter(write); err != nil || wrote {
+		t.Fatalf("unbound profiling writer = %v, %v", wrote, err)
+	}
+	if RunMetadataFilename != "run.txt" {
+		t.Fatalf("run metadata filename = %q", RunMetadataFilename)
+	}
+}
