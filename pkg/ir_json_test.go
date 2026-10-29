@@ -3,7 +3,9 @@ package apalache
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"math/big"
+	"math/rand"
 	"reflect"
 	"strings"
 	"testing"
@@ -160,6 +162,148 @@ func TestIRJSONMatchesScalaTlaToUJsonCases(t *testing.T) {
 					parameters[parameterIndex]["arity"] != parameter.Arity {
 					t.Fatalf("encoded parameter %d/%d = %#v", index, parameterIndex, parameters[parameterIndex])
 				}
+			}
+		}
+	})
+}
+
+func TestIRJSONMatchesScalaUJsonToTlaCases(t *testing.T) {
+	decodeExpression := func(t *testing.T, expression Expr) Expr {
+		t.Helper()
+		encoded, err := encodeIRExpression(expression, IRJSONOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, err := json.Marshal(encoded)
+		if err != nil {
+			t.Fatal(err)
+		}
+		decoded, err := decodeIRExpression(raw, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return decoded
+	}
+
+	t.Run("expression declaration module and root round trips", func(t *testing.T) {
+		and := MustOperExpr(Op("AND"), Untyped(), NewNameExpr("x", Untyped()), NewValueExpr(BoolValue(true), Untyped()))
+		conditional := MustOperExpr(Op("IF_THEN_ELSE"), Untyped(), NewNameExpr("p", Untyped()),
+			NewNameExpr("A", Untyped()), NewNameExpr("B", Untyped()))
+		local := NewOperDecl("A", []OperatorParam{ValueParam("p")},
+			MustOperExpr(Op("PLUS"), Untyped(), NewNameExpr("p", Untyped()), NewValueExpr(Int64Value(1), Untyped())), Untyped())
+		application, err := ApplyDeclarationUntyped(local, NewValueExpr(Int64Value(1), Untyped()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, expression := range []Expr{and, conditional, NewLetInExpr(application, Untyped(), local)} {
+			if decoded := decodeExpression(t, expression); !EqualTypedExpr(decoded, expression) {
+				t.Fatalf("expression round trip = %#v, want %#v", decoded, expression)
+			}
+		}
+
+		declarations := []Decl{
+			NewOperDecl("X", []OperatorParam{ValueParam("a")},
+				MustOperExpr(Op("EQ"), Untyped(), NewNameExpr("a", Untyped()), NewValueExpr(Int64Value(1), Untyped())), Untyped()),
+			NewUnnamedAssumeDecl(MustOperExpr(Op("EQ"), Untyped(), NewValueExpr(Int64Value(1), Untyped()),
+				NewValueExpr(Int64Value(0), Untyped())), Untyped()),
+			NewConstDecl("c", Untyped()), NewVarDecl("v", Untyped()),
+		}
+		modules := []*Module{NewModule("Empty", nil), NewModule("Module", declarations)}
+		encoded, err := MarshalIRJSON(modules, IRJSONOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		decoded, err := UnmarshalIRJSON(encoded, nil)
+		if err != nil || len(decoded) != len(modules) {
+			t.Fatalf("root round trip = %#v, %v", decoded, err)
+		}
+		for index := range modules {
+			assertModulesEqual(t, modules[index], decoded[index])
+		}
+	})
+
+	t.Run("predefined sets", func(t *testing.T) {
+		for _, value := range []PredefinedSet{IntSet, NatSet, BoolSet, StringSet} {
+			expression := NewValueExpr(value, Untyped())
+			if decoded := decodeExpression(t, expression); !EqualTypedExpr(decoded, expression) {
+				t.Fatalf("predefined set round trip = %#v, want %#v", decoded, expression)
+			}
+		}
+	})
+
+	t.Run("type reader", func(t *testing.T) {
+		valid := []string{"Untyped", "Int", "Set(Bool)", "() => a -> b", "(UT, Int) => [x: Str]"}
+		invalid := []string{"", "SomeType", "Untyped()", "-12", "Set(true)", "() > a -> b", "(UT, Int) => [x: 9]", `Typed[Str]("cake")`}
+		for _, text := range valid {
+			if _, err := ReadTLAType1Tag(text); err != nil {
+				t.Errorf("rejected valid type tag %q: %v", text, err)
+			}
+		}
+		for _, text := range invalid {
+			if _, err := ReadTLAType1Tag(text); err == nil {
+				t.Errorf("accepted invalid type tag %q", text)
+			}
+		}
+	})
+
+	t.Run("500 generated modules", func(t *testing.T) {
+		random := rand.New(rand.NewSource(0x5ca1a))
+		var expression func(int) Expr
+		expression = func(depth int) Expr {
+			if depth == 0 || random.Intn(4) == 0 {
+				if random.Intn(2) == 0 {
+					return NewNameExpr(fmt.Sprintf("x%d", random.Intn(20)), Untyped())
+				}
+				return NewValueExpr(Int64Value(random.Int63n(100)), Untyped())
+			}
+			sub := func() Expr { return expression(depth - 1) }
+			switch random.Intn(9) {
+			case 0:
+				return MustOperExpr(Op("AND"), Untyped(), sub(), sub())
+			case 1:
+				return MustOperExpr(Op("PLUS"), Untyped(), sub(), sub())
+			case 2:
+				return MustOperExpr(Op("IF_THEN_ELSE"), Untyped(), sub(), sub(), sub())
+			case 3:
+				return MustOperExpr(Op("SET_ENUM"), Untyped(), sub(), sub())
+			case 4:
+				return MustOperExpr(Op("TUPLE"), Untyped(), sub(), sub())
+			case 5:
+				return MustOperExpr(Op("SET_IN"), Untyped(), sub(), sub())
+			case 6:
+				return MustOperExpr(Op("FUN_APP"), Untyped(), sub(), sub())
+			case 7:
+				return MustOperExpr(Op("PRIME"), Untyped(), sub())
+			default:
+				return MustOperExpr(Op("GLOBALLY"), Untyped(), sub())
+			}
+		}
+
+		modules := make([]*Module, 500)
+		for index := range modules {
+			body := expression(3)
+			operator := NewOperDecl(fmt.Sprintf("Op%d", index), []OperatorParam{ValueParam("p")}, body, Untyped())
+			operator.SetRecursive(index%7 == 0)
+			modules[index] = NewModule(fmt.Sprintf("M%d", index), []Decl{
+				NewConstDecl(fmt.Sprintf("C%d", index), Untyped()), operator,
+				NewUnnamedAssumeDecl(expression(2), Untyped()), NewTheoremDecl(fmt.Sprintf("T%d", index), expression(2), Untyped()),
+			})
+		}
+		encoded, err := MarshalIRJSON(modules, IRJSONOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		decoded, err := UnmarshalIRJSON(encoded, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(decoded) != len(modules) {
+			t.Fatalf("decoded %d modules, want %d", len(decoded), len(modules))
+		}
+		for index := range modules {
+			assertModulesEqual(t, modules[index], decoded[index])
+			if decoded[index].OperDeclarations()[0].IsRecursive() != (index%7 == 0) {
+				t.Fatalf("module %d recursive flag changed", index)
 			}
 		}
 	})
