@@ -10,6 +10,39 @@ type VMTRewriter struct {
 	declarations VMTDeclarations
 }
 
+type normalizedVMTProductBinding struct {
+	name   *NameExpr
+	domain Expr
+}
+
+// normalizedVMTProductBindings recognizes the canonical image of a Cartesian
+// product after Desugarer and Keramelizer have converted it to a tuple-valued
+// SET_MAP. General set maps are deliberately not part of ReTLA.
+func normalizedVMTProductBindings(expression Expr) ([]normalizedVMTProductBinding, bool) {
+	mapped, ok := expression.(*OperExpr)
+	if !ok || mapped.Operator().Name() != "SET_MAP" {
+		return nil, false
+	}
+	arguments := mapped.Arguments()
+	if len(arguments) < 5 || len(arguments)%2 == 0 {
+		return nil, false
+	}
+	tuple, ok := arguments[0].(*OperExpr)
+	if !ok || tuple.Operator().Name() != "TUPLE" || len(tuple.Arguments()) != (len(arguments)-1)/2 {
+		return nil, false
+	}
+	bindings := make([]normalizedVMTProductBinding, len(tuple.Arguments()))
+	for index, element := range tuple.Arguments() {
+		tupleName, tupleOK := element.(*NameExpr)
+		binder, binderOK := arguments[1+2*index].(*NameExpr)
+		if !tupleOK || !binderOK || tupleName.Name() != binder.Name() {
+			return nil, false
+		}
+		bindings[index] = normalizedVMTProductBinding{name: binder, domain: arguments[2+2*index]}
+	}
+	return bindings, true
+}
+
 func NewVMTRewriter(constantSets map[string]VMTSort) (*VMTRewriter, error) {
 	sets := make(map[string]VMTSort, len(constantSets))
 	for name, sort := range constantSets {
@@ -108,6 +141,45 @@ func (rewriter *VMTRewriter) define(arguments []VMTBinding, body VMTTerm) (VMTTe
 		domain[index] = argument.Sort
 	}
 	return VMTVar(name, FunctionVMTSort(body.Sort, domain...))
+}
+
+func expandNormalizedVMTFunctionBody(body Expr, aggregate string, bindings []normalizedVMTProductBinding) (Expr, error) {
+	var expansionErr error
+	expanded := RewriteExpressions(IdleTracker{}, func(expression Expr) (Expr, bool) {
+		application, ok := expression.(*OperExpr)
+		if !ok || application.Operator().Name() != "FUN_APP" {
+			return nil, false
+		}
+		arguments := application.Arguments()
+		if len(arguments) != 2 {
+			return nil, false
+		}
+		name, ok := arguments[0].(*NameExpr)
+		if !ok || name.Name() != aggregate {
+			return nil, false
+		}
+		literal, ok := arguments[1].(*ValueExpr)
+		if !ok {
+			expansionErr = fmt.Errorf("normalized VMT function tuple access must use an integer index")
+			return nil, false
+		}
+		integer, ok := literal.Value().(IntValue)
+		if !ok || !integer.BigInt().IsInt64() {
+			expansionErr = fmt.Errorf("normalized VMT function tuple access must use an integer index")
+			return nil, false
+		}
+		index := integer.BigInt().Int64() - 1
+		if index < 0 || index >= int64(len(bindings)) {
+			expansionErr = fmt.Errorf("normalized VMT function tuple index %d is out of bounds", index+1)
+			return nil, false
+		}
+		binding := bindings[index].name
+		return NewNameExpr(binding.Name(), binding.Tag()), true
+	})(body)
+	if expansionErr != nil {
+		return nil, expansionErr
+	}
+	return expanded, nil
 }
 
 func (rewriter *VMTRewriter) rewriteEquality(leftExpression, rightExpression Expr) (VMTTerm, error) {
@@ -212,6 +284,14 @@ func (rewriter *VMTRewriter) rewriteOperator(expression *OperExpr) (VMTTerm, err
 			return VMTTerm{}, err
 		}
 		return VMTNotTerm(term)
+	case "Apalache!Skolem":
+		if len(arguments) != 1 {
+			return VMTTerm{}, fmt.Errorf("VMT Skolem marker requires one argument")
+		}
+		// Skolem is an analysis hint for the symbolic checker, not a logical
+		// operator. Scala's ReTLA pipeline reaches VMT before adding the marker;
+		// the shared Go pipeline may add it, so erase it at this boundary.
+		return rewriter.Rewrite(arguments[0])
 	case "IMPLIES", "EQUIV":
 		terms, err := rewriter.rewriteAll(arguments)
 		if err != nil {
@@ -249,6 +329,30 @@ func (rewriter *VMTRewriter) rewriteOperator(expression *OperExpr) (VMTTerm, err
 		}
 		return VMTNotTerm(equality)
 	case "FUN_CTOR":
+		if len(arguments) == 3 {
+			aggregate, aggregateOK := arguments[1].(*NameExpr)
+			productBindings, productOK := normalizedVMTProductBindings(arguments[2])
+			if aggregateOK && productOK {
+				bodyExpression, expandErr := expandNormalizedVMTFunctionBody(arguments[0], aggregate.Name(), productBindings)
+				if expandErr != nil {
+					return VMTTerm{}, expandErr
+				}
+				bindings := make([]VMTBinding, len(productBindings))
+				for index, binding := range productBindings {
+					sort, sortErr := rewriter.restrictedSetSort(binding.domain)
+					if sortErr != nil {
+						return VMTTerm{}, sortErr
+					}
+					rewriter.rememberSort(sort)
+					bindings[index] = VMTBinding{Name: binding.name.Name(), Sort: sort}
+				}
+				body, bodyErr := rewriter.Rewrite(bodyExpression)
+				if bodyErr != nil {
+					return VMTTerm{}, bodyErr
+				}
+				return rewriter.define(bindings, body)
+			}
+		}
 		bindings := make([]VMTBinding, (len(arguments)-1)/2)
 		for index := range bindings {
 			name, ok := arguments[1+2*index].(*NameExpr)

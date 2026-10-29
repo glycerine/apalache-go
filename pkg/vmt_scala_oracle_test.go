@@ -66,6 +66,61 @@ func TestReTLAVMTScalaOracleDocumentsMissingGeneratedDefinitions(t *testing.T) {
 	}
 }
 
+func TestReTLAVMTScalaOracleQuantifiedMultiArgumentShape(t *testing.T) {
+	scalaExecutable := os.Getenv("APALACHE_SCALA")
+	goExecutable := os.Getenv("APALACHE_GO")
+	if scalaExecutable == "" || goExecutable == "" {
+		t.Skip("set APALACHE_SCALA and APALACHE_GO to run the live ReTLA/VMT differential")
+	}
+	source, err := filepath.Abs("testdata/oracle/ReTLAVMTQuantified.tla")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	scalaRun := filepath.Join(t.TempDir(), "scala-run")
+	runOracleCommand(t, ctx, scalaExecutable,
+		"--run-dir="+scalaRun, "transpile", "--inv=Inv", source)
+	scalaDocument, err := os.ReadFile(filepath.Join(scalaRun, "output.vmt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	goOutput := filepath.Join(t.TempDir(), "go.vmt")
+	runOracleCommand(t, ctx, goExecutable,
+		"transpile", "-inv", "Inv", "-output", goOutput, source)
+	goDocument, err := os.ReadFile(goOutput)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sharedFragments := []string{
+		"(declare-sort A 0)",
+		"(declare-fun f (A Int) A)",
+		"(declare-fun flag () Bool)",
+		"(declare-fun n () Int)",
+		"(declare-fun x () A)",
+		"(and (= x a_A) (= n 0) (= flag true) (forall",
+		"(and (= x^ (ite flag b_A x)) (= n^ (ite (= n 0) 1 0)) (= flag^ (not flag)) (forall",
+		"(! (or (= n 0) (= n 1)) :invar-property 0)",
+		"(! true :invar-property 2)",
+		"(! (or (not flag) (= (f a_A 0) x)) :invar-property 3)",
+	}
+	for _, fragment := range sharedFragments {
+		if !strings.Contains(string(scalaDocument), fragment) || !strings.Contains(string(goDocument), fragment) {
+			t.Errorf("Scala and Go quantified VMT must both contain %q", fragment)
+		}
+	}
+	existential := regexp.MustCompile(`\(exists \(\(a\$[0-9]+ A\)\) \(= a\$[0-9]+ x\)\)`)
+	if !existential.Match(scalaDocument) || !existential.Match(goDocument) {
+		t.Errorf("Scala and Go must both retain the uninterpreted-sort existential")
+	}
+	if missing := undefinedVMTGeneratedFunctions(goDocument); len(missing) != 0 {
+		t.Fatalf("Go quantified VMT has undefined generated functions: %v", missing)
+	}
+}
+
 func runOracleCommand(t *testing.T, ctx context.Context, executable string, arguments ...string) {
 	t.Helper()
 	command := exec.CommandContext(ctx, executable, arguments...)

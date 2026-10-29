@@ -109,6 +109,8 @@ func TestVMTRewriterBooleanAndQuantifierRules(t *testing.T) {
 			"(exists ((x SSORT)) p)"},
 		{"forall-integers", MustOperExpr(Op("FORALL3"), Typed(BoolT1), y,
 			NewValueExpr(IntSet, Typed(mustSet(IntT1))), q), "(forall ((y Int)) q)"},
+		{"skolem-marker-is-erased", MustOperExpr(Op("Apalache!Skolem"), Typed(BoolT1),
+			MustOperExpr(Op("EXISTS3"), Typed(BoolT1), x, set, p)), "(exists ((x SSORT)) p)"},
 	}
 	for _, test := range quantifierCases {
 		t.Run(test.name, func(t *testing.T) {
@@ -180,6 +182,33 @@ func TestVMTRewriterFunctionConstructionApplicationAndEquality(t *testing.T) {
 	equality := MustOperExpr(Op("EQ"), Typed(BoolT1), f, g)
 	if got := rewriteVMTText(t, rewriter, equality); got != "(forall ((t_2 SSORT) (t_3 Int)) (= (f t_2 t_3) (g t_2 t_3)))" {
 		t.Fatalf("function equality = %q", got)
+	}
+}
+
+func TestVMTRewriterLowersNormalizedMultiArgumentFunctionConstructor(t *testing.T) {
+	rewriter, typ, _ := newTestVMTRewriter(t)
+	tupleType := mustTuple(typ, IntT1)
+	functionType := mustFun(tupleType, typ)
+	x := NewNameExpr("x", Typed(typ))
+	y := NewNameExpr("y", Typed(IntT1))
+	tuple := MustOperExpr(Op("TUPLE"), Typed(tupleType), x, y)
+	domain := MustOperExpr(Op("SET_MAP"), Typed(mustSet(tupleType)), tuple,
+		x, NewNameExpr("S", Typed(mustSet(typ))),
+		y, NewValueExpr(IntSet, Typed(mustSet(IntT1))))
+	aggregate := NewNameExpr("pair", Typed(tupleType))
+	first := MustOperExpr(Op("FUN_APP"), Typed(typ), aggregate, NewValueExpr(Int64Value(1), Typed(IntT1)))
+	second := MustOperExpr(Op("FUN_APP"), Typed(IntT1), aggregate, NewValueExpr(Int64Value(2), Typed(IntT1)))
+	body := MustOperExpr(Op("IF_THEN_ELSE"), Typed(typ),
+		MustOperExpr(Op("EQ"), Typed(BoolT1), second, NewValueExpr(Int64Value(0), Typed(IntT1))),
+		first, NewNameExpr("fallback", Typed(typ)))
+	constructor := MustOperExpr(Op("FUN_CTOR"), Typed(functionType), body, aggregate, domain)
+	if got := rewriteVMTText(t, rewriter, constructor); got != "t_1" {
+		t.Fatalf("normalized function constructor = %q", got)
+	}
+	definition := rewriter.Declarations().DefinedFunctions["t_1"]
+	want := "(define-fun t_1 ((x SSORT) (y Int)) SSORT (ite (= y 0) x fallback))"
+	if got, err := FormatVMTFunctionDefinition(definition); err != nil || got != want {
+		t.Fatalf("normalized function definition = %q, %v; want %q", got, err, want)
 	}
 }
 

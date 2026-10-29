@@ -480,6 +480,18 @@ func checkReTLAInContext(context map[string]struct{}, expression Expr) Predicate
 			}
 			return PredicateFail(typed.ID(), name)
 		}
+		if name == "FUN_CTOR" && len(arguments) == 3 {
+			if _, binderOK := arguments[1].(*NameExpr); binderOK {
+				if bindings, productOK := normalizedVMTProductBindings(arguments[2]); productOK {
+					result := checkReTLAInContext(context, arguments[0]).And(checkReTLAInContext(context, arguments[1]))
+					for _, binding := range bindings {
+						result = result.And(checkReTLAInContext(context, binding.name))
+						result = result.And(checkReTLAInContext(context, binding.domain))
+					}
+					return result
+				}
+			}
+		}
 		if _, allowed := reTLAOperators[name]; allowed {
 			return checkReTLAArguments(context, arguments)
 		}
