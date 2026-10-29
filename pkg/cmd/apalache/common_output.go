@@ -233,7 +233,7 @@ func pruneNullConfigurationValues(object map[string]any) {
 
 func boolPointer(value bool) *bool { return &value }
 
-func writeFrontendIntermediate(
+func writeModuleIntermediate(
 	paths commandOutputPaths,
 	module *pal.Module,
 	extends []string,

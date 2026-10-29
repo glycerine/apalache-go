@@ -287,7 +287,7 @@ Inv == x < 5
 	runDir := filepath.Join(directory, "debug-run")
 	var stdout, stderr bytes.Buffer
 	code := run(context.Background(), []string{
-		"check", "--config-file=debug.json", "--run-dir=" + runDir, "--debug",
+		"check", "--config-file=debug.json", "--run-dir=" + runDir, "--debug", "--write-intermediate",
 		"--length=1", "--inv=Inv", "--no-deadlock", "--smt-encoding=arrays",
 		"--features=rows", "--no-polytypes", "--output-traces=false",
 	}, &stdout, &stderr)
@@ -326,6 +326,12 @@ Inv == x < 5
 	features := snapshot["features"].([]any)
 	if len(features) != 1 || features[0] != "rows" {
 		t.Fatalf("effective features = %#v", features)
+	}
+	for _, name := range []string{"01_OutSafetyPipeline.tla", "01_OutSafetyPipeline.json"} {
+		data, readErr := os.ReadFile(filepath.Join(runDir, "intermediate", name))
+		if readErr != nil || len(data) == 0 {
+			t.Fatalf("safety intermediate %s = %q, %v", name, data, readErr)
+		}
 	}
 }
 
