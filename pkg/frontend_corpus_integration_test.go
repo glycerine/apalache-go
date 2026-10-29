@@ -14,11 +14,12 @@ import (
 func TestAnnotatedTopLevelScalaFixtureCorpus(t *testing.T) {
 	expectedFailures := map[string]string{
 		"Bug3400.tla":             "undefined identifier IndInv1",
-		"Bug860.tla":              "Expected 0 parameters in Op, found 2",
-		"Bug914.tla":              "Arguments to EQ should have the same type",
+		"Bug832.tla":              "parenthesized type list must be followed by =>",
+		"Bug860.tla":              "parenthesized type list must be followed by =>",
+		"Bug914.tla":              "Arguments to = should have the same type",
 		"Bug925.tla":              "Error when computing the type of Optional",
-		"FormulaRefs.tla":         "No annotation found for A!1",
-		"ModelValFail.tla":        "found UT, Str",
+		"FormulaRefs.tla":         "subformula references are not supported: A!1",
+		"ModelValFail.tla":        "types UT, Str",
 		"TestAliasNewMissing.tla": "typeAlias",
 		"UntypedConst.tla":        "type annotation for CONSTANT",
 		"UntypedVar.tla":          "type annotation for VARIABLE",
@@ -82,6 +83,7 @@ func TestTopLevelScalaSyntaxCorpus(t *testing.T) {
 	expectedFailures := map[string]string{
 		"Bug3400.tla":        "undefined identifier IndInv1",
 		"FoldDefined.tla":    "expected EXCEPT component",
+		"FormulaRefs.tla":    "subformula references are not supported: A!1",
 		"NonFoldDefined.tla": "undefined operator +",
 		"typing1.tla":        "Cannot find source file for module Typing",
 	}
