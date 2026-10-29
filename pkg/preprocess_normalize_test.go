@@ -177,3 +177,67 @@ func TestNormalizeNNFTracksNegatedLocalOperatorReplacement(t *testing.T) {
 		t.Fatalf("negated local replacement traces to %s, want %s", changes.TraceBack(replacement.ID()), call.ID())
 	}
 }
+
+func TestNormalizeNNFCompletesScalaCaseMatrix(t *testing.T) {
+	boolName := func(name string) Expr { return NewNameExpr(name, Typed(BoolT1)) }
+	intName := func(name string) Expr { return NewNameExpr(name, Typed(IntT1)) }
+	not := func(expression Expr) Expr { return MustOperExpr(Op("NOT"), Typed(BoolT1), expression) }
+	x, y := boolName("x"), boolName("y")
+	bound, set := intName("i"), NewNameExpr("S", Typed(mustSet(IntT1)))
+
+	for _, test := range []struct {
+		name string
+		in   Expr
+		want Expr
+	}{
+		{
+			"negated eventually",
+			not(MustOperExpr(Op("EVENTUALLY"), Typed(BoolT1), x)),
+			MustOperExpr(Op("GLOBALLY"), Typed(BoolT1), not(x)),
+		},
+		{
+			"negated universal",
+			not(MustOperExpr(Op("FORALL3"), Typed(BoolT1), bound, set, y)),
+			MustOperExpr(Op("EXISTS3"), Typed(BoolT1), bound, set, not(y)),
+		},
+		{
+			"negated membership normalizes operand",
+			not(MustOperExpr(Op("SET_IN"), Typed(BoolT1), not(temporalBool(false)), NewNameExpr("B", Typed(mustSet(BoolT1))))),
+			not(MustOperExpr(Op("SET_IN"), Typed(BoolT1), temporalBool(true), NewNameExpr("B", Typed(mustSet(BoolT1))))),
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := NormalizeNNF(test.in, nil)
+			if err != nil || !EqualTypedExpr(got, test.want) {
+				t.Fatalf("normalization = %v, want %v, error = %v", got, test.want, err)
+			}
+		})
+	}
+
+	boolSet := NewNameExpr("B", Typed(mustSet(BoolT1)))
+	intZero := intLiteral(0)
+	unchanged := []Expr{
+		MustOperExpr(Op("LEADS_TO"), Typed(BoolT1), x, y),
+		not(MustOperExpr(Op("LEADS_TO"), Typed(BoolT1), x, y)),
+		MustOperExpr(Op("GUARANTEES"), Typed(BoolT1), x, y),
+		not(MustOperExpr(Op("GUARANTEES"), Typed(BoolT1), x, y)),
+		MustOperExpr(Op("WEAK_FAIRNESS"), Typed(BoolT1), x, y),
+		not(MustOperExpr(Op("WEAK_FAIRNESS"), Typed(BoolT1), x, y)),
+		MustOperExpr(Op("STRONG_FAIRNESS"), Typed(BoolT1), x, y),
+		not(MustOperExpr(Op("STRONG_FAIRNESS"), Typed(BoolT1), x, y)),
+		MustOperExpr(Op("EXISTS3"), Typed(BoolT1), bound, set, y),
+		MustOperExpr(Op("FORALL3"), Typed(BoolT1), bound, set, y),
+		MustOperExpr(Op("LT"), Typed(BoolT1), intName("n"), intZero),
+		MustOperExpr(Op("LE"), Typed(BoolT1), intName("n"), intZero),
+		MustOperExpr(Op("GT"), Typed(BoolT1), intName("n"), intZero),
+		MustOperExpr(Op("GE"), Typed(BoolT1), intName("n"), intZero),
+		MustOperExpr(Op("EQ"), Typed(BoolT1), intName("n"), intZero),
+		MustOperExpr(Op("SET_IN"), Typed(BoolT1), x, boolSet),
+	}
+	for index, expression := range unchanged {
+		got, err := NormalizeNNF(expression, nil)
+		if err != nil || !EqualTypedExpr(got, expression) {
+			t.Errorf("unchanged case %d = %v, want %v, error = %v", index, got, expression, err)
+		}
+	}
+}
