@@ -94,6 +94,63 @@ func TestJSONRepresentationMatchesScalaJacksonAdapterCases(t *testing.T) {
 	}
 }
 
+func TestJSONRepresentationMatchesScalaJacksonITFIntegrationCases(t *testing.T) {
+	assertTrace := func(t *testing.T, representation JSONRepresentation) {
+		t.Helper()
+		trace, err := UnmarshalITFTraceRepresentation(representation)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(trace) != 2 {
+			t.Fatalf("trace length = %d", len(trace))
+		}
+		want := []struct {
+			x int64
+			y string
+		}{{1, "hello"}, {2, "world"}}
+		for index, expected := range want {
+			x := NewValueExpr(Int64Value(expected.x), Typed(IntT1))
+			y := NewValueExpr(StringValue(expected.y), Typed(StrT1))
+			if !EqualTypedExpr(trace[index]["x"], x) || !EqualTypedExpr(trace[index]["y"], y) {
+				t.Fatalf("state %d = %#v", index, trace[index])
+			}
+		}
+	}
+
+	parsed, err := ParseJSONRepresentation([]byte(`{
+  "#meta": {
+    "format-description": "Example ITF trace",
+    "varTypes": {"x": "Int", "y": "Str"}
+  },
+  "vars": ["x", "y"],
+  "states": [
+    {"x": 1, "y": "hello"},
+    {"x": 2, "y": "world"}
+  ]
+}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertTrace(t, parsed)
+
+	meta := JSONObject(
+		JSONField{Name: "format-description", Value: JSONString("Example ITF trace")},
+		JSONField{Name: "varTypes", Value: JSONObject(
+			JSONField{Name: "x", Value: JSONString("Int")},
+			JSONField{Name: "y", Value: JSONString("Str")},
+		)},
+	)
+	programmatic := JSONObject(
+		JSONField{Name: ITFMetaField, Value: meta},
+		JSONField{Name: ITFVarsField, Value: JSONArray(JSONString("x"), JSONString("y"))},
+		JSONField{Name: ITFStatesField, Value: JSONArray(
+			JSONObject(JSONField{Name: "x", Value: JSONInt(1)}, JSONField{Name: "y", Value: JSONString("hello")}),
+			JSONObject(JSONField{Name: "x", Value: JSONInt(2)}, JSONField{Name: "y", Value: JSONString("world")}),
+		)},
+	)
+	assertTrace(t, programmatic)
+}
+
 func TestIRJSONNodeEncoderDecoder(t *testing.T) {
 	expression := MustOperExpr(Op("EQ"), Typed(BoolT1),
 		NewNameExpr("x", Typed(IntT1)), NewValueExpr(Int64Value(1), Typed(IntT1)))

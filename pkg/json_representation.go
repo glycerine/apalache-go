@@ -125,6 +125,17 @@ func JSONAsArray(value JSONRepresentation) ([]JSONRepresentation, error) {
 	return result, nil
 }
 
+// UnmarshalITFTraceRepresentation decodes an ITF trace assembled through the
+// generic JSON adapter. It is the standard-library counterpart of Scala's
+// JacksonRepresentation/ItfJsonToTla integration boundary.
+func UnmarshalITFTraceRepresentation(value JSONRepresentation) ([]TraceState, error) {
+	data, err := rawJSONRepresentation(value)
+	if err != nil {
+		return nil, err
+	}
+	return UnmarshalITFTrace(data)
+}
+
 // IRJSONEncoder exposes the node-level operations of the Apalache IR encoder.
 type IRJSONEncoder struct{ Options IRJSONOptions }
 
