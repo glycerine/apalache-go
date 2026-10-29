@@ -1,0 +1,231 @@
+# github.com/cespare/xxhash/v2 v2.3.0
+## explicit; go 1.11
+github.com/cespare/xxhash/v2
+# github.com/glycerine/g3/pkg v0.0.9
+## explicit; go 1.26.4
+github.com/glycerine/g3/pkg/ackermannization
+github.com/glycerine/g3/pkg/api
+github.com/glycerine/g3/pkg/arena
+github.com/glycerine/g3/pkg/ast
+github.com/glycerine/g3/pkg/ast/fpa
+github.com/glycerine/g3/pkg/ast/macros
+github.com/glycerine/g3/pkg/ast/normal_forms
+github.com/glycerine/g3/pkg/ast/pattern
+github.com/glycerine/g3/pkg/ast/proofs
+github.com/glycerine/g3/pkg/ast/rewriter
+github.com/glycerine/g3/pkg/ast/rewriter/bit_blaster
+github.com/glycerine/g3/pkg/ast/substitution
+github.com/glycerine/g3/pkg/clibrand
+github.com/glycerine/g3/pkg/cmd_context
+github.com/glycerine/g3/pkg/engine
+github.com/glycerine/g3/pkg/interp
+github.com/glycerine/g3/pkg/math/automata
+github.com/glycerine/g3/pkg/math/euclid
+github.com/glycerine/g3/pkg/math/grobner
+github.com/glycerine/g3/pkg/math/hilbert
+github.com/glycerine/g3/pkg/math/interval
+github.com/glycerine/g3/pkg/math/polynomial
+github.com/glycerine/g3/pkg/math/realclosure
+github.com/glycerine/g3/pkg/math/simplex
+github.com/glycerine/g3/pkg/model
+github.com/glycerine/g3/pkg/model/fpa
+github.com/glycerine/g3/pkg/muz/base
+github.com/glycerine/g3/pkg/muz/dataflow
+github.com/glycerine/g3/pkg/muz/fp
+github.com/glycerine/g3/pkg/muz/pdr
+github.com/glycerine/g3/pkg/muz/rel
+github.com/glycerine/g3/pkg/muz/spacer
+github.com/glycerine/g3/pkg/muz/transforms
+github.com/glycerine/g3/pkg/nlsat
+github.com/glycerine/g3/pkg/nlsat/tactic
+github.com/glycerine/g3/pkg/opt
+github.com/glycerine/g3/pkg/parsers/smt2
+github.com/glycerine/g3/pkg/parsers/util
+github.com/glycerine/g3/pkg/qe
+github.com/glycerine/g3/pkg/sat
+github.com/glycerine/g3/pkg/sat/sat_solver
+github.com/glycerine/g3/pkg/sat/tactic
+github.com/glycerine/g3/pkg/smtcore
+github.com/glycerine/g3/pkg/smtcore/proto_model
+github.com/glycerine/g3/pkg/solver
+github.com/glycerine/g3/pkg/tactic
+github.com/glycerine/g3/pkg/tactic/aig
+github.com/glycerine/g3/pkg/tactic/arith
+github.com/glycerine/g3/pkg/tactic/bv
+github.com/glycerine/g3/pkg/tactic/core
+github.com/glycerine/g3/pkg/tactic/fpa
+github.com/glycerine/g3/pkg/tactic/portfolio
+github.com/glycerine/g3/pkg/tactic/sls
+github.com/glycerine/g3/pkg/tactic/smtlogics
+github.com/glycerine/g3/pkg/tactic/smtlogics/params
+github.com/glycerine/g3/pkg/tactic/ufbv
+github.com/glycerine/g3/pkg/util/approx
+github.com/glycerine/g3/pkg/util/backtrack
+github.com/glycerine/g3/pkg/util/cliques
+github.com/glycerine/g3/pkg/util/cmdexception
+github.com/glycerine/g3/pkg/util/control
+github.com/glycerine/g3/pkg/util/cooperate
+github.com/glycerine/g3/pkg/util/diagnostic
+github.com/glycerine/g3/pkg/util/escaped
+github.com/glycerine/g3/pkg/util/hash
+github.com/glycerine/g3/pkg/util/heap
+github.com/glycerine/g3/pkg/util/idgen
+github.com/glycerine/g3/pkg/util/lbool
+github.com/glycerine/g3/pkg/util/lp
+github.com/glycerine/g3/pkg/util/luby
+github.com/glycerine/g3/pkg/util/memory
+github.com/glycerine/g3/pkg/util/messages
+github.com/glycerine/g3/pkg/util/mincut
+github.com/glycerine/g3/pkg/util/numeral
+github.com/glycerine/g3/pkg/util/params
+github.com/glycerine/g3/pkg/util/prime
+github.com/glycerine/g3/pkg/util/process
+github.com/glycerine/g3/pkg/util/productiter
+github.com/glycerine/g3/pkg/util/random
+github.com/glycerine/g3/pkg/util/sexpr
+github.com/glycerine/g3/pkg/util/smt2
+github.com/glycerine/g3/pkg/util/statistics
+github.com/glycerine/g3/pkg/util/stopwatch
+github.com/glycerine/g3/pkg/util/symbol
+github.com/glycerine/g3/pkg/util/text
+github.com/glycerine/g3/pkg/util/version
+github.com/glycerine/g3/pkg/util/z3exception
+# github.com/glycerine/insdict v0.14.6
+## explicit; go 1.26.4
+github.com/glycerine/insdict
+# github.com/glycerine/rbtree v0.2.2
+## explicit; go 1.24
+github.com/glycerine/rbtree
+# github.com/glycerine/tlago v0.1.10
+## explicit; go 1.26
+github.com/glycerine/tlago
+github.com/glycerine/tlago/tlc
+# github.com/klauspost/compress v1.18.5
+## explicit; go 1.24
+github.com/klauspost/compress
+github.com/klauspost/compress/fse
+github.com/klauspost/compress/huff0
+github.com/klauspost/compress/internal/cpuinfo
+github.com/klauspost/compress/internal/le
+github.com/klauspost/compress/internal/snapref
+github.com/klauspost/compress/zstd
+github.com/klauspost/compress/zstd/internal/xxhash
+# golang.org/x/net v0.28.0
+## explicit; go 1.18
+golang.org/x/net/http/httpguts
+golang.org/x/net/http2
+golang.org/x/net/http2/hpack
+golang.org/x/net/idna
+golang.org/x/net/internal/timeseries
+golang.org/x/net/trace
+# golang.org/x/sys v0.24.0
+## explicit; go 1.18
+golang.org/x/sys/unix
+golang.org/x/sys/windows
+# golang.org/x/text v0.28.0
+## explicit; go 1.23.0
+golang.org/x/text/cases
+golang.org/x/text/internal
+golang.org/x/text/internal/language
+golang.org/x/text/internal/language/compact
+golang.org/x/text/internal/tag
+golang.org/x/text/language
+golang.org/x/text/secure/bidirule
+golang.org/x/text/transform
+golang.org/x/text/unicode/bidi
+golang.org/x/text/unicode/norm
+# google.golang.org/genproto/googleapis/rpc v0.0.0-20240814211410-ddb44dafa142
+## explicit; go 1.21
+google.golang.org/genproto/googleapis/rpc/status
+# google.golang.org/grpc v1.67.1
+## explicit; go 1.21
+google.golang.org/grpc
+google.golang.org/grpc/attributes
+google.golang.org/grpc/backoff
+google.golang.org/grpc/balancer
+google.golang.org/grpc/balancer/base
+google.golang.org/grpc/balancer/grpclb/state
+google.golang.org/grpc/balancer/pickfirst
+google.golang.org/grpc/balancer/roundrobin
+google.golang.org/grpc/binarylog/grpc_binarylog_v1
+google.golang.org/grpc/channelz
+google.golang.org/grpc/codes
+google.golang.org/grpc/connectivity
+google.golang.org/grpc/credentials
+google.golang.org/grpc/credentials/insecure
+google.golang.org/grpc/encoding
+google.golang.org/grpc/encoding/proto
+google.golang.org/grpc/experimental/stats
+google.golang.org/grpc/grpclog
+google.golang.org/grpc/grpclog/internal
+google.golang.org/grpc/internal
+google.golang.org/grpc/internal/backoff
+google.golang.org/grpc/internal/balancer/gracefulswitch
+google.golang.org/grpc/internal/balancerload
+google.golang.org/grpc/internal/binarylog
+google.golang.org/grpc/internal/buffer
+google.golang.org/grpc/internal/channelz
+google.golang.org/grpc/internal/credentials
+google.golang.org/grpc/internal/envconfig
+google.golang.org/grpc/internal/grpclog
+google.golang.org/grpc/internal/grpcsync
+google.golang.org/grpc/internal/grpcutil
+google.golang.org/grpc/internal/idle
+google.golang.org/grpc/internal/metadata
+google.golang.org/grpc/internal/pretty
+google.golang.org/grpc/internal/resolver
+google.golang.org/grpc/internal/resolver/dns
+google.golang.org/grpc/internal/resolver/dns/internal
+google.golang.org/grpc/internal/resolver/passthrough
+google.golang.org/grpc/internal/resolver/unix
+google.golang.org/grpc/internal/serviceconfig
+google.golang.org/grpc/internal/stats
+google.golang.org/grpc/internal/status
+google.golang.org/grpc/internal/syscall
+google.golang.org/grpc/internal/transport
+google.golang.org/grpc/internal/transport/networktype
+google.golang.org/grpc/keepalive
+google.golang.org/grpc/mem
+google.golang.org/grpc/metadata
+google.golang.org/grpc/peer
+google.golang.org/grpc/resolver
+google.golang.org/grpc/resolver/dns
+google.golang.org/grpc/serviceconfig
+google.golang.org/grpc/stats
+google.golang.org/grpc/status
+google.golang.org/grpc/tap
+google.golang.org/grpc/test/bufconn
+# google.golang.org/protobuf v1.34.2
+## explicit; go 1.20
+google.golang.org/protobuf/encoding/protojson
+google.golang.org/protobuf/encoding/prototext
+google.golang.org/protobuf/encoding/protowire
+google.golang.org/protobuf/internal/descfmt
+google.golang.org/protobuf/internal/descopts
+google.golang.org/protobuf/internal/detrand
+google.golang.org/protobuf/internal/editiondefaults
+google.golang.org/protobuf/internal/encoding/defval
+google.golang.org/protobuf/internal/encoding/json
+google.golang.org/protobuf/internal/encoding/messageset
+google.golang.org/protobuf/internal/encoding/tag
+google.golang.org/protobuf/internal/encoding/text
+google.golang.org/protobuf/internal/errors
+google.golang.org/protobuf/internal/filedesc
+google.golang.org/protobuf/internal/filetype
+google.golang.org/protobuf/internal/flags
+google.golang.org/protobuf/internal/genid
+google.golang.org/protobuf/internal/impl
+google.golang.org/protobuf/internal/order
+google.golang.org/protobuf/internal/pragma
+google.golang.org/protobuf/internal/set
+google.golang.org/protobuf/internal/strs
+google.golang.org/protobuf/internal/version
+google.golang.org/protobuf/proto
+google.golang.org/protobuf/protoadapt
+google.golang.org/protobuf/reflect/protoreflect
+google.golang.org/protobuf/reflect/protoregistry
+google.golang.org/protobuf/runtime/protoiface
+google.golang.org/protobuf/runtime/protoimpl
+google.golang.org/protobuf/types/known/anypb
+google.golang.org/protobuf/types/known/durationpb
+google.golang.org/protobuf/types/known/timestamppb
