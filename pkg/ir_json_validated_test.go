@@ -10,10 +10,19 @@ import (
 func TestValidatedIRJSONDecoderMatchesScalaBuilderCases(t *testing.T) {
 	encoder := IRJSONEncoder{}
 	decoder := ValidatedIRJSONDecoder{}
+	localType := mustOperator([]Type{IntT1}, IntT1)
+	local := NewOperDecl("A", []OperatorParam{ValueParam("p")},
+		MustOperExpr(Op("PLUS"), Typed(IntT1), NewNameExpr("p", Typed(IntT1)), intLiteral(1)), Typed(localType))
+	application := MustOperExpr(Op("OPER_APP"), Typed(IntT1), NewNameExpr("A", Typed(localType)), intLiteral(1))
 	valid := []Expr{
 		MustOperExpr(Op("AND"), Typed(BoolT1), NewNameExpr("x", Typed(BoolT1)), NewValueExpr(BoolValue(true), Typed(BoolT1))),
 		MustOperExpr(Op("IF_THEN_ELSE"), Typed(IntT1), NewNameExpr("p", Typed(BoolT1)), intLiteral(1), intLiteral(2)),
 		MustOperExpr(Op("LABEL"), Typed(BoolT1), boolExpr(false), NewValueExpr(StringValue("label0"), Typed(StrT1))),
+		NewLetInExpr(application, Typed(IntT1), local),
+		NewValueExpr(IntSet, Typed(newSetTypeUnchecked(IntT1))),
+		NewValueExpr(NatSet, Typed(newSetTypeUnchecked(IntT1))),
+		NewValueExpr(BoolSet, Typed(newSetTypeUnchecked(BoolT1))),
+		NewValueExpr(StringSet, Typed(newSetTypeUnchecked(StrT1))),
 	}
 	for _, expression := range valid {
 		encoded, err := encoder.Expression(expression)
@@ -74,6 +83,49 @@ func TestValidatedIRJSONDecoderDeclarationsModulesAndRoots(t *testing.T) {
 	}
 	if _, err = (ValidatedIRJSONDecoder{}).Declaration(badJSON); err == nil {
 		t.Fatal("accepted theorem whose body disagrees with its declaration type")
+	}
+}
+
+func TestValidatedIRJSONDecoderMatchesScalaDeclarationModuleAndRootCases(t *testing.T) {
+	operatorType := mustOperator([]Type{IntT1}, BoolT1)
+	operator := NewOperDecl("X", []OperatorParam{ValueParam("a")},
+		MustOperExpr(Op("EQ"), Typed(BoolT1), NewNameExpr("a", Typed(IntT1)), intLiteral(1)), Typed(operatorType))
+	assumption := NewUnnamedAssumeDecl(MustOperExpr(Op("EQ"), Typed(BoolT1), intLiteral(1), intLiteral(0)), Untyped())
+	declarations := []Decl{operator, assumption, NewConstDecl("c", Untyped()), NewVarDecl("v", Untyped())}
+	encoder := IRJSONEncoder{}
+	decoder := ValidatedIRJSONDecoder{}
+	for _, declaration := range declarations {
+		encoded, err := encoder.Declaration(declaration)
+		if err != nil {
+			t.Fatal(err)
+		}
+		decoded, err := decoder.Declaration(encoded)
+		if err != nil || !EqualTypedDecl(decoded, declaration) {
+			t.Fatalf("declaration round trip = %#v, %v", decoded, err)
+		}
+	}
+	modules := []*Module{NewModule("Empty", nil), NewModule("Module", declarations)}
+	for _, module := range modules {
+		encoded, err := encoder.Module(module)
+		if err != nil {
+			t.Fatal(err)
+		}
+		decoded, err := decoder.Module(encoded)
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertModulesEqual(t, module, decoded)
+	}
+	root, err := encoder.Root(modules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := decoder.Root(root)
+	if err != nil || len(decoded) != len(modules) {
+		t.Fatalf("root round trip = %#v, %v", decoded, err)
+	}
+	for index := range modules {
+		assertModulesEqual(t, modules[index], decoded[index])
 	}
 }
 
