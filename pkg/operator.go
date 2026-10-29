@@ -70,6 +70,12 @@ type operatorDefinition struct {
 // Operator is immutable metadata for an IR built-in operator.
 type Operator struct{ definition *operatorDefinition }
 
+var internalIntegerExistsOperator = Operator{definition: &operatorDefinition{
+	name: "ApalacheInternal!IntExists", interpretation: InterpretationSignature,
+	category: CategoryApalacheInternal, arity: FixedArity(4), precedence: Precedence{Low: 160, High: 160},
+	constructible: true,
+}}
+
 func (o Operator) valid() *operatorDefinition {
 	if o.definition == nil {
 		panic("zero Operator has no metadata")

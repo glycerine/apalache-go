@@ -139,14 +139,44 @@ func TestTransitionEnabledProjectionEliminatesIntegerWitnessBounds(t *testing.T)
 
 	symbolicDomain := MustOperExpr(Op("INT_RANGE"), Typed(mustSet(IntT1)),
 		NewNameExpr("a", Typed(IntT1)), NewNameExpr("b", Typed(IntT1)))
-	if projected, exact = transitionEnabledProjection(MustOperExpr(Op("EXISTS3"), Typed(BoolT1), i, symbolicDomain, nonlinear)); exact || projected != nil {
+	if projected, exact = transitionEnabledProjection(MustOperExpr(Op("EXISTS3"), Typed(BoolT1), i, symbolicDomain, nonlinear)); !exact ||
+		projected == nil || countOperator(projected, "ApalacheInternal!IntExists") != 1 {
 		t.Fatalf("variable-width nonlinear binder projection = %v, exact=%t", projected, exact)
 	}
 
 	oversizedDomain := MustOperExpr(Op("INT_RANGE"), Typed(mustSet(IntT1)),
 		intLiteral(0), intLiteral(maxExpandedIntegerRange))
-	if projected, exact = transitionEnabledProjection(MustOperExpr(Op("EXISTS3"), Typed(BoolT1), i, oversizedDomain, nonlinear)); exact || projected != nil {
+	if projected, exact = transitionEnabledProjection(MustOperExpr(Op("EXISTS3"), Typed(BoolT1), i, oversizedDomain, nonlinear)); !exact ||
+		projected == nil || countOperator(projected, "ApalacheInternal!IntExists") != 1 {
 		t.Fatalf("oversized nonlinear binder projection = %v, exact=%t", projected, exact)
+	}
+}
+
+func TestVariableWidthNonlinearProjectionThroughG3(t *testing.T) {
+	for _, test := range []struct {
+		x    int64
+		want bool
+	}{{2, false}, {4, true}} {
+		t.Run(fmt.Sprintf("x=%d", test.x), func(t *testing.T) {
+			rewriter := NewStratifiedRewriter()
+			scope := InitialRewriterScope()
+			var err error
+			scope, xCell, err := rewriter.Rewrite(intLiteral(test.x), scope)
+			if err != nil {
+				t.Fatal(err)
+			}
+			scope.Binding = scope.Binding.With("x", xCell)
+			i := NewNameExpr("i", Typed(IntT1))
+			predicate := MustOperExpr(Op("EQ"), Typed(BoolT1),
+				MustOperExpr(Op("MULT"), Typed(IntT1), i, i), NewNameExpr("x", Typed(IntT1)))
+			quantified := MustOperExpr(internalIntegerExistsOperator, Typed(BoolT1),
+				i, intLiteral(0), NewNameExpr("x", Typed(IntT1)), predicate)
+			scope, result, err := rewriter.Rewrite(quantified, scope)
+			if err != nil {
+				t.Fatal(err)
+			}
+			checkRewrittenTruth(t, rewriter, scope, result, test.want)
+		})
 	}
 }
 

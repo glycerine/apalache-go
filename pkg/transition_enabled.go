@@ -1,6 +1,9 @@
 package apalache
 
-import "math/big"
+import (
+	"math/big"
+	"strings"
+)
 
 func projectedTransitionEnabledness(
 	transitions []Expr,
@@ -193,7 +196,40 @@ func projectIntegerRangeExistential(binder string, domainLower, domainUpper, pre
 			}
 		}
 	}
+	if integerQuantifierSMTFragment(domainLower, binder) && integerQuantifierSMTFragment(domainUpper, binder) &&
+		integerQuantifierSMTFragment(predicate, binder) {
+		return MustOperExpr(internalIntegerExistsOperator, Typed(BoolT1),
+			NewNameExpr(binder, Typed(IntT1)), domainLower, domainUpper, predicate), true
+	}
 	return nil, false
+}
+
+func integerQuantifierSMTFragment(expression Expr, binder string) bool {
+	switch typed := expression.(type) {
+	case *NameExpr:
+		return typed.Name() != "" && (typed.Name() == binder || !strings.HasSuffix(typed.Name(), "'"))
+	case *ValueExpr:
+		_, integer := typed.Value().(IntValue)
+		_, boolean := typed.Value().(BoolValue)
+		return integer || boolean
+	case *OperExpr:
+		supported := map[string]struct{}{
+			"EQ": {}, "NE": {}, "AND": {}, "OR": {}, "NOT": {}, "IMPLIES": {}, "IF_THEN_ELSE": {},
+			"PLUS": {}, "MINUS": {}, "MULT": {}, "DIV": {}, "MOD": {}, "POW": {}, "UNARY_MINUS": {},
+			"LT": {}, "LE": {}, "GT": {}, "GE": {},
+		}
+		if _, found := supported[typed.Operator().Name()]; !found {
+			return false
+		}
+		for _, argument := range typed.Arguments() {
+			if !integerQuantifierSMTFragment(argument, binder) {
+				return false
+			}
+		}
+		return true
+	default:
+		return false
+	}
 }
 
 func projectIntegerRangeAffineExistential(binder string, domainLower, domainUpper, predicate Expr) (Expr, bool) {

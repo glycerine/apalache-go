@@ -315,6 +315,8 @@ func (rewriter *StratifiedRewriter) rewrite(expression Expr, scope RewriterScope
 			return rewriter.rewriteBoundedChoice(typed, scope)
 		case "EXISTS3", "FORALL3":
 			return rewriter.rewriteFiniteQuantifier(typed, scope)
+		case "ApalacheInternal!IntExists":
+			return rewriter.rewriteIntegerSMTExistential(typed, scope)
 		case "Apalache!Skolem":
 			return rewriter.rewriteSkolemizedExistential(typed, scope)
 		case "FUN_CTOR":
@@ -783,6 +785,70 @@ func (rewriter *StratifiedRewriter) rewriteFiniteQuantifier(expression *OperExpr
 		}
 	}
 	return scope, result, nil
+}
+
+func (rewriter *StratifiedRewriter) rewriteIntegerSMTExistential(
+	expression *OperExpr,
+	scope RewriterScope,
+) (RewriterScope, ArenaCell, error) {
+	arguments := expression.Arguments()
+	if len(arguments) != 4 {
+		return scope, ArenaCell{}, fmt.Errorf("integer SMT existential requires a binder, two bounds, and a predicate")
+	}
+	binder, ok := arguments[0].(*NameExpr)
+	if !ok || binder.Name() == "" {
+		return scope, ArenaCell{}, fmt.Errorf("integer SMT existential binder must be a name")
+	}
+	grounded := make([]Expr, 3)
+	for index, argument := range arguments[1:] {
+		var err error
+		grounded[index], err = groundIntegerSMTExpression(argument, binder.Name(), scope.Binding)
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+	}
+	condition := MustOperExpr(internalIntegerExistsOperator, Typed(BoolT1),
+		NewNameExpr(binder.Name(), Typed(IntT1)), grounded[0], grounded[1], grounded[2])
+	scope, result := rewriter.bindBoolean(scope, condition)
+	return scope, result, nil
+}
+
+func groundIntegerSMTExpression(expression Expr, binder string, binding Binding) (Expr, error) {
+	switch typed := expression.(type) {
+	case *NameExpr:
+		if typed.Name() == binder {
+			return NewNameExpr(binder, typed.Tag()), nil
+		}
+		cell, found := binding.Get(typed.Name())
+		if !found {
+			return nil, fmt.Errorf("integer SMT existential name %s is not bound", typed.Name())
+		}
+		return cell.NameExpr(), nil
+	case *ValueExpr:
+		if _, integer := typed.Value().(IntValue); integer {
+			return typed, nil
+		}
+		if _, boolean := typed.Value().(BoolValue); boolean {
+			return typed, nil
+		}
+		return nil, fmt.Errorf("integer SMT existential value %T is unsupported", typed.Value())
+	case *OperExpr:
+		if !integerQuantifierSMTFragment(typed, binder) {
+			return nil, fmt.Errorf("integer SMT existential operator %s is unsupported", typed.Operator().Name())
+		}
+		arguments := typed.Arguments()
+		grounded := make([]Expr, len(arguments))
+		for index, argument := range arguments {
+			var err error
+			grounded[index], err = groundIntegerSMTExpression(argument, binder, binding)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return MustOperExpr(typed.Operator(), typed.Tag(), grounded...), nil
+	default:
+		return nil, fmt.Errorf("integer SMT existential expression %T is unsupported", expression)
+	}
 }
 
 func (rewriter *StratifiedRewriter) rewriteSkolemizedExistential(

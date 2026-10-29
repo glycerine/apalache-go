@@ -20,6 +20,7 @@ type G3GroundEncoder struct {
 	cellStack     []map[string]SMTTerm
 	inStack       []map[[2]int]SMTTerm
 	versionStack  []map[string]int
+	boundTerms    map[string]SMTTerm
 }
 
 func NewG3GroundEncoder(solver *G3SolverContext) (*G3GroundEncoder, error) {
@@ -43,6 +44,7 @@ func NewG3GroundEncoderWithEncoding(
 		solver: solver, encoding: encoding,
 		cells: make(map[string]SMTTerm), memberships: make(map[[2]int]SMTTerm),
 		arrayVersions: make(map[string]int), defaultValues: make(map[string]SMTTerm),
+		boundTerms: make(map[string]SMTTerm),
 	}, nil
 }
 
@@ -298,6 +300,9 @@ func (encoder *G3GroundEncoder) Encode(expression Expr) (SMTTerm, error) {
 	}
 	switch typed := expression.(type) {
 	case *NameExpr:
+		if term, found := encoder.boundTerms[typed.Name()]; found {
+			return term, nil
+		}
 		term, found := encoder.cells[typed.Name()]
 		if !found {
 			return SMTTerm{}, fmt.Errorf("SMT name %s is not a declared arena cell", typed.Name())
@@ -321,6 +326,9 @@ func (encoder *G3GroundEncoder) Encode(expression Expr) (SMTTerm, error) {
 
 func (encoder *G3GroundEncoder) encodeOperator(expression *OperExpr) (SMTTerm, error) {
 	arguments := expression.Arguments()
+	if expression.Operator().Name() == "ApalacheInternal!IntExists" {
+		return encoder.encodeIntegerExistential(arguments)
+	}
 	if (expression.Operator().Name() == "SET_IN" || expression.Operator().Name() == "Apalache!SelectInSet") &&
 		encoder.encoding == SMTEncodingArrays {
 		return encoder.encodeArraySelect(arguments)
@@ -465,6 +473,50 @@ func (encoder *G3GroundEncoder) encodeOperator(expression *OperExpr) (SMTTerm, e
 	default:
 		return SMTTerm{}, fmt.Errorf("unsupported ground SMT operator %s", expression.Operator().Name())
 	}
+}
+
+func (encoder *G3GroundEncoder) encodeIntegerExistential(arguments []Expr) (SMTTerm, error) {
+	if len(arguments) != 4 {
+		return SMTTerm{}, fmt.Errorf("integer existential requires four arguments")
+	}
+	binder, ok := arguments[0].(*NameExpr)
+	if !ok || binder.Name() == "" {
+		return SMTTerm{}, fmt.Errorf("integer existential binder must be a name")
+	}
+	if len(encoder.boundTerms) != 0 {
+		return SMTTerm{}, fmt.Errorf("nested integer existential encoding is not supported")
+	}
+	lower, err := encoder.Encode(arguments[1])
+	if err != nil {
+		return SMTTerm{}, fmt.Errorf("encode integer existential lower bound: %w", err)
+	}
+	upper, err := encoder.Encode(arguments[2])
+	if err != nil {
+		return SMTTerm{}, fmt.Errorf("encode integer existential upper bound: %w", err)
+	}
+	bound, err := encoder.solver.Bound(0, SMTInt)
+	if err != nil {
+		return SMTTerm{}, err
+	}
+	encoder.boundTerms[binder.Name()] = bound
+	body, bodyErr := encoder.Encode(arguments[3])
+	delete(encoder.boundTerms, binder.Name())
+	if bodyErr != nil {
+		return SMTTerm{}, fmt.Errorf("encode integer existential predicate: %w", bodyErr)
+	}
+	lowerBound, err := encoder.solver.LessEqual(lower, bound)
+	if err != nil {
+		return SMTTerm{}, err
+	}
+	upperBound, err := encoder.solver.LessEqual(bound, upper)
+	if err != nil {
+		return SMTTerm{}, err
+	}
+	quantifiedBody, err := encoder.solver.And(lowerBound, upperBound, body)
+	if err != nil {
+		return SMTTerm{}, err
+	}
+	return encoder.solver.Exists(binder.Name(), bound, quantifiedBody)
 }
 
 func (encoder *G3GroundEncoder) freshArrayVersion(expression Expr) (SMTTerm, error) {
