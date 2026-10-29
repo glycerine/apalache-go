@@ -236,6 +236,13 @@ func formatTLAOperator(parent Precedence, expression *OperExpr) (string, error) 
 		}
 		return wrapTLA(parent, operator.Precedence(), argument+"'"), nil
 	}
+	if name == "NOT" {
+		argument, err := formatTLAExpressionAt(Precedence{High: 160}, arguments[0])
+		if err != nil {
+			return "", err
+		}
+		return wrapTLA(parent, operator.Precedence(), "~"+argument), nil
+	}
 	if sign, ok := tlaUnary[name]; ok {
 		argument, err := format(0, operator.Precedence())
 		if err != nil {
@@ -694,7 +701,7 @@ func formatTLACase(parent Precedence, expression *OperExpr) (string, error) {
 	start := 0
 	other := ""
 	if expression.Operator().Name() == "CASE_OTHER" {
-		value, err := formatTLAExpressionAt(Precedence{}, arguments[0])
+		value, err := formatTLACaseValue(arguments[0])
 		if err != nil {
 			return "", err
 		}
@@ -710,13 +717,26 @@ func formatTLACase(parent Precedence, expression *OperExpr) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		value, err := formatTLAExpressionAt(Precedence{}, arguments[i+1])
+		value, err := formatTLACaseValue(arguments[i+1])
 		if err != nil {
 			return "", err
 		}
 		items = append(items, guard+" -> "+value)
 	}
 	return wrapTLA(parent, expression.Operator().Precedence(), "CASE "+strings.Join(items, " [] ")+other), nil
+}
+
+func formatTLACaseValue(expression Expr) (string, error) {
+	formatted, err := formatTLAExpressionAt(Precedence{}, expression)
+	if err != nil {
+		return "", err
+	}
+	if let, ok := expression.(*LetInExpr); ok {
+		if _, lambda := tlaLambdaDeclaration(let); !lambda {
+			return "(" + formatted + ")", nil
+		}
+	}
+	return formatted, nil
 }
 func formatTLASubscript(expression Expr) (string, error) {
 	text, err := formatTLAExpressionAt(Precedence{}, expression)

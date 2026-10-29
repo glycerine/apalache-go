@@ -106,6 +106,133 @@ func TestFormatTLATLCFunctionAndLambdaScalaOracleCases(t *testing.T) {
 	}
 }
 
+func TestFormatTLACompleteScalaPrettyWriterShapes(t *testing.T) {
+	falseValue := NewValueExpr(BoolValue(false), Untyped())
+	trueValue := NewValueExpr(BoolValue(true), Untyped())
+	record := tlaOper("RECORD", tlaString("x1"), tlaName("x2"), tlaString("x3"), tlaName("x4"))
+	recordSet := tlaOper("RECORD_SET", tlaString("x1"), tlaName("S"), tlaString("x2"), tlaName("T"))
+	function := tlaOper("FUN_CTOR", tlaOper("PLUS", tlaName("x"), tlaName("y")),
+		tlaName("x"), tlaName("S"), tlaName("y"), tlaName("T"))
+	mapSet := tlaOper("SET_MAP", tlaOper("PLUS", tlaName("x"), tlaName("y")),
+		tlaName("x"), tlaName("S"), tlaName("y"), tlaName("T"))
+	except := tlaOper("EXCEPT", tlaName("f"), tlaOper("TUPLE", tlaName("i"), tlaName("k")), tlaName("v"),
+		tlaOper("TUPLE", tlaName("j")), tlaName("w"))
+	cases := []struct {
+		name string
+		expr Expr
+		want string
+	}{
+		{"empty set", tlaOper("SET_ENUM"), "{}"},
+		{"singleton set", tlaOper("SET_ENUM", tlaInt(42)), "{42}"},
+		{"empty tuple", tlaOper("TUPLE"), "<<>>"},
+		{"product", tlaOper("SET_TIMES", tlaName("X"), tlaName("Y"), tlaName("Z")), "X \\X Y \\X Z"},
+		{"negated equality", tlaOper("NOT", tlaOper("EQ", tlaInt(1), tlaInt(2))), "~(1 = 2)"},
+		{"integer division", tlaOper("DIV", tlaInt(5), tlaInt(3)), "5 \\div 3"},
+		{"real division", tlaOper("REAL_DIV", tlaInt(5), tlaInt(3)), "5 / 3"},
+		{"function set", tlaOper("FUN_SET", tlaName("S"), tlaName("T")), "[S -> T]"},
+		{"label arguments", tlaOper("LABEL", tlaInt(1), tlaString("L2"), tlaString("a"), tlaString("b")), "L2(a, b) :: 1"},
+		{"bounded forall", tlaOper("FORALL3", tlaName("x"), tlaName("S"), tlaName("P")), "\\A x \\in S: P"},
+		{"unbounded choose", tlaOper("CHOOSE2", tlaName("x"), trueValue), "CHOOSE x : TRUE"},
+		{"nested temporal quantifiers", tlaOper("TEMPORAL_FORALL", tlaName("x"),
+			tlaOper("TEMPORAL_EXISTS", tlaName("y"), tlaName("P"))), "\\AA x: \\EE y: P"},
+		{"record", record, "[x1 |-> x2, x3 |-> x4]"},
+		{"record set", recordSet, "[x1: S, x2: T]"},
+		{"function constructor", function, "[x \\in S, y \\in T |-> x + y]"},
+		{"set map", mapSet, "{ (x + y): x \\in S, y \\in T }"},
+		{"filter", tlaOper("SET_FILTER", tlaName("x"), tlaName("S"), tlaOper("LT", tlaName("x"), tlaInt(5))), "{x \\in S: x < 5}"},
+		{"function application", tlaOper("FUN_APP", tlaName("f"), tlaName("e")), "f[e]"},
+		{"conditional", tlaOper("IF_THEN_ELSE", tlaName("a"), tlaName("b"), tlaName("c")), "IF a THEN b ELSE c"},
+		{"multiple except", except, "[f EXCEPT ![i, k] = v, ![j] = w]"},
+		{"cardinality", tlaOper("FiniteSets!Cardinality", tlaName("S")), "Cardinality(S)"},
+		{"append", tlaOper("Sequences!Append", tlaOper("TUPLE", tlaName("a")), tlaName("b")), "Append(<<a>>, b)"},
+		{"case", tlaOper("CASE", tlaName("g1"), tlaName("a1"), tlaName("g2"), tlaName("a2")), "CASE g1 -> a1 [] g2 -> a2"},
+		{"case other", tlaOper("CASE_OTHER", tlaName("other"), tlaName("g"), tlaName("a")), "CASE g -> a [] OTHER -> other"},
+		{"strong fairness", tlaOper("STRONG_FAIRNESS", tlaName("vars"), tlaName("A")), "SF_vars(A)"},
+		{"always", tlaOper("GLOBALLY", tlaName("A")), "[]A"},
+		{"eventually", tlaOper("EVENTUALLY", tlaName("A")), "<>A"},
+		{"leads to", tlaOper("LEADS_TO", tlaName("A"), tlaName("B")), "A ~> B"},
+		{"guarantees", tlaOper("GUARANTEES", tlaName("A"), tlaName("B")), "A -+-> B"},
+		{"transparent singleton and", tlaOper("AND", tlaOper("SET_IN", tlaName("x"), tlaName("S"))), "x \\in S"},
+		{"transparent singleton or", tlaOper("OR", tlaOper("SET_IN", tlaName("x"), tlaName("S"))), "x \\in S"},
+		{"empty disjunction", tlaOper("OR"), "FALSE"},
+		{"false", falseValue, "FALSE"},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := FormatTLAExpression(test.expr)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != test.want {
+				t.Fatalf("got %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestFormatTLAParenthesizesOrdinaryLetsInScalaContexts(t *testing.T) {
+	declaration := NewOperDecl("c", nil, tlaInt(1), Untyped())
+	let := NewLetInExpr(tlaOper("OPER_APP", tlaName("c")), Untyped(), declaration)
+	cases := []struct {
+		expr Expr
+		want string
+	}{
+		{tlaOper("AND", let, NewValueExpr(BoolValue(true), Untyped())), "(LET c == 1 IN c) /\\ TRUE"},
+		{tlaOper("CASE_OTHER", let, NewValueExpr(BoolValue(true), Untyped()), tlaName("a")),
+			"CASE TRUE -> a [] OTHER -> (LET c == 1 IN c)"},
+	}
+	for _, test := range cases {
+		got, err := FormatTLAExpression(test.expr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != test.want {
+			t.Fatalf("got %q, want %q", got, test.want)
+		}
+	}
+}
+
+func TestFormatTLADeclarationScalaPrettyWriterCases(t *testing.T) {
+	operator := NewOperDecl("A", []OperatorParam{ValueParam("x")},
+		tlaOper("PLUS", tlaInt(1), tlaName("x")), Untyped())
+	formatted, err := FormatTLADeclaration(operator, nil)
+	if err != nil || formatted != "A(x) == 1 + x" {
+		t.Fatalf("ordinary operator = %q, %v", formatted, err)
+	}
+	operator.SetRecursive(true)
+	formatted, err = FormatTLADeclaration(operator, nil)
+	if err != nil || formatted != "RECURSIVE A(_)\nA(x) == 1 + x" {
+		t.Fatalf("recursive operator = %q, %v", formatted, err)
+	}
+	application, err := ApplyDeclarationUntyped(operator, tlaInt(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	formatted, err = FormatTLAExpression(NewLetInExpr(application, Untyped(), operator))
+	if err != nil || formatted != "LET RECURSIVE A(_)\nA(x) == 1 + x IN A(1)" {
+		t.Fatalf("recursive LET-IN operator = %q, %v", formatted, err)
+	}
+
+	reference := tlaOper("FUN_APP", tlaOper("FUN_REC_REF"), tlaOper("TUPLE", tlaName("y"), tlaName("x")))
+	recursiveFunction := tlaOper("FUN_REC_CTOR", reference,
+		tlaName("x"), tlaName("S"), tlaName("y"), tlaName("S"))
+	functionDeclaration := NewOperDecl("f", nil, recursiveFunction, Untyped())
+	formatted, err = FormatTLADeclaration(functionDeclaration, nil)
+	if err != nil || formatted != "f[x \\in S, y \\in S] == f[<<y, x>>]" {
+		t.Fatalf("recursive function = %q, %v", formatted, err)
+	}
+	formatted, err = FormatTLAExpression(NewLetInExpr(tlaOper("OPER_APP", tlaName("f")), Untyped(), functionDeclaration))
+	if err != nil || formatted != "LET f[x \\in S, y \\in S] == f[<<y, x>>] IN f" {
+		t.Fatalf("recursive function LET-IN = %q, %v", formatted, err)
+	}
+
+	invalid := NewOperDecl("__12-3::A::B::C", []OperatorParam{ValueParam("a::b::c")}, tlaName("a::b::c"), Untyped())
+	formatted, err = FormatTLADeclaration(invalid, nil)
+	if err != nil || formatted != "id__12_3_A_B_C(a_b_c) == a_b_c" {
+		t.Fatalf("sanitized declaration = %q, %v", formatted, err)
+	}
+}
+
 func TestFormatTLAPrecedenceAndBinderOracleCases(t *testing.T) {
 	cases := []struct {
 		name string
