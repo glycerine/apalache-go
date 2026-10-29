@@ -36,10 +36,32 @@ func FormatDecodedTraceTLC(module *Module, states []DecodedState) (string, error
 	if len(states) == 0 {
 		return "", fmt.Errorf("expected at least one decoded state, found none")
 	}
+	constantNames := make(map[string]struct{}, len(module.ConstDeclarations()))
+	for _, declaration := range module.ConstDeclarations() {
+		constantNames[declaration.Name()] = struct{}{}
+	}
 	variableNames := make(map[string]struct{}, len(module.VarDeclarations()))
+	internalNames := make(map[string]struct{})
 	for _, declaration := range module.VarDeclarations() {
-		if !declaration.IsInternal() {
+		if declaration.IsInternal() {
+			internalNames[declaration.Name()] = struct{}{}
+		} else {
 			variableNames[declaration.Name()] = struct{}{}
+		}
+	}
+	// A Trace is a self-contained witness. Scala's writer preserves bindings
+	// carried by the witness even when its lightweight root-module fixture does
+	// not repeat the declarations. Do the same without exposing known constants
+	// or generated internal variables as state variables.
+	for _, state := range states {
+		for name := range state.Values {
+			if _, constant := constantNames[name]; constant {
+				continue
+			}
+			if _, internal := internalNames[name]; internal {
+				continue
+			}
+			variableNames[name] = struct{}{}
 		}
 	}
 	var output strings.Builder
@@ -94,9 +116,25 @@ func decodedTraceModule(module *Module, states []DecodedState, violation Expr) (
 		constantNames[declaration.Name()] = struct{}{}
 	}
 	variableNames := make(map[string]struct{}, len(module.VarDeclarations()))
+	internalNames := make(map[string]struct{})
 	for _, declaration := range module.VarDeclarations() {
-		if !declaration.IsInternal() {
+		if declaration.IsInternal() {
+			internalNames[declaration.Name()] = struct{}{}
+		} else {
 			variableNames[declaration.Name()] = struct{}{}
+		}
+	}
+	// Preserve bindings supplied by self-contained traces even when a minimal
+	// root module does not repeat their declarations (as in Scala's fixtures).
+	for _, state := range states {
+		for name := range state.Values {
+			if _, constant := constantNames[name]; constant {
+				continue
+			}
+			if _, internal := internalNames[name]; internal {
+				continue
+			}
+			variableNames[name] = struct{}{}
 		}
 	}
 	declarations := make([]Decl, 0, len(states)+2)

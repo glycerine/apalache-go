@@ -121,6 +121,76 @@ func TestFormatDecodedTraceTLCMatchesScalaMessageLayout(t *testing.T) {
 	}
 }
 
+func TestDecodedTraceWritersPreserveScalaUndeclaredFixtureBindings(t *testing.T) {
+	module := NewModule("test", nil)
+	violation := MustOperExpr(Op("GT"), Typed(BoolT1),
+		NewNameExpr("x", Typed(IntT1)), intLiteral(1))
+	tests := []struct {
+		name   string
+		states []DecodedState
+		want   []string
+	}{
+		{
+			"single state",
+			[]DecodedState{{Values: map[string]Expr{"x": intLiteral(2)}}},
+			[]string{"ConstInit == TRUE", "State0 == x = 2", "InvariantViolation == x > 1"},
+		},
+		{
+			"two steps",
+			[]DecodedState{
+				{Values: map[string]Expr{"x": intLiteral(0)}},
+				{Values: map[string]Expr{"x": intLiteral(1)}},
+				{Values: map[string]Expr{"x": intLiteral(2)}},
+			},
+			[]string{"State0 == x = 0", "State1 == x = 1", "State2 == x = 2"},
+		},
+		{
+			"two steps with conjunction",
+			[]DecodedState{
+				{Values: map[string]Expr{"x": intLiteral(0), "y": intLiteral(8)}},
+				{Values: map[string]Expr{"x": intLiteral(1), "y": intLiteral(9)}},
+				{Values: map[string]Expr{"x": intLiteral(2), "y": intLiteral(10)}},
+			},
+			[]string{
+				"State0 == x = 0 /\\ y = 8", "State1 == x = 1 /\\ y = 9",
+				"State2 == x = 2 /\\ y = 10",
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			tla, err := FormatDecodedTraceTLA(module, test.states, violation)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, fragment := range test.want {
+				if !strings.Contains(tla, fragment) {
+					t.Fatalf("TLA trace lacks %q:\n%s", fragment, tla)
+				}
+			}
+
+			encoded, err := MarshalDecodedTraceApalacheJSON(module, test.states, violation)
+			if err != nil {
+				t.Fatal(err)
+			}
+			decoded, err := UnmarshalApalacheJSONTrace(encoded)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(decoded) != len(test.states) {
+				t.Fatalf("decoded %d states, want %d", len(decoded), len(test.states))
+			}
+			for index := range decoded {
+				for name, want := range test.states[index].Values {
+					if got, found := decoded[index][name]; !found || !EqualExpr(got, want) {
+						t.Fatalf("state %d binding %s = %v, want %v", index, name, got, want)
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestUnmarshalApalacheJSONTrace(t *testing.T) {
 	x := NewNameExpr("x", Typed(IntT1))
 	y := NewNameExpr("y", Typed(BoolT1))
