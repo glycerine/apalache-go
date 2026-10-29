@@ -52,6 +52,44 @@ func TestApalacheConfigLoaderDiscoveryDoesNotTraverseOrFallBack(t *testing.T) {
 	}
 }
 
+func TestApalacheConfigLoaderDiscoveryCandidateIsolation(t *testing.T) {
+	t.Run("local shields invalid global", func(t *testing.T) {
+		work, home := configLoaderDirectories(t)
+		writeConfigTestFile(t, filepath.Join(work, LocalConfigFilename), `{"run-dir":"local-run"}`)
+		writeGlobalConfigTestFile(t, home, "not json")
+		result := NewApalacheConfigLoader(work, home).Load(EmptyApalacheConfig().WithCommand(ConfigCheck))
+		if !result.IsSuccess() || result.RequireValue().Common.RunDir == nil ||
+			*result.RequireValue().Common.RunDir != "local-run" {
+			t.Fatalf("local selection = %#v", result.Errors())
+		}
+	})
+
+	t.Run("invalid selected global is reported", func(t *testing.T) {
+		work, home := configLoaderDirectories(t)
+		writeGlobalConfigTestFile(t, home, "not json")
+		result := NewApalacheConfigLoader(work, home).Load(EmptyApalacheConfig().WithCommand(ConfigCheck))
+		if result.IsSuccess() || len(result.Errors()) == 0 ||
+			!strings.Contains(result.Errors()[0], TLAPlusConfigDirectory) {
+			t.Fatalf("invalid global = %#v", result.Errors())
+		}
+	})
+
+	t.Run("legacy global filename is ignored", func(t *testing.T) {
+		work, home := configLoaderDirectories(t)
+		globalDirectory := filepath.Join(home, TLAPlusConfigDirectory)
+		if err := os.MkdirAll(globalDirectory, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		writeConfigTestFile(t, filepath.Join(globalDirectory, "apalache.cfg"), "not json")
+		writeGlobalConfigTestFile(t, home, `{"run-dir":"global-run"}`)
+		result := NewApalacheConfigLoader(work, home).Load(EmptyApalacheConfig().WithCommand(ConfigCheck))
+		if !result.IsSuccess() || result.RequireValue().Common.RunDir == nil ||
+			*result.RequireValue().Common.RunDir != "global-run" {
+			t.Fatalf("global JSON selection = %#v", result.Errors())
+		}
+	})
+}
+
 func TestApalacheConfigLoaderNoSelectionAndMissingExplicit(t *testing.T) {
 	work, home := configLoaderDirectories(t)
 	primary := EmptyApalacheConfig().WithCommand(ConfigCheck)
