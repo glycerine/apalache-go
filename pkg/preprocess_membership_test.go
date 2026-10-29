@@ -193,3 +193,96 @@ func TestSimplifySetMembershipKeepsNonTypeDefiningPowerSetAndSequence(t *testing
 		t.Fatalf("non-type-defining powerset membership changed: %v", got)
 	}
 }
+
+func TestSimplifySetMembershipScalaNestedTypeDefiningMatrix(t *testing.T) {
+	truth := NewValueExpr(BoolValue(true), Typed(BoolT1))
+	intSet := NewValueExpr(IntSet, Typed(mustSet(IntT1)))
+	boolSet := NewValueExpr(BoolSet, Typed(mustSet(BoolT1)))
+
+	setInt := mustSet(IntT1)
+	seqSetInt := mustSeq(setInt)
+	setSeqBool := mustSet(mustSeq(BoolT1))
+	seqOfPowerInt := MustOperExpr(Op("Sequences!Seq"), Typed(mustSet(seqSetInt)),
+		MustOperExpr(Op("SET_POWERSET"), Typed(mustSet(setInt)), intSet))
+	powerOfSeqBool := MustOperExpr(Op("SET_POWERSET"), Typed(mustSet(setSeqBool)),
+		MustOperExpr(Op("Sequences!Seq"), Typed(mustSet(mustSeq(BoolT1))), boolSet))
+
+	for _, test := range []struct {
+		name    string
+		element Expr
+		set     Expr
+	}{
+		{"sequence of powersets", NewNameExpr("seqSets", Typed(seqSetInt)), seqOfPowerInt},
+		{"powerset of sequences", NewNameExpr("setSeqs", Typed(setSeqBool)), powerOfSeqBool},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := SimplifySetMembership(MustOperExpr(Op("SET_IN"), Typed(BoolT1), test.element, test.set),
+				NewUniqueNameGenerator(), nil, false)
+			if err != nil || !EqualTypedExpr(got, truth) {
+				t.Fatalf("nested type-defining membership = %v, %v", got, err)
+			}
+		})
+	}
+
+	functionType := mustFun(seqSetInt, setSeqBool)
+	functionSet := MustOperExpr(Op("FUN_SET"), Typed(mustSet(functionType)), seqOfPowerInt, powerOfSeqBool)
+	function := NewNameExpr("nestedFunction", Typed(functionType))
+	got, err := SimplifySetMembership(MustOperExpr(Op("SET_IN"), Typed(BoolT1), function, functionSet),
+		NewUniqueNameGenerator(), nil, false)
+	if err != nil || !EqualTypedExpr(got, truth) {
+		t.Fatalf("function over nested type-defining sets = %v, %v", got, err)
+	}
+
+	domainRecord, _ := NewRecordType(map[string]Type{"a": seqSetInt})
+	rangeRecord, _ := NewRecordType(map[string]Type{"b": setSeqBool})
+	domainRecordSet := MustOperExpr(Op("RECORD_SET"), Typed(mustSet(domainRecord)),
+		NewValueExpr(StringValue("a"), Typed(StrT1)), seqOfPowerInt)
+	rangeRecordSet := MustOperExpr(Op("RECORD_SET"), Typed(mustSet(rangeRecord)),
+		NewValueExpr(StringValue("b"), Typed(StrT1)), powerOfSeqBool)
+	recordFunctionType := mustFun(domainRecord, rangeRecord)
+	recordFunctionSet := MustOperExpr(Op("FUN_SET"), Typed(mustSet(recordFunctionType)), domainRecordSet, rangeRecordSet)
+	recordFunction := NewNameExpr("recordFunction", Typed(recordFunctionType))
+	got, err = SimplifySetMembership(MustOperExpr(Op("SET_IN"), Typed(BoolT1), recordFunction, recordFunctionSet),
+		NewUniqueNameGenerator(), nil, false)
+	if err != nil || !EqualTypedExpr(got, truth) {
+		t.Fatalf("function over nested records = %v, %v", got, err)
+	}
+}
+
+func TestSimplifySetMembershipScalaNatWrapperAndNestedFunctionContracts(t *testing.T) {
+	natSet := NewValueExpr(NatSet, Typed(mustSet(IntT1)))
+	seqType := mustSeq(IntT1)
+	seqNat := MustOperExpr(Op("Sequences!Seq"), Typed(mustSet(seqType)), natSet)
+	seqMembership := MustOperExpr(Op("SET_IN"), Typed(BoolT1), NewNameExpr("s", Typed(seqType)), seqNat)
+	powerNat := MustOperExpr(Op("SET_POWERSET"), Typed(mustSet(mustSet(IntT1))), natSet)
+	powerMembership := MustOperExpr(Op("SET_IN"), Typed(BoolT1),
+		NewNameExpr("S", Typed(mustSet(IntT1))), powerNat)
+	for _, membership := range []Expr{seqMembership, powerMembership} {
+		got, err := SimplifySetMembership(membership, NewUniqueNameGenerator(), nil, false)
+		if err != nil || !EqualTypedExpr(got, membership) {
+			t.Fatalf("Nat wrapper membership = %v, %v; want unchanged %v", got, err, membership)
+		}
+	}
+
+	domain := NewNameExpr("RM", Typed(mustSet(IntT1)))
+	innerType := mustFun(IntT1, IntT1)
+	innerSet := MustOperExpr(Op("FUN_SET"), Typed(mustSet(innerType)), domain, natSet)
+	outerType := mustFun(IntT1, innerType)
+	outerSet := MustOperExpr(Op("FUN_SET"), Typed(mustSet(outerType)), domain, innerSet)
+	membership := MustOperExpr(Op("SET_IN"), Typed(BoolT1), NewNameExpr("nested", Typed(outerType)), outerSet)
+	got, err := SimplifySetMembership(membership, NewUniqueNameGenerator(), nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if countOperator(got, "DOMAIN") != 2 || countOperator(got, "FORALL3") != 2 ||
+		countOperator(got, "FUN_APP") != 3 || countOperator(got, "GE") != 1 {
+		t.Fatalf("nested function constraints have wrong shape: %v", got)
+	}
+	early, err := SimplifySetMembership(membership, NewUniqueNameGenerator(), nil, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if countOperator(early, "FORALL3") != 2 || countOperator(early, "GE") != 1 {
+		t.Fatalf("pre-keramelizer nested function constraints have wrong shape: %v", early)
+	}
+}
