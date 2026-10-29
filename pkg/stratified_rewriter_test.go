@@ -990,6 +990,92 @@ func TestStratifiedIntegerArithmeticOperatorsAndTypeErrors(t *testing.T) {
 	}
 }
 
+func TestStratifiedIntegerScalaSymbolicOracleCases(t *testing.T) {
+	integer := func(value int64) Expr { return NewValueExpr(Int64Value(value), Typed(IntT1)) }
+	x := NewNameExpr("x", Typed(IntT1))
+	y := NewNameExpr("y", Typed(IntT1))
+	equal := func(left, right Expr) Expr { return MustOperExpr(Op("EQ"), Typed(BoolT1), left, right) }
+	not := func(expression Expr) Expr { return MustOperExpr(Op("NOT"), Typed(BoolT1), expression) }
+	prove := func(t *testing.T, xValue, yValue int64, proposition Expr) {
+		t.Helper()
+		scope := InitialRewriterScope()
+		arena, cells := scope.Arena.AppendCellTypes(
+			BasicCellType{Type: IntT1}, BasicCellType{Type: IntT1})
+		scope.Arena = arena
+		scope.Binding = scope.Binding.With("x", cells[0]).With("y", cells[1])
+		assumptions := MustOperExpr(Op("AND"), Typed(BoolT1),
+			equal(x, integer(xValue)), equal(y, integer(yValue)))
+		claim := MustOperExpr(Op("IMPLIES"), Typed(BoolT1), assumptions, proposition)
+		rewriter := NewStratifiedRewriter()
+		resultScope, result, err := rewriter.Rewrite(claim, scope)
+		if err != nil {
+			t.Fatal(err)
+		}
+		checkRewrittenTruth(t, rewriter, resultScope, result, true)
+	}
+
+	for _, test := range []struct {
+		name           string
+		operator       string
+		xValue, yValue int64
+		want           bool
+	}{
+		{name: "equal cells", operator: "EQ", xValue: 22, yValue: 22, want: true},
+		{name: "unequal cells", operator: "EQ", xValue: 22, yValue: 1981, want: false},
+		{name: "negated equality equal", operator: "NE", xValue: 22, yValue: 22, want: false},
+		{name: "negated equality different", operator: "NE", xValue: 22, yValue: 1981, want: true},
+		{name: "less true", operator: "LT", xValue: 4, yValue: 22, want: true},
+		{name: "less equal", operator: "LT", xValue: 4, yValue: 4, want: false},
+		{name: "less false", operator: "LT", xValue: 4, yValue: 3, want: false},
+		{name: "less-equal true", operator: "LE", xValue: 4, yValue: 22, want: true},
+		{name: "less-equal equal", operator: "LE", xValue: 4, yValue: 4, want: true},
+		{name: "less-equal false", operator: "LE", xValue: 4, yValue: 3, want: false},
+		{name: "greater false", operator: "GT", xValue: 4, yValue: 22, want: false},
+		{name: "greater equal", operator: "GT", xValue: 4, yValue: 4, want: false},
+		{name: "greater true", operator: "GT", xValue: 4, yValue: 3, want: true},
+		{name: "greater-equal false", operator: "GE", xValue: 4, yValue: 22, want: false},
+		{name: "greater-equal equal", operator: "GE", xValue: 4, yValue: 4, want: true},
+		{name: "greater-equal true", operator: "GE", xValue: 4, yValue: 3, want: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var proposition Expr = MustOperExpr(Op(test.operator), Typed(BoolT1), x, y)
+			if !test.want {
+				proposition = not(proposition)
+			}
+			prove(t, test.xValue, test.yValue, proposition)
+		})
+	}
+
+	for _, test := range []struct {
+		name           string
+		operator       string
+		xValue, yValue int64
+		want           int64
+		unary          bool
+	}{
+		{name: "addition", operator: "PLUS", xValue: 1981, yValue: 36, want: 2017},
+		{name: "subtraction", operator: "MINUS", xValue: 2017, yValue: 36, want: 1981},
+		{name: "unary minus", operator: "UNARY_MINUS", xValue: 2017, want: -2017, unary: true},
+		{name: "multiplication", operator: "MULT", xValue: 7, yValue: 4, want: 28},
+		{name: "division", operator: "DIV", xValue: 30, yValue: 4, want: 7},
+		{name: "modulo", operator: "MOD", xValue: 30, yValue: 7, want: 2},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			arguments := []Expr{x, y}
+			if test.unary {
+				arguments = arguments[:1]
+			}
+			result := MustOperExpr(Op(test.operator), Typed(IntT1), arguments...)
+			prove(t, test.xValue, test.yValue, equal(result, integer(test.want)))
+		})
+	}
+
+	composite := MustOperExpr(Op("GT"), Typed(BoolT1),
+		MustOperExpr(Op("PLUS"), Typed(IntT1), integer(1), integer(5)),
+		MustOperExpr(Op("MINUS"), Typed(IntT1), integer(6), integer(3)))
+	prove(t, 0, 0, composite)
+}
+
 func TestStratifiedEqualityIdentityAndTypeErrors(t *testing.T) {
 	for _, operator := range []string{"EQ", "NE"} {
 		name := NewNameExpr("unbound", Typed(IntT1))
