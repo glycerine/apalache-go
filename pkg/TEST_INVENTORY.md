@@ -26,6 +26,8 @@ make test-resource
 Every target caps Go package parallelism at eight and uses logical CPUs 1–8
 when `taskset` is available. Tagged gates are kept separate because some need
 external Scala/solver installations or intentionally expensive lifecycle and
-packaging work. Passing a bounded property test proves only the guarantee and
-range stated in its inventory row; it is not evidence for unbounded input
-spaces.
+packaging work. The race gate uses a configurable 60-minute timeout because
+instrumenting the exhaustive checker families exceeds Go's 10-minute default
+and has measured beyond 30 minutes on the capped eight-CPU configuration.
+Passing a bounded property test proves only the guarantee and range stated in
+its inventory row; it is not evidence for unbounded input spaces.

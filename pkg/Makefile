@@ -14,6 +14,7 @@ ARCHIVE := $(DIST_ROOT)/$(RELEASE_NAME).tar.gz
 .PHONY: build coverage dist test vet verify test-race test-fuzz-smoke test-oracle test-solver test-resource test-corpus test-release test-deterministic
 
 FUZZ_TIME ?= 10s
+RACE_TIMEOUT ?= 60m
 
 build:
 	mkdir -p $(BUILD_ROOT)
@@ -40,7 +41,7 @@ vet:
 verify: test vet build
 
 test-race:
-	GOFLAGS='-p=8' $(CPU_RUN) $(GO) test -race ./...
+	GOFLAGS='-p=8' $(CPU_RUN) $(GO) test -race -timeout=$(RACE_TIMEOUT) ./...
 
 test-fuzz-smoke:
 	GOFLAGS='-p=8' $(CPU_RUN) $(GO) test -run '^$$' -fuzz '^FuzzTypeParserRoundTrip$$' -fuzztime=$(FUZZ_TIME) -parallel=8 .
