@@ -217,6 +217,76 @@ func TestNestedVariableWidthNonlinearProjectionThroughG3(t *testing.T) {
 	}
 }
 
+func TestBooleanAndDistinctWitnessProjectionThroughG3(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		n, x      int64
+		flag      bool
+		predicate func(Expr, Expr, Expr) Expr
+		want      bool
+	}{
+		{
+			name: "equivalent", n: 2, x: 4, flag: true, want: true,
+			predicate: func(square, x, flag Expr) Expr {
+				return MustOperExpr(Op("EQUIV"), Typed(BoolT1),
+					MustOperExpr(Op("EQ"), Typed(BoolT1), square, x), flag)
+			},
+		},
+		{
+			name: "not equivalent", n: 2, x: 4, flag: false, want: false,
+			predicate: func(square, x, flag Expr) Expr {
+				return MustOperExpr(Op("EQUIV"), Typed(BoolT1),
+					MustOperExpr(Op("EQ"), Typed(BoolT1), square, x), flag)
+			},
+		},
+		{
+			name: "not distinct", n: 2, x: 4, want: false,
+			predicate: func(square, x, _ Expr) Expr {
+				return MustOperExpr(Op("Apalache!Distinct"), Typed(BoolT1), square, x)
+			},
+		},
+		{
+			name: "distinct", n: 3, x: 4, want: true,
+			predicate: func(square, x, _ Expr) Expr {
+				return MustOperExpr(Op("Apalache!Distinct"), Typed(BoolT1), square, x)
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			i := NewNameExpr("i", Typed(IntT1))
+			n := NewNameExpr("n", Typed(IntT1))
+			x := NewNameExpr("x", Typed(IntT1))
+			flag := NewNameExpr("flag", Typed(BoolT1))
+			square := MustOperExpr(Op("MULT"), Typed(IntT1), i, i)
+			domain := MustOperExpr(Op("INT_RANGE"), Typed(mustSet(IntT1)), n, n)
+			exists := MustOperExpr(Op("EXISTS3"), Typed(BoolT1), i, domain, test.predicate(square, x, flag))
+			projected, exact := transitionEnabledProjection(exists)
+			if !exact || countOperator(projected, "ApalacheInternal!IntExists") != 1 {
+				t.Fatalf("projection = %v, exact=%t", projected, exact)
+			}
+
+			rewriter := NewStratifiedRewriter()
+			scope := InitialRewriterScope()
+			for name, value := range map[string]Expr{
+				"n": intLiteral(test.n), "x": intLiteral(test.x), "flag": boolExpr(test.flag),
+			} {
+				var cell ArenaCell
+				var err error
+				scope, cell, err = rewriter.Rewrite(value, scope)
+				if err != nil {
+					t.Fatal(err)
+				}
+				scope.Binding = scope.Binding.With(name, cell)
+			}
+			scope, result, err := rewriter.Rewrite(projected, scope)
+			if err != nil {
+				t.Fatal(err)
+			}
+			checkRewrittenTruth(t, rewriter, scope, result, test.want)
+		})
+	}
+}
+
 func TestNonUnitAffineWitnessProjectionExhaustive(t *testing.T) {
 	i := NewNameExpr("i", Typed(IntT1))
 	x := NewNameExpr("x", Typed(IntT1))
