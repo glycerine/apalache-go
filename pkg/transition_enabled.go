@@ -168,10 +168,35 @@ func expressionContainsAssignment(expression Expr) bool {
 	return found
 }
 
-// projectIntegerRangeExistential eliminates a bounded integer witness when
-// its predicate is a conjunction of state-only conditions and lower/upper
-// bounds on the witness. Over integers, strict bounds are shifted by one.
+// projectIntegerRangeExistential eliminates a bounded integer witness. It
+// first projects affine lower/upper bounds algebraically (shifting strict
+// integer bounds by one), then exactly enumerates small constant domains for
+// predicates such as nonlinear arithmetic.
 func projectIntegerRangeExistential(binder string, domainLower, domainUpper, predicate Expr) (Expr, bool) {
+	if projected, exact := projectIntegerRangeAffineExistential(binder, domainLower, domainUpper, predicate); exact {
+		return projected, true
+	}
+	if lower, lowerConstant := constantInteger(domainLower); lowerConstant {
+		if upper, upperConstant := constantInteger(domainUpper); upperConstant {
+			width := new(big.Int).Sub(upper, lower)
+			if width.Sign() < 0 {
+				return boolExpr(false), true
+			}
+			if width.IsInt64() && width.Int64() < maxExpandedIntegerRange {
+				branches := make([]Expr, 0, int(width.Int64()+1))
+				step := big.NewInt(1)
+				for value := new(big.Int).Set(lower); value.Cmp(upper) <= 0; value.Add(value, step) {
+					literal := NewValueExpr(NewIntValue(value), Typed(IntT1))
+					branches = append(branches, substituteBoundName(predicate, binder, literal, nil))
+				}
+				return booleanOr(branches...), true
+			}
+		}
+	}
+	return nil, false
+}
+
+func projectIntegerRangeAffineExistential(binder string, domainLower, domainUpper, predicate Expr) (Expr, bool) {
 	if disjunction, ok := predicate.(*OperExpr); ok && disjunction.Operator().Name() == "OR" {
 		branches := make([]Expr, len(disjunction.Arguments()))
 		for index, branch := range disjunction.Arguments() {
@@ -250,10 +275,6 @@ func projectIntegerRangeExistential(binder string, domainLower, domainUpper, pre
 			if coefficient.Cmp(big.NewInt(1)) != 0 {
 				remainder := MustOperExpr(Op("MOD"), Typed(IntT1), rightHandSide, integerBoundLiteral(coefficient))
 				conditions = append(conditions, MustOperExpr(Op("EQ"), Typed(BoolT1), remainder, intLiteral(0)))
-			}
-			if coefficient.Cmp(big.NewInt(1)) != 0 {
-				conditions = append(conditions, MustOperExpr(Op("EQ"), Typed(BoolT1),
-					MustOperExpr(Op("MOD"), Typed(IntT1), rightHandSide, integerBoundLiteral(coefficient)), intLiteral(0)))
 			}
 		case "GE":
 			lowers = append(lowers, ceil(rightHandSide))

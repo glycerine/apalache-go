@@ -62,14 +62,22 @@ func TestTransitionEnabledProjectionDistributesAssignedDisjunctions(t *testing.T
 	}
 }
 
-func TestTransitionEnabledProjectionRefusesUneliminatedWitnessPredicate(t *testing.T) {
+func TestTransitionEnabledProjectionEliminatesBoundedNonlinearWitnessPredicate(t *testing.T) {
 	i := NewNameExpr("i", Typed(IntT1))
-	domain := MustOperExpr(Op("INT_RANGE"), Typed(mustSet(IntT1)), NewNameExpr("a", Typed(IntT1)), NewNameExpr("b", Typed(IntT1)))
+	domain := MustOperExpr(Op("INT_RANGE"), Typed(mustSet(IntT1)), intLiteral(-2), intLiteral(3))
 	body := MustOperExpr(Op("EQ"), Typed(BoolT1),
-		MustOperExpr(Op("MULT"), Typed(IntT1), i, i), intLiteral(0))
+		MustOperExpr(Op("MULT"), Typed(IntT1), i, i), NewNameExpr("x", Typed(IntT1)))
 	exists := MustOperExpr(Op("EXISTS3"), Typed(BoolT1), i, domain, body)
-	if projected, exact := transitionEnabledProjection(exists); exact || projected != nil {
-		t.Fatalf("nontrivial witness projection = %v, exact=%t", projected, exact)
+	projected, exact := transitionEnabledProjection(exists)
+	if !exact || projected == nil || expressionContainsName(projected, "i") {
+		t.Fatalf("bounded nonlinear witness projection = %v, exact=%t", projected, exact)
+	}
+	for value := int64(-1); value <= 10; value++ {
+		got, err := evaluateProjectedBoolean(projected, map[string]*big.Int{"x": big.NewInt(value)})
+		want := value == 0 || value == 1 || value == 4 || value == 9
+		if err != nil || got != want {
+			t.Fatalf("x=%d: bounded nonlinear projection = %v, %v; want %v", value, got, err, want)
+		}
 	}
 }
 
@@ -125,8 +133,20 @@ func TestTransitionEnabledProjectionEliminatesIntegerWitnessBounds(t *testing.T)
 
 	nonlinear := MustOperExpr(Op("EQ"), Typed(BoolT1),
 		MustOperExpr(Op("MULT"), Typed(IntT1), i, i), x)
-	if projected, exact = transitionEnabledProjection(MustOperExpr(Op("EXISTS3"), Typed(BoolT1), i, domain, nonlinear)); exact || projected != nil {
+	if projected, exact = transitionEnabledProjection(MustOperExpr(Op("EXISTS3"), Typed(BoolT1), i, domain, nonlinear)); !exact || projected == nil || expressionContainsName(projected, "i") {
 		t.Fatalf("nonlinear binder projection = %v, exact=%t", projected, exact)
+	}
+
+	symbolicDomain := MustOperExpr(Op("INT_RANGE"), Typed(mustSet(IntT1)),
+		NewNameExpr("a", Typed(IntT1)), NewNameExpr("b", Typed(IntT1)))
+	if projected, exact = transitionEnabledProjection(MustOperExpr(Op("EXISTS3"), Typed(BoolT1), i, symbolicDomain, nonlinear)); exact || projected != nil {
+		t.Fatalf("variable-width nonlinear binder projection = %v, exact=%t", projected, exact)
+	}
+
+	oversizedDomain := MustOperExpr(Op("INT_RANGE"), Typed(mustSet(IntT1)),
+		intLiteral(0), intLiteral(maxExpandedIntegerRange))
+	if projected, exact = transitionEnabledProjection(MustOperExpr(Op("EXISTS3"), Typed(BoolT1), i, oversizedDomain, nonlinear)); exact || projected != nil {
+		t.Fatalf("oversized nonlinear binder projection = %v, exact=%t", projected, exact)
 	}
 }
 
