@@ -1,5 +1,7 @@
 package apalache
 
+import "math/big"
+
 func projectedTransitionEnabledness(
 	transitions []Expr,
 	actionConstraints, stateConstraints []namedExpression,
@@ -82,6 +84,19 @@ func projectEnabled(expression Expr, primed map[string]Expr) (Expr, bool) {
 				projected = append(projected, item)
 			}
 			return booleanAnd(projected...), true
+		case "OR":
+			if expressionContainsAssignment(expression) {
+				return nil, false
+			}
+			projected := make([]Expr, len(arguments))
+			for index, argument := range arguments {
+				var exact bool
+				projected[index], exact = projectEnabled(argument, cloneMap(primed))
+				if !exact {
+					return nil, false
+				}
+			}
+			return booleanOr(projected...), true
 		case "LABEL":
 			if len(arguments) == 0 {
 				return nil, false
@@ -110,7 +125,7 @@ func projectEnabled(expression Expr, primed map[string]Expr) (Expr, bool) {
 			// Keeping a general quantified predicate would require eliminating
 			// its witness before negating enabledness for the deadlock query.
 			return nil, false
-		case "OR", "IF_THEN_ELSE", "LET_IN":
+		case "IF_THEN_ELSE", "LET_IN":
 			// Transition slicing normally removes these assignment branches.
 			// Refuse any survivors rather than approximate their bindings.
 			return nil, false
@@ -124,10 +139,33 @@ func projectEnabled(expression Expr, primed map[string]Expr) (Expr, bool) {
 	}
 }
 
+func expressionContainsAssignment(expression Expr) bool {
+	found := false
+	RewriteExpressions(nil, func(current Expr) (Expr, bool) {
+		operation, ok := current.(*OperExpr)
+		if ok && operation.Operator().Name() == "Apalache!:=" {
+			found = true
+		}
+		return nil, false
+	})(expression)
+	return found
+}
+
 // projectIntegerRangeExistential eliminates a bounded integer witness when
 // its predicate is a conjunction of state-only conditions and lower/upper
 // bounds on the witness. Over integers, strict bounds are shifted by one.
 func projectIntegerRangeExistential(binder string, domainLower, domainUpper, predicate Expr) (Expr, bool) {
+	if disjunction, ok := predicate.(*OperExpr); ok && disjunction.Operator().Name() == "OR" {
+		branches := make([]Expr, len(disjunction.Arguments()))
+		for index, branch := range disjunction.Arguments() {
+			var exact bool
+			branches[index], exact = projectIntegerRangeExistential(binder, domainLower, domainUpper, branch)
+			if !exact {
+				return nil, false
+			}
+		}
+		return booleanOr(branches...), true
+	}
 	lowers := []Expr{domainLower}
 	uppers := []Expr{domainUpper}
 	conditions := make([]Expr, 0)
@@ -151,8 +189,8 @@ func projectIntegerRangeExistential(binder string, domainLower, domainUpper, pre
 			continue
 		}
 		arguments := operation.Arguments()
-		leftBinder := isProjectedBinder(arguments[0], binder)
-		rightBinder := isProjectedBinder(arguments[1], binder)
+		leftOffset, leftBinder := projectedBinderOffset(arguments[0], binder)
+		rightOffset, rightBinder := projectedBinderOffset(arguments[1], binder)
 		if !leftBinder && !rightBinder {
 			if expressionContainsName(term, binder) {
 				return nil, false
@@ -165,9 +203,12 @@ func projectIntegerRangeExistential(binder string, domainLower, domainUpper, pre
 			return nil, false
 		}
 		other := arguments[1]
+		offset := leftOffset
 		if rightBinder {
 			other = arguments[0]
+			offset = rightOffset
 		}
+		other = shiftIntegerBoundBig(other, new(big.Int).Neg(offset))
 		switch operation.Operator().Name() {
 		case "EQ":
 			lowers = append(lowers, other)
@@ -208,22 +249,52 @@ func projectIntegerRangeExistential(binder string, domainLower, domainUpper, pre
 	return booleanAnd(conditions...), true
 }
 
-func isProjectedBinder(expression Expr, binder string) bool {
-	name, ok := expression.(*NameExpr)
-	return ok && name.Name() == binder
+func projectedBinderOffset(expression Expr, binder string) (*big.Int, bool) {
+	if name, ok := expression.(*NameExpr); ok && name.Name() == binder {
+		return new(big.Int), true
+	}
+	operation, ok := expression.(*OperExpr)
+	if !ok || len(operation.Arguments()) != 2 {
+		return nil, false
+	}
+	arguments := operation.Arguments()
+	switch operation.Operator().Name() {
+	case "PLUS":
+		if offset, constant := constantInteger(arguments[1]); constant {
+			if base, binderExpression := projectedBinderOffset(arguments[0], binder); binderExpression {
+				return new(big.Int).Add(base, offset), true
+			}
+		}
+		if offset, constant := constantInteger(arguments[0]); constant {
+			if base, binderExpression := projectedBinderOffset(arguments[1], binder); binderExpression {
+				return new(big.Int).Add(base, offset), true
+			}
+		}
+	case "MINUS":
+		if offset, constant := constantInteger(arguments[1]); constant {
+			if base, binderExpression := projectedBinderOffset(arguments[0], binder); binderExpression {
+				return new(big.Int).Sub(base, offset), true
+			}
+		}
+	}
+	return nil, false
 }
 
 func shiftIntegerBound(expression Expr, amount int64) Expr {
-	if amount == 0 {
+	return shiftIntegerBoundBig(expression, big.NewInt(amount))
+}
+
+func shiftIntegerBoundBig(expression Expr, amount *big.Int) Expr {
+	if amount.Sign() == 0 {
 		return expression
 	}
 	operator := "PLUS"
-	value := amount
-	if amount < 0 {
+	value := new(big.Int).Set(amount)
+	if amount.Sign() < 0 {
 		operator = "MINUS"
-		value = -amount
+		value.Neg(value)
 	}
-	return MustOperExpr(Op(operator), Typed(IntT1), expression, NewValueExpr(Int64Value(value), Typed(IntT1)))
+	return MustOperExpr(Op(operator), Typed(IntT1), expression, NewValueExpr(NewIntValue(value), Typed(IntT1)))
 }
 
 func projectedSetNonempty(set Expr) (Expr, bool) {

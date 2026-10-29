@@ -689,7 +689,7 @@ VARIABLE
 \* @type: Int;
 x
 Init == \E i \in {0, 1}: x = i
-Next == \E j \in 0..(x - x + 1): x' = j /\ j > x
+Next == \E j \in 0..(x - x + 1): x' = j /\ (j + 1 > x + 1 \/ j < 0)
 ====
 `, FrontendOptions{}, TypeCheckOptions{})
 	if !frontend.OK() {

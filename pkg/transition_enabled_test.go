@@ -36,7 +36,7 @@ func TestTransitionEnabledProjectionRefusesUneliminatedWitnessPredicate(t *testi
 	i := NewNameExpr("i", Typed(IntT1))
 	domain := MustOperExpr(Op("INT_RANGE"), Typed(mustSet(IntT1)), NewNameExpr("a", Typed(IntT1)), NewNameExpr("b", Typed(IntT1)))
 	body := MustOperExpr(Op("EQ"), Typed(BoolT1),
-		MustOperExpr(Op("PLUS"), Typed(IntT1), i, intLiteral(1)), intLiteral(0))
+		MustOperExpr(Op("MULT"), Typed(IntT1), i, intLiteral(2)), intLiteral(0))
 	exists := MustOperExpr(Op("EXISTS3"), Typed(BoolT1), i, domain, body)
 	if projected, exact := transitionEnabledProjection(exists); exact || projected != nil {
 		t.Fatalf("nontrivial witness projection = %v, exact=%t", projected, exact)
@@ -71,8 +71,15 @@ func TestTransitionEnabledProjectionEliminatesIntegerWitnessBounds(t *testing.T)
 		t.Fatalf("integer witness bounds projection = %v, exact=%t", projected, exact)
 	}
 
+	affine := MustOperExpr(Op("OR"), Typed(BoolT1),
+		MustOperExpr(Op("EQ"), Typed(BoolT1), MustOperExpr(Op("PLUS"), Typed(IntT1), i, intLiteral(1)), x),
+		MustOperExpr(Op("LT"), Typed(BoolT1), MustOperExpr(Op("MINUS"), Typed(IntT1), i, intLiteral(2)), x))
+	if projected, exact = transitionEnabledProjection(MustOperExpr(Op("EXISTS3"), Typed(BoolT1), i, domain, affine)); !exact || projected == nil || expressionContainsName(projected, "i") {
+		t.Fatalf("affine disjunction projection = %v, exact=%t", projected, exact)
+	}
+
 	nonlinear := MustOperExpr(Op("EQ"), Typed(BoolT1),
-		MustOperExpr(Op("PLUS"), Typed(IntT1), i, intLiteral(1)), x)
+		MustOperExpr(Op("MULT"), Typed(IntT1), i, intLiteral(2)), x)
 	if projected, exact = transitionEnabledProjection(MustOperExpr(Op("EXISTS3"), Typed(BoolT1), i, domain, nonlinear)); exact || projected != nil {
 		t.Fatalf("nonlinear binder projection = %v, exact=%t", projected, exact)
 	}
