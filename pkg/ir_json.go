@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"sort"
 	"strings"
 )
 
@@ -53,11 +54,156 @@ func MarshalIRJSON(modules []*Module, options IRJSONOptions) ([]byte, error) {
 		}
 		root.Modules[index] = encoded
 	}
-	return json.Marshal(root)
+	return marshalCanonicalIRRoot(root)
 }
 
 func MarshalSingleModuleIRJSON(module *Module, options IRJSONOptions) ([]byte, error) {
 	return MarshalIRJSON([]*Module{module}, options)
+}
+
+func marshalCanonicalIRRoot(root irJSONRoot) ([]byte, error) {
+	var output bytes.Buffer
+	output.WriteString(`{"name":`)
+	writeIRJSONScalar(&output, root.Name)
+	output.WriteString(`,"version":`)
+	writeIRJSONScalar(&output, root.Version)
+	output.WriteString(`,"description":`)
+	writeIRJSONScalar(&output, root.Description)
+	output.WriteString(`,"modules":[`)
+	for index, module := range root.Modules {
+		if index > 0 {
+			output.WriteByte(',')
+		}
+		output.WriteString(`{"kind":`)
+		writeIRJSONScalar(&output, module.Kind)
+		output.WriteString(`,"name":`)
+		writeIRJSONScalar(&output, module.Name)
+		output.WriteString(`,"declarations":`)
+		if err := writeCanonicalIRJSONValue(&output, module.Declarations); err != nil {
+			return nil, err
+		}
+		output.WriteByte('}')
+	}
+	output.WriteString(`]}`)
+	return output.Bytes(), nil
+}
+
+func writeIRJSONScalar(output *bytes.Buffer, value any) {
+	encoded, _ := marshalIRJSONLeaf(value)
+	output.Write(encoded)
+}
+
+func marshalIRJSONLeaf(value any) ([]byte, error) {
+	var output bytes.Buffer
+	encoder := json.NewEncoder(&output)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(value); err != nil {
+		return nil, err
+	}
+	return bytes.TrimSuffix(output.Bytes(), []byte{'\n'}), nil
+}
+
+func writeCanonicalIRJSONValue(output *bytes.Buffer, value any) error {
+	switch typed := value.(type) {
+	case map[string]any:
+		return writeCanonicalIRJSONObject(output, typed)
+	case []any:
+		output.WriteByte('[')
+		for index, item := range typed {
+			if index > 0 {
+				output.WriteByte(',')
+			}
+			if err := writeCanonicalIRJSONValue(output, item); err != nil {
+				return err
+			}
+		}
+		output.WriteByte(']')
+		return nil
+	case []map[string]any:
+		output.WriteByte('[')
+		for index, item := range typed {
+			if index > 0 {
+				output.WriteByte(',')
+			}
+			if err := writeCanonicalIRJSONObject(output, item); err != nil {
+				return err
+			}
+		}
+		output.WriteByte(']')
+		return nil
+	default:
+		encoded, err := marshalIRJSONLeaf(value)
+		if err != nil {
+			return err
+		}
+		output.Write(encoded)
+		return nil
+	}
+}
+
+func writeCanonicalIRJSONObject(output *bytes.Buffer, object map[string]any) error {
+	order := canonicalIRJSONFieldOrder(object)
+	seen := make(map[string]struct{}, len(order))
+	remaining := make([]string, 0, len(object))
+	for _, field := range order {
+		seen[field] = struct{}{}
+	}
+	for field := range object {
+		if _, found := seen[field]; !found {
+			remaining = append(remaining, field)
+		}
+	}
+	sort.Strings(remaining)
+	order = append(order, remaining...)
+	output.WriteByte('{')
+	written := 0
+	for _, field := range order {
+		value, found := object[field]
+		if !found {
+			continue
+		}
+		if written > 0 {
+			output.WriteByte(',')
+		}
+		writeIRJSONScalar(output, field)
+		output.WriteByte(':')
+		if err := writeCanonicalIRJSONValue(output, value); err != nil {
+			return err
+		}
+		written++
+	}
+	output.WriteByte('}')
+	return nil
+}
+
+func canonicalIRJSONFieldOrder(object map[string]any) []string {
+	kind, _ := object["kind"].(string)
+	prefix := []string{}
+	if _, found := object["source"]; found {
+		prefix = append(prefix, "source")
+	}
+	fields := map[string][]string{
+		"NameEx":         {"type", "kind", "name"},
+		"ValEx":          {"type", "kind", "value"},
+		"OperEx":         {"type", "kind", "oper", "args"},
+		"LetInEx":        {"type", "kind", "body", "decls"},
+		"NullEx":         {"kind"},
+		"TlaTheoremDecl": {"type", "kind", "name", "body"},
+		"TlaVarDecl":     {"type", "kind", "name"},
+		"TlaConstDecl":   {"type", "kind", "name"},
+		"TlaOperDecl":    {"type", "kind", "name", "formalParams", "isRecursive", "body"},
+		"TlaAssumeDecl":  {"type", "kind", "body", "name"},
+		"OperParam":      {"kind", "name", "arity"},
+		"TlaStr":         {"kind", "value"},
+		"TlaDecimal":     {"kind", "value"},
+		"TlaInt":         {"kind", "value"},
+		"TlaBool":        {"kind", "value"},
+		"TlaBoolSet":     {"kind"},
+		"TlaIntSet":      {"kind"},
+		"TlaStrSet":      {"kind"},
+		"TlaNatSet":      {"kind"},
+	}[kind]
+	return append(prefix, fields...)
 }
 
 func encodeIRModule(module *Module, options IRJSONOptions) (irJSONModule, error) {

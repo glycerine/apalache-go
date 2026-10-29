@@ -64,6 +64,23 @@ func TestMarshalDecodedTraceFormatsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestMarshalDecodedTraceApalacheJSONMatchesScalaCanonicalFieldOrder(t *testing.T) {
+	module := NewModule("test", nil)
+	violation := MustOperExpr(Op("GT"), Typed(BoolT1), NewNameExpr("x", Typed(IntT1)), intLiteral(1))
+	encoded, err := MarshalDecodedTraceApalacheJSON(module,
+		[]DecodedState{{Values: map[string]Expr{"x": intLiteral(2)}}}, violation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"name":"ApalacheIR","version":"1.0","description":"https://apalache-mc.org/docs/adr/005adr-json.html","modules":[{"kind":"TlaModule","name":"counterexample","declarations":[` +
+		`{"type":"(() => Bool)","kind":"TlaOperDecl","name":"ConstInit","formalParams":[],"isRecursive":false,"body":{"type":"Bool","kind":"ValEx","value":{"kind":"TlaBool","value":true}}},` +
+		`{"type":"(() => Bool)","kind":"TlaOperDecl","name":"State0","formalParams":[],"isRecursive":false,"body":{"type":"Bool","kind":"OperEx","oper":"AND","args":[{"type":"Bool","kind":"OperEx","oper":"EQ","args":[{"type":"Int","kind":"NameEx","name":"x"},{"type":"Int","kind":"ValEx","value":{"kind":"TlaInt","value":2}}]}]}},` +
+		`{"type":"(() => Bool)","kind":"TlaOperDecl","name":"InvariantViolation","formalParams":[],"isRecursive":false,"body":{"type":"Bool","kind":"OperEx","oper":"GT","args":[{"type":"Int","kind":"NameEx","name":"x"},{"type":"Int","kind":"ValEx","value":{"kind":"TlaInt","value":1}}]}}]}]}`
+	if string(encoded) != want {
+		t.Fatalf("canonical legacy JSON differs\ngot:  %s\nwant: %s", encoded, want)
+	}
+}
+
 func TestMarshalDecodedTraceFormatsRejectEmptyTrace(t *testing.T) {
 	module := NewModule("Root", nil)
 	if _, err := MarshalDecodedTraceApalacheJSON(module, nil, nil); err == nil {

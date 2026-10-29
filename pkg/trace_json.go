@@ -166,8 +166,6 @@ func traceStateDeclaration(name string, values map[string]Expr, included map[str
 	switch len(assignments) {
 	case 0:
 		body = NewValueExpr(BoolValue(true), Typed(BoolT1))
-	case 1:
-		body = assignments[0]
 	default:
 		body = MustOperExpr(Op("AND"), Typed(BoolT1), assignments...)
 	}
