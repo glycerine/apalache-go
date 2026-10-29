@@ -112,7 +112,7 @@ func MarshalITFTrace(module *Module, states []TraceState, options ITFOptions) ([
 	}
 	meta := map[string]any{ITFFormatField: "ITF", ITFFormatDescriptionField: "https://apalache-mc.org/docs/adr/015adr-trace.html", ITFVarTypesField: varTypes}
 	if options.Description == "" {
-		options.Description = "Created by Apalache Go"
+		options.Description = "Created by Apalache"
 	}
 	meta[ITFDescriptionField] = options.Description
 	replacements := module.NameReplacements()
@@ -206,7 +206,7 @@ func EncodeITFValue(expression Expr) (any, error) {
 	}
 	operator, ok := expression.(*OperExpr)
 	if !ok {
-		return map[string]any{ITFUnserializableField: debugIRExpression(expression)}, nil
+		return map[string]any{ITFUnserializableField: itfUnserializableExpression(expression)}, nil
 	}
 	arguments := operator.Arguments()
 	switch operator.Operator().Name() {
@@ -294,7 +294,14 @@ func EncodeITFValue(expression Expr) (any, error) {
 			}
 		}
 	}
-	return map[string]any{ITFUnserializableField: debugIRExpression(expression)}, nil
+	return map[string]any{ITFUnserializableField: itfUnserializableExpression(expression)}, nil
+}
+
+func itfUnserializableExpression(expression Expr) string {
+	if text, err := FormatUTFExpression(expression); err == nil {
+		return text
+	}
+	return debugIRExpression(expression)
 }
 
 func debugIRExpression(expression Expr) string {
