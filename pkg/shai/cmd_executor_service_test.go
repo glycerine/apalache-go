@@ -21,6 +21,11 @@ Next == TRUE
 Inv == FALSE
 ====`
 
+const remoteDeadlockSpec = `---- MODULE M ----
+Init == TRUE
+Next == FALSE
+====`
+
 const remoteMultiErrorSpec = `---- MODULE M ----
 EXTENDS Integers, FiniteSets
 \* @type: Int;
@@ -91,6 +96,11 @@ func TestCmdExecutorReportsFrontendAndConfigurationFailures(t *testing.T) {
 	if err != nil || response.GetFailure() == nil || !strings.Contains(strings.ToLower(response.GetFailure().GetData()), "module") {
 		t.Fatalf("invalid parse = %q, %v", response.GetFailure().GetData(), err)
 	}
+	var parseFailure map[string]any
+	if err = json.Unmarshal([]byte(response.GetFailure().GetData()), &parseFailure); err != nil ||
+		parseFailure["pass_name"] != "SanyParser" || parseFailure["exit_code"] != float64(150) {
+		t.Fatalf("invalid parse shape = %#v, %v", parseFailure, err)
+	}
 	response, err = service.Run(ctx, &cmd.CmdRequest{Cmd: cmd.Cmd_PARSE, Config: `{}`})
 	if err != nil || response.GetFailure() == nil || !strings.Contains(response.GetFailure().GetData(), "source") {
 		t.Fatalf("missing source = %#v, %v", response, err)
@@ -100,7 +110,8 @@ func TestCmdExecutorReportsFrontendAndConfigurationFailures(t *testing.T) {
 		t.Fatalf("ill-typed = %#v, %v", response, err)
 	}
 	var failure map[string]any
-	if err = json.Unmarshal([]byte(response.GetFailure().GetData()), &failure); err != nil || failure["pass_name"] != "TypeCheckerSnowcat" {
+	if err = json.Unmarshal([]byte(response.GetFailure().GetData()), &failure); err != nil ||
+		failure["pass_name"] != "TypeCheckerSnowcat" || failure["exit_code"] != float64(120) {
 		t.Fatalf("ill-typed failure = %q, %v", response.GetFailure().GetData(), err)
 	}
 
@@ -123,13 +134,16 @@ func TestCmdExecutorChecksModelsAndReturnsCounterexamples(t *testing.T) {
 	}
 	var failure struct {
 		PassName  string `json:"pass_name"`
+		ExitCode  int    `json:"exit_code"`
 		ErrorData struct {
 			CheckingResult  string `json:"checking_result"`
+			NErrors         int    `json:"nerrors"`
 			Counterexamples []any  `json:"counterexamples"`
 		} `json:"error_data"`
 	}
 	if err = json.Unmarshal([]byte(response.GetFailure().GetData()), &failure); err != nil ||
-		failure.PassName != "BoundedChecker" || failure.ErrorData.CheckingResult != "violation" || len(failure.ErrorData.Counterexamples) == 0 {
+		failure.PassName != "BoundedChecker" || failure.ExitCode != 12 || failure.ErrorData.CheckingResult != "Error" ||
+		failure.ErrorData.NErrors != 1 || len(failure.ErrorData.Counterexamples) == 0 {
 		t.Fatalf("violation data = %+v, %v", failure, err)
 	}
 	response, err = service.Run(ctx, remoteRequest(t, cmd.Cmd_CHECK, remoteCheckableSpec, map[string]any{
@@ -155,12 +169,41 @@ func TestCmdExecutorReturnsMultipleDistinctCounterexamples(t *testing.T) {
 		t.Fatalf("multi-error response = %#v, %v", response, err)
 	}
 	var failure struct {
+		ExitCode  int `json:"exit_code"`
 		ErrorData struct {
-			Counterexamples []any `json:"counterexamples"`
+			CheckingResult  string `json:"checking_result"`
+			NErrors         int    `json:"nerrors"`
+			Counterexamples []any  `json:"counterexamples"`
 		} `json:"error_data"`
 	}
-	if err = json.Unmarshal([]byte(response.GetFailure().GetData()), &failure); err != nil || len(failure.ErrorData.Counterexamples) != 3 {
+	if err = json.Unmarshal([]byte(response.GetFailure().GetData()), &failure); err != nil || failure.ExitCode != 12 ||
+		failure.ErrorData.CheckingResult != "Error" || failure.ErrorData.NErrors != 3 ||
+		len(failure.ErrorData.Counterexamples) != 3 {
 		t.Fatalf("multi-error data = %+v, %v", failure, err)
+	}
+}
+
+func TestCmdExecutorReturnsScalaDeadlockShape(t *testing.T) {
+	service := NewCmdExecutorService()
+	response, err := service.Run(context.Background(), remoteRequest(t, cmd.Cmd_CHECK, remoteDeadlockSpec,
+		map[string]any{"length": 1}))
+	if err != nil || response.GetFailure() == nil {
+		t.Fatalf("deadlock response = %#v, %v", response, err)
+	}
+	var failure struct {
+		PassName  string `json:"pass_name"`
+		ExitCode  int    `json:"exit_code"`
+		ErrorData struct {
+			CheckingResult  string `json:"checking_result"`
+			Counterexamples []any  `json:"counterexamples"`
+			NErrors         *int   `json:"nerrors"`
+		} `json:"error_data"`
+	}
+	if err = json.Unmarshal([]byte(response.GetFailure().GetData()), &failure); err != nil ||
+		failure.PassName != "BoundedChecker" || failure.ExitCode != 12 ||
+		failure.ErrorData.CheckingResult != "Deadlock" || len(failure.ErrorData.Counterexamples) != 1 ||
+		failure.ErrorData.NErrors != nil {
+		t.Fatalf("deadlock data = %+v, %v", failure, err)
 	}
 }
 

@@ -237,7 +237,7 @@ func decodeStrictJSON(data []byte, target any) error {
 func runRemoteParse(ctx context.Context, path string) (*cmd.CmdResponse, error) {
 	result := pal.ParseFile(ctx, path, pal.FrontendOptions{})
 	if !result.OK() {
-		return passFailureCommandResponse("Parser", result.Diagnostics), nil
+		return passFailureCommandResponse("SanyParser", result.Diagnostics, 150), nil
 	}
 	return successfulCommandResponse(string(result.IR)), nil
 }
@@ -245,7 +245,7 @@ func runRemoteParse(ctx context.Context, path string) (*cmd.CmdResponse, error) 
 func runRemoteTypecheck(ctx context.Context, path string, config remoteCommandConfig) (*cmd.CmdResponse, error) {
 	result := pal.ParseAndTypeCheckFile(ctx, path, pal.FrontendOptions{}, remoteTypecheckOptions(config))
 	if !result.OK() {
-		return passFailureCommandResponse("TypeCheckerSnowcat", result.Diagnostics), nil
+		return passFailureCommandResponse("TypeCheckerSnowcat", result.Diagnostics, 120), nil
 	}
 	encoded, err := pal.MarshalSingleModuleIRJSON(result.Native, pal.IRJSONOptions{})
 	if err != nil {
@@ -257,7 +257,7 @@ func runRemoteTypecheck(ctx context.Context, path string, config remoteCommandCo
 func runRemoteTLA(ctx context.Context, path, source string) (*cmd.CmdResponse, error) {
 	result := pal.ParseFile(ctx, path, pal.FrontendOptions{IncludeSource: true})
 	if !result.OK() {
-		return passFailureCommandResponse("Parser", result.Diagnostics), nil
+		return passFailureCommandResponse("SanyParser", result.Diagnostics, 150), nil
 	}
 	annotations := pal.ExtractTypeAnnotations(path, source, result.Native, result.Sources)
 	formatted, err := pal.FormatTLAModule(result.Native, pal.TLAFormatOptions{
@@ -277,7 +277,7 @@ func runRemoteCheck(ctx context.Context, path string, config remoteCommandConfig
 	}
 	frontend := pal.ParseAndTypeCheckFile(ctx, path, pal.FrontendOptions{}, remoteTypecheckOptions(config))
 	if !frontend.OK() {
-		return passFailureCommandResponse("TypeCheckerSnowcat", frontend.Diagnostics), nil
+		return passFailureCommandResponse("TypeCheckerSnowcat", frontend.Diagnostics, 120), nil
 	}
 	checker := config.Checker
 	init, next := "Init", "Next"
@@ -295,7 +295,7 @@ func runRemoteCheck(ctx context.Context, path string, config remoteCommandConfig
 		Sources: frontend.Sources,
 	})
 	if err != nil {
-		return passFailureCommandResponse("ConfigurationPass", map[string]string{"msg": err.Error()}), nil
+		return unexpectedCommandResponse(err), nil
 	}
 	length := 10
 	if checker.Length != nil {
@@ -319,12 +319,12 @@ func runRemoteCheck(ctx context.Context, path string, config remoteCommandConfig
 		DiscardDisabled: &discardDisabled,
 	})
 	if err != nil {
-		return passFailureCommandResponse("BoundedChecker", map[string]string{"msg": err.Error()}), nil
+		return unexpectedCommandResponse(err), nil
 	}
 	if result.Outcome == pal.SafetyCounterexample || result.Outcome == pal.SafetyDeadlock {
-		checkingResult := "violation"
+		checkingResult := "Error"
 		if result.Outcome == pal.SafetyDeadlock {
-			checkingResult = "deadlock"
+			checkingResult = "Deadlock"
 		}
 		counterexamples := make([]any, 0, max(1, len(result.Counterexamples)))
 		if result.Outcome == pal.SafetyDeadlock {
@@ -335,9 +335,11 @@ func runRemoteCheck(ctx context.Context, path string, config remoteCommandConfig
 					encodedRemoteCounterexample(prepared.Module, counterexample.Depth, counterexample.States))
 			}
 		}
-		return passFailureCommandResponse("BoundedChecker", map[string]any{
-			"checking_result": checkingResult, "counterexamples": counterexamples,
-		}), nil
+		errorData := map[string]any{"checking_result": checkingResult, "counterexamples": counterexamples}
+		if result.Outcome == pal.SafetyCounterexample {
+			errorData["nerrors"] = len(counterexamples)
+		}
+		return passFailureCommandResponse("BoundedChecker", errorData, 12), nil
 	}
 	encoded, err := pal.MarshalSingleModuleIRJSON(prepared.Module, pal.IRJSONOptions{})
 	if err != nil {
@@ -376,8 +378,8 @@ func successfulCommandResponse(data string) *cmd.CmdResponse {
 	return &cmd.CmdResponse{Result: &cmd.CmdResponse_Success{Success: data}}
 }
 
-func passFailureCommandResponse(pass string, errorData any) *cmd.CmdResponse {
-	data, _ := json.Marshal(map[string]any{"pass_name": pass, "error_data": errorData})
+func passFailureCommandResponse(pass string, errorData any, exitCode int) *cmd.CmdResponse {
+	data, _ := json.Marshal(map[string]any{"pass_name": pass, "error_data": errorData, "exit_code": exitCode})
 	return &cmd.CmdResponse{Result: &cmd.CmdResponse_Failure{Failure: &cmd.CmdError{
 		ErrorType: cmd.CmdErrorType_PASS_FAILURE, Data: string(data),
 	}}}
