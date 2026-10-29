@@ -1,6 +1,8 @@
 package apalache
 
 import (
+	"context"
+	"path/filepath"
 	"reflect"
 	"testing"
 )
@@ -82,6 +84,55 @@ func TestTypeCheckModuleProducesTypedCopy(t *testing.T) {
 	typedInit := result.Module.OperDeclarations()[0]
 	if typ, ok := typedInit.Body().Tag().Type(); !ok || !EqualTypes(typ, BoolT1) {
 		t.Fatalf("Init body type = %v, %v", typ, ok)
+	}
+}
+
+func TestTypeCheckerToolScalaResourceAndSerializationContracts(t *testing.T) {
+	extensions := map[string][]string{
+		"MegaSpec1": {"Integers", "Sequences", "FiniteSets", "Reals", "Apalache"},
+		"TlcSpec1":  {"TLC"},
+	}
+	for _, name := range []string{"MegaSpec1", "TlcSpec1"} {
+		t.Run(name, func(t *testing.T) {
+			path := "../passes/src/test/resources/" + name + ".tla"
+			frontend := ParseAndTypeCheckFile(context.Background(), path, FrontendOptions{}, TypeCheckOptions{})
+			if !frontend.OK() {
+				t.Fatalf("typecheck diagnostics: %+v", frontend.Diagnostics)
+			}
+			if typed := (TypedLanguagePredicate{}).CheckModule(frontend.Native); !typed.OK() {
+				t.Fatalf("typechecker left untyped nodes: %+v", typed.Failures)
+			}
+
+			encoded, err := MarshalSingleModuleIRJSON(frontend.Native, IRJSONOptions{SourceStore: frontend.Sources})
+			if err != nil {
+				t.Fatal(err)
+			}
+			decoded, err := UnmarshalSingleModuleIRJSON(encoded, NewSourceStore())
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertModulesEqual(t, frontend.Native, decoded)
+
+			rootDeclarations := make([]Decl, 0, len(frontend.Native.Declarations()))
+			for _, declaration := range frontend.Native.Declarations() {
+				location, found := frontend.Sources.Find(declaration.ID())
+				if !found || filepath.Base(location.Filename) == name+".tla" {
+					rootDeclarations = append(rootDeclarations, declaration)
+				}
+			}
+			rootModule := NewModule(frontend.Native.Name(), rootDeclarations)
+			formatted, err := FormatTLAModule(rootModule, TLAFormatOptions{
+				ExtendedModules: extensions[name], Annotations: frontend.Annotations,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			reparsed := ParseAndTypeCheckSource(context.Background(), name+"RoundTrip.tla", formatted,
+				FrontendOptions{}, TypeCheckOptions{})
+			if !reparsed.OK() {
+				t.Fatalf("formatted TLA did not typecheck: %+v\n%s", reparsed.Diagnostics, formatted)
+			}
+		})
 	}
 }
 
