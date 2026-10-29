@@ -1,6 +1,9 @@
 package apalache
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 func temporalTestModule() *Module {
 	x := NewVarDecl("x", Typed(IntT1))
@@ -38,6 +41,65 @@ func TestTemporalLoopEncoderAddsTypedAuxiliariesAndPredicates(t *testing.T) {
 	}
 	if !result.Module.HasProperty(PropertyTypeChecked) {
 		t.Fatal("module properties were not preserved")
+	}
+}
+
+func TestTemporalLoopEncoderScalaGeneratedModuleContracts(t *testing.T) {
+	types := []Type{IntT1, BoolT1, StrT1}
+	for sample := 0; sample < 500; sample++ {
+		variableCount := sample % 9
+		declarations := make([]Decl, 0, variableCount+2)
+		originals := make([]*VarDecl, variableCount)
+		for index := range variableCount {
+			variable := NewVarDecl(fmt.Sprintf("v%d_%d", sample, index), Typed(types[(sample+index)%len(types)]))
+			originals[index] = variable
+			declarations = append(declarations, variable)
+		}
+		declarations = append(declarations,
+			boolDefinition("Init", temporalBool(true)),
+			boolDefinition("Next", temporalBool(true)))
+
+		result, err := NewTemporalLoopEncoder(nil).AddLoopLogic(NewModule("Generated", declarations), "Init", "Next")
+		if err != nil {
+			t.Fatalf("sample %d: %v", sample, err)
+		}
+
+		variables := result.Module.VarDeclarations()
+		if len(variables) != 2*variableCount+1 {
+			t.Fatalf("sample %d: variables = %v", sample, declarationNameSlice(variables))
+		}
+		nameCounts := make(map[string]int, len(variables))
+		for _, variable := range variables {
+			nameCounts[variable.Name()]++
+		}
+		for _, original := range originals {
+			savedName := TemporalSavedPrefix + original.Name()
+			if nameCounts[original.Name()] != 1 || nameCounts[savedName] != 1 {
+				t.Fatalf("sample %d: missing original/copy pair for %s in %v", sample, original.Name(), nameCounts)
+			}
+			var saved *VarDecl
+			for _, variable := range variables {
+				if variable.Name() == savedName {
+					saved = variable
+					break
+				}
+			}
+			if saved == nil || !saved.Tag().Equal(original.Tag()) || !saved.IsInternal() {
+				t.Fatalf("sample %d: invalid loop copy for %s: %#v", sample, original.Name(), saved)
+			}
+		}
+		if nameCounts[TemporalInLoopName] != 1 || nameCounts[TemporalSavedPrefix+TemporalInLoopName] != 0 {
+			t.Fatalf("sample %d: invalid InLoop declarations: %v", sample, nameCounts)
+		}
+		loopOKCount := 0
+		for _, declaration := range result.Module.OperDeclarations() {
+			if declaration.Name() == TemporalLoopOKName {
+				loopOKCount++
+			}
+		}
+		if loopOKCount != 1 {
+			t.Fatalf("sample %d: LoopOK declaration count = %d", sample, loopOKCount)
+		}
 	}
 }
 
