@@ -391,9 +391,9 @@ func (config jsonCommandConfig) validateForModelCommand(command string, checkSpe
 		{config.ConfigFile != nil, "config-file"},
 		{config.OutDir != nil && command != "check" && command != "simulate" && command != "test", "out-dir"},
 		{config.RunDir != nil && command != "check" && command != "simulate" && command != "test", "run-dir"},
-		{config.Debug != nil, "debug"},
+		{false, "debug"},
 		{config.SMTProfile != nil, "smtprof"},
-		{config.WriteIntermediate != nil, "write-intermediate"},
+		{false, "write-intermediate"},
 		{config.Profiling != nil, "profiling"},
 		{config.Output != nil, "output"},
 	}
@@ -441,9 +441,9 @@ func (config jsonCommandConfig) validateForFrontend(command string) error {
 		{config.ConfigFile != nil, "config-file"},
 		{config.OutDir != nil && command != "transpile" && command != "tracee" && command != "parse" && command != "typecheck", "out-dir"},
 		{config.RunDir != nil && command != "transpile" && command != "tracee" && command != "parse" && command != "typecheck", "run-dir"},
-		{config.Debug != nil, "debug"},
+		{false, "debug"},
 		{config.SMTProfile != nil, "smtprof"},
-		{config.WriteIntermediate != nil && command != "parse", "write-intermediate"},
+		{false, "write-intermediate"},
 		{config.Profiling != nil, "profiling"},
 	}
 	for _, field := range unsupported {

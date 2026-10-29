@@ -110,17 +110,17 @@ func TestJSONServerConfigAcceptsOnlyServerSettings(t *testing.T) {
 	}
 }
 
-func TestJSONWriteIntermediateIsAcceptedOnlyForParse(t *testing.T) {
+func TestJSONCommonOutputControlsAreAcceptedByFileCommands(t *testing.T) {
 	enabled := true
-	config := jsonCommandConfig{WriteIntermediate: &enabled}
+	config := jsonCommandConfig{Debug: &enabled, WriteIntermediate: &enabled}
 	if err := config.validateForFrontend("parse"); err != nil {
 		t.Fatalf("parse write-intermediate configuration = %v", err)
 	}
-	if err := config.validateForFrontend("typecheck"); err == nil {
-		t.Fatal("typecheck accepted write-intermediate configuration")
+	if err := config.validateForFrontend("typecheck"); err != nil {
+		t.Fatalf("typecheck common output configuration = %v", err)
 	}
-	if err := config.validateForCheck(); err == nil {
-		t.Fatal("check accepted write-intermediate configuration")
+	if err := config.validateForCheck(); err != nil {
+		t.Fatalf("check common output configuration = %v", err)
 	}
 }
 

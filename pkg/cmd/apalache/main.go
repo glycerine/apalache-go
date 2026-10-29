@@ -219,6 +219,7 @@ func newExplorationHTTPServer(ctx context.Context) *http.Server {
 func runTranspile(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("transpile", flag.ContinueOnError)
 	flags.SetOutput(stderr)
+	commonOutput := addCommonOutputFlags(flags)
 	configFile := flags.String("config-file", "", "Apalache JSON configuration file")
 	outDir := flags.String("out-dir", "", "root directory for source-namespaced run output")
 	runDir := flags.String("run-dir", "", "additional directory receiving run output directly")
@@ -243,6 +244,11 @@ func runTranspile(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	applicationConfig, selectedConfig, err := loadCommandConfig(*configFile)
 	if err != nil {
 		fmt.Fprintf(stderr, "cannot load Apalache configuration: %v\n", err)
+		return exitUsage
+	}
+	commonOptions, err := commonOutput.resolve(applicationConfig, visited)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
 		return exitUsage
 	}
 	if selectedConfig != "" {
@@ -329,6 +335,10 @@ func runTranspile(ctx context.Context, args []string, stdout, stderr io.Writer) 
 		fmt.Fprintf(stderr, "cannot write transpile run metadata: %v\n", err)
 		return exitTool
 	}
+	if err = writeDebugApplicationConfig(outputPaths, applicationConfig, "transpile", selectedConfig, sourcePath, *outDir, *runDir, commonOptions); err != nil {
+		fmt.Fprintf(stderr, "cannot write transpile debug configuration: %v\n", err)
+		return exitTool
+	}
 	frontend := pal.ParseAndTypeCheckFile(ctx, sourcePath, pal.FrontendOptions{
 		LibraryPaths: libraryPaths,
 	}, pal.TypeCheckOptions{UseRows: rows, NoRows: *features == "no-rows", DisablePolytypes: *disablePolytypes})
@@ -337,6 +347,12 @@ func runTranspile(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	}
 	if !frontend.OK() {
 		return exitFrontend
+	}
+	if commonOptions.writeIntermediate {
+		if err = writeFrontendIntermediate(outputPaths, frontend.Native, frontend.Extends, frontend.Sources, "00_OutFrontend"); err != nil {
+			fmt.Fprintf(stderr, "cannot write transpile intermediate output: %v\n", err)
+			return exitTool
+		}
 	}
 	prepared, err := pal.PrepareSafetyTransitions(frontend.Native, pal.SafetyPipelineOptions{
 		Specification: configuration,
@@ -379,6 +395,7 @@ func runTranspile(ctx context.Context, args []string, stdout, stderr io.Writer) 
 func runTracee(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("tracee", flag.ContinueOnError)
 	flags.SetOutput(stderr)
+	commonOutput := addCommonOutputFlags(flags)
 	configFile := flags.String("config-file", "", "Apalache JSON configuration file")
 	outDir := flags.String("out-dir", "", "root directory for source-namespaced run output")
 	runDir := flags.String("run-dir", "", "additional directory receiving run output directly")
@@ -418,6 +435,11 @@ func runTracee(ctx context.Context, args []string, stdout, stderr io.Writer) int
 	applicationConfig, selectedConfig, err := loadCommandConfig(*configFile)
 	if err != nil {
 		fmt.Fprintf(stderr, "cannot load Apalache configuration: %v\n", err)
+		return exitUsage
+	}
+	commonOptions, err := commonOutput.resolve(applicationConfig, visited)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
 		return exitUsage
 	}
 	if selectedConfig != "" {
@@ -465,6 +487,10 @@ func runTracee(ctx context.Context, args []string, stdout, stderr io.Writer) int
 		fmt.Fprintf(stderr, "cannot write tracee run metadata: %v\n", err)
 		return exitTool
 	}
+	if err = writeDebugApplicationConfig(outputPaths, applicationConfig, "tracee", selectedConfig, sourcePath, *outDir, *runDir, commonOptions); err != nil {
+		fmt.Fprintf(stderr, "cannot write tracee debug configuration: %v\n", err)
+		return exitTool
+	}
 	rows, featureErr := resolveRowsFeature(*useRows, *features)
 	if featureErr != nil {
 		fmt.Fprintln(stderr, featureErr)
@@ -478,6 +504,12 @@ func runTracee(ctx context.Context, args []string, stdout, stderr io.Writer) int
 	}
 	if !frontend.OK() {
 		return exitFrontend
+	}
+	if commonOptions.writeIntermediate {
+		if err = writeFrontendIntermediate(outputPaths, frontend.Native, frontend.Extends, frontend.Sources, "00_OutFrontend"); err != nil {
+			fmt.Fprintf(stderr, "cannot write tracee intermediate output: %v\n", err)
+			return exitTool
+		}
 	}
 	traceData, err := os.ReadFile(*tracePath)
 	if err != nil {
@@ -606,6 +638,7 @@ func (*optionalBoolFlag) IsBoolFlag() bool { return true }
 func runTest(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("test", flag.ContinueOnError)
 	flags.SetOutput(stderr)
+	commonOutput := addCommonOutputFlags(flags)
 	configFile := flags.String("config-file", "", "Apalache JSON configuration file")
 	outDir := flags.String("out-dir", "", "root directory for source-namespaced run output")
 	runDir := flags.String("run-dir", "", "additional directory receiving run output directly")
@@ -624,6 +657,11 @@ func runTest(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	applicationConfig, selectedConfig, err := loadCommandConfig(*configFile)
 	if err != nil {
 		fmt.Fprintf(stderr, "cannot load Apalache configuration: %v\n", err)
+		return exitUsage
+	}
+	commonOptions, err := commonOutput.resolve(applicationConfig, visited)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
 		return exitUsage
 	}
 	if selectedConfig != "" {
@@ -677,6 +715,10 @@ func runTest(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "cannot write test run metadata: %v\n", err)
 		return exitTool
 	}
+	if err = writeDebugApplicationConfig(outputPaths, applicationConfig, "test", selectedConfig, path, *outDir, *runDir, commonOptions); err != nil {
+		fmt.Fprintf(stderr, "cannot write test debug configuration: %v\n", err)
+		return exitTool
+	}
 	rows, featureErr := resolveRowsFeature(*useRows, *features)
 	if featureErr != nil {
 		fmt.Fprintln(stderr, featureErr)
@@ -690,6 +732,12 @@ func runTest(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	}
 	if !frontend.OK() {
 		return exitFrontend
+	}
+	if commonOptions.writeIntermediate {
+		if err = writeFrontendIntermediate(outputPaths, frontend.Native, frontend.Extends, frontend.Sources, "00_OutFrontend"); err != nil {
+			fmt.Fprintf(stderr, "cannot write test intermediate output: %v\n", err)
+			return exitTool
+		}
 	}
 	prepared, err := pal.PrepareSafetyTransitions(frontend.Native, pal.SafetyPipelineOptions{
 		Specification: pal.SpecificationConfiguration{
@@ -752,6 +800,7 @@ func writeTestViolationTraces(paths commandOutputPaths, module *pal.Module, stat
 func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("simulate", flag.ContinueOnError)
 	flags.SetOutput(stderr)
+	commonOutput := addCommonOutputFlags(flags)
 	backend := addCheckerBackendFlags(flags)
 	length := flags.Int("length", 10, "maximum number of Next steps")
 	maxRun := flags.Int("max-run", 100, "maximum number of independent symbolic simulation runs")
@@ -785,6 +834,11 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	applicationConfig, selectedConfig, err := loadCommandConfig(*configFile)
 	if err != nil {
 		fmt.Fprintf(stderr, "cannot load Apalache configuration: %v\n", err)
+		return exitUsage
+	}
+	commonOptions, err := commonOutput.resolve(applicationConfig, visited)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
 		return exitUsage
 	}
 	if selectedConfig != "" {
@@ -911,6 +965,10 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 		fmt.Fprintf(stderr, "cannot write simulation run metadata: %v\n", err)
 		return exitTool
 	}
+	if err = writeDebugApplicationConfig(outputPaths, applicationConfig, "simulate", selectedConfig, sourcePath, *outDir, *runDir, commonOptions); err != nil {
+		fmt.Fprintf(stderr, "cannot write simulate debug configuration: %v\n", err)
+		return exitTool
+	}
 
 	frontend := pal.ParseAndTypeCheckFile(ctx, sourcePath, pal.FrontendOptions{
 		LibraryPaths: libraryPaths,
@@ -920,6 +978,12 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	}
 	if !frontend.OK() {
 		return exitFrontend
+	}
+	if commonOptions.writeIntermediate {
+		if err = writeFrontendIntermediate(outputPaths, frontend.Native, frontend.Extends, frontend.Sources, "00_OutFrontend"); err != nil {
+			fmt.Fprintf(stderr, "cannot write simulate intermediate output: %v\n", err)
+			return exitTool
+		}
 	}
 	prepared, err := pal.PrepareSafetyTransitions(frontend.Native, pal.SafetyPipelineOptions{
 		Specification: configuration, Sources: frontend.Sources,
@@ -1156,6 +1220,7 @@ func loadTuningProperties(path string) (map[string]string, error) {
 func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("check", flag.ContinueOnError)
 	flags.SetOutput(stderr)
+	commonOutput := addCommonOutputFlags(flags)
 	backend := addCheckerBackendFlags(flags)
 	length := flags.Int("length", 10, "maximum number of Next steps")
 	maxErrors := flags.Int("max-error", 1, "produce at most this many distinct errors")
@@ -1196,6 +1261,11 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	applicationConfig, selectedConfig, err := loadCommandConfig(*configFile)
 	if err != nil {
 		fmt.Fprintf(stderr, "cannot load Apalache configuration: %v\n", err)
+		return exitUsage
+	}
+	commonOptions, err := commonOutput.resolve(applicationConfig, visited)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
 		return exitUsage
 	}
 	if selectedConfig != "" {
@@ -1358,6 +1428,10 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		fmt.Fprintf(stderr, "cannot write check run metadata: %v\n", err)
 		return exitTool
 	}
+	if err = writeDebugApplicationConfig(outputPaths, applicationConfig, "check", selectedConfig, sourcePath, *outDir, *runDir, commonOptions); err != nil {
+		fmt.Fprintf(stderr, "cannot write check debug configuration: %v\n", err)
+		return exitTool
+	}
 
 	frontend := pal.ParseAndTypeCheckFile(ctx, sourcePath, pal.FrontendOptions{
 		LibraryPaths: libraryPaths,
@@ -1367,6 +1441,12 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	}
 	if !frontend.OK() {
 		return exitFrontend
+	}
+	if commonOptions.writeIntermediate {
+		if err = writeFrontendIntermediate(outputPaths, frontend.Native, frontend.Extends, frontend.Sources, "00_OutFrontend"); err != nil {
+			fmt.Fprintf(stderr, "cannot write check intermediate output: %v\n", err)
+			return exitTool
+		}
 	}
 	prepared, err := pal.PrepareSafetyTransitions(frontend.Native, pal.SafetyPipelineOptions{
 		Specification: configuration,
@@ -1490,6 +1570,7 @@ func printDecodedStates(output io.Writer, module *pal.Module, states []pal.Decod
 func runTypeCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("typecheck", flag.ContinueOnError)
 	flags.SetOutput(stderr)
+	commonOutput := addCommonOutputFlags(flags)
 	output := flags.String("output", "summary", "output format (summary/json) or .tla/.json file")
 	configFile := flags.String("config-file", "", "Apalache JSON configuration file")
 	outDir := flags.String("out-dir", "", "root directory for source-namespaced run output")
@@ -1508,6 +1589,11 @@ func runTypeCheck(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	applicationConfig, selectedConfig, err := loadCommandConfig(*configFile)
 	if err != nil {
 		fmt.Fprintf(stderr, "cannot load Apalache configuration: %v\n", err)
+		return exitUsage
+	}
+	commonOptions, err := commonOutput.resolve(applicationConfig, visited)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
 		return exitUsage
 	}
 	if selectedConfig != "" {
@@ -1550,6 +1636,10 @@ func runTypeCheck(ctx context.Context, args []string, stdout, stderr io.Writer) 
 		fmt.Fprintf(stderr, "cannot write typecheck run metadata: %v\n", err)
 		return exitTool
 	}
+	if err = writeDebugApplicationConfig(outputPaths, applicationConfig, "typecheck", selectedConfig, sourcePath, *outDir, *runDir, commonOptions); err != nil {
+		fmt.Fprintf(stderr, "cannot write typecheck debug configuration: %v\n", err)
+		return exitTool
+	}
 	rows, featureErr := resolveRowsFeature(*useRows, *features)
 	if featureErr != nil {
 		fmt.Fprintln(stderr, featureErr)
@@ -1564,6 +1654,12 @@ func runTypeCheck(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	}
 	if !result.OK() {
 		return exitFrontend
+	}
+	if commonOptions.writeIntermediate {
+		if err = writeFrontendIntermediate(outputPaths, result.Native, result.Extends, result.Sources, "00_OutFrontend"); err != nil {
+			fmt.Fprintf(stderr, "cannot write typecheck intermediate output: %v\n", err)
+			return exitTool
+		}
 	}
 	if *output == "json" || strings.EqualFold(filepath.Ext(*output), ".json") {
 		options := pal.IRJSONOptions{}
@@ -1630,11 +1726,11 @@ func (s *csvStringList) Set(value string) error {
 func runParse(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("parse", flag.ContinueOnError)
 	flags.SetOutput(stderr)
+	commonOutput := addCommonOutputFlags(flags)
 	output := flags.String("output", "summary", "output format (summary/json) or .tla/.json file")
 	configFile := flags.String("config-file", "", "Apalache JSON configuration file")
 	outDir := flags.String("out-dir", "", "root directory for source-namespaced run output")
 	runDir := flags.String("run-dir", "", "additional directory receiving run output directly")
-	writeIntermediate := flags.Bool("write-intermediate", false, "write parsed intermediate TLA+ into the run directory")
 	includeSource := flags.Bool("source", false, "include source positions in JSON IR")
 	features := flags.String("features", "", "typechecker features: rows or no-rows")
 	var libraryPaths stringList
@@ -1649,6 +1745,11 @@ func runParse(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		fmt.Fprintf(stderr, "cannot load Apalache configuration: %v\n", err)
 		return exitUsage
 	}
+	commonOptions, err := commonOutput.resolve(applicationConfig, visited)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return exitUsage
+	}
 	if selectedConfig != "" {
 		if err = applicationConfig.validateForFrontend("parse"); err != nil {
 			fmt.Fprintln(stderr, err)
@@ -1657,9 +1758,6 @@ func runParse(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		if err = applyJSONFrontendDefaults(applicationConfig, visited, output, features, nil, nil); err != nil {
 			fmt.Fprintln(stderr, err)
 			return exitUsage
-		}
-		if !visited["write-intermediate"] && applicationConfig.WriteIntermediate != nil {
-			*writeIntermediate = *applicationConfig.WriteIntermediate
 		}
 	}
 	resolveOutputDirectoryOptions(applicationConfig, visited, outDir, runDir)
@@ -1692,6 +1790,10 @@ func runParse(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		fmt.Fprintf(stderr, "cannot write parse run metadata: %v\n", err)
 		return exitTool
 	}
+	if err = writeDebugApplicationConfig(outputPaths, applicationConfig, "parse", selectedConfig, sourcePath, *outDir, *runDir, commonOptions); err != nil {
+		fmt.Fprintf(stderr, "cannot write parse debug configuration: %v\n", err)
+		return exitTool
+	}
 	if _, err := resolveRowsFeature(false, *features); err != nil {
 		fmt.Fprintln(stderr, err)
 		return exitUsage
@@ -1707,7 +1809,7 @@ func runParse(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	if !result.OK() {
 		return exitFrontend
 	}
-	if *writeIntermediate {
+	if commonOptions.writeIntermediate {
 		formatted, formatErr := pal.FormatTLAModule(result.Native, pal.TLAFormatOptions{ExtendedModules: result.Extends})
 		if formatErr != nil {
 			fmt.Fprintf(stderr, "cannot format parsed intermediate TLA+: %v\n", formatErr)

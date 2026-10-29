@@ -1,8 +1,11 @@
 package main
 
 import (
+	"encoding/json"
+	"flag"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -97,5 +100,67 @@ func TestResolveOutputDirectoryOptionsPrecedence(t *testing.T) {
 	resolveOutputDirectoryOptions(config, map[string]bool{}, &outDir, &runDir)
 	if outDir != "environment-out" || runDir != "environment-run" {
 		t.Fatalf("environment fallback = (%q, %q)", outDir, runDir)
+	}
+}
+
+func TestCommonOutputOptionsPrecedenceAndEnvironmentValidation(t *testing.T) {
+	jsonDebug, jsonIntermediate := true, false
+	config := jsonCommandConfig{Debug: &jsonDebug, WriteIntermediate: &jsonIntermediate}
+	flags := flag.NewFlagSet("common-output", flag.ContinueOnError)
+	common := addCommonOutputFlags(flags)
+	if err := flags.Parse([]string{"--debug=false", "--write-intermediate=yes"}); err != nil {
+		t.Fatal(err)
+	}
+	visited := make(map[string]bool)
+	flags.Visit(func(flag *flag.Flag) { visited[flag.Name] = true })
+	resolved, err := common.resolve(config, visited)
+	if err != nil || resolved.debug || !resolved.writeIntermediate {
+		t.Fatalf("CLI common output options = %#v, %v", resolved, err)
+	}
+
+	t.Setenv("WRITE_INTERMEDIATE", "no")
+	resolved, err = (&commonOutputFlags{}).resolve(jsonCommandConfig{}, map[string]bool{})
+	if err != nil || resolved.writeIntermediate {
+		t.Fatalf("environment common output options = %#v, %v", resolved, err)
+	}
+	t.Setenv("WRITE_INTERMEDIATE", "sometimes")
+	if _, err = (&commonOutputFlags{}).resolve(jsonCommandConfig{}, map[string]bool{}); err == nil ||
+		!strings.Contains(err.Error(), "invalid WRITE_INTERMEDIATE") {
+		t.Fatalf("invalid environment common output option = %v", err)
+	}
+}
+
+func TestTypecheckWritesDebugConfigurationAndFrontendIntermediates(t *testing.T) {
+	directory := t.TempDir()
+	t.Setenv("HOME", filepath.Join(directory, "home"))
+	source := filepath.Join(directory, "CommonOutput.tla")
+	text := "---- MODULE CommonOutput ----\nEXTENDS Integers\n\\* @type: Int;\nVARIABLE x\nInit == x = 0\n====\n"
+	if err := os.WriteFile(source, []byte(text), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runDir := filepath.Join(directory, "run")
+	var stdout, stderr strings.Builder
+	code := run(t.Context(), []string{
+		"typecheck", "--run-dir=" + runDir, "--debug", "--write-intermediate=1", source,
+	}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("typecheck = %d, stderr = %q", code, stderr.String())
+	}
+	data, err := os.ReadFile(filepath.Join(runDir, "application-config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var snapshot map[string]any
+	if err = json.Unmarshal(data, &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if snapshot["command"] != "typecheck" || snapshot["debug"] != true || snapshot["write-intermediate"] != true ||
+		snapshot["run-dir"] != runDir {
+		t.Fatalf("application configuration = %#v", snapshot)
+	}
+	for _, name := range []string{"00_OutFrontend.tla", "00_OutFrontend.json"} {
+		if info, statErr := os.Stat(filepath.Join(runDir, "intermediate", name)); statErr != nil || info.Size() == 0 {
+			t.Fatalf("frontend intermediate %s = %v, %v", name, info, statErr)
+		}
 	}
 }
