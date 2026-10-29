@@ -1428,7 +1428,20 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		fmt.Fprintf(stderr, "cannot write check run metadata: %v\n", err)
 		return exitTool
 	}
-	if err = writeDebugApplicationConfig(outputPaths, applicationConfig, "check", selectedConfig, sourcePath, *outDir, *runDir, commonOptions); err != nil {
+	effectiveInit, effectiveNext := *initName, *nextName
+	if effectiveInit == "" && configuration.TLCConfig == nil {
+		effectiveInit, effectiveNext = "Init", "Next"
+	}
+	debugTuning := make(map[string]string, len(tuningValues)+1)
+	for key, value := range tuningValues {
+		debugTuning[key] = value
+	}
+	debugTuning["search.outputTraces"] = strconv.FormatBool(*outputTraces)
+	debugOverlay := checkDebugApplicationOverlay(
+		backend, debugTuning, *configPath, *constantInit, effectiveInit, effectiveNext,
+		invariants, temporalProperties, *length, *maxErrors, *timeoutSMT,
+		discardDisabled, checkDeadlocks, !*disablePolytypes, rows, *viewName)
+	if err = writeDebugApplicationConfig(outputPaths, applicationConfig, "check", selectedConfig, sourcePath, *outDir, *runDir, commonOptions, debugOverlay); err != nil {
 		fmt.Fprintf(stderr, "cannot write check debug configuration: %v\n", err)
 		return exitTool
 	}

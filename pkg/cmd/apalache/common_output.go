@@ -52,6 +52,7 @@ func writeDebugApplicationConfig(
 	config jsonCommandConfig,
 	command, selectedConfig, sourcePath, outDir, runDir string,
 	options commonOutputOptions,
+	effectiveOverlays ...map[string]any,
 ) error {
 	if !options.debug {
 		return nil
@@ -88,6 +89,9 @@ func writeDebugApplicationConfig(
 		return fmt.Errorf("normalize application configuration: %w", err)
 	}
 	pruneNullConfigurationValues(snapshot)
+	for _, overlay := range effectiveOverlays {
+		mergeDebugConfiguration(snapshot, overlay)
+	}
 	data, err := json.MarshalIndent(snapshot, "", "  ")
 	if err != nil {
 		return fmt.Errorf("format application configuration: %w", err)
@@ -99,6 +103,74 @@ func writeDebugApplicationConfig(
 		}
 	}
 	return nil
+}
+
+func mergeDebugConfiguration(target, overlay map[string]any) {
+	for key, value := range overlay {
+		incoming, nested := value.(map[string]any)
+		if !nested {
+			target[key] = value
+			continue
+		}
+		existing, ok := target[key].(map[string]any)
+		if !ok {
+			existing = make(map[string]any)
+			target[key] = existing
+		}
+		mergeDebugConfiguration(existing, incoming)
+	}
+}
+
+func checkDebugApplicationOverlay(
+	backend *checkerBackendOptions,
+	tuning map[string]string,
+	TLCConfig, constantInit, init, next string,
+	invariants, temporal []string,
+	length, maxErrors, timeoutSMT int,
+	discardDisabled, checkDeadlocks, inferPoly, rows bool,
+	view string,
+) map[string]any {
+	checker := map[string]any{
+		"tuning":           cloneStringMap(tuning),
+		"algo":             backend.algorithm,
+		"discard-disabled": discardDisabled,
+		"init":             init,
+		"inv":              append([]string(nil), invariants...),
+		"next":             next,
+		"length":           length,
+		"max-error":        maxErrors,
+		"timeout-smt":      timeoutSMT,
+		"no-deadlock":      !checkDeadlocks,
+		"smt-solver":       backend.solver,
+		"smt-encoding":     backend.encoding,
+		"temporal":         append([]string(nil), temporal...),
+	}
+	if TLCConfig != "" {
+		checker["config"] = TLCConfig
+	}
+	if constantInit != "" {
+		checker["cinit"] = constantInit
+	}
+	if view != "" {
+		checker["view"] = view
+	}
+	features := []string{}
+	if rows {
+		features = append(features, "rows")
+	}
+	return map[string]any{
+		"features":    features,
+		"checker":     checker,
+		"typechecker": map[string]any{"infer-poly": inferPoly},
+	}
+}
+
+func cloneStringMap(source map[string]string) map[string]string {
+	result := make(map[string]string, len(source))
+	for key, value := range source {
+		result[key] = value
+	}
+	return result
 }
 
 func pruneNullConfigurationValues(object map[string]any) {

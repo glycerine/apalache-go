@@ -260,6 +260,75 @@ Inv == x < 2
 	}
 }
 
+func TestRunCheckDebugSnapshotContainsEffectiveCLIValues(t *testing.T) {
+	directory := t.TempDir()
+	t.Setenv("HOME", filepath.Join(directory, "home"))
+	t.Chdir(directory)
+	if err := os.WriteFile("DebugCounter.tla", []byte(`---- MODULE DebugCounter ----
+EXTENDS Integers
+\* @type: Int;
+VARIABLE x
+Init == x = 0
+Next == x' = x + 1
+Inv == x < 5
+====
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	configuration := `{
+  "source":"DebugCounter.tla",
+  "features":[],
+  "checker":{"length":3,"inv":[],"no-deadlock":false,"smt-encoding":"funArrays","tuning":{"search.outputTraces":"true"}},
+  "typechecker":{"infer-poly":true}
+}`
+	if err := os.WriteFile("debug.json", []byte(configuration), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runDir := filepath.Join(directory, "debug-run")
+	var stdout, stderr bytes.Buffer
+	code := run(context.Background(), []string{
+		"check", "--config-file=debug.json", "--run-dir=" + runDir, "--debug",
+		"--length=1", "--inv=Inv", "--no-deadlock", "--smt-encoding=arrays",
+		"--features=rows", "--no-polytypes", "--output-traces=false",
+	}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("debug check = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
+	}
+	data, err := os.ReadFile(filepath.Join(runDir, "application-config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var snapshot map[string]any
+	if err = json.Unmarshal(data, &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	checker, ok := snapshot["checker"].(map[string]any)
+	if !ok {
+		t.Fatalf("debug checker configuration = %#v", snapshot["checker"])
+	}
+	if checker["length"] != float64(1) || checker["smt-encoding"] != "arrays" ||
+		checker["smt-solver"] != "z3" || checker["algo"] != "incremental" ||
+		checker["no-deadlock"] != true || checker["discard-disabled"] != true ||
+		checker["init"] != "Init" || checker["next"] != "Next" {
+		t.Fatalf("effective checker configuration = %#v", checker)
+	}
+	if got := checker["inv"].([]any); len(got) != 1 || got[0] != "Inv" {
+		t.Fatalf("effective invariants = %#v", checker["inv"])
+	}
+	tuning := checker["tuning"].(map[string]any)
+	if tuning["search.outputTraces"] != "false" {
+		t.Fatalf("effective tuning = %#v", tuning)
+	}
+	typechecker := snapshot["typechecker"].(map[string]any)
+	if typechecker["infer-poly"] != false {
+		t.Fatalf("effective typechecker configuration = %#v", typechecker)
+	}
+	features := snapshot["features"].([]any)
+	if len(features) != 1 || features[0] != "rows" {
+		t.Fatalf("effective features = %#v", features)
+	}
+}
+
 func TestRunCheckRejectsLegacyExplicitConfiguration(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := run(context.Background(), []string{"check", "--config-file=.apalache.cfg", "Spec.tla"}, &stdout, &stderr)
