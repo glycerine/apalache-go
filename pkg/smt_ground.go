@@ -20,7 +20,7 @@ type G3GroundEncoder struct {
 	cellStack     []map[string]SMTTerm
 	inStack       []map[[2]int]SMTTerm
 	versionStack  []map[string]int
-	boundTerms    map[string]SMTTerm
+	boundIndices  map[string]uint32
 }
 
 func NewG3GroundEncoder(solver *G3SolverContext) (*G3GroundEncoder, error) {
@@ -44,7 +44,7 @@ func NewG3GroundEncoderWithEncoding(
 		solver: solver, encoding: encoding,
 		cells: make(map[string]SMTTerm), memberships: make(map[[2]int]SMTTerm),
 		arrayVersions: make(map[string]int), defaultValues: make(map[string]SMTTerm),
-		boundTerms: make(map[string]SMTTerm),
+		boundIndices: make(map[string]uint32),
 	}, nil
 }
 
@@ -300,8 +300,8 @@ func (encoder *G3GroundEncoder) Encode(expression Expr) (SMTTerm, error) {
 	}
 	switch typed := expression.(type) {
 	case *NameExpr:
-		if term, found := encoder.boundTerms[typed.Name()]; found {
-			return term, nil
+		if index, found := encoder.boundIndices[typed.Name()]; found {
+			return encoder.solver.Bound(index, SMTInt)
 		}
 		term, found := encoder.cells[typed.Name()]
 		if !found {
@@ -483,9 +483,19 @@ func (encoder *G3GroundEncoder) encodeIntegerExistential(arguments []Expr) (SMTT
 	if !ok || binder.Name() == "" {
 		return SMTTerm{}, fmt.Errorf("integer existential binder must be a name")
 	}
-	if len(encoder.boundTerms) != 0 {
-		return SMTTerm{}, fmt.Errorf("nested integer existential encoding is not supported")
+	if _, duplicate := encoder.boundIndices[binder.Name()]; duplicate {
+		return SMTTerm{}, fmt.Errorf("integer existential binder %s is already active", binder.Name())
 	}
+	for name, index := range encoder.boundIndices {
+		encoder.boundIndices[name] = index + 1
+	}
+	encoder.boundIndices[binder.Name()] = 0
+	defer func() {
+		delete(encoder.boundIndices, binder.Name())
+		for name, index := range encoder.boundIndices {
+			encoder.boundIndices[name] = index - 1
+		}
+	}()
 	lower, err := encoder.Encode(arguments[1])
 	if err != nil {
 		return SMTTerm{}, fmt.Errorf("encode integer existential lower bound: %w", err)
@@ -498,11 +508,9 @@ func (encoder *G3GroundEncoder) encodeIntegerExistential(arguments []Expr) (SMTT
 	if err != nil {
 		return SMTTerm{}, err
 	}
-	encoder.boundTerms[binder.Name()] = bound
-	body, bodyErr := encoder.Encode(arguments[3])
-	delete(encoder.boundTerms, binder.Name())
-	if bodyErr != nil {
-		return SMTTerm{}, fmt.Errorf("encode integer existential predicate: %w", bodyErr)
+	body, err := encoder.Encode(arguments[3])
+	if err != nil {
+		return SMTTerm{}, fmt.Errorf("encode integer existential predicate: %w", err)
 	}
 	lowerBound, err := encoder.solver.LessEqual(lower, bound)
 	if err != nil {

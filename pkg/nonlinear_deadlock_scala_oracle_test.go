@@ -13,6 +13,15 @@ import (
 )
 
 func TestVariableWidthNonlinearDeadlockDocumentsScalaUnderapproximation(t *testing.T) {
+	testNonlinearDeadlockDocumentsScalaUnderapproximation(t, "VariableNonlinearDeadlock.tla")
+}
+
+func TestNestedVariableWidthNonlinearDeadlockDocumentsScalaUnderapproximation(t *testing.T) {
+	testNonlinearDeadlockDocumentsScalaUnderapproximation(t, "NestedVariableNonlinearDeadlock.tla")
+}
+
+func testNonlinearDeadlockDocumentsScalaUnderapproximation(t *testing.T, fixture string) {
+	t.Helper()
 	scalaExecutable := os.Getenv("APALACHE_SCALA")
 	goExecutable := os.Getenv("APALACHE_GO")
 	if scalaExecutable == "" || goExecutable == "" {
@@ -20,7 +29,7 @@ func TestVariableWidthNonlinearDeadlockDocumentsScalaUnderapproximation(t *testi
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	source := "pkg/testdata/oracle/VariableNonlinearDeadlock.tla"
+	source := filepath.Join("pkg", "testdata", "oracle", fixture)
 	scalaRun := t.TempDir()
 	scala, err := oraclectl.Run(ctx, oraclectl.Command{
 		Executable: scalaExecutable,

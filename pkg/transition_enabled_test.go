@@ -180,6 +180,43 @@ func TestVariableWidthNonlinearProjectionThroughG3(t *testing.T) {
 	}
 }
 
+func TestNestedVariableWidthNonlinearProjectionThroughG3(t *testing.T) {
+	for _, test := range []struct {
+		x    int64
+		want bool
+	}{{2, false}, {4, true}} {
+		t.Run(fmt.Sprintf("x=%d", test.x), func(t *testing.T) {
+			i := NewNameExpr("i", Typed(IntT1))
+			j := NewNameExpr("j", Typed(IntT1))
+			x := NewNameExpr("x", Typed(IntT1))
+			inner := MustOperExpr(Op("EXISTS3"), Typed(BoolT1), j,
+				MustOperExpr(Op("INT_RANGE"), Typed(mustSet(IntT1)), intLiteral(0), i),
+				MustOperExpr(Op("EQ"), Typed(BoolT1),
+					MustOperExpr(Op("MULT"), Typed(IntT1), j, j), x))
+			nested := MustOperExpr(Op("EXISTS3"), Typed(BoolT1), i,
+				MustOperExpr(Op("INT_RANGE"), Typed(mustSet(IntT1)), intLiteral(0), x), inner)
+			projected, exact := transitionEnabledProjection(nested)
+			if !exact || countOperator(projected, "ApalacheInternal!IntExists") != 2 {
+				t.Fatalf("nested projection = %v, exact=%t", projected, exact)
+			}
+
+			rewriter := NewStratifiedRewriter()
+			scope := InitialRewriterScope()
+			var err error
+			scope, xCell, err := rewriter.Rewrite(intLiteral(test.x), scope)
+			if err != nil {
+				t.Fatal(err)
+			}
+			scope.Binding = scope.Binding.With("x", xCell)
+			scope, result, err := rewriter.Rewrite(projected, scope)
+			if err != nil {
+				t.Fatal(err)
+			}
+			checkRewrittenTruth(t, rewriter, scope, result, test.want)
+		})
+	}
+}
+
 func TestNonUnitAffineWitnessProjectionExhaustive(t *testing.T) {
 	i := NewNameExpr("i", Typed(IntT1))
 	x := NewNameExpr("x", Typed(IntT1))

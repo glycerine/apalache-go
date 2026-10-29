@@ -814,6 +814,39 @@ Next == x' = 0 /\ \E j \in 0..x: j * j = x
 	}
 }
 
+func TestCheckBoundedSafetyProjectsNestedVariableWidthNonlinearWitnessDeadlock(t *testing.T) {
+	frontend := ParseAndTypeCheckSource(context.Background(), "NestedVariableNonlinearWitnessDeadlock.tla", `---- MODULE NestedVariableNonlinearWitnessDeadlock ----
+EXTENDS Integers
+VARIABLE
+\* @type: Int;
+x
+Init == \E n \in {2, 4}: x = n
+Next == x' = 0 /\ \E i \in 0..x: \E j \in 0..i: j * j = x
+====
+`, FrontendOptions{}, TypeCheckOptions{})
+	if !frontend.OK() {
+		t.Fatalf("frontend diagnostics = %v", frontend.Diagnostics)
+	}
+	prepared, err := PrepareSafetyTransitions(frontend.Native, SafetyPipelineOptions{
+		Specification: SpecificationConfiguration{Behavior: InitNextSpec{Init: "Init", Next: "Next"}},
+		Sources:       frontend.Sources,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Outcome != SafetyDeadlock || result.Depth != 0 || len(result.States) != 1 {
+		t.Fatalf("nested variable-width nonlinear witness deadlock = %#v", result)
+	}
+	value, formatErr := FormatTLAExpression(result.States[0].Values["x"])
+	if formatErr != nil || value != "2" {
+		t.Fatalf("nested variable-width nonlinear deadlocked state x = %q, %v", value, formatErr)
+	}
+}
+
 func TestCheckBoundedSafetyProjectsAssignmentsInsideDisjunction(t *testing.T) {
 	frontend := ParseAndTypeCheckSource(context.Background(), "AssignedDisjunctionDeadlock.tla", `---- MODULE AssignedDisjunctionDeadlock ----
 EXTENDS Integers

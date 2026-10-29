@@ -441,6 +441,69 @@ func TestG3SolverQuantifiers(t *testing.T) {
 	}
 }
 
+func TestG3SolverNestedQuantifierDeBruijnIndices(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		y          int64
+		wantStatus SMTStatus
+	}{
+		{name: "satisfiable", y: 2, wantStatus: SMTSatisfiable},
+		{name: "unsatisfiable", y: 3, wantStatus: SMTUnsatisfiable},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			solver := newTestG3SolverWithLogic(t, "AUFNIA")
+			innerY, err := solver.Bound(0, SMTInt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			outerXInsideY, err := solver.Bound(1, SMTInt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			one, _ := solver.Int(1)
+			wantY, _ := solver.Int(test.y)
+			xIsOne, err := solver.Equal(outerXInsideY, one)
+			if err != nil {
+				t.Fatal(err)
+			}
+			xPlusOne, err := solver.Add(outerXInsideY, one)
+			if err != nil {
+				t.Fatal(err)
+			}
+			yFollowsX, err := solver.Equal(innerY, xPlusOne)
+			if err != nil {
+				t.Fatal(err)
+			}
+			yIsWanted, err := solver.Equal(innerY, wantY)
+			if err != nil {
+				t.Fatal(err)
+			}
+			innerBody, err := solver.And(xIsOne, yFollowsX, yIsWanted)
+			if err != nil {
+				t.Fatal(err)
+			}
+			inner, err := solver.Exists("y", innerY, innerBody)
+			if err != nil {
+				t.Fatal(err)
+			}
+			outerX, err := solver.Bound(0, SMTInt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			formula, err := solver.Exists("x", outerX, inner)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = solver.Assert(formula); err != nil {
+				t.Fatal(err)
+			}
+			if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != test.wantStatus {
+				t.Fatalf("nested quantified formula = %v, %v", status, checkErr)
+			}
+		})
+	}
+}
+
 func TestG3SolverSMTLib2TracksActiveScopes(t *testing.T) {
 	solver := newTestG3Solver(t)
 	x, err := solver.Declare("x", SMTInt)

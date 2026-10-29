@@ -213,6 +213,19 @@ func integerQuantifierSMTFragment(expression Expr, binder string) bool {
 		_, boolean := typed.Value().(BoolValue)
 		return integer || boolean
 	case *OperExpr:
+		if typed.Operator().Name() == "ApalacheInternal!IntExists" {
+			arguments := typed.Arguments()
+			if len(arguments) != 4 {
+				return false
+			}
+			nested, ok := arguments[0].(*NameExpr)
+			if !ok || nested.Name() == "" || nested.Name() == binder {
+				return false
+			}
+			return integerQuantifierSMTFragment(arguments[1], binder) &&
+				integerQuantifierSMTFragment(arguments[2], binder) &&
+				integerQuantifierSMTFragment(arguments[3], nested.Name())
+		}
 		supported := map[string]struct{}{
 			"EQ": {}, "NE": {}, "AND": {}, "OR": {}, "NOT": {}, "IMPLIES": {}, "IF_THEN_ELSE": {},
 			"PLUS": {}, "MINUS": {}, "MULT": {}, "DIV": {}, "MOD": {}, "POW": {}, "UNARY_MINUS": {},

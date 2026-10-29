@@ -800,9 +800,10 @@ func (rewriter *StratifiedRewriter) rewriteIntegerSMTExistential(
 		return scope, ArenaCell{}, fmt.Errorf("integer SMT existential binder must be a name")
 	}
 	grounded := make([]Expr, 3)
+	boundNames := map[string]struct{}{binder.Name(): {}}
 	for index, argument := range arguments[1:] {
 		var err error
-		grounded[index], err = groundIntegerSMTExpression(argument, binder.Name(), scope.Binding)
+		grounded[index], err = groundIntegerSMTExpression(argument, boundNames, scope.Binding)
 		if err != nil {
 			return scope, ArenaCell{}, err
 		}
@@ -813,11 +814,11 @@ func (rewriter *StratifiedRewriter) rewriteIntegerSMTExistential(
 	return scope, result, nil
 }
 
-func groundIntegerSMTExpression(expression Expr, binder string, binding Binding) (Expr, error) {
+func groundIntegerSMTExpression(expression Expr, boundNames map[string]struct{}, binding Binding) (Expr, error) {
 	switch typed := expression.(type) {
 	case *NameExpr:
-		if typed.Name() == binder {
-			return NewNameExpr(binder, typed.Tag()), nil
+		if _, bound := boundNames[typed.Name()]; bound {
+			return NewNameExpr(typed.Name(), typed.Tag()), nil
 		}
 		cell, found := binding.Get(typed.Name())
 		if !found {
@@ -833,14 +834,48 @@ func groundIntegerSMTExpression(expression Expr, binder string, binding Binding)
 		}
 		return nil, fmt.Errorf("integer SMT existential value %T is unsupported", typed.Value())
 	case *OperExpr:
-		if !integerQuantifierSMTFragment(typed, binder) {
+		if typed.Operator().Name() == "ApalacheInternal!IntExists" {
+			arguments := typed.Arguments()
+			if len(arguments) != 4 {
+				return nil, fmt.Errorf("nested integer SMT existential requires four arguments")
+			}
+			binder, ok := arguments[0].(*NameExpr)
+			if !ok || binder.Name() == "" {
+				return nil, fmt.Errorf("nested integer SMT existential binder must be a name")
+			}
+			if _, duplicate := boundNames[binder.Name()]; duplicate {
+				return nil, fmt.Errorf("nested integer SMT existential binder %s is already active", binder.Name())
+			}
+			lower, err := groundIntegerSMTExpression(arguments[1], boundNames, binding)
+			if err != nil {
+				return nil, err
+			}
+			upper, err := groundIntegerSMTExpression(arguments[2], boundNames, binding)
+			if err != nil {
+				return nil, err
+			}
+			nestedNames := cloneMap(boundNames)
+			nestedNames[binder.Name()] = struct{}{}
+			body, err := groundIntegerSMTExpression(arguments[3], nestedNames, binding)
+			if err != nil {
+				return nil, err
+			}
+			return MustOperExpr(internalIntegerExistsOperator, typed.Tag(),
+				NewNameExpr(binder.Name(), binder.Tag()), lower, upper, body), nil
+		}
+		fragmentBinder := ""
+		for name := range boundNames {
+			fragmentBinder = name
+			break
+		}
+		if !integerQuantifierSMTFragment(typed, fragmentBinder) {
 			return nil, fmt.Errorf("integer SMT existential operator %s is unsupported", typed.Operator().Name())
 		}
 		arguments := typed.Arguments()
 		grounded := make([]Expr, len(arguments))
 		for index, argument := range arguments {
 			var err error
-			grounded[index], err = groundIntegerSMTExpression(argument, binder, binding)
+			grounded[index], err = groundIntegerSMTExpression(argument, boundNames, binding)
 			if err != nil {
 				return nil, err
 			}
