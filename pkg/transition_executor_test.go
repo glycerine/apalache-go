@@ -159,6 +159,129 @@ func TestTransitionExecutorConstantsAlternativesAndPartialAssignments(t *testing
 	}
 }
 
+func TestTransitionExecutorScalaConstantAndMultiStepOracles(t *testing.T) {
+	assign := func(name string, value Expr) Expr {
+		prime := MustOperExpr(Op("PRIME"), Typed(IntT1), NewNameExpr(name, Typed(IntT1)))
+		return MustOperExpr(Op("Apalache!:="), Typed(BoolT1), prime, value)
+	}
+	conjoin := func(expressions ...Expr) Expr {
+		return MustOperExpr(Op("AND"), Typed(BoolT1), expressions...)
+	}
+	decodedInt := func(t *testing.T, state DecodedState, name string) int64 {
+		t.Helper()
+		value, found := state.Values[name]
+		literal, ok := value.(*ValueExpr)
+		if !found || !ok {
+			t.Fatalf("decoded %s = %v, found %v", name, value, found)
+		}
+		integer, ok := literal.Value().(IntValue)
+		if !ok || !integer.BigInt().IsInt64() {
+			t.Fatalf("decoded %s is not an int64: %v", name, literal)
+		}
+		return integer.BigInt().Int64()
+	}
+
+	t.Run("constant initialization", func(t *testing.T) {
+		executor := NewTransitionExecutor([]string{"N"}, []string{"x", "y"})
+		if err := executor.InitializeConstants(assign("N", intLiteral(10))); err != nil {
+			t.Fatal(err)
+		}
+		initial := conjoin(
+			assign("x", MustOperExpr(Op("PLUS"), Typed(IntT1), NewNameExpr("N", Typed(IntT1)), intLiteral(1))),
+			assign("y", intLiteral(4)))
+		if enabled, err := executor.PrepareTransition(3, initial); err != nil || !enabled {
+			t.Fatalf("prepare initial = %v, %v", enabled, err)
+		}
+		if _, err := executor.PickTransition(); err != nil {
+			t.Fatal(err)
+		}
+		if err := executor.NextState(); err != nil {
+			t.Fatal(err)
+		}
+		for _, test := range []struct {
+			name       string
+			expression Expr
+			want       int64
+		}{
+			{name: "x", expression: NewNameExpr("x", Typed(IntT1)), want: 11},
+			{name: "twice y", expression: MustOperExpr(Op("MULT"), Typed(IntT1),
+				NewNameExpr("y", Typed(IntT1)), intLiteral(2)), want: 8},
+		} {
+			value, status, err := executor.Evaluate(context.Background(), test.expression)
+			literal, ok := value.(*ValueExpr)
+			if err != nil || status != SMTSatisfiable || !ok ||
+				literal.Value().(IntValue).BigInt().Int64() != test.want {
+				t.Fatalf("evaluate %s = %v, %v, %v", test.name, value, status, err)
+			}
+		}
+		if err := executor.AssertState(MustOperExpr(Op("EQ"), Typed(BoolT1),
+			NewNameExpr("x", Typed(IntT1)), intLiteral(5))); err != nil {
+			t.Fatal(err)
+		}
+		if status, err := executor.Check(context.Background()); err != nil || status != SMTUnsatisfiable {
+			t.Fatalf("x = 5 after constant initialization = %v, %v", status, err)
+		}
+	})
+
+	t.Run("Init plus three Next steps", func(t *testing.T) {
+		executor := NewTransitionExecutor(nil, []string{"x", "y"})
+		x := NewNameExpr("x", Typed(IntT1))
+		y := NewNameExpr("y", Typed(IntT1))
+		initial := conjoin(assign("x", intLiteral(1)), assign("y", intLiteral(1)))
+		advance := conjoin(assign("x", y),
+			assign("y", MustOperExpr(Op("PLUS"), Typed(IntT1), x, y)))
+		stutter := conjoin(assign("x", x), assign("y", y))
+		preparePickAdvance := func(number int, expression Expr) {
+			t.Helper()
+			if enabled, err := executor.PrepareTransition(number, expression); err != nil || !enabled {
+				t.Fatalf("prepare transition %d = %v, %v", number, enabled, err)
+			}
+			if _, err := executor.PickTransition(); err != nil {
+				t.Fatal(err)
+			}
+			if err := executor.NextState(); err != nil {
+				t.Fatal(err)
+			}
+		}
+		preparePickAdvance(1, initial)
+		preparePickAdvance(1, advance)
+		preparePickAdvance(1, advance)
+		if enabled, err := executor.PrepareTransition(1, advance); err != nil || !enabled {
+			t.Fatalf("prepare advancing branch = %v, %v", enabled, err)
+		}
+		if enabled, err := executor.PrepareTransition(2, stutter); err != nil || !enabled {
+			t.Fatalf("prepare stuttering branch = %v, %v", enabled, err)
+		}
+		if _, err := executor.PickTransition(); err != nil {
+			t.Fatal(err)
+		}
+		if err := executor.NextState(); err != nil {
+			t.Fatal(err)
+		}
+
+		status, execution, err := executor.CheckDecodedExecution(context.Background(), boolExpr(true))
+		if err != nil || status != SMTSatisfiable || len(execution.Path) != 4 {
+			t.Fatalf("decoded four-step execution = %v, %#v, %v", status, execution, err)
+		}
+		want := [][3]int64{{1, 1, 1}, {1, 1, 2}, {1, 2, 3}}
+		for index, expected := range want {
+			state := execution.Path[index]
+			if int64(state.TransitionNumber) != expected[0] || decodedInt(t, state, "x") != expected[1] ||
+				decodedInt(t, state, "y") != expected[2] {
+				t.Fatalf("decoded state %d = transition %d, x=%d, y=%d; want %v", index,
+					state.TransitionNumber, decodedInt(t, state, "x"), decodedInt(t, state, "y"), expected)
+			}
+		}
+		last := execution.Path[3]
+		lastX, lastY := decodedInt(t, last, "x"), decodedInt(t, last, "y")
+		if !((last.TransitionNumber == 1 && lastX == 3 && lastY == 5) ||
+			(last.TransitionNumber == 2 && lastX == 2 && lastY == 3)) {
+			t.Fatalf("uncorrelated final branch = transition %d, x=%d, y=%d",
+				last.TransitionNumber, lastX, lastY)
+		}
+	})
+}
+
 func TestTransitionExecutorCheckStateIsTemporary(t *testing.T) {
 	executor := NewTransitionExecutor(nil, []string{"x"})
 	prime := MustOperExpr(Op("PRIME"), Typed(IntT1), NewNameExpr("x", Typed(IntT1)))
