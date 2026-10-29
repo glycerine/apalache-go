@@ -79,7 +79,15 @@ func TestKeraLanguagePredicateSpecialFormsAndFailures(t *testing.T) {
 	for _, rejected := range []*OperExpr{
 		MustOperExpr(Op("SET_INTERSECT"), Untyped(), set, set),
 		MustOperExpr(Op("SET_MINUS"), Untyped(), set, set),
+		MustOperExpr(Op("SET_NOT_IN"), Untyped(), one, set),
+		MustOperExpr(Op("SET_SUBSET_EQ"), Untyped(), set, set),
+		MustOperExpr(Op("RECORD_SET"), Untyped(), NewValueExpr(StringValue("a"), Untyped()), set),
+		MustOperExpr(Op("SET_TIMES"), Untyped(), set, set),
 		MustOperExpr(Op("EQUIV"), Untyped(), NewValueExpr(BoolValue(true), Untyped()), NewValueExpr(BoolValue(false), Untyped())),
+		MustOperExpr(Op("IMPLIES"), Untyped(), NewValueExpr(BoolValue(true), Untyped()), NewValueExpr(BoolValue(false), Untyped())),
+		MustOperExpr(Op("NE"), Untyped(), one, one),
+		MustOperExpr(Op("CASE_OTHER"), Untyped(), one, NewValueExpr(BoolValue(true), Untyped()), one),
+		MustOperExpr(Op("CASE"), Untyped(), NewValueExpr(BoolValue(true), Untyped()), one),
 	} {
 		if predicate.CheckExpression(rejected).OK() {
 			t.Errorf("accepted non-KerA operator %s", rejected.Operator().Name())
