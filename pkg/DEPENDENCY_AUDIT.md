@@ -7,7 +7,7 @@ explicit review here.
 
 | Module | Pinned version | License evidence | Status |
 | --- | --- | --- | --- |
-| `github.com/glycerine/g3/pkg` | `v0.0.0-20261027115743-fe4e2f4f6dae` (repository tag `v0.0.5`) | The repository README says MIT and links `LICENSE.txt`, but that file is absent from both the repository and tagged module. | **Blocking: upstream license file required.** |
+| `github.com/glycerine/g3/pkg` | `v0.0.0-20261029004947-6def119f3e25` (repository tag `v0.0.7`) | The repository README says MIT and links `LICENSE.txt`, but that file is absent from both the repository and tagged module. | **Blocking: upstream license file required.** |
 | `github.com/glycerine/tlago` | `v0.1.9` | `LICENSE`, MIT | Reviewed |
 | `github.com/cespare/xxhash/v2` | `v2.3.0` | `LICENSE.txt`, MIT | Reviewed |
 | `github.com/glycerine/insdict` | `v0.14.6` | `LICENSE`, MIT | Reviewed |

@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/glycerine/g3/pkg/api"
 )
 
 // CheckerTuning is the validated Scala search-tuning contract used by the Go
@@ -120,7 +122,7 @@ func ParseCheckerTuning(values map[string]string) (CheckerTuning, error) {
 				return CheckerTuning{}, err
 			}
 			result.solverUIntOptions["sat.random_seed"] = parsed
-			result.solverUIntOptions["smt.random_seed"] = parsed
+			result.solverUIntOptions[string(api.SMTRandomSeed)] = parsed
 		case "z3.smt.random_seed", "z3.sat.random_seed", "z3.timeout", "z3.rlimit":
 			parsed, err := parseTuningUInt(key, value)
 			if err != nil {
@@ -196,7 +198,7 @@ func (tuning CheckerTuning) WithSMTRandomSeed(seed uint32) CheckerTuning {
 		tuning.solverUIntOptions = make(map[string]uint32)
 	}
 	tuning.solverUIntOptions["sat.random_seed"] = seed
-	tuning.solverUIntOptions["smt.random_seed"] = seed
+	tuning.solverUIntOptions[string(api.SMTRandomSeed)] = seed
 	return tuning
 }
 

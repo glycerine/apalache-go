@@ -143,7 +143,46 @@ func newG3SolverContextWithUIntOptions(logic string, options map[string]uint32) 
 	return newG3SolverContextWithOptions(logic, options, nil)
 }
 
+type g3SolverOptions struct {
+	bools   map[string]bool
+	uints   map[string]uint32
+	doubles map[string]float64
+	symbols map[string]string
+}
+
 func newG3SolverContextWithOptions(logic string, uintOptions map[string]uint32, textOptions map[string]string) (*G3SolverContext, error) {
+	options := g3SolverOptions{uints: cloneMap(uintOptions)}
+	for key, value := range textOptions {
+		if parsed, err := strconv.ParseBool(value); err == nil {
+			if options.bools == nil {
+				options.bools = make(map[string]bool)
+			}
+			options.bools[key] = parsed
+			continue
+		}
+		if parsed, err := strconv.ParseUint(value, 10, 32); err == nil {
+			if options.uints == nil {
+				options.uints = make(map[string]uint32)
+			}
+			options.uints[key] = uint32(parsed)
+			continue
+		}
+		if parsed, err := strconv.ParseFloat(value, 64); err == nil {
+			if options.doubles == nil {
+				options.doubles = make(map[string]float64)
+			}
+			options.doubles[key] = parsed
+			continue
+		}
+		if options.symbols == nil {
+			options.symbols = make(map[string]string)
+		}
+		options.symbols[key] = value
+	}
+	return newG3SolverContextWithTypedOptions(logic, options)
+}
+
+func newG3SolverContextWithTypedOptions(logic string, options g3SolverOptions) (*G3SolverContext, error) {
 	if logic == "" {
 		return nil, fmt.Errorf("SMT logic cannot be empty")
 	}
@@ -157,24 +196,44 @@ func newG3SolverContextWithOptions(logic string, uintOptions map[string]uint32, 
 	if err = command.SetLogic(logic); err != nil {
 		return fail(err)
 	}
-	keys := make([]string, 0, len(uintOptions))
-	for key := range uintOptions {
+	keys := make([]string, 0, len(options.bools)+len(options.uints)+len(options.doubles)+len(options.symbols))
+	for key := range options.bools {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
 	for _, key := range keys {
-		if err = command.SetUIntOption(key, uintOptions[key]); err != nil {
-			return fail(fmt.Errorf("set g3 option %s: %w", key, err))
+		if err = command.SetBoolOption(key, options.bools[key]); err != nil {
+			return fail(fmt.Errorf("set g3 Boolean option %s: %w", key, err))
 		}
 	}
 	keys = keys[:0]
-	for key := range textOptions {
+	for key := range options.uints {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
 	for _, key := range keys {
-		if err = command.SetSymbolOption(key, textOptions[key]); err != nil {
-			return fail(fmt.Errorf("set g3 option %s: %w", key, err))
+		if err = command.SetUIntOption(key, options.uints[key]); err != nil {
+			return fail(fmt.Errorf("set g3 unsigned option %s: %w", key, err))
+		}
+	}
+	keys = keys[:0]
+	for key := range options.doubles {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		if err = command.SetDoubleOption(key, options.doubles[key]); err != nil {
+			return fail(fmt.Errorf("set g3 double option %s: %w", key, err))
+		}
+	}
+	keys = keys[:0]
+	for key := range options.symbols {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		if err = command.SetSymbolOption(key, options.symbols[key]); err != nil {
+			return fail(fmt.Errorf("set g3 symbol option %s: %w", key, err))
 		}
 	}
 	manager, err := command.Manager()

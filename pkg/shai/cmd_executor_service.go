@@ -136,7 +136,7 @@ func validateRemoteCheckerConfig(checker remoteCheckerConfig) error {
 		return fmt.Errorf("unsupported SMT encoding %q (Go port currently supports oopsla19)", *checker.SMTEncoding)
 	}
 	if checker.SMTSolver != nil && !strings.EqualFold(*checker.SMTSolver, "z3") {
-		return fmt.Errorf("unsupported SMT solver %q (Go port uses g3 v0.0.5 as its Z3 backend)", *checker.SMTSolver)
+		return fmt.Errorf("unsupported SMT solver %q (Go port uses g3 v0.0.7 as its Z3 backend)", *checker.SMTSolver)
 	}
 	if checker.MaxError != nil && *checker.MaxError <= 0 {
 		return fmt.Errorf("checker.max-error must be positive")

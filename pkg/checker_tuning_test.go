@@ -46,16 +46,21 @@ func TestParseCheckerTuningRejectsUnsupportedAndMalformedValues(t *testing.T) {
 
 func TestParseCheckerTuningUsesPinnedG3TypedCatalog(t *testing.T) {
 	tuning, err := ParseCheckerTuning(map[string]string{
-		"z3.smt.mbqi":        "true",
-		"z3.sat.random_freq": "0.25",
-		"z3.sat.phase":       "random",
-		"z3.pp.max_width":    "120",
+		"z3.smt.mbqi":              "true",
+		"z3.smt.array.extensional": "false",
+		"z3.smt.arith.solver":      "2",
+		"z3.smt.restart_factor":    "1.25",
+		"z3.sat.random_freq":       "0.25",
+		"z3.sat.phase":             "random",
+		"z3.pp.max_width":          "120",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for key, want := range map[string]string{
-		"smt.mbqi": "true", "sat.random_freq": "0.25", "sat.phase": "random", "pp.max_width": "120",
+		"smt.mbqi": "true", "smt.array.extensional": "false", "smt.arith.solver": "2",
+		"smt.restart_factor": "1.25", "sat.random_freq": "0.25", "sat.phase": "random",
+		"pp.max_width": "120",
 	} {
 		if got := tuning.solverTextOptions[key]; got != want {
 			t.Fatalf("g3 text option %s = %q, want %q", key, got, want)

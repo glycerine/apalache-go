@@ -4,6 +4,8 @@ import (
 	"context"
 	"reflect"
 	"testing"
+
+	"github.com/glycerine/g3/pkg/api"
 )
 
 func TestSolverConfigDefaultsAndEnumParsingMatchScala(t *testing.T) {
@@ -49,7 +51,8 @@ func TestSolverConfigCopiesParameters(t *testing.T) {
 
 func TestSolverConfigConstructsPinnedG3WithTypedParameters(t *testing.T) {
 	config := NewSolverConfig(false, false, 17, SMTEncodingOOPSLA19, 60, SMTSolverZ3, map[string]any{
-		"z3.smt.mbqi": true, "sat.random_freq": 0.25, "pp.max_width": 120,
+		"z3." + string(api.SMTMBQI): true, "sat.random_freq": 0.25, "pp.max_width": 120,
+		"sat.phase": "random",
 	})
 	solver, err := NewG3SolverContextWithConfig(config)
 	if err != nil {

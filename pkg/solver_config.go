@@ -3,8 +3,9 @@ package apalache
 import (
 	"fmt"
 	"math"
-	"strconv"
 	"strings"
+
+	"github.com/glycerine/g3/pkg/api"
 )
 
 type SMTEncoding string
@@ -97,11 +98,13 @@ func NewG3SolverContextWithConfig(config SolverConfig) (*G3SolverContext, error)
 	if config.RandomSeed < 0 || uint64(config.RandomSeed) > math.MaxInt32 {
 		return nil, fmt.Errorf("solver random seed must be in 0..%d, found %d", math.MaxInt32, config.RandomSeed)
 	}
-	uintOptions := make(map[string]uint32)
-	textOptions := make(map[string]string)
+	options := g3SolverOptions{
+		bools: make(map[string]bool), uints: make(map[string]uint32),
+		doubles: make(map[string]float64), symbols: make(map[string]string),
+	}
 	if config.RandomSeed != 0 {
-		uintOptions["sat.random_seed"] = uint32(config.RandomSeed)
-		uintOptions["smt.random_seed"] = uint32(config.RandomSeed)
+		options.uints["sat.random_seed"] = uint32(config.RandomSeed)
+		options.uints[string(api.SMTRandomSeed)] = uint32(config.RandomSeed)
 	}
 	for key, value := range config.solverParams {
 		key = strings.TrimPrefix(key, "z3.")
@@ -110,31 +113,31 @@ func NewG3SolverContextWithConfig(config SolverConfig) (*G3SolverContext, error)
 		}
 		switch typed := value.(type) {
 		case uint32:
-			uintOptions[key] = typed
+			options.uints[key] = typed
 		case uint:
 			if uint64(typed) > math.MaxInt32 {
 				return nil, fmt.Errorf("solver parameter %s is out of range: %d", key, typed)
 			}
-			uintOptions[key] = uint32(typed)
+			options.uints[key] = uint32(typed)
 		case int:
 			if typed < 0 || uint64(typed) > math.MaxInt32 {
 				return nil, fmt.Errorf("solver parameter %s is out of range: %d", key, typed)
 			}
-			uintOptions[key] = uint32(typed)
+			options.uints[key] = uint32(typed)
 		case int64:
 			if typed < 0 || uint64(typed) > math.MaxInt32 {
 				return nil, fmt.Errorf("solver parameter %s is out of range: %d", key, typed)
 			}
-			uintOptions[key] = uint32(typed)
+			options.uints[key] = uint32(typed)
 		case bool:
-			textOptions[key] = strconv.FormatBool(typed)
+			options.bools[key] = typed
 		case string:
-			textOptions[key] = typed
+			options.symbols[key] = typed
 		case float64:
-			textOptions[key] = strconv.FormatFloat(typed, 'g', -1, 64)
+			options.doubles[key] = typed
 		default:
 			return nil, fmt.Errorf("solver parameter %s has unsupported value type %T", key, value)
 		}
 	}
-	return newG3SolverContextWithOptions("QF_AUFNIA", uintOptions, textOptions)
+	return newG3SolverContextWithTypedOptions("QF_AUFNIA", options)
 }
