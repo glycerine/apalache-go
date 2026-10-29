@@ -335,7 +335,14 @@ func runTranspile(ctx context.Context, args []string, stdout, stderr io.Writer) 
 		fmt.Fprintf(stderr, "cannot write transpile run metadata: %v\n", err)
 		return exitTool
 	}
-	if err = writeDebugApplicationConfig(outputPaths, applicationConfig, "transpile", selectedConfig, sourcePath, *outDir, *runDir, commonOptions); err != nil {
+	effectiveInit, effectiveNext := *initName, *nextName
+	if effectiveInit == "" && configuration.TLCConfig == nil {
+		effectiveInit, effectiveNext = "Init", "Next"
+	}
+	debugOverlay := transpileDebugApplicationOverlay(
+		*outputPath, *configPath, *constantInit, effectiveInit, effectiveNext,
+		invariants, temporalProperties, rows, !*disablePolytypes)
+	if err = writeDebugApplicationConfig(outputPaths, applicationConfig, "transpile", selectedConfig, sourcePath, *outDir, *runDir, commonOptions, debugOverlay); err != nil {
 		fmt.Fprintf(stderr, "cannot write transpile debug configuration: %v\n", err)
 		return exitTool
 	}
@@ -478,6 +485,11 @@ func runTracee(ctx context.Context, args []string, stdout, stderr io.Writer) int
 		fmt.Fprintln(stderr, "tracee requires a trace and at least one expression operator")
 		return exitUsage
 	}
+	rows, featureErr := resolveRowsFeature(*useRows, *features)
+	if featureErr != nil {
+		fmt.Fprintln(stderr, featureErr)
+		return exitUsage
+	}
 	outputPaths, err := prepareCommandOutputPaths(*outDir, *runDir, sourcePath, "tracee")
 	if err != nil {
 		fmt.Fprintf(stderr, "cannot configure tracee output: %v\n", err)
@@ -487,14 +499,10 @@ func runTracee(ctx context.Context, args []string, stdout, stderr io.Writer) int
 		fmt.Fprintf(stderr, "cannot write tracee run metadata: %v\n", err)
 		return exitTool
 	}
-	if err = writeDebugApplicationConfig(outputPaths, applicationConfig, "tracee", selectedConfig, sourcePath, *outDir, *runDir, commonOptions); err != nil {
+	debugOverlay := traceeDebugApplicationOverlay(*tracePath, expressions, rows, !*disablePolytypes)
+	if err = writeDebugApplicationConfig(outputPaths, applicationConfig, "tracee", selectedConfig, sourcePath, *outDir, *runDir, commonOptions, debugOverlay); err != nil {
 		fmt.Fprintf(stderr, "cannot write tracee debug configuration: %v\n", err)
 		return exitTool
-	}
-	rows, featureErr := resolveRowsFeature(*useRows, *features)
-	if featureErr != nil {
-		fmt.Fprintln(stderr, featureErr)
-		return exitUsage
 	}
 	frontend := pal.ParseAndTypeCheckFile(ctx, sourcePath, pal.FrontendOptions{
 		LibraryPaths: libraryPaths,
@@ -706,6 +714,11 @@ func runTest(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "test requires FILE BEFORE ACTION ASSERTION, or BEFORE ACTION ASSERTION with a JSON source")
 		return exitUsage
 	}
+	rows, featureErr := resolveRowsFeature(*useRows, *features)
+	if featureErr != nil {
+		fmt.Fprintln(stderr, featureErr)
+		return exitUsage
+	}
 	outputPaths, err := prepareCommandOutputPaths(*outDir, *runDir, path, "test")
 	if err != nil {
 		fmt.Fprintf(stderr, "cannot configure test output: %v\n", err)
@@ -715,14 +728,20 @@ func runTest(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "cannot write test run metadata: %v\n", err)
 		return exitTool
 	}
-	if err = writeDebugApplicationConfig(outputPaths, applicationConfig, "test", selectedConfig, path, *outDir, *runDir, commonOptions); err != nil {
+	debugTuning := make(map[string]string)
+	if applicationConfig.Checker.Tuning != nil {
+		for key, value := range *applicationConfig.Checker.Tuning {
+			debugTuning[key] = value
+		}
+	}
+	debugTuning["smt.randomSeed"] = strconv.FormatUint(uint64(seed), 10)
+	debugBackend := &checkerBackendOptions{algorithm: "incremental", encoding: "oopsla19", solver: "z3"}
+	debugOverlay := checkDebugApplicationOverlay(
+		debugBackend, debugTuning, "", *constantInit, before, action, []string{assertion}, nil,
+		1, 1, 0, true, true, !*disablePolytypes, rows, "")
+	if err = writeDebugApplicationConfig(outputPaths, applicationConfig, "test", selectedConfig, path, *outDir, *runDir, commonOptions, debugOverlay); err != nil {
 		fmt.Fprintf(stderr, "cannot write test debug configuration: %v\n", err)
 		return exitTool
-	}
-	rows, featureErr := resolveRowsFeature(*useRows, *features)
-	if featureErr != nil {
-		fmt.Fprintln(stderr, featureErr)
-		return exitUsage
 	}
 	frontend := pal.ParseAndTypeCheckFile(ctx, path, pal.FrontendOptions{
 		LibraryPaths: libraryPaths,

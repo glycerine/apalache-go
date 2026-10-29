@@ -488,10 +488,28 @@ Positive == x > 0
 		t.Fatal(err)
 	}
 	var stdout, stderr bytes.Buffer
-	args := []string{"test", "--config-file=test.json", "Before", "Increment", "Positive"}
+	runDir := filepath.Join(directory, "test-debug-run")
+	args := []string{"test", "--config-file=test.json", "--run-dir=" + runDir, "--debug", "Before", "Increment", "Positive"}
 	if code := run(context.Background(), args, &stdout, &stderr); code != exitOK ||
 		!strings.Contains(stdout.String(), "No example found") {
 		t.Fatalf("configured test = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
+	}
+	data, err := os.ReadFile(filepath.Join(runDir, "application-config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var snapshot map[string]any
+	if err = json.Unmarshal(data, &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	checker := snapshot["checker"].(map[string]any)
+	if checker["cinit"] != "CInit" || checker["init"] != "Before" || checker["next"] != "Increment" ||
+		checker["length"] != float64(1) || checker["smt-solver"] != "z3" {
+		t.Fatalf("effective test checker configuration = %#v", checker)
+	}
+	seed := checker["tuning"].(map[string]any)["smt.randomSeed"]
+	if seed == nil || seed == "0" {
+		t.Fatalf("effective test random seed = %#v", seed)
 	}
 }
 
@@ -580,12 +598,25 @@ Inv == x = x
 	}
 	stdout.Reset()
 	stderr.Reset()
-	if code := run(context.Background(), []string{"transpile", "--config-file=transpile.json", "--output=-"}, &stdout, &stderr); code != exitOK ||
+	runDir := filepath.Join(directory, "transpile-debug-run")
+	if code := run(context.Background(), []string{"transpile", "--config-file=transpile.json", "--run-dir=" + runDir, "--debug", "--output=-"}, &stdout, &stderr); code != exitOK ||
 		!strings.Contains(stdout.String(), ":action Next$0000") {
 		t.Fatalf("transpile output override = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
 	}
 	if _, err = os.Stat("configured.vmt"); !os.IsNotExist(err) {
 		t.Fatalf("configured output was used despite CLI override: %v", err)
+	}
+	debugData, err := os.ReadFile(filepath.Join(runDir, "application-config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var snapshot map[string]any
+	if err = json.Unmarshal(debugData, &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	checker := snapshot["checker"].(map[string]any)
+	if snapshot["output"] != "-" || checker["init"] != "Init" || checker["next"] != "Next" {
+		t.Fatalf("effective transpile configuration = %#v", snapshot)
 	}
 }
 
@@ -625,9 +656,27 @@ Increment == x + 1
 
 	stdout.Reset()
 	stderr.Reset()
-	if code := run(context.Background(), []string{"tracee", "--config-file=tracee.json", "--expressions=Increment"}, &stdout, &stderr); code != exitOK ||
-		!bytes.Contains(stdout.Bytes(), []byte(`"Increment":{"#bigint":"5"}`)) || bytes.Contains(stdout.Bytes(), []byte(`"Double"`)) {
+	runDir := filepath.Join(directory, "tracee-debug-run")
+	if code := run(context.Background(), []string{"tracee", "--config-file=tracee.json", "--run-dir=" + runDir, "--debug", "--expressions=Increment"}, &stdout, &stderr); code != exitOK ||
+		!strings.Contains(stdout.String(), "Wrote evaluated ITF trace") {
 		t.Fatalf("tracee expression override = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
+	}
+	evaluated, err := os.ReadFile(filepath.Join(runDir, "example.itf.json"))
+	if err != nil || !bytes.Contains(evaluated, []byte(`"Increment":{"#bigint":"5"}`)) || bytes.Contains(evaluated, []byte(`"Double"`)) {
+		t.Fatalf("tracee evaluated output = %q, %v", evaluated, err)
+	}
+	debugData, err := os.ReadFile(filepath.Join(runDir, "application-config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var snapshot map[string]any
+	if err = json.Unmarshal(debugData, &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	tracee := snapshot["tracee"].(map[string]any)
+	expressions := tracee["expressions"].([]any)
+	if tracee["trace"] != "input.itf.json" || len(expressions) != 1 || expressions[0] != "Increment" {
+		t.Fatalf("effective tracee configuration = %#v", tracee)
 	}
 }
 

@@ -177,6 +177,38 @@ func frontendDebugApplicationOverlay(output string, rows, inferPoly bool) map[st
 	}
 }
 
+func traceeDebugApplicationOverlay(trace string, expressions []string, rows, inferPoly bool) map[string]any {
+	overlay := frontendDebugApplicationOverlay("", rows, inferPoly)
+	delete(overlay, "output")
+	overlay["tracee"] = map[string]any{
+		"trace":       trace,
+		"expressions": append([]string(nil), expressions...),
+	}
+	return overlay
+}
+
+func transpileDebugApplicationOverlay(
+	output, TLCConfig, constantInit, init, next string,
+	invariants, temporal []string,
+	rows, inferPoly bool,
+) map[string]any {
+	overlay := frontendDebugApplicationOverlay(output, rows, inferPoly)
+	checker := map[string]any{
+		"init":     init,
+		"inv":      append([]string(nil), invariants...),
+		"next":     next,
+		"temporal": append([]string(nil), temporal...),
+	}
+	if TLCConfig != "" {
+		checker["config"] = TLCConfig
+	}
+	if constantInit != "" {
+		checker["cinit"] = constantInit
+	}
+	overlay["checker"] = checker
+	return overlay
+}
+
 func cloneStringMap(source map[string]string) map[string]string {
 	result := make(map[string]string, len(source))
 	for key, value := range source {
