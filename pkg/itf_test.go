@@ -281,6 +281,28 @@ func TestUnmarshalITFTrace(t *testing.T) {
 	}
 }
 
+func TestUnmarshalITFHeaderAndEmptyTraceScalaCases(t *testing.T) {
+	valid := []byte(`{"#meta":{"varTypes":{"x":"Int","y":"Str -> Bool"}},"vars":["x","y"],"states":[]}`)
+	states, err := UnmarshalITFTrace(valid)
+	if err != nil || len(states) != 0 {
+		t.Fatalf("valid empty trace = %#v, %v", states, err)
+	}
+	invalid := []string{
+		`{}`,
+		`{"#meta":{},"vars":[],"states":[]}`,
+		`{"#meta":{"varTypes":42},"vars":["x"],"states":[]}`,
+		`{"#meta":{"varTypes":{"x":"Int"}},"vars":[],"states":[]}`,
+		`{"#meta":{"varTypes":{}},"vars":["x"],"states":[]}`,
+		`{"#meta":{"varTypes":{"x":"Int"}},"vars":["x"]}`,
+		`{"#meta":{"varTypes":{"x":"Int"}},"vars":["x"],"states":2}`,
+	}
+	for _, input := range invalid {
+		if _, err := UnmarshalITFTrace([]byte(input)); err == nil {
+			t.Errorf("accepted invalid header/trace: %s", input)
+		}
+	}
+}
+
 func TestDecodeITFStateAcceptsPartialStatesAndAggregatesErrors(t *testing.T) {
 	raw := map[string]any{ITFMetaField: map[string]any{"index": json.Number("0")}, "x": json.Number("1")}
 	state, err := DecodeITFState(raw, map[string]Type{"x": IntT1, "y": StrT1})
@@ -356,6 +378,7 @@ func TestUnmarshalITFTraceWithSourceTypedParams(t *testing.T) {
 func TestUnmarshalITFTraceRejectsMalformedContent(t *testing.T) {
 	cases := []string{
 		`{}`,
+		`{"#meta":{"varTypes":{}},"vars":[],"states":[]}`,
 		`{"#meta":{"varTypes":{"x":"Int"}},"vars":[],"states":[]}`,
 		`{"#meta":{"varTypes":{}},"vars":["x"],"states":[]}`,
 		`{"#meta":{"varTypes":{"x":"Int"}},"vars":["x"],"states":[{}]}`,
@@ -372,16 +395,38 @@ func TestUnmarshalITFTraceRejectsMalformedContent(t *testing.T) {
 
 func TestDecodeITFRejectsShapeAndTypeMismatches(t *testing.T) {
 	setType, _ := NewSetType(IntT1)
+	boolSetType, _ := NewSetType(BoolT1)
+	seqType, _ := NewSeqType(IntT1)
 	tupleType, _ := NewTupleType(IntT1, BoolT1)
 	funType, _ := NewFunType(IntT1, BoolT1)
+	recordRow, _ := NewRowType(map[string]Type{"x": IntT1, "y": StrT1}, nil)
+	recordType := NewRecordRowType(recordRow)
+	variantRow, _ := NewRowType(map[string]Type{"A": IntT1, "B": StrT1}, nil)
+	variantType := NewVariantType(variantRow)
 	cases := []struct {
 		raw any
 		typ Type
 	}{
-		{true, IntT1}, {"one_OF_A", StrT1}, {"one_OF_A", mustConstType(t, "B")},
+		{true, IntT1}, {"cake", IntT1}, {"cake", mustConstType(t, "X")},
+		{"one_OF_A", StrT1}, {"one_OF_A", mustConstType(t, "B")},
+		{json.Number("1"), StrT1}, {[]any{}, funType},
+		{map[string]any{}, recordType},
+		{map[string]any{"x": json.Number("1")}, recordType},
+		{map[string]any{"x": json.Number("1"), "y": "ok", "z": true}, recordType},
+		{map[string]any{"x": "bad", "y": "ok"}, recordType},
+		{map[string]any{ITFTupleField: []any{json.Number("1"), true}}, setType},
 		{map[string]any{ITFSetField: []any{}, "junk": true}, setType},
+		{map[string]any{ITFSetField: []any{true}}, setType},
+		{map[string]any{ITFSetField: []any{true, false}, "junk": true}, boolSetType},
 		{map[string]any{ITFTupleField: []any{json.Number("1")}}, tupleType},
 		{map[string]any{ITFMapField: []any{[]any{json.Number("1")}}}, funType},
+		{map[string]any{ITFMapField: []any{[]any{json.Number("1"), json.Number("2")}}}, funType},
+		{map[string]any{ITFTagField: "C", ITFValueField: json.Number("1")}, variantType},
+		{map[string]any{ITFTagField: "A", ITFValueField: "bad"}, variantType},
+		{map[string]any{ITFTagField: "A"}, variantType},
+		{[]any{json.Number("1")}, tupleType},
+		{map[string]any{ITFSetField: []any{}}, seqType},
+		{map[string]any{ITFUnserializableField: "Int"}, IntT1},
 	}
 	for _, test := range cases {
 		if _, err := DecodeITFValue(test.raw, test.typ); err == nil {

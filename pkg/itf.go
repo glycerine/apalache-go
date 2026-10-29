@@ -406,6 +406,9 @@ func unmarshalITFTrace(data []byte, parameterTypes map[string]Type) ([]TraceStat
 	if !ok {
 		return nil, itfFormat("ITF JSON must declare a %s array", ITFVarsField)
 	}
+	if len(rawVars) == 0 {
+		return nil, itfFormat("ITF JSON must declare at least one variable")
+	}
 	variables := make([]string, len(rawVars))
 	variableSet := make(map[string]struct{}, len(rawVars))
 	for i, raw := range rawVars {
