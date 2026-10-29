@@ -682,6 +682,39 @@ Next == ` + test.next + `
 	}
 }
 
+func TestCheckBoundedSafetyProjectsIntegerWitnessPredicateDeadlock(t *testing.T) {
+	frontend := ParseAndTypeCheckSource(context.Background(), "WitnessPredicateDeadlock.tla", `---- MODULE WitnessPredicateDeadlock ----
+EXTENDS Integers
+VARIABLE
+\* @type: Int;
+x
+Init == \E i \in {0, 1}: x = i
+Next == \E j \in 0..(x - x + 1): x' = j /\ j > x
+====
+`, FrontendOptions{}, TypeCheckOptions{})
+	if !frontend.OK() {
+		t.Fatalf("frontend diagnostics = %v", frontend.Diagnostics)
+	}
+	prepared, err := PrepareSafetyTransitions(frontend.Native, SafetyPipelineOptions{
+		Specification: SpecificationConfiguration{Behavior: InitNextSpec{Init: "Init", Next: "Next"}},
+		Sources:       frontend.Sources,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Outcome != SafetyDeadlock || len(result.States) != 1 {
+		t.Fatalf("integer-witness deadlock = %#v", result)
+	}
+	value, formatErr := FormatTLAExpression(result.States[0].Values["x"])
+	if formatErr != nil || value != "1" {
+		t.Fatalf("integer-witness deadlocked state x = %q, %v", value, formatErr)
+	}
+}
+
 func TestCheckBoundedSafetyEnforcesConfiguredConstraints(t *testing.T) {
 	for _, test := range []struct {
 		name              string

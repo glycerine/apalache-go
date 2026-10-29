@@ -96,6 +96,14 @@ func projectEnabled(expression Expr, primed map[string]Expr) (Expr, bool) {
 			if !exact {
 				return nil, false
 			}
+			if domain, integerRange := arguments[1].(*OperExpr); integerRange &&
+				domain.Operator().Name() == "INT_RANGE" && len(domain.Arguments()) == 2 {
+				binder, named := arguments[0].(*NameExpr)
+				if !named {
+					return nil, false
+				}
+				return projectIntegerRangeExistential(binder.Name(), domain.Arguments()[0], domain.Arguments()[1], body)
+			}
 			if value, constant := boolConstant(body); constant && value {
 				return projectedSetNonempty(arguments[1])
 			}
@@ -114,6 +122,108 @@ func projectEnabled(expression Expr, primed map[string]Expr) (Expr, bool) {
 	default:
 		return expression, true
 	}
+}
+
+// projectIntegerRangeExistential eliminates a bounded integer witness when
+// its predicate is a conjunction of state-only conditions and lower/upper
+// bounds on the witness. Over integers, strict bounds are shifted by one.
+func projectIntegerRangeExistential(binder string, domainLower, domainUpper, predicate Expr) (Expr, bool) {
+	lowers := []Expr{domainLower}
+	uppers := []Expr{domainUpper}
+	conditions := make([]Expr, 0)
+	terms := []Expr{predicate}
+	if conjunction, ok := predicate.(*OperExpr); ok && conjunction.Operator().Name() == "AND" {
+		terms = conjunction.Arguments()
+	}
+	for _, term := range terms {
+		if value, constant := boolConstant(term); constant {
+			if !value {
+				return boolExpr(false), true
+			}
+			continue
+		}
+		operation, comparison := term.(*OperExpr)
+		if !comparison || len(operation.Arguments()) != 2 {
+			if expressionContainsName(term, binder) {
+				return nil, false
+			}
+			conditions = append(conditions, term)
+			continue
+		}
+		arguments := operation.Arguments()
+		leftBinder := isProjectedBinder(arguments[0], binder)
+		rightBinder := isProjectedBinder(arguments[1], binder)
+		if !leftBinder && !rightBinder {
+			if expressionContainsName(term, binder) {
+				return nil, false
+			}
+			conditions = append(conditions, term)
+			continue
+		}
+		if leftBinder == rightBinder || expressionContainsName(arguments[1], binder) && leftBinder ||
+			expressionContainsName(arguments[0], binder) && rightBinder {
+			return nil, false
+		}
+		other := arguments[1]
+		if rightBinder {
+			other = arguments[0]
+		}
+		switch operation.Operator().Name() {
+		case "EQ":
+			lowers = append(lowers, other)
+			uppers = append(uppers, other)
+		case "GE":
+			if leftBinder {
+				lowers = append(lowers, other)
+			} else {
+				uppers = append(uppers, other)
+			}
+		case "GT":
+			if leftBinder {
+				lowers = append(lowers, shiftIntegerBound(other, 1))
+			} else {
+				uppers = append(uppers, shiftIntegerBound(other, -1))
+			}
+		case "LE":
+			if leftBinder {
+				uppers = append(uppers, other)
+			} else {
+				lowers = append(lowers, other)
+			}
+		case "LT":
+			if leftBinder {
+				uppers = append(uppers, shiftIntegerBound(other, -1))
+			} else {
+				lowers = append(lowers, shiftIntegerBound(other, 1))
+			}
+		default:
+			return nil, false
+		}
+	}
+	for _, lower := range lowers {
+		for _, upper := range uppers {
+			conditions = append(conditions, MustOperExpr(Op("LE"), Typed(BoolT1), lower, upper))
+		}
+	}
+	return booleanAnd(conditions...), true
+}
+
+func isProjectedBinder(expression Expr, binder string) bool {
+	name, ok := expression.(*NameExpr)
+	return ok && name.Name() == binder
+}
+
+func shiftIntegerBound(expression Expr, amount int64) Expr {
+	if amount == 0 {
+		return expression
+	}
+	operator := "PLUS"
+	value := amount
+	if amount < 0 {
+		operator = "MINUS"
+		value = -amount
+	}
+	return MustOperExpr(Op(operator), Typed(IntT1), expression, NewValueExpr(Int64Value(value), Typed(IntT1)))
 }
 
 func projectedSetNonempty(set Expr) (Expr, bool) {
