@@ -113,6 +113,15 @@ func CheckBoundedSafetyWithOptions(
 		return BoundedSafetyResult{}, fmt.Errorf("module has no normalized initial transitions")
 	}
 	nextTransitions := TransitionsFromModule(module, NormalizedNextPrefix)
+	nextEnabled := make([]Expr, len(nextTransitions))
+	for index, transition := range nextTransitions {
+		var exact bool
+		nextEnabled[index], exact = transitionEnabledProjection(transition)
+		if !exact {
+			nextEnabled = nil
+			break
+		}
+	}
 	var stateInvariants []namedExpression
 	var actionInvariants []namedExpression
 	var traceInvariants []namedTraceInvariant
@@ -232,7 +241,7 @@ func CheckBoundedSafetyWithOptions(
 		module:    module,
 		constants: constants, variables: variables, constantInit: constantInit,
 		hasConstantInit: hasConstantInit, assumptions: assumptions,
-		initTransitions: initTransitions, nextTransitions: nextTransitions,
+		initTransitions: initTransitions, nextTransitions: nextTransitions, nextEnabled: nextEnabled,
 		stateInvariants: stateInvariants, actionInvariants: actionInvariants,
 		traceInvariants: traceInvariants, variableDeclarations: variableDeclarations,
 		maxSteps: options.MaxSteps, checkDeadlocks: options.CheckDeadlocks,
@@ -423,6 +432,7 @@ type modulePathInputs struct {
 	assumptions           []*AssumeDecl
 	initTransitions       []Expr
 	nextTransitions       []Expr
+	nextEnabled           []Expr
 	stateInvariants       []namedExpression
 	actionInvariants      []namedExpression
 	traceInvariants       []namedTraceInvariant
@@ -609,6 +619,30 @@ func searchSafetyPath(
 			*children = append(*children, child)
 		}
 	}
+	if inputs.checkDeadlocks && inputs.nextEnabled != nil && len(inputs.stateConstraints) == 0 && len(inputs.actionConstraints) == 0 {
+		enabled := make([]Expr, 0, len(inputs.nextEnabled))
+		for number, expression := range inputs.nextEnabled {
+			if inputs.tuning.allowsTransition(len(path.next)+1, number) {
+				enabled = append(enabled, expression)
+			}
+		}
+		deadlockExpression := MustOperExpr(Op("NOT"), Typed(BoolT1), booleanOr(enabled...))
+		status, states, decodeErr := executor.CheckAndDecode(ctx, deadlockExpression)
+		if decodeErr != nil {
+			return false, fmt.Errorf("check projected deadlock at depth %d: %w", len(path.next), decodeErr)
+		}
+		if status == SMTUnknown {
+			result.Outcome = SafetyUnknown
+			return true, nil
+		}
+		if status == SMTSatisfiable {
+			if len(result.Counterexamples) != 0 {
+				return false, nil
+			}
+			return recordDeadlock(inputs, path, result, states)
+		}
+		return false, nil
+	}
 	if inputs.checkDeadlocks && !enabledNext {
 		if len(result.Counterexamples) != 0 {
 			return false, nil
@@ -622,22 +656,26 @@ func searchSafetyPath(
 			result.Outcome = SafetyUnknown
 			return true, nil
 		}
-		result.Outcome = SafetyDeadlock
-		result.Depth = len(path.next)
-		result.InitTransition = path.init
-		result.NextTransitions = append([]int(nil), path.next...)
-		result.States = states
-		deadlock := BoundedCounterexample{
-			Module: inputs.module,
-			Depth:  len(path.next), Deadlock: true, InitTransition: path.init,
-			NextTransitions: append([]int(nil), path.next...), States: states,
-		}
-		if err = notifyCounterexampleListeners(inputs.listeners, deadlock, 0); err != nil {
-			return false, err
-		}
-		return true, nil
+		return recordDeadlock(inputs, path, result, states)
 	}
 	return false, nil
+}
+
+func recordDeadlock(inputs modulePathInputs, path boundedPath, result *BoundedSafetyResult, states []DecodedState) (bool, error) {
+	result.Outcome = SafetyDeadlock
+	result.Depth = len(path.next)
+	result.InitTransition = path.init
+	result.NextTransitions = append([]int(nil), path.next...)
+	result.States = states
+	deadlock := BoundedCounterexample{
+		Module: inputs.module,
+		Depth:  len(path.next), Deadlock: true, InitTransition: path.init,
+		NextTransitions: append([]int(nil), path.next...), States: states,
+	}
+	if err := notifyCounterexampleListeners(inputs.listeners, deadlock, 0); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func safetyExcludedViews(result *BoundedSafetyResult) [][]Expr {

@@ -600,6 +600,39 @@ Next == x < 2 /\ \E i \in x..(x + 2): x' = i
 	}
 }
 
+func TestCheckBoundedSafetyProjectsVariableWidthSymbolicRangeDeadlock(t *testing.T) {
+	frontend := ParseAndTypeCheckSource(context.Background(), "VariableRangeDeadlock.tla", `---- MODULE VariableRangeDeadlock ----
+EXTENDS Integers
+VARIABLE
+\* @type: Int;
+x
+Init == \E i \in {0, 1}: x = i
+Next == \E j \in x..0: x' = j
+====
+`, FrontendOptions{}, TypeCheckOptions{})
+	if !frontend.OK() {
+		t.Fatalf("frontend diagnostics = %v", frontend.Diagnostics)
+	}
+	prepared, err := PrepareSafetyTransitions(frontend.Native, SafetyPipelineOptions{
+		Specification: SpecificationConfiguration{Behavior: InitNextSpec{Init: "Init", Next: "Next"}},
+		Sources:       frontend.Sources,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Outcome != SafetyDeadlock || result.Depth != 0 || len(result.States) != 1 {
+		t.Fatalf("variable-width symbolic-range deadlock = %#v", result)
+	}
+	value, err := FormatTLAExpression(result.States[0].Values["x"])
+	if err != nil || value != "1" {
+		t.Fatalf("deadlocked initial state x = %q, %v", value, err)
+	}
+}
+
 func TestCheckBoundedSafetyEnforcesConfiguredConstraints(t *testing.T) {
 	for _, test := range []struct {
 		name              string
