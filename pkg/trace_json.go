@@ -43,7 +43,7 @@ func FormatDecodedTraceTLC(module *Module, states []DecodedState) (string, error
 		}
 	}
 	var output strings.Builder
-	output.WriteString("@!@!@STARTMSG 2262:0 @!@!@\nCreated by Apalache Go\n@!@!@ENDMSG 2262 @!@!@\n")
+	output.WriteString("@!@!@STARTMSG 2262:0 @!@!@\nCreated by Apalache\n@!@!@ENDMSG 2262 @!@!@\n")
 	output.WriteString("@!@!@STARTMSG 2110:1 @!@!@\nInvariant is violated.\n@!@!@ENDMSG 2110 @!@!@\n")
 	output.WriteString("@!@!@STARTMSG 2121:1 @!@!@\nThe behavior up to this point is:\n@!@!@ENDMSG 2121 @!@!@\n")
 	for index, state := range states {
@@ -74,7 +74,7 @@ func FormatDecodedTraceTLC(module *Module, states []DecodedState) (string, error
 				fmt.Fprintf(&output, "%s%s = %s\n", prefix, ParseableTLAName(name), value)
 			}
 		}
-		output.WriteString("@!@!@ENDMSG 2217 @!@!@\n")
+		output.WriteString("\n@!@!@ENDMSG 2217 @!@!@\n")
 	}
 	return output.String(), nil
 }

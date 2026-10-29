@@ -77,6 +77,50 @@ func TestMarshalDecodedTraceFormatsRejectEmptyTrace(t *testing.T) {
 	}
 }
 
+func TestFormatDecodedTraceTLCMatchesScalaMessageLayout(t *testing.T) {
+	module := NewModule("test", []Decl{NewVarDecl("x", Typed(IntT1)), NewVarDecl("y", Typed(IntT1))})
+	tests := []struct {
+		name   string
+		states []DecodedState
+		want   string
+	}{
+		{
+			name:   "single variable",
+			states: []DecodedState{{Values: map[string]Expr{"x": intLiteral(2)}}},
+			want: "@!@!@STARTMSG 2262:0 @!@!@\nCreated by Apalache\n@!@!@ENDMSG 2262 @!@!@\n" +
+				"@!@!@STARTMSG 2110:1 @!@!@\nInvariant is violated.\n@!@!@ENDMSG 2110 @!@!@\n" +
+				"@!@!@STARTMSG 2121:1 @!@!@\nThe behavior up to this point is:\n@!@!@ENDMSG 2121 @!@!@\n" +
+				"@!@!@STARTMSG 2217:4 @!@!@\n1: <Initial predicate>\nx = 2\n\n" +
+				"@!@!@ENDMSG 2217 @!@!@\n",
+		},
+		{
+			name: "multiple variables and steps",
+			states: []DecodedState{
+				{Values: map[string]Expr{"x": intLiteral(0), "y": intLiteral(8)}},
+				{Values: map[string]Expr{"x": intLiteral(1), "y": intLiteral(9)}},
+			},
+			want: "@!@!@STARTMSG 2262:0 @!@!@\nCreated by Apalache\n@!@!@ENDMSG 2262 @!@!@\n" +
+				"@!@!@STARTMSG 2110:1 @!@!@\nInvariant is violated.\n@!@!@ENDMSG 2110 @!@!@\n" +
+				"@!@!@STARTMSG 2121:1 @!@!@\nThe behavior up to this point is:\n@!@!@ENDMSG 2121 @!@!@\n" +
+				"@!@!@STARTMSG 2217:4 @!@!@\n1: <Initial predicate>\n/\\ x = 0\n/\\ y = 8\n\n" +
+				"@!@!@ENDMSG 2217 @!@!@\n" +
+				"@!@!@STARTMSG 2217:4 @!@!@\n2: <Next>\n/\\ x = 1\n/\\ y = 9\n\n" +
+				"@!@!@ENDMSG 2217 @!@!@\n",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := FormatDecodedTraceTLC(module, test.states)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != test.want {
+				t.Fatalf("TLC output:\n%q\nwant:\n%q", got, test.want)
+			}
+		})
+	}
+}
+
 func TestUnmarshalApalacheJSONTrace(t *testing.T) {
 	x := NewNameExpr("x", Typed(IntT1))
 	y := NewNameExpr("y", Typed(BoolT1))
