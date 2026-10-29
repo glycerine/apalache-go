@@ -44,6 +44,81 @@ func TestVCGeneratorSplitsStateInvariantAndNegatesFreshCopies(t *testing.T) {
 	}
 }
 
+func TestVCGeneratorScalaOracleCases(t *testing.T) {
+	x := NewNameExpr("x", Typed(IntT1))
+	zero := NewValueExpr(Int64Value(0), Typed(IntT1))
+	ten := NewValueExpr(Int64Value(10), Typed(IntT1))
+	greaterThanZero := MustOperExpr(Op("GT"), Typed(BoolT1), x, zero)
+	lessThanTen := MustOperExpr(Op("LT"), Typed(BoolT1), x, ten)
+	assertPair := func(t *testing.T, module *Module, positivePrefix, negativePrefix string, want []Expr) {
+		t.Helper()
+		result, err := NewVCGenerator(IdleTracker{}).GenerateInvariant(module, "Inv")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for index, expected := range want {
+			suffix := string(rune('0' + index))
+			positive, found := OperatorBody(result, positivePrefix+suffix)
+			if !found || !EqualExpr(positive, expected) {
+				t.Fatalf("positive VC %d = %v, want %v", index, positive, expected)
+			}
+			negative, found := OperatorBody(result, negativePrefix+suffix)
+			not, ok := negative.(*OperExpr)
+			if !found || !ok || not.Operator().Name() != "NOT" || !EqualExpr(not.Arguments()[0], expected) {
+				t.Fatalf("negative VC %d = %v, want NOT(%v)", index, negative, expected)
+			}
+		}
+	}
+	module := func(body Expr) *Module {
+		return NewModule("M", []Decl{NewVarDecl("x", Typed(IntT1)), vcOperator("Inv", nil, body)})
+	}
+
+	t.Run("simple invariant", func(t *testing.T) {
+		assertPair(t, module(greaterThanZero), NormalizedVCInvariantPrefix, NormalizedVCNotInvariantPrefix,
+			[]Expr{greaterThanZero})
+	})
+	t.Run("action invariant", func(t *testing.T) {
+		prime := MustOperExpr(Op("PRIME"), Typed(IntT1), x)
+		action := MustOperExpr(Op("GT"), Typed(BoolT1), prime, x)
+		assertPair(t, module(action), NormalizedVCActionPrefix, NormalizedVCNotActionPrefix, []Expr{action})
+	})
+	t.Run("conjunctive invariant", func(t *testing.T) {
+		conjunction := MustOperExpr(Op("AND"), Typed(BoolT1), greaterThanZero, lessThanTen)
+		assertPair(t, module(conjunction), NormalizedVCInvariantPrefix, NormalizedVCNotInvariantPrefix,
+			[]Expr{greaterThanZero, lessThanTen})
+	})
+	t.Run("conjunction under label", func(t *testing.T) {
+		label := NewValueExpr(StringValue("L0"), Typed(StrT1))
+		conjunction := MustOperExpr(Op("AND"), Typed(BoolT1), greaterThanZero, lessThanTen)
+		body := MustOperExpr(Op("LABEL"), Typed(BoolT1), conjunction, label)
+		want := []Expr{
+			MustOperExpr(Op("LABEL"), Typed(BoolT1), greaterThanZero, label),
+			MustOperExpr(Op("LABEL"), Typed(BoolT1), lessThanTen, label),
+		}
+		assertPair(t, module(body), NormalizedVCInvariantPrefix, NormalizedVCNotInvariantPrefix, want)
+	})
+	t.Run("conjunction under nested universals", func(t *testing.T) {
+		setType := mustSet(IntT1)
+		set := NewNameExpr("S", Typed(setType))
+		z := NewNameExpr("z", Typed(IntT1))
+		y := NewNameExpr("y", Typed(IntT1))
+		gt := MustOperExpr(Op("GT"), Typed(BoolT1), y, zero)
+		lt := MustOperExpr(Op("LT"), Typed(BoolT1), y, ten)
+		wrap := func(leaf Expr) Expr {
+			inner := MustOperExpr(Op("FORALL3"), Typed(BoolT1), y, set, leaf)
+			return MustOperExpr(Op("FORALL3"), Typed(BoolT1), z, set, inner)
+		}
+		body := MustOperExpr(Op("FORALL3"), Typed(BoolT1), z, set,
+			MustOperExpr(Op("FORALL3"), Typed(BoolT1), y, set,
+				MustOperExpr(Op("AND"), Typed(BoolT1), gt, lt)))
+		withSet := NewModule("M", []Decl{
+			NewVarDecl("x", Typed(IntT1)), NewVarDecl("S", Typed(setType)), vcOperator("Inv", nil, body),
+		})
+		assertPair(t, withSet, NormalizedVCInvariantPrefix, NormalizedVCNotInvariantPrefix,
+			[]Expr{wrap(gt), wrap(lt)})
+	})
+}
+
 func TestVCGeneratorDistributesUniversalsLabelsAndNormalizesAssignment(t *testing.T) {
 	x := NewNameExpr("x", Typed(IntT1))
 	i := NewNameExpr("i", Typed(IntT1))
@@ -81,8 +156,16 @@ func TestVCGeneratorTraceInvariantAndView(t *testing.T) {
 	row, _ := NewRowType(map[string]Type{"x": IntT1}, nil)
 	history, _ := NewSeqType(NewRecordRowType(row))
 	traceType, _ := NewOperatorType([]Type{history}, BoolT1)
-	trace := NewOperDecl("TraceInv", []OperatorParam{ValueParam("h")},
-		NewValueExpr(BoolValue(true), Typed(BoolT1)), Typed(traceType))
+	h := NewNameExpr("h", Typed(history))
+	length := MustOperExpr(Op("Sequences!Len"), Typed(IntT1), h)
+	last := MustOperExpr(Op("FUN_APP"), Typed(NewRecordRowType(row)), h, length)
+	first := MustOperExpr(Op("FUN_APP"), Typed(NewRecordRowType(row)), h,
+		NewValueExpr(Int64Value(1), Typed(IntT1)))
+	field := NewValueExpr(StringValue("x"), Typed(StrT1))
+	traceBody := MustOperExpr(Op("GT"), Typed(BoolT1),
+		MustOperExpr(Op("FUN_APP"), Typed(IntT1), last, field),
+		MustOperExpr(Op("FUN_APP"), Typed(IntT1), first, field))
+	trace := NewOperDecl("TraceInv", []OperatorParam{ValueParam("h")}, traceBody, Typed(traceType))
 	viewType, _ := NewOperatorType(nil, IntT1)
 	view := NewOperDecl("View", nil, NewNameExpr("x", Typed(IntT1)), Typed(viewType))
 	module := NewModule("M", []Decl{NewVarDecl("x", Typed(IntT1)), trace, view})
@@ -93,7 +176,8 @@ func TestVCGeneratorTraceInvariantAndView(t *testing.T) {
 	}
 	positive, positiveFound := OperatorBody(withTrace, NormalizedVCTracePrefix+"0")
 	negative, negativeFound := OperatorBody(withTrace, NormalizedVCNotTracePrefix+"0")
-	if !positiveFound || !negativeFound || positive.ID() == trace.Body().ID() || negative.(*OperExpr).Operator().Name() != "NOT" {
+	if !positiveFound || !negativeFound || positive.ID() == trace.Body().ID() || !EqualExpr(positive, traceBody) ||
+		negative.(*OperExpr).Operator().Name() != "NOT" || !EqualExpr(negative.(*OperExpr).Arguments()[0], traceBody) {
 		t.Fatalf("trace VCs = %v/%v, found %v/%v", positive, negative, positiveFound, negativeFound)
 	}
 	withView, err := generator.GenerateView(withTrace, "View")
