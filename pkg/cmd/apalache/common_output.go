@@ -165,6 +165,18 @@ func checkDebugApplicationOverlay(
 	}
 }
 
+func frontendDebugApplicationOverlay(output string, rows, inferPoly bool) map[string]any {
+	features := []string{}
+	if rows {
+		features = append(features, "rows")
+	}
+	return map[string]any{
+		"output":      output,
+		"features":    features,
+		"typechecker": map[string]any{"infer-poly": inferPoly},
+	}
+}
+
 func cloneStringMap(source map[string]string) map[string]string {
 	result := make(map[string]string, len(source))
 	for key, value := range source {

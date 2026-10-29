@@ -965,7 +965,24 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 		fmt.Fprintf(stderr, "cannot write simulation run metadata: %v\n", err)
 		return exitTool
 	}
-	if err = writeDebugApplicationConfig(outputPaths, applicationConfig, "simulate", selectedConfig, sourcePath, *outDir, *runDir, commonOptions); err != nil {
+	effectiveInit, effectiveNext := *initName, *nextName
+	if effectiveInit == "" && configuration.TLCConfig == nil {
+		effectiveInit, effectiveNext = "Init", "Next"
+	}
+	debugTuning := make(map[string]string)
+	if applicationConfig.Checker.Tuning != nil {
+		for key, value := range *applicationConfig.Checker.Tuning {
+			debugTuning[key] = value
+		}
+	}
+	debugTuning["search.simulation.maxRun"] = strconv.Itoa(*maxRun)
+	debugTuning["search.outputTraces"] = strconv.FormatBool(*outputTraces)
+	checkDeadlocks := applicationConfig.Checker.NoDeadlock == nil || !*applicationConfig.Checker.NoDeadlock
+	debugOverlay := checkDebugApplicationOverlay(
+		backend, debugTuning, *configPath, *constantInit, effectiveInit, effectiveNext,
+		invariants, temporalProperties, *length, *maxErrors, *timeoutSMT,
+		true, checkDeadlocks, !*disablePolytypes, rows, *viewName)
+	if err = writeDebugApplicationConfig(outputPaths, applicationConfig, "simulate", selectedConfig, sourcePath, *outDir, *runDir, commonOptions, debugOverlay); err != nil {
 		fmt.Fprintf(stderr, "cannot write simulate debug configuration: %v\n", err)
 		return exitTool
 	}
@@ -1640,6 +1657,11 @@ func runTypeCheck(ctx context.Context, args []string, stdout, stderr io.Writer) 
 		fmt.Fprintf(stderr, "invalid output %q (want summary, json, or a .tla/.json file)\n", *output)
 		return exitUsage
 	}
+	rows, featureErr := resolveRowsFeature(*useRows, *features)
+	if featureErr != nil {
+		fmt.Fprintln(stderr, featureErr)
+		return exitUsage
+	}
 	outputPaths, err := prepareCommandOutputPaths(*outDir, *runDir, sourcePath, "typecheck")
 	if err != nil {
 		fmt.Fprintf(stderr, "cannot configure typecheck output: %v\n", err)
@@ -1649,16 +1671,11 @@ func runTypeCheck(ctx context.Context, args []string, stdout, stderr io.Writer) 
 		fmt.Fprintf(stderr, "cannot write typecheck run metadata: %v\n", err)
 		return exitTool
 	}
-	if err = writeDebugApplicationConfig(outputPaths, applicationConfig, "typecheck", selectedConfig, sourcePath, *outDir, *runDir, commonOptions); err != nil {
+	debugOverlay := frontendDebugApplicationOverlay(*output, rows, !*disablePolytypes)
+	if err = writeDebugApplicationConfig(outputPaths, applicationConfig, "typecheck", selectedConfig, sourcePath, *outDir, *runDir, commonOptions, debugOverlay); err != nil {
 		fmt.Fprintf(stderr, "cannot write typecheck debug configuration: %v\n", err)
 		return exitTool
 	}
-	rows, featureErr := resolveRowsFeature(*useRows, *features)
-	if featureErr != nil {
-		fmt.Fprintln(stderr, featureErr)
-		return exitUsage
-	}
-
 	result := pal.ParseAndTypeCheckFile(ctx, sourcePath, pal.FrontendOptions{
 		LibraryPaths: libraryPaths,
 	}, pal.TypeCheckOptions{UseRows: rows, NoRows: *features == "no-rows", DisablePolytypes: *disablePolytypes})
@@ -1794,6 +1811,11 @@ func runParse(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		fmt.Fprintf(stderr, "invalid output %q (want summary, json, or a .tla/.json file)\n", *output)
 		return exitUsage
 	}
+	rows, featureErr := resolveRowsFeature(false, *features)
+	if featureErr != nil {
+		fmt.Fprintln(stderr, featureErr)
+		return exitUsage
+	}
 	outputPaths, err := prepareCommandOutputPaths(*outDir, *runDir, sourcePath, "parse")
 	if err != nil {
 		fmt.Fprintf(stderr, "cannot configure parse output: %v\n", err)
@@ -1803,15 +1825,11 @@ func runParse(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		fmt.Fprintf(stderr, "cannot write parse run metadata: %v\n", err)
 		return exitTool
 	}
-	if err = writeDebugApplicationConfig(outputPaths, applicationConfig, "parse", selectedConfig, sourcePath, *outDir, *runDir, commonOptions); err != nil {
+	debugOverlay := frontendDebugApplicationOverlay(*output, rows, true)
+	if err = writeDebugApplicationConfig(outputPaths, applicationConfig, "parse", selectedConfig, sourcePath, *outDir, *runDir, commonOptions, debugOverlay); err != nil {
 		fmt.Fprintf(stderr, "cannot write parse debug configuration: %v\n", err)
 		return exitTool
 	}
-	if _, err := resolveRowsFeature(false, *features); err != nil {
-		fmt.Fprintln(stderr, err)
-		return exitUsage
-	}
-
 	result := pal.ParseFile(ctx, sourcePath, pal.FrontendOptions{
 		LibraryPaths:  libraryPaths,
 		IncludeSource: *includeSource || strings.EqualFold(filepath.Ext(*output), ".tla"),

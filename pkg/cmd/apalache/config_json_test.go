@@ -377,6 +377,55 @@ Next == x' = x + 1
 	}
 }
 
+func TestRunSimulateDebugSnapshotContainsEffectiveControls(t *testing.T) {
+	directory := t.TempDir()
+	t.Setenv("HOME", filepath.Join(directory, "home"))
+	t.Chdir(directory)
+	if err := os.WriteFile("DebugSimulation.tla", []byte(`---- MODULE DebugSimulation ----
+EXTENDS Integers
+\* @type: Int;
+VARIABLE x
+Init == x = 0
+Next == x' = x + 1
+====
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	configuration := `{
+  "source":"DebugSimulation.tla",
+  "checker":{"length":3,"smt-encoding":"funArrays","tuning":{"search.simulation.maxRun":"4","search.outputTraces":"true"}}
+}`
+	if err := os.WriteFile("simulate-debug.json", []byte(configuration), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runDir := filepath.Join(directory, "simulate-debug-run")
+	var stdout, stderr bytes.Buffer
+	code := run(context.Background(), []string{
+		"simulate", "--config-file=simulate-debug.json", "--run-dir=" + runDir, "--debug",
+		"--length=0", "--max-run=2", "--output-traces=false", "--smt-encoding=arrays",
+	}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("debug simulate = %d, stdout = %q, stderr = %q", code, &stdout, &stderr)
+	}
+	data, err := os.ReadFile(filepath.Join(runDir, "application-config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var snapshot map[string]any
+	if err = json.Unmarshal(data, &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	checker := snapshot["checker"].(map[string]any)
+	if checker["length"] != float64(0) || checker["smt-encoding"] != "arrays" ||
+		checker["init"] != "Init" || checker["next"] != "Next" {
+		t.Fatalf("effective simulation checker configuration = %#v", checker)
+	}
+	tuning := checker["tuning"].(map[string]any)
+	if tuning["search.simulation.maxRun"] != "2" || tuning["search.outputTraces"] != "false" {
+		t.Fatalf("effective simulation tuning = %#v", tuning)
+	}
+}
+
 func TestRunSimulateStopsAtConfiguredInvariantErrorBudget(t *testing.T) {
 	directory := t.TempDir()
 	t.Setenv("HOME", filepath.Join(directory, "home"))

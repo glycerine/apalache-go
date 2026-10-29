@@ -158,6 +158,10 @@ func TestTypecheckWritesDebugConfigurationAndFrontendIntermediates(t *testing.T)
 		snapshot["run-dir"] != runDir {
 		t.Fatalf("application configuration = %#v", snapshot)
 	}
+	if snapshot["output"] != "summary" || len(snapshot["features"].([]any)) != 0 ||
+		snapshot["typechecker"].(map[string]any)["infer-poly"] != true {
+		t.Fatalf("effective typecheck configuration = %#v", snapshot)
+	}
 	for _, name := range []string{"00_OutFrontend.tla", "00_OutFrontend.json"} {
 		if info, statErr := os.Stat(filepath.Join(runDir, "intermediate", name)); statErr != nil || info.Size() == 0 {
 			t.Fatalf("frontend intermediate %s = %v, %v", name, info, statErr)
