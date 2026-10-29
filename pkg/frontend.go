@@ -26,6 +26,7 @@ type FrontendResult struct {
 	Extends     []string               `json:"-"`
 	IR          json.RawMessage        `json:"ir,omitempty"`
 	Diagnostics []Diagnostic           `json:"diagnostics"`
+	Parsed      *Module                `json:"-"`
 	Native      *Module                `json:"-"`
 	Sources     *SourceStore           `json:"-"`
 	Types       map[UID]Type           `json:"-"`
@@ -268,6 +269,7 @@ func ParseAndTypeCheckSource(ctx context.Context, filename, source string, front
 	if !result.OK() {
 		return result
 	}
+	result.Parsed = result.Native
 	annotations := ExtractTypeAnnotations(filename, source, result.Native, result.Sources)
 	mergeTlagoImportedAnnotations(&annotations, result.Native, result.imported)
 	result.Annotations = annotations.Annotations
@@ -397,6 +399,7 @@ func ParseAndTypeCheckFile(ctx context.Context, filename string, frontendOptions
 		if !result.OK() {
 			return result
 		}
+		result.Parsed = result.Native
 		if (TypedLanguagePredicate{}).CheckModule(result.Native).OK() {
 			result.Native.AddProperty(PropertyTypeChecked)
 			return result

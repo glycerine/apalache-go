@@ -313,11 +313,15 @@ func writeModuleIntermediate(
 	sources *pal.SourceStore,
 	baseName string,
 ) error {
-	formatted, err := pal.FormatTLAModule(module, pal.TLAFormatOptions{ExtendedModules: extends})
+	if module == nil {
+		return fmt.Errorf("format intermediate %s: module is nil", baseName)
+	}
+	snapshot := pal.NewModule(baseName, module.Declarations())
+	formatted, err := pal.FormatTLAModule(snapshot, pal.TLAFormatOptions{ExtendedModules: extends})
 	if err != nil {
 		return fmt.Errorf("format frontend intermediate TLA+: %w", err)
 	}
-	encoded, err := pal.MarshalSingleModuleIRJSON(module, pal.IRJSONOptions{SourceStore: sources})
+	encoded, err := pal.MarshalSingleModuleIRJSON(snapshot, pal.IRJSONOptions{SourceStore: sources})
 	if err != nil {
 		return fmt.Errorf("format frontend intermediate JSON: %w", err)
 	}
@@ -333,4 +337,32 @@ func writeModuleIntermediate(
 		}
 	}
 	return nil
+}
+
+func writeFrontendIntermediates(paths commandOutputPaths, result pal.FrontendResult) error {
+	parsed := result.Parsed
+	if parsed == nil {
+		parsed = result.Native
+	}
+	if err := writeModuleIntermediate(paths, parsed, result.Extends, result.Sources, "00_OutSanyParser"); err != nil {
+		return err
+	}
+	if result.Native != nil && result.Native.HasProperty(pal.PropertyTypeChecked) {
+		if err := writeModuleIntermediate(paths, result.Native, result.Extends, result.Sources, "01_OutTypeCheckerSnowcat"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func safetyIntermediateObserver(
+	enabled bool, paths commandOutputPaths, extends []string, sources *pal.SourceStore,
+) func(pal.SafetyPipelineStage) error {
+	if !enabled {
+		return nil
+	}
+	return func(stage pal.SafetyPipelineStage) error {
+		baseName := fmt.Sprintf("%02d_Out%s", stage.Number, stage.Name)
+		return writeModuleIntermediate(paths, stage.Module, extends, sources, baseName)
+	}
 }

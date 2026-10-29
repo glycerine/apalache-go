@@ -356,7 +356,7 @@ func runTranspile(ctx context.Context, args []string, stdout, stderr io.Writer) 
 		return exitFrontend
 	}
 	if commonOptions.writeIntermediate {
-		if err = writeModuleIntermediate(outputPaths, frontend.Native, frontend.Extends, frontend.Sources, "00_OutFrontend"); err != nil {
+		if err = writeFrontendIntermediates(outputPaths, frontend); err != nil {
 			fmt.Fprintf(stderr, "cannot write transpile intermediate output: %v\n", err)
 			return exitTool
 		}
@@ -364,16 +364,11 @@ func runTranspile(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	prepared, err := pal.PrepareSafetyTransitions(frontend.Native, pal.SafetyPipelineOptions{
 		Specification: configuration,
 		Sources:       frontend.Sources,
+		OnStage:       safetyIntermediateObserver(commonOptions.writeIntermediate, outputPaths, frontend.Extends, frontend.Sources),
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "cannot prepare VMT transitions: %v\n", err)
 		return exitTool
-	}
-	if commonOptions.writeIntermediate {
-		if err = writeModuleIntermediate(outputPaths, prepared.Module, frontend.Extends, frontend.Sources, "01_OutSafetyPipeline"); err != nil {
-			fmt.Fprintf(stderr, "cannot write transpile safety intermediate output: %v\n", err)
-			return exitTool
-		}
 	}
 	document, err := pal.FormatVMTModuleWithInvariants(prepared.Module, prepared.Predicates.Invariants)
 	if err != nil {
@@ -520,7 +515,7 @@ func runTracee(ctx context.Context, args []string, stdout, stderr io.Writer) int
 		return exitFrontend
 	}
 	if commonOptions.writeIntermediate {
-		if err = writeModuleIntermediate(outputPaths, frontend.Native, frontend.Extends, frontend.Sources, "00_OutFrontend"); err != nil {
+		if err = writeFrontendIntermediates(outputPaths, frontend); err != nil {
 			fmt.Fprintf(stderr, "cannot write tracee intermediate output: %v\n", err)
 			return exitTool
 		}
@@ -759,7 +754,7 @@ func runTest(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return exitFrontend
 	}
 	if commonOptions.writeIntermediate {
-		if err = writeModuleIntermediate(outputPaths, frontend.Native, frontend.Extends, frontend.Sources, "00_OutFrontend"); err != nil {
+		if err = writeFrontendIntermediates(outputPaths, frontend); err != nil {
 			fmt.Fprintf(stderr, "cannot write test intermediate output: %v\n", err)
 			return exitTool
 		}
@@ -776,16 +771,11 @@ func runTest(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 			Invariants: []string{assertion},
 		},
 		Sources: frontend.Sources, Tracker: tracker,
+		OnStage: safetyIntermediateObserver(commonOptions.writeIntermediate, outputPaths, frontend.Extends, frontend.Sources),
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "cannot prepare test: %v\n", err)
 		return exitTool
-	}
-	if commonOptions.writeIntermediate {
-		if err = writeModuleIntermediate(outputPaths, prepared.Module, frontend.Extends, frontend.Sources, "01_OutSafetyPipeline"); err != nil {
-			fmt.Fprintf(stderr, "cannot write test safety intermediate output: %v\n", err)
-			return exitTool
-		}
 	}
 	ruleStats := newRuleProfiler(commonOptions.profiling)
 	result, err := pal.CheckBoundedSafetyWithOptions(ctx, prepared.Module, prepared.Predicates,
@@ -1044,7 +1034,7 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 		return exitFrontend
 	}
 	if commonOptions.writeIntermediate {
-		if err = writeModuleIntermediate(outputPaths, frontend.Native, frontend.Extends, frontend.Sources, "00_OutFrontend"); err != nil {
+		if err = writeFrontendIntermediates(outputPaths, frontend); err != nil {
 			fmt.Fprintf(stderr, "cannot write simulate intermediate output: %v\n", err)
 			return exitTool
 		}
@@ -1057,16 +1047,11 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	}
 	prepared, err := pal.PrepareSafetyTransitions(frontend.Native, pal.SafetyPipelineOptions{
 		Specification: configuration, Sources: frontend.Sources, Tracker: tracker,
+		OnStage: safetyIntermediateObserver(commonOptions.writeIntermediate, outputPaths, frontend.Extends, frontend.Sources),
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "cannot prepare simulation: %v\n", err)
 		return exitTool
-	}
-	if commonOptions.writeIntermediate {
-		if err = writeModuleIntermediate(outputPaths, prepared.Module, frontend.Extends, frontend.Sources, "01_OutSafetyPipeline"); err != nil {
-			fmt.Fprintf(stderr, "cannot write simulate safety intermediate output: %v\n", err)
-			return exitTool
-		}
 	}
 	ruleStats := newRuleProfiler(commonOptions.profiling)
 	report, err := pal.SimulateAndCheckWithOptions(ctx, prepared.Module, prepared.Predicates,
@@ -1541,7 +1526,7 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		return exitFrontend
 	}
 	if commonOptions.writeIntermediate {
-		if err = writeModuleIntermediate(outputPaths, frontend.Native, frontend.Extends, frontend.Sources, "00_OutFrontend"); err != nil {
+		if err = writeFrontendIntermediates(outputPaths, frontend); err != nil {
 			fmt.Fprintf(stderr, "cannot write check intermediate output: %v\n", err)
 			return exitTool
 		}
@@ -1556,16 +1541,11 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		Specification: configuration,
 		Sources:       frontend.Sources,
 		Tracker:       tracker,
+		OnStage:       safetyIntermediateObserver(commonOptions.writeIntermediate, outputPaths, frontend.Extends, frontend.Sources),
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "cannot prepare safety transitions: %v\n", err)
 		return exitTool
-	}
-	if commonOptions.writeIntermediate {
-		if err = writeModuleIntermediate(outputPaths, prepared.Module, frontend.Extends, frontend.Sources, "01_OutSafetyPipeline"); err != nil {
-			fmt.Fprintf(stderr, "cannot write check safety intermediate output: %v\n", err)
-			return exitTool
-		}
 	}
 	if len(prepared.Predicates.Invariants) == 0 && !checkDeadlocks {
 		fmt.Fprintln(stderr, "check requires at least one invariant when deadlock checking is disabled")
@@ -1777,7 +1757,7 @@ func runTypeCheck(ctx context.Context, args []string, stdout, stderr io.Writer) 
 		return exitFrontend
 	}
 	if commonOptions.writeIntermediate {
-		if err = writeModuleIntermediate(outputPaths, result.Native, result.Extends, result.Sources, "00_OutFrontend"); err != nil {
+		if err = writeFrontendIntermediates(outputPaths, result); err != nil {
 			fmt.Fprintf(stderr, "cannot write typecheck intermediate output: %v\n", err)
 			return exitTool
 		}
@@ -1932,21 +1912,9 @@ func runParse(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		return exitFrontend
 	}
 	if commonOptions.writeIntermediate {
-		formatted, formatErr := pal.FormatTLAModule(result.Native, pal.TLAFormatOptions{ExtendedModules: result.Extends})
-		if formatErr != nil {
-			fmt.Fprintf(stderr, "cannot format parsed intermediate TLA+: %v\n", formatErr)
+		if err = writeFrontendIntermediates(outputPaths, result); err != nil {
+			fmt.Fprintf(stderr, "cannot write parsed intermediate output: %v\n", err)
 			return exitTool
-		}
-		intermediateFiles, pathErr := outputPaths.intermediateFiles("00_OutSanyParser.tla")
-		if pathErr != nil {
-			fmt.Fprintf(stderr, "cannot configure parsed intermediate output: %v\n", pathErr)
-			return exitTool
-		}
-		for _, path := range intermediateFiles {
-			if err = os.WriteFile(path, []byte(formatted), 0o644); err != nil {
-				fmt.Fprintf(stderr, "cannot write parsed intermediate TLA+ to %s: %v\n", path, err)
-				return exitTool
-			}
 		}
 	}
 
@@ -2051,7 +2019,7 @@ func validateCheckerBackendOptions(options *checkerBackendOptions) error {
 		return fmt.Errorf("unsupported SMT encoding %q (want oopsla19, arrays, or funArrays)", options.encoding)
 	}
 	if solver := strings.ToLower(options.solver); solver != "z3" {
-		return fmt.Errorf("unsupported SMT solver %q (Go port uses g3 v0.0.5 as its Z3 backend)", options.solver)
+		return fmt.Errorf("unsupported SMT solver %q (Go port uses g3 v0.0.7 as its Z3 backend)", options.solver)
 	}
 	return nil
 }

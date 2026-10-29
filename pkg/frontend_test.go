@@ -310,6 +310,26 @@ Inv == LET Op(a, i) == a + i IN Repeat(Op, 2, 0) = 3
 	}
 }
 
+func TestParseAndTypeCheckSourceRetainsParserStage(t *testing.T) {
+	result := ParseAndTypeCheckSource(context.Background(), "Stages.tla", `---- MODULE Stages ----
+EXTENDS Integers
+\* @type: Int;
+CONSTANT N
+Value == N + 1
+====
+`, FrontendOptions{}, TypeCheckOptions{})
+	if !result.OK() {
+		t.Fatalf("frontend diagnostics = %v", result.Diagnostics)
+	}
+	if result.Parsed == nil || result.Native == nil || result.Parsed == result.Native {
+		t.Fatalf("frontend stages = parsed %p, typed %p", result.Parsed, result.Native)
+	}
+	if result.Parsed.HasProperty(PropertyTypeChecked) || !result.Native.HasProperty(PropertyTypeChecked) {
+		t.Fatalf("frontend stage typing = parsed %v, typed %v",
+			result.Parsed.HasProperty(PropertyTypeChecked), result.Native.HasProperty(PropertyTypeChecked))
+	}
+}
+
 func TestParseAndTypeCheckSourcePassesOperatorArgumentsByName(t *testing.T) {
 	result := ParseAndTypeCheckSource(context.Background(), "Callback.tla", `---- MODULE Callback ----
 EXTENDS Integers

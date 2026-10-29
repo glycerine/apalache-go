@@ -327,10 +327,24 @@ Inv == x < 5
 	if len(features) != 1 || features[0] != "rows" {
 		t.Fatalf("effective features = %#v", features)
 	}
-	for _, name := range []string{"01_OutSafetyPipeline.tla", "01_OutSafetyPipeline.json"} {
-		data, readErr := os.ReadFile(filepath.Join(runDir, "intermediate", name))
-		if readErr != nil || len(data) == 0 {
-			t.Fatalf("safety intermediate %s = %q, %v", name, data, readErr)
+	stages := []string{
+		"00_OutSanyParser", "01_OutTypeCheckerSnowcat", "02_OutConfigurationPass", "03_OutDesugarerPass",
+		"04_OutInlinePass", "05_OutTemporalPass", "06_OutInlinePass", "07_OutPrimingPass", "08_OutVCGen",
+		"09_OutPreprocessingPass", "10_OutTransitionFinderPass", "11_OutOptimizationPass", "12_OutAnalysisPass",
+	}
+	for _, stage := range stages {
+		for _, extension := range []string{".tla", ".json"} {
+			name := stage + extension
+			data, readErr := os.ReadFile(filepath.Join(runDir, "intermediate", name))
+			if readErr != nil || len(data) == 0 {
+				t.Fatalf("safety intermediate %s = %q, %v", name, data, readErr)
+			}
+			if extension == ".tla" && !bytes.Contains(data, []byte(" MODULE id"+stage+" ")) {
+				t.Fatalf("safety intermediate %s has wrong module identity: %q", name, data)
+			}
+			if extension == ".json" && !bytes.Contains(data, []byte(`"name":"`+stage+`"`)) {
+				t.Fatalf("safety intermediate %s has wrong module identity: %q", name, data)
+			}
 		}
 	}
 }
