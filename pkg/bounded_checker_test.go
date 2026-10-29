@@ -475,6 +475,41 @@ Next == \E i \in {0, 1, 2, 3}: i > x /\ x' = i
 	}
 }
 
+func TestCheckBoundedSafetyProjectsDeadlockInsideSymbolicExistentialChoice(t *testing.T) {
+	frontend := ParseAndTypeCheckSource(context.Background(), "SymbolicExistentialDeadlock.tla", `---- MODULE SymbolicExistentialDeadlock ----
+EXTENDS Integers
+\* @type: Int;
+VARIABLE x
+Init == x = 0
+Next == \E i \in 0..3: i > x /\ x' = i
+====
+`, FrontendOptions{}, TypeCheckOptions{})
+	if !frontend.OK() {
+		t.Fatalf("frontend diagnostics = %v", frontend.Diagnostics)
+	}
+	prepared, err := PrepareSafetyTransitions(frontend.Native, SafetyPipelineOptions{
+		Specification: SpecificationConfiguration{Behavior: InitNextSpec{Init: "Init", Next: "Next"}},
+		Sources:       frontend.Sources,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if transitions := TransitionsFromModule(prepared.Module, NormalizedNextPrefix); len(transitions) != 4 {
+		t.Fatalf("normalized integer-range existential transitions = %d, want 4", len(transitions))
+	}
+	result, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Outcome != SafetyDeadlock || result.Depth != 1 || len(result.States) != 2 {
+		t.Fatalf("symbolic existential deadlock result = %#v", result)
+	}
+	value, err := FormatTLAExpression(result.States[1].Values["x"])
+	if err != nil || value != "3" {
+		t.Fatalf("symbolic existential deadlocked state x = %q, %v", value, err)
+	}
+}
+
 func TestCheckBoundedSafetyRejectsChooseOverSymbolicIntegerRange(t *testing.T) {
 	frontend := ParseAndTypeCheckSource(context.Background(), "SymbolicRangeChoose.tla", `---- MODULE SymbolicRangeChoose ----
 EXTENDS Integers

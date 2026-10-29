@@ -2,9 +2,12 @@ package apalache
 
 import (
 	"fmt"
+	"math/big"
 	"sort"
 	"strings"
 )
+
+const maxExpandedIntegerRange = 4096
 
 const AssignmentManualLink = "https://apalache-mc.org/docs/apalache/principles/assignments.html"
 
@@ -93,11 +96,10 @@ func expandFiniteQuantifiers(expression Expr, assignmentVariables map[string]str
 		if !quantifierAssignsFromBinder(arguments[2], binder.Name(), assignmentVariables) {
 			return nil, false
 		}
-		set, ok := arguments[1].(*OperExpr)
-		if !ok || set.Operator().Name() != "SET_ENUM" {
+		members, ok := finiteQuantifierMembers(arguments[1])
+		if !ok {
 			return nil, false
 		}
-		members := set.Arguments()
 		if len(members) == 0 {
 			return NewValueExpr(BoolValue(false), quantifier.Tag()), true
 		}
@@ -110,6 +112,44 @@ func expandFiniteQuantifiers(expression Expr, assignmentVariables map[string]str
 		}
 		return MustOperExpr(Op("OR"), quantifier.Tag(), branches...), true
 	})(expression)
+}
+
+func finiteQuantifierMembers(domain Expr) ([]Expr, bool) {
+	set, ok := domain.(*OperExpr)
+	if !ok {
+		return nil, false
+	}
+	if set.Operator().Name() == "SET_ENUM" {
+		return set.Arguments(), true
+	}
+	arguments := set.Arguments()
+	if set.Operator().Name() != "INT_RANGE" || len(arguments) != 2 {
+		return nil, false
+	}
+	lowerExpr, lowerOK := arguments[0].(*ValueExpr)
+	upperExpr, upperOK := arguments[1].(*ValueExpr)
+	if !lowerOK || !upperOK {
+		return nil, false
+	}
+	lower, lowerOK := lowerExpr.Value().(IntValue)
+	upper, upperOK := upperExpr.Value().(IntValue)
+	if !lowerOK || !upperOK {
+		return nil, false
+	}
+	first, last := lower.BigInt(), upper.BigInt()
+	if first.Cmp(last) > 0 {
+		return nil, true
+	}
+	width := new(big.Int).Sub(last, first)
+	width.Add(width, big.NewInt(1))
+	if !width.IsInt64() || width.Int64() > maxExpandedIntegerRange {
+		return nil, false
+	}
+	members := make([]Expr, 0, int(width.Int64()))
+	for value := new(big.Int).Set(first); value.Cmp(last) <= 0; value.Add(value, big.NewInt(1)) {
+		members = append(members, NewValueExpr(NewIntValue(value), Typed(IntT1)))
+	}
+	return members, true
 }
 
 func quantifierAssignsFromBinder(expression Expr, binder string, variables map[string]struct{}) bool {

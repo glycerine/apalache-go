@@ -237,3 +237,26 @@ func TestExpandFiniteQuantifiersScopesAssignmentsAndPreservesShadowing(t *testin
 		t.Fatalf("shadow-aware substitution = %v", substituted)
 	}
 }
+
+func TestExpandFiniteQuantifiersExpandsBoundedIntegerRanges(t *testing.T) {
+	binder := NewNameExpr("i", Typed(IntT1))
+	rangeDomain := MustOperExpr(Op("INT_RANGE"), Typed(mustSet(IntT1)), intLiteral(-1), intLiteral(2))
+	action := MustOperExpr(Op("EXISTS3"), Typed(BoolT1), binder, rangeDomain, assignmentCandidate("x", binder))
+	expanded := expandFiniteQuantifiers(action, assignmentVariables("x"), nil)
+	if countOperator(expanded, "OR") != 1 || countOperator(expanded, "EXISTS3") != 0 {
+		t.Fatalf("expanded integer range = %v", expanded)
+	}
+
+	emptyRange := MustOperExpr(Op("INT_RANGE"), Typed(mustSet(IntT1)), intLiteral(2), intLiteral(1))
+	emptyChoice := MustOperExpr(Op("EXISTS3"), Typed(BoolT1), binder, emptyRange, assignmentCandidate("x", binder))
+	value, ok := expandFiniteQuantifiers(emptyChoice, assignmentVariables("x"), nil).(*ValueExpr)
+	if !ok || value.Value() != BoolValue(false) {
+		t.Fatalf("empty integer range expansion = %v", value)
+	}
+
+	largeRange := MustOperExpr(Op("INT_RANGE"), Typed(mustSet(IntT1)), intLiteral(0), intLiteral(maxExpandedIntegerRange))
+	largeChoice := MustOperExpr(Op("EXISTS3"), Typed(BoolT1), binder, largeRange, assignmentCandidate("x", binder))
+	if expanded = expandFiniteQuantifiers(largeChoice, assignmentVariables("x"), nil); countOperator(expanded, "EXISTS3") != 1 {
+		t.Fatalf("oversized integer range was expanded: %v", expanded)
+	}
+}
