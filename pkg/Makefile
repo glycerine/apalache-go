@@ -52,7 +52,7 @@ test-solver:
 	GOFLAGS='-p=8' $(CPU_RUN) $(GO) test -tags=solver -run TestVMTQueriesAgreeAcrossZ3AndCVC5 .
 
 test-resource:
-	GOFLAGS='-p=8' $(CPU_RUN) $(GO) test -tags=resource -run TestG3RepeatedContextsReleaseResources .
+	GOFLAGS='-p=8' $(CPU_RUN) $(GO) test -tags=resource -run 'Test(G3RepeatedContextsReleaseResources|ExplorationJSONRPCConcurrentLoadSolveDisposeReleasesResources|ShaiGRPCRepeatedConcurrentLifecyclesReleaseResources)$$' ./...
 
 test-corpus:
 	GOFLAGS='-p=8' $(CPU_RUN) $(GO) test -tags=corpus -run 'Test.*Corpus' .
