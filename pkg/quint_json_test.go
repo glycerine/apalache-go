@@ -329,6 +329,139 @@ func TestConvertQuintDerivedCollectionOperators(t *testing.T) {
 	if _, err := importer.expression(quintJSONExpr{ID: json.Number("1"), Kind: "app", Opcode: "oneOf", Args: []quintJSONExpr{set}}); err == nil {
 		t.Fatal("standalone oneOf was accepted")
 	}
+	if _, err := importer.expression(quintJSONExpr{ID: json.Number("4"), Kind: "app", Opcode: "repeated", Args: []quintJSONExpr{{ID: json.Number("4"), Kind: "bool", Value: json.RawMessage("true")}}}); err == nil {
+		t.Fatal("unsupported repeated operator was accepted")
+	}
+}
+
+func TestConvertQuintBindingOperatorSurface(t *testing.T) {
+	integer := quintJSONType{Kind: "int"}
+	boolean := quintJSONType{Kind: "bool"}
+	setInt := quintJSONType{Kind: "set", Elem: &integer}
+	predicate := quintJSONType{Kind: "oper", Args: []quintJSONType{integer}, Res: &boolean}
+	importer := quintJSONImporter{types: map[string]quintJSONScheme{
+		"1": {Type: integer}, "2": {Type: integer}, "3": {Type: setInt},
+		"4": {Type: boolean}, "5": {Type: predicate},
+	}}
+	one := quintJSONExpr{ID: json.Number("1"), Kind: "int", Value: json.RawMessage("1")}
+	two := quintJSONExpr{ID: json.Number("2"), Kind: "int", Value: json.RawMessage("2")}
+	domain := setExpr("3", one, two)
+	name := quintJSONExpr{ID: json.Number("1"), Kind: "name", Name: "n"}
+	zero := quintJSONExpr{ID: json.Number("2"), Kind: "int", Value: json.RawMessage("0")}
+	body := quintJSONExpr{ID: json.Number("4"), Kind: "app", Opcode: "igt", Args: []quintJSONExpr{name, zero}}
+	lambda := quintJSONExpr{ID: json.Number("5"), Kind: "lambda",
+		Params: []quintJSONLambdaParam{{ID: json.Number("1"), Name: "n"}}, Expr: &body}
+	named := quintJSONExpr{ID: json.Number("5"), Kind: "name", Name: "Positive"}
+
+	for _, test := range []struct {
+		opcode string
+		want   string
+		binder quintJSONExpr
+	}{
+		{"exists", "EXISTS3", lambda}, {"forall", "FORALL3", lambda},
+		{"filter", "SET_FILTER", named}, {"map", "SET_MAP", lambda}, {"mapBy", "FUN_CTOR", named},
+	} {
+		t.Run(test.opcode, func(t *testing.T) {
+			id := "4"
+			if test.opcode == "filter" || test.opcode == "map" {
+				id = "3"
+			}
+			if test.opcode == "mapBy" {
+				fun := quintJSONType{Kind: "fun", Arg: &integer, Res: &boolean}
+				importer.types["6"] = quintJSONScheme{Type: fun}
+				id = "6"
+			}
+			converted, err := importer.expression(quintJSONExpr{ID: json.Number(id), Kind: "app", Opcode: test.opcode,
+				Args: []quintJSONExpr{domain, test.binder}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if application, ok := converted.(*OperExpr); !ok || application.Operator().Name() != test.want {
+				t.Fatalf("%s converted to %v", test.opcode, converted)
+			}
+			if result := (TypedLanguagePredicate{}).CheckExpression(converted); !result.OK() {
+				t.Fatalf("%s produced untyped IR: %+v", test.opcode, result.Failures)
+			}
+		})
+	}
+	for _, malformed := range []quintJSONExpr{
+		{ID: json.Number("4"), Kind: "app", Opcode: "forall", Args: []quintJSONExpr{domain}},
+		{ID: json.Number("4"), Kind: "app", Opcode: "forall", Args: []quintJSONExpr{domain, domain}},
+	} {
+		if _, err := importer.expression(malformed); err == nil {
+			t.Fatalf("malformed binding expression was accepted: %#v", malformed)
+		}
+	}
+}
+
+func TestConvertQuintVariantAndUpdateSurface(t *testing.T) {
+	integer := quintJSONType{Kind: "int"}
+	stringType := quintJSONType{Kind: "str"}
+	empty := quintJSONRow{Kind: "empty"}
+	variantType := quintJSONType{Kind: "sum", Fields: &quintJSONRow{Kind: "row",
+		Fields: []quintJSONRecordField{{FieldName: "F1", FieldType: integer}}, Other: &empty}}
+	intMap := quintJSONType{Kind: "fun", Arg: &integer, Res: &integer}
+	intOperator := quintJSONType{Kind: "oper", Args: []quintJSONType{integer}, Res: &integer}
+	importer := quintJSONImporter{types: map[string]quintJSONScheme{
+		"1": {Type: integer}, "2": {Type: stringType}, "3": {Type: variantType},
+		"4": {Type: intOperator}, "5": {Type: intMap},
+	}}
+	value := quintJSONExpr{ID: json.Number("1"), Kind: "int", Value: json.RawMessage("42")}
+	label := quintJSONExpr{ID: json.Number("2"), Kind: "str", Value: json.RawMessage(`"F1"`)}
+	wildcard := quintJSONExpr{ID: json.Number("2"), Kind: "str", Value: json.RawMessage(`"_"`)}
+	variant := quintJSONExpr{ID: json.Number("3"), Kind: "app", Opcode: "variant", Args: []quintJSONExpr{label, value}}
+	lambda := quintJSONExpr{ID: json.Number("4"), Kind: "lambda",
+		Params: []quintJSONLambdaParam{{ID: json.Number("1"), Name: "x"}}, Expr: &value}
+	matched, err := importer.expression(quintJSONExpr{ID: json.Number("1"), Kind: "app", Opcode: "matchVariant",
+		Args: []quintJSONExpr{variant, label, lambda, wildcard, lambda}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, operator := range []string{"CASE_OTHER", "Variants!VariantTag", "Variants!VariantGetUnsafe", "OPER_APP"} {
+		if countOperator(matched, operator) == 0 {
+			t.Fatalf("matchVariant result lacks %s: %v", operator, matched)
+		}
+	}
+
+	mapName := quintJSONExpr{ID: json.Number("5"), Kind: "name", Name: "m"}
+	identity := quintJSONExpr{ID: json.Number("4"), Kind: "lambda",
+		Params: []quintJSONLambdaParam{{ID: json.Number("1"), Name: "old"}},
+		Expr:   &quintJSONExpr{ID: json.Number("1"), Kind: "name", Name: "old"}}
+	updated, err := importer.expression(quintJSONExpr{ID: json.Number("5"), Kind: "app", Opcode: "setBy",
+		Args: []quintJSONExpr{mapName, value, identity}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := updated.(*LetInExpr); !ok || countOperator(updated, "EXCEPT") != 1 || countOperator(updated, "FUN_APP") != 1 {
+		t.Fatalf("setBy converted to %v", updated)
+	}
+	if result := (TypedLanguagePredicate{}).CheckExpression(updated); !result.OK() {
+		t.Fatalf("setBy produced untyped IR: %+v", result.Failures)
+	}
+}
+
+func TestConvertQuintNondeterministicOneOf(t *testing.T) {
+	integer := quintJSONType{Kind: "int"}
+	boolean := quintJSONType{Kind: "bool"}
+	setInt := quintJSONType{Kind: "set", Elem: &integer}
+	importer := quintJSONImporter{types: map[string]quintJSONScheme{
+		"1": {Type: integer}, "2": {Type: setInt}, "3": {Type: integer},
+		"4": {Type: boolean}, "5": {Type: boolean},
+	}}
+	one := quintJSONExpr{ID: json.Number("1"), Kind: "int", Value: json.RawMessage("1")}
+	domain := setExpr("2", one)
+	oneOf := quintJSONExpr{ID: json.Number("3"), Kind: "app", Opcode: "oneOf", Args: []quintJSONExpr{domain}}
+	truth := quintJSONExpr{ID: json.Number("4"), Kind: "bool", Value: json.RawMessage("true")}
+	expression := quintJSONExpr{ID: json.Number("5"), Kind: "let",
+		Opdef: &quintJSONDef{ID: json.Number("3"), Kind: "def", Name: "n", Qualifier: "nondet", Expr: &oneOf},
+		Expr:  &truth}
+	converted, err := importer.expression(expression)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if application, ok := converted.(*OperExpr); !ok || application.Operator().Name() != "EXISTS3" {
+		t.Fatalf("nondeterministic oneOf converted to %v", converted)
+	}
 }
 
 func TestConvertQuintPredefinedNamesAndLocalLets(t *testing.T) {
