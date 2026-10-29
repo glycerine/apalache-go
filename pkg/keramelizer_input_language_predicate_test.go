@@ -5,6 +5,51 @@ import (
 	"testing"
 )
 
+func TestKeramelizerInputLanguagePredicateExactAcceptedFamilies(t *testing.T) {
+	predicate := KeramelizerInputLanguagePredicate{}
+	value := func() Expr { return NewValueExpr(Int64Value(1), Untyped()) }
+	name := func() Expr { return NewNameExpr("x", Untyped()) }
+	for operatorName := range keraUnaryOperators {
+		if result := predicate.CheckExpression(MustOperExpr(Op(operatorName), Untyped(), value())); !result.OK() {
+			t.Errorf("unary %s rejected: %+v", operatorName, result.Failures)
+		}
+	}
+	for operatorName := range keraBinaryOperators {
+		if result := predicate.CheckExpression(MustOperExpr(Op(operatorName), Untyped(), value(), value())); !result.OK() {
+			t.Errorf("binary %s rejected: %+v", operatorName, result.Failures)
+		}
+	}
+	nary := map[string][]Expr{
+		"AND":                       {},
+		"OR":                        {},
+		"SET_ENUM":                  {},
+		"EXCEPT":                    {name(), value(), value()},
+		"TUPLE":                     {},
+		"RECORD":                    {NewValueExpr(StringValue("a"), Untyped()), value()},
+		"Sequences!SubSeq":          {name(), value(), value()},
+		"LABEL":                     {value(), NewValueExpr(StringValue("label"), Untyped())},
+		"Variants!VariantGetOrElse": {NewValueExpr(StringValue("tag"), Untyped()), name(), value()},
+	}
+	for operatorName, arguments := range nary {
+		if result := predicate.CheckExpression(MustOperExpr(Op(operatorName), Untyped(), arguments...)); !result.OK() {
+			t.Errorf("nary %s rejected: %+v", operatorName, result.Failures)
+		}
+	}
+	for _, expression := range []Expr{
+		MustOperExpr(Op("SET_SUBSET_EQ"), Untyped(), value(), value()),
+		MustOperExpr(Op("SET_NOT_IN"), Untyped(), value(), value()),
+		MustOperExpr(Op("EQUIV"), Untyped(), value(), value()),
+		MustOperExpr(Op("IMPLIES"), Untyped(), value(), value()),
+		MustOperExpr(Op("NE"), Untyped(), value(), value()),
+		MustOperExpr(Op("CASE_OTHER"), Untyped(), value(), value(), value()),
+		MustOperExpr(Op("CASE"), Untyped(), value(), value()),
+	} {
+		if result := predicate.CheckExpression(expression); !result.OK() {
+			t.Errorf("desugared-only %s rejected: %+v", expression.(*OperExpr).Operator().Name(), result.Failures)
+		}
+	}
+}
+
 func TestKeramelizerInputLanguagePredicateNameFirstForms(t *testing.T) {
 	predicate := KeramelizerInputLanguagePredicate{}
 	set := MustOperExpr(Op("SET_ENUM"), Untyped(), NewValueExpr(Int64Value(1), Untyped()))
@@ -105,5 +150,15 @@ func TestKeramelizerInputLanguagePredicateFailureOrderSeqAndModules(t *testing.T
 	module := NewModule("M", []Decl{NewConstDecl("C", Untyped()), bad})
 	if result := predicate.CheckModule(module); result.OK() || result.Failures[0].ID != bad.Body().ID() {
 		t.Fatalf("module predicate did not check operator bodies: %+v", result.Failures)
+	}
+	validModule := NewModule("Valid", []Decl{NewOperDecl("Value", nil, NewValueExpr(Int64Value(1), Untyped()), Untyped())})
+	if result := predicate.CheckModule(validModule); !result.OK() {
+		t.Fatalf("module without calls was rejected: %+v", result.Failures)
+	}
+
+	inner := NewLetInExpr(untypedApp("A"), Untyped(), NewOperDecl("A", nil, NewValueExpr(Int64Value(1), Untyped()), Untyped()))
+	nested := NewLetInExpr(inner, Untyped(), NewOperDecl("B", nil, NewValueExpr(Int64Value(2), Untyped()), Untyped()))
+	if result := predicate.CheckExpression(nested); !result.OK() {
+		t.Fatalf("nested nullary LET was rejected: %+v", result.Failures)
 	}
 }
