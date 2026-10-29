@@ -126,17 +126,11 @@ func finiteQuantifierMembers(domain Expr) ([]Expr, bool) {
 	if set.Operator().Name() != "INT_RANGE" || len(arguments) != 2 {
 		return nil, false
 	}
-	lowerExpr, lowerOK := arguments[0].(*ValueExpr)
-	upperExpr, upperOK := arguments[1].(*ValueExpr)
-	if !lowerOK || !upperOK {
-		return nil, false
+	first, firstConstant := constantInteger(arguments[0])
+	last, lastConstant := constantInteger(arguments[1])
+	if !firstConstant || !lastConstant {
+		return finiteSymbolicRangeMembers(arguments[0], arguments[1])
 	}
-	lower, lowerOK := lowerExpr.Value().(IntValue)
-	upper, upperOK := upperExpr.Value().(IntValue)
-	if !lowerOK || !upperOK {
-		return nil, false
-	}
-	first, last := lower.BigInt(), upper.BigInt()
 	if first.Cmp(last) > 0 {
 		return nil, true
 	}
@@ -150,6 +144,64 @@ func finiteQuantifierMembers(domain Expr) ([]Expr, bool) {
 		members = append(members, NewValueExpr(NewIntValue(value), Typed(IntT1)))
 	}
 	return members, true
+}
+
+// finiteSymbolicRangeMembers recognizes integer ranges whose endpoints share
+// one symbolic base and differ only by constant offsets. Such ranges have a
+// statically known cardinality even though their concrete bounds depend on the
+// current state, for example x..(x + 2) or (x - 1)..(x + 1).
+func finiteSymbolicRangeMembers(lower, upper Expr) ([]Expr, bool) {
+	lowerBase, lowerOffset := additiveBaseAndOffset(lower)
+	upperBase, upperOffset := additiveBaseAndOffset(upper)
+	if lowerBase == nil || upperBase == nil || !EqualTypedExpr(lowerBase, upperBase) {
+		return nil, false
+	}
+	width := new(big.Int).Sub(upperOffset, lowerOffset)
+	width.Add(width, big.NewInt(1))
+	if width.Sign() <= 0 {
+		return nil, true
+	}
+	if !width.IsInt64() || width.Int64() > maxExpandedIntegerRange {
+		return nil, false
+	}
+	members := make([]Expr, 0, int(width.Int64()))
+	for index := int64(0); index < width.Int64(); index++ {
+		if index == 0 {
+			members = append(members, lower)
+			continue
+		}
+		members = append(members, MustOperExpr(Op("PLUS"), Typed(IntT1), lower,
+			NewValueExpr(Int64Value(index), Typed(IntT1))))
+	}
+	return members, true
+}
+
+func additiveBaseAndOffset(expression Expr) (Expr, *big.Int) {
+	if value, constant := constantInteger(expression); constant {
+		return nil, value
+	}
+	operation, ok := expression.(*OperExpr)
+	if !ok || len(operation.Arguments()) != 2 {
+		return expression, new(big.Int)
+	}
+	arguments := operation.Arguments()
+	switch operation.Operator().Name() {
+	case "PLUS":
+		if offset, constant := constantInteger(arguments[1]); constant {
+			base, previous := additiveBaseAndOffset(arguments[0])
+			return base, new(big.Int).Add(previous, offset)
+		}
+		if offset, constant := constantInteger(arguments[0]); constant {
+			base, previous := additiveBaseAndOffset(arguments[1])
+			return base, new(big.Int).Add(previous, offset)
+		}
+	case "MINUS":
+		if offset, constant := constantInteger(arguments[1]); constant {
+			base, previous := additiveBaseAndOffset(arguments[0])
+			return base, new(big.Int).Sub(previous, offset)
+		}
+	}
+	return expression, new(big.Int)
 }
 
 func quantifierAssignsFromBinder(expression Expr, binder string, variables map[string]struct{}) bool {

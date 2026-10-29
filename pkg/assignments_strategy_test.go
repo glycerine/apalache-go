@@ -260,3 +260,22 @@ func TestExpandFiniteQuantifiersExpandsBoundedIntegerRanges(t *testing.T) {
 		t.Fatalf("oversized integer range was expanded: %v", expanded)
 	}
 }
+
+func TestExpandFiniteQuantifiersExpandsFixedWidthSymbolicIntegerRanges(t *testing.T) {
+	binder := NewNameExpr("i", Typed(IntT1))
+	x := NewNameExpr("x", Typed(IntT1))
+	lower := MustOperExpr(Op("MINUS"), Typed(IntT1), x, intLiteral(1))
+	upper := MustOperExpr(Op("PLUS"), Typed(IntT1), x, intLiteral(1))
+	domain := MustOperExpr(Op("INT_RANGE"), Typed(mustSet(IntT1)), lower, upper)
+	action := MustOperExpr(Op("EXISTS3"), Typed(BoolT1), binder, domain, assignmentCandidate("x", binder))
+	expanded := expandFiniteQuantifiers(action, assignmentVariables("x"), nil)
+	if countOperator(expanded, "OR") != 1 || countOperator(expanded, "EXISTS3") != 0 {
+		t.Fatalf("expanded fixed-width symbolic range = %v", expanded)
+	}
+
+	unrelated := MustOperExpr(Op("INT_RANGE"), Typed(mustSet(IntT1)), x, NewNameExpr("y", Typed(IntT1)))
+	unbounded := MustOperExpr(Op("EXISTS3"), Typed(BoolT1), binder, unrelated, assignmentCandidate("x", binder))
+	if expanded = expandFiniteQuantifiers(unbounded, assignmentVariables("x"), nil); countOperator(expanded, "EXISTS3") != 1 {
+		t.Fatalf("variable-width symbolic range was expanded: %v", expanded)
+	}
+}
