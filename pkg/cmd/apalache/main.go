@@ -84,7 +84,8 @@ func runServer(ctx context.Context, args []string, stdout, stderr io.Writer) int
 	flags.SetOutput(stderr)
 	configFile := flags.String("config-file", "", "Apalache JSON configuration file")
 	port := flags.Int("port", 8822, "port served by the RPC server")
-	serverType := flags.String("server-type", "explorer", "server type: explorer or checker")
+	serverType := flags.String("server-type", "explorer", "server type: 'checker' (shai-grpc) or 'explorer' (json-rpc)")
+	documentFlagDefaults(flags)
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
 	}
@@ -236,6 +237,7 @@ func runTranspile(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	flags.Var(&invariants, "inv", "state invariant operator (repeatable or comma-separated)")
 	flags.Var(&temporalProperties, "temporal", "temporal property operator (repeatable or comma-separated)")
 	flags.Var(&libraryPaths, "I", "add a TLA+ module search directory (repeatable)")
+	documentFlagDefaults(flags)
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
 	}
@@ -416,6 +418,7 @@ func runTracee(ctx context.Context, args []string, stdout, stderr io.Writer) int
 	var libraryPaths stringList
 	flags.Var(&expressions, "expressions", "nullary operators to evaluate (repeatable or comma-separated)")
 	flags.Var(&libraryPaths, "I", "add a TLA+ module search directory (repeatable)")
+	documentFlagDefaults(flags)
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
 	}
@@ -582,6 +585,7 @@ func runConfig(args []string, stdout, stderr io.Writer) int {
 	flags.SetOutput(stderr)
 	var enableStats optionalBoolFlag
 	flags.Var(&enableStats, "enable-stats", "enable shared TLA+ usage statistics: true or false (default unchanged)")
+	documentFlagDefaults(flags)
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
 	}
@@ -658,6 +662,7 @@ func runTest(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	var libraryPaths stringList
 	checkerTuning := pal.CheckerTuning{}
 	flags.Var(&libraryPaths, "I", "add a TLA+ module search directory (repeatable)")
+	documentFlagDefaults(flags)
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
 	}
@@ -862,6 +867,7 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	flags.Var(&libraryPaths, "I", "add a TLA+ module search directory (repeatable)")
 	flags.Var(&invariants, "inv", "state invariant operator (repeatable)")
 	flags.Var(&temporalProperties, "temporal", "temporal property operator (repeatable or comma-separated)")
+	documentFlagDefaults(flags)
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
 	}
@@ -1322,6 +1328,7 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	flags.Var(&invariants, "inv", "state invariant operator (repeatable)")
 	flags.Var(&temporalProperties, "temporal", "temporal property operator (repeatable or comma-separated)")
 	flags.Var(&libraryPaths, "I", "add a TLA+ module search directory (repeatable)")
+	documentFlagDefaults(flags)
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
 	}
@@ -1682,6 +1689,7 @@ func runTypeCheck(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	disablePolytypes := flags.Bool("no-polytypes", false, "disable let-polymorphism")
 	var libraryPaths stringList
 	flags.Var(&libraryPaths, "I", "add a TLA+ module search directory (repeatable)")
+	documentFlagDefaults(flags)
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
 	}
@@ -1836,6 +1844,7 @@ func runParse(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	features := flags.String("features", "", "typechecker features: rows or no-rows")
 	var libraryPaths stringList
 	flags.Var(&libraryPaths, "I", "add a TLA+ module search directory (repeatable)")
+	documentFlagDefaults(flags)
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
 	}
@@ -1984,10 +1993,26 @@ type checkerBackendOptions struct {
 
 func addCheckerBackendFlags(flags *flag.FlagSet) *checkerBackendOptions {
 	options := &checkerBackendOptions{}
-	flags.StringVar(&options.algorithm, "algo", "incremental", "checking algorithm (incremental)")
-	flags.StringVar(&options.encoding, "smt-encoding", "oopsla19", "SMT encoding (oopsla19, arrays, or funArrays)")
-	flags.StringVar(&options.solver, "smt-solver", "z3", "SMT solver backend (z3 via g3)")
+	flags.StringVar(&options.algorithm, "algo", "incremental", "checking algorithm: incremental, offline, or remote (used by explorer)")
+	flags.StringVar(&options.encoding, "smt-encoding", "oopsla19", "SMT encoding: oopsla19, arrays (experimental), or funArrays (experimental)")
+	flags.StringVar(&options.solver, "smt-solver", "z3", "SMT solver backend: z3 via g3 or cvc5 (experimental)")
 	return options
+}
+
+func documentFlagDefaults(flags *flag.FlagSet) {
+	if flags == nil {
+		return
+	}
+	flags.VisitAll(func(option *flag.Flag) {
+		if strings.Contains(strings.ToLower(option.Usage), "default:") {
+			return
+		}
+		value := option.DefValue
+		if value == "" {
+			value = "<empty>"
+		}
+		option.Usage += " (default: " + value + ")"
+	})
 }
 
 func applyCheckerBackendEnvironment(options *checkerBackendOptions, visited map[string]bool) {

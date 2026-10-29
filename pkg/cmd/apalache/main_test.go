@@ -1259,3 +1259,51 @@ func TestRunUsage(t *testing.T) {
 		t.Fatalf("stderr = %q", &stderr)
 	}
 }
+
+func TestEveryCommandOptionDocumentsDefaultsAndCanonicalEnums(t *testing.T) {
+	commands := []string{"check", "config", "parse", "server", "simulate", "test", "tracee", "transpile", "typecheck"}
+	help := make(map[string]string, len(commands))
+	for _, command := range commands {
+		var stdout, stderr bytes.Buffer
+		if code := run(context.Background(), []string{command, "-h"}, &stdout, &stderr); code != exitUsage {
+			t.Fatalf("%s -h = %d, want %d", command, code, exitUsage)
+		}
+		help[command] = stderr.String()
+		lines := strings.Split(stderr.String(), "\n")
+		options := 0
+		for index := 0; index < len(lines); {
+			if !strings.HasPrefix(strings.TrimSpace(lines[index]), "-") {
+				index++
+				continue
+			}
+			options++
+			description := lines[index]
+			index++
+			for index < len(lines) && !strings.HasPrefix(strings.TrimSpace(lines[index]), "-") {
+				description += " " + lines[index]
+				index++
+			}
+			if !strings.Contains(strings.ToLower(description), "default:") {
+				t.Fatalf("%s option lacks documented default: %q", command, description)
+			}
+		}
+		if options == 0 {
+			t.Fatalf("%s help contains no options: %q", command, stderr.String())
+		}
+	}
+
+	for _, value := range []string{
+		"incremental", "offline", "remote (used by explorer)",
+		"oopsla19", "arrays (experimental)", "funArrays (experimental)",
+		"z3", "cvc5 (experimental)",
+	} {
+		if !strings.Contains(help["check"], value) {
+			t.Fatalf("check help does not document %q: %s", value, help["check"])
+		}
+	}
+	for _, value := range []string{"'checker' (shai-grpc)", "'explorer' (json-rpc)"} {
+		if !strings.Contains(help["server"], value) {
+			t.Fatalf("server help does not document %q: %s", value, help["server"])
+		}
+	}
+}
