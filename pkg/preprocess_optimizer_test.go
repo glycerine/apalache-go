@@ -351,3 +351,73 @@ func TestExprOptimizerAllocatesFreshNamesInScalaTraversalOrder(t *testing.T) {
 		t.Fatalf("LET definition did not receive second fresh name: %v", let.Declarations()[0].Body())
 	}
 }
+
+func TestExprOptimizerMatchesScalaExactDerivedCardinalityShapes(t *testing.T) {
+	intSet := mustSet(IntT1)
+	set := NewNameExpr("S", Typed(intSet))
+	cardinality := func(expression Expr) Expr {
+		return MustOperExpr(Op("FiniteSets!Cardinality"), Typed(IntT1), expression)
+	}
+	expectedAtLeastTwo := func() Expr {
+		t1 := NewNameExpr("t_1", Typed(IntT1))
+		t2 := NewNameExpr("t_2", Typed(IntT1))
+		operatorType := mustOperator(nil, intSet)
+		application := func() Expr {
+			return MustOperExpr(Op("OPER_APP"), Typed(intSet), NewNameExpr("t_3", Typed(operatorType)))
+		}
+		distinct := MustOperExpr(Op("NOT"), Typed(BoolT1),
+			MustOperExpr(Op("EQ"), Typed(BoolT1), t1, t2))
+		body := MustOperExpr(Op("EXISTS3"), Typed(BoolT1), t1, application(),
+			MustOperExpr(Op("EXISTS3"), Typed(BoolT1), t2, application(), distinct))
+		return NewLetInExpr(body, Typed(BoolT1), NewOperDecl("t_3", nil, set, Typed(operatorType)))
+	}
+	for _, input := range []Expr{
+		MustOperExpr(Op("GE"), Typed(BoolT1), cardinality(set), i(2)),
+		MustOperExpr(Op("GT"), Typed(BoolT1), cardinality(set), i(1)),
+	} {
+		got := optimizeForTest(t, input)
+		if want := expectedAtLeastTwo(); !EqualTypedExpr(got, want) {
+			t.Fatalf("cardinality lower bound = %v, want %v", got, want)
+		}
+	}
+
+	a := NewNameExpr("a", Typed(IntT1))
+	b := NewNameExpr("b", Typed(IntT1))
+	rangeExpr := MustOperExpr(Op("INT_RANGE"), Typed(intSet), a, b)
+	wantRange := MustOperExpr(Op("IF_THEN_ELSE"), Typed(IntT1),
+		MustOperExpr(Op("LE"), Typed(BoolT1), a, b),
+		MustOperExpr(Op("PLUS"), Typed(IntT1),
+			MustOperExpr(Op("MINUS"), Typed(IntT1), b, a), i(1)), i(0))
+	if got := optimizeForTest(t, cardinality(rangeExpr)); !EqualTypedExpr(got, wantRange) {
+		t.Fatalf("range cardinality = %v, want %v", got, wantRange)
+	}
+	wantPower := MustOperExpr(Op("POW"), Typed(IntT1), i(2), cardinality(set))
+	if got := optimizeForTest(t, cardinality(MustOperExpr(Op("SET_POWERSET"), Typed(mustSet(intSet)), set))); !EqualTypedExpr(got, wantPower) {
+		t.Fatalf("powerset cardinality = %v, want %v", got, wantPower)
+	}
+}
+
+func TestExprOptimizerMatchesScalaExactRecordMapMembership(t *testing.T) {
+	intSet := mustSet(IntT1)
+	recordType, _ := NewRecordType(map[string]Type{"a": IntT1, "b": IntT1})
+	x := NewNameExpr("x", Typed(IntT1))
+	y := NewNameExpr("y", Typed(IntT1))
+	left := NewNameExpr("S", Typed(intSet))
+	right := NewNameExpr("T", Typed(intSet))
+	record := MustOperExpr(Op("RECORD"), Typed(recordType), s("a"), x, s("b"), y)
+	mapped := MustOperExpr(Op("SET_MAP"), Typed(mustSet(recordType)), record, x, left, y, right)
+	member := NewNameExpr("r", Typed(recordType))
+	got := optimizeForTest(t, MustOperExpr(Op("SET_IN"), Typed(BoolT1), member, mapped))
+	stringSet := mustSet(StrT1)
+	want := MustOperExpr(Op("AND"), Typed(BoolT1),
+		MustOperExpr(Op("EQ"), Typed(BoolT1),
+			MustOperExpr(Op("DOMAIN"), Typed(stringSet), member),
+			MustOperExpr(Op("SET_ENUM"), Typed(stringSet), s("a"), s("b"))),
+		MustOperExpr(Op("SET_IN"), Typed(BoolT1),
+			MustOperExpr(Op("FUN_APP"), Typed(IntT1), member, s("a")), left),
+		MustOperExpr(Op("SET_IN"), Typed(BoolT1),
+			MustOperExpr(Op("FUN_APP"), Typed(IntT1), member, s("b")), right))
+	if !EqualTypedExpr(got, want) {
+		t.Fatalf("record map membership = %v, want %v", got, want)
+	}
+}
