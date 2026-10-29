@@ -336,6 +336,14 @@ View == x = 0
 		t.Fatalf("checkInvariant action = %#v", actionSatisfied)
 	}
 	compact := postJSONRPC(t, handler, fmt.Sprintf(
+		`{"jsonrpc":"2.0","method":"compact","params":{"sessionId":%q,"snapshotId":9999},"id":7}`,
+		sessionID,
+	))
+	compactError, _ := compact["error"].(map[string]any)
+	if message, _ := compactError["message"].(string); !strings.Contains(strings.ToLower(message), "snapshot") {
+		t.Fatalf("compact invalid snapshot = %#v", compact)
+	}
+	compact = postJSONRPC(t, handler, fmt.Sprintf(
 		`{"jsonrpc":"2.0","method":"compact","params":{"sessionId":%q,"snapshotId":0},"id":7}`,
 		sessionID,
 	))
@@ -349,6 +357,27 @@ View == x = 0
 	))
 	if result, _ := queryCompacted["result"].(map[string]any); result["operatorValue"] != false {
 		t.Fatalf("query compacted state = %#v", queryCompacted)
+	}
+	afterCompact := postJSONRPC(t, handler, fmt.Sprintf(
+		`{"jsonrpc":"2.0","method":"assumeTransition","params":{"sessionId":%q,"transitionId":1,"checkEnabled":true},"id":7}`,
+		sessionID,
+	))
+	if result, _ := afterCompact["result"].(map[string]any); result["status"] != "ENABLED" {
+		t.Fatalf("transition after compact = %#v", afterCompact)
+	}
+	postJSONRPC(t, handler, fmt.Sprintf(
+		`{"jsonrpc":"2.0","method":"nextStep","params":{"sessionId":%q},"id":7}`,
+		sessionID,
+	))
+	traceAfterCompact := postJSONRPC(t, handler, fmt.Sprintf(
+		`{"jsonrpc":"2.0","method":"query","params":{"sessionId":%q,"kinds":["TRACE"]},"id":7}`,
+		sessionID,
+	))
+	traceResult, _ := traceAfterCompact["result"].(map[string]any)
+	traceDocument, _ := traceResult["trace"].(map[string]any)
+	states, _ := traceDocument["states"].([]any)
+	if len(states) != 2 {
+		t.Fatalf("trace after compact and transition = %#v", traceAfterCompact)
 	}
 	rollback := postJSONRPC(t, handler, fmt.Sprintf(
 		`{"jsonrpc":"2.0","method":"rollback","params":{"sessionId":%q,"snapshotId":0},"id":6}`,
