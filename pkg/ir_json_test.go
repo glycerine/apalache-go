@@ -53,6 +53,118 @@ func TestIRJSONRoundTripEveryNodeAndValue(t *testing.T) {
 	}
 }
 
+func TestIRJSONMatchesScalaTlaToUJsonCases(t *testing.T) {
+	encodeExpr := func(t *testing.T, expression Expr) map[string]any {
+		t.Helper()
+		encoded, err := encodeIRExpression(expression, IRJSONOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return encoded
+	}
+	encodeDecl := func(t *testing.T, declaration Decl) map[string]any {
+		t.Helper()
+		encoded, err := encodeIRDeclaration(declaration, IRJSONOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return encoded
+	}
+	integer := func(value int64) Expr { return NewValueExpr(Int64Value(value), Untyped()) }
+	stringValue := func(value string) Expr { return NewValueExpr(StringValue(value), Untyped()) }
+
+	t.Run("basic values", func(t *testing.T) {
+		cases := []struct {
+			expression Expr
+			kind       string
+			value      any
+		}{
+			{integer(5), "TlaInt", int64(5)},
+			{stringValue("abc"), "TlaStr", "abc"},
+			{NewValueExpr(BoolValue(true), Untyped()), "TlaBool", true},
+		}
+		for _, test := range cases {
+			encoded := encodeExpr(t, test.expression)
+			value := encoded["value"].(map[string]any)
+			if encoded["kind"] != "ValEx" || value["kind"] != test.kind || value["value"] != test.value {
+				t.Fatalf("encoded value = %#v", encoded)
+			}
+		}
+	})
+
+	t.Run("collections", func(t *testing.T) {
+		set := encodeExpr(t, MustOperExpr(Op("SET_ENUM"), Untyped(), integer(1), integer(2), integer(3)))
+		tuple := encodeExpr(t, MustOperExpr(Op("TUPLE"), Untyped(), stringValue("x"), stringValue("y"), stringValue("z")))
+		setArgs := set["args"].([]any)
+		tupleArgs := tuple["args"].([]any)
+		if set["kind"] != "OperEx" || set["oper"] != "SET_ENUM" || len(setArgs) != 3 ||
+			!reflect.DeepEqual(setArgs[1], encodeExpr(t, integer(2))) {
+			t.Fatalf("encoded set = %#v", set)
+		}
+		if tuple["kind"] != "OperEx" || tuple["oper"] != "TUPLE" || len(tupleArgs) != 3 ||
+			!reflect.DeepEqual(tupleArgs[2], encodeExpr(t, stringValue("z"))) {
+			t.Fatalf("encoded tuple = %#v", tuple)
+		}
+	})
+
+	t.Run("let in", func(t *testing.T) {
+		p := NewNameExpr("p", Untyped())
+		declaration := NewOperDecl("A", []OperatorParam{ValueParam("p")},
+			MustOperExpr(Op("PLUS"), Untyped(), p, integer(1)), Untyped())
+		application, err := ApplyDeclarationUntyped(declaration, integer(0))
+		if err != nil {
+			t.Fatal(err)
+		}
+		encoded := encodeExpr(t, NewLetInExpr(application, Untyped(), declaration))
+		declarations := encoded["decls"].([]any)
+		if encoded["kind"] != "LetInEx" || !reflect.DeepEqual(encoded["body"], encodeExpr(t, application)) ||
+			len(declarations) != 1 || !reflect.DeepEqual(declarations[0], encodeDecl(t, declaration)) {
+			t.Fatalf("encoded LET-IN = %#v", encoded)
+		}
+	})
+
+	t.Run("non operator declarations", func(t *testing.T) {
+		body := MustOperExpr(Op("EQ"), Untyped(), NewNameExpr("x", Untyped()), NewValueExpr(BoolValue(true), Untyped()))
+		constJSON := encodeDecl(t, NewConstDecl("C", Untyped()))
+		varJSON := encodeDecl(t, NewVarDecl("x", Untyped()))
+		namedJSON := encodeDecl(t, NewNamedAssumeDecl("myAssume", body, Untyped()))
+		unnamedJSON := encodeDecl(t, NewUnnamedAssumeDecl(body, Untyped()))
+		if constJSON["kind"] != "TlaConstDecl" || constJSON["name"] != "C" ||
+			varJSON["kind"] != "TlaVarDecl" || varJSON["name"] != "x" ||
+			namedJSON["kind"] != "TlaAssumeDecl" || namedJSON["name"] != "myAssume" ||
+			unnamedJSON["kind"] != "TlaAssumeDecl" {
+			t.Fatalf("encoded declarations = %#v %#v %#v %#v", constJSON, varJSON, namedJSON, unnamedJSON)
+		}
+		if _, present := unnamedJSON["name"]; present {
+			t.Fatalf("unnamed assumption has name: %#v", unnamedJSON)
+		}
+	})
+
+	t.Run("operator declarations", func(t *testing.T) {
+		declarations := []*OperDecl{
+			NewOperDecl("T", nil, integer(1), Untyped()),
+			NewOperDecl("T", []OperatorParam{ValueParam("p")}, NewNameExpr("p", Untyped()), Untyped()),
+			NewOperDecl("T", []OperatorParam{{Name: "A", Arity: 1}, ValueParam("b")}, NewNameExpr("b", Untyped()), Untyped()),
+			NewOperDecl("T", []OperatorParam{ValueParam("p")}, NewNameExpr("p", Untyped()), Untyped()),
+		}
+		declarations[3].SetRecursive(true)
+		for index, declaration := range declarations {
+			encoded := encodeDecl(t, declaration)
+			parameters := encoded["formalParams"].([]map[string]any)
+			if encoded["kind"] != "TlaOperDecl" || encoded["name"] != "T" || len(parameters) != len(declaration.FormalParams()) ||
+				encoded["isRecursive"] != (index == 3) {
+				t.Fatalf("encoded operator %d = %#v", index, encoded)
+			}
+			for parameterIndex, parameter := range declaration.FormalParams() {
+				if parameters[parameterIndex]["kind"] != "OperParam" || parameters[parameterIndex]["name"] != parameter.Name ||
+					parameters[parameterIndex]["arity"] != parameter.Arity {
+					t.Fatalf("encoded parameter %d/%d = %#v", index, parameterIndex, parameters[parameterIndex])
+				}
+			}
+		}
+	})
+}
+
 func TestIRJSONSourceRoundTrip(t *testing.T) {
 	store := NewSourceStore()
 	name := NewNameExpr("x", Untyped())
