@@ -23,6 +23,7 @@ dist: build
 	mkdir -p $(STAGING_DIR) $(DIST_ROOT)
 	cp $(BUILD_ROOT)/apalache $(STAGING_DIR)/apalache
 	cp ../LICENSE ../NOTICE ../README.md DEPENDENCY_AUDIT.md $(STAGING_DIR)/
+	cp -R third_party_licenses $(STAGING_DIR)/
 	tar --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner -czf $(ARCHIVE) -C $(BUILD_ROOT) $(RELEASE_NAME)
 
 test:

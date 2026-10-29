@@ -60,6 +60,14 @@ func TestReleaseArchiveRunsWithoutSourceOrExternalRuntime(t *testing.T) {
 			t.Fatalf("release entry %s: %v", name, err)
 		}
 	}
+	g3License, err := os.ReadFile(filepath.Join(extractRoot, releaseName, "third_party_licenses", "g3-LICENSE.txt"))
+	if err != nil {
+		t.Fatalf("release g3 license: %v", err)
+	}
+	if !bytes.Contains(g3License, []byte("MIT License")) ||
+		!bytes.Contains(g3License, []byte("Copyright (c) Microsoft Corporation")) {
+		t.Fatalf("release g3 license has unexpected contents: %q", g3License)
+	}
 
 	binary := filepath.Join(extractRoot, releaseName, "apalache")
 	build, buildErr := buildinfo.ReadFile(binary)
