@@ -1,6 +1,10 @@
 package apalache
 
-import "testing"
+import (
+	"fmt"
+	"math/big"
+	"testing"
+)
 
 func TestTransitionEnabledProjectionEliminatesSymbolicRangeAssignment(t *testing.T) {
 	i := NewNameExpr("i", Typed(IntT1))
@@ -32,11 +36,37 @@ func TestTransitionEnabledProjectionSubstitutesAssignedPrimeInGuard(t *testing.T
 	}
 }
 
+func TestTransitionEnabledProjectionDistributesAssignedDisjunctions(t *testing.T) {
+	x := NewNameExpr("x", Typed(IntT1))
+	prime := MustOperExpr(Op("PRIME"), Typed(IntT1), x)
+	assign := func(value int64) Expr {
+		return MustOperExpr(Op("Apalache!:="), Typed(BoolT1), prime, intLiteral(value))
+	}
+	branch := func(guard Expr, value int64) Expr {
+		return MustOperExpr(Op("AND"), Typed(BoolT1), guard, assign(value))
+	}
+	disjunction := MustOperExpr(Op("OR"), Typed(BoolT1),
+		branch(MustOperExpr(Op("EQ"), Typed(BoolT1), x, intLiteral(0)), 1),
+		branch(MustOperExpr(Op("EQ"), Typed(BoolT1), x, intLiteral(1)), 3))
+	targetGuard := MustOperExpr(Op("LT"), Typed(BoolT1), prime, intLiteral(2))
+	projected, exact := transitionEnabledProjection(MustOperExpr(Op("AND"), Typed(BoolT1), disjunction, targetGuard))
+	if !exact || projected == nil || expressionContainsPrime(projected) || expressionContainsAssignment(projected) {
+		t.Fatalf("assigned disjunction projection = %v, exact=%t", projected, exact)
+	}
+	formatted, err := FormatTLAExpression(projected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if formatted != "(x = 0 /\\ 1 < 2) \\/ (x = 1 /\\ 3 < 2)" {
+		t.Fatalf("assigned disjunction projection = %q", formatted)
+	}
+}
+
 func TestTransitionEnabledProjectionRefusesUneliminatedWitnessPredicate(t *testing.T) {
 	i := NewNameExpr("i", Typed(IntT1))
 	domain := MustOperExpr(Op("INT_RANGE"), Typed(mustSet(IntT1)), NewNameExpr("a", Typed(IntT1)), NewNameExpr("b", Typed(IntT1)))
 	body := MustOperExpr(Op("EQ"), Typed(BoolT1),
-		MustOperExpr(Op("MULT"), Typed(IntT1), i, intLiteral(2)), intLiteral(0))
+		MustOperExpr(Op("MULT"), Typed(IntT1), i, i), intLiteral(0))
 	exists := MustOperExpr(Op("EXISTS3"), Typed(BoolT1), i, domain, body)
 	if projected, exact := transitionEnabledProjection(exists); exact || projected != nil {
 		t.Fatalf("nontrivial witness projection = %v, exact=%t", projected, exact)
@@ -78,9 +108,182 @@ func TestTransitionEnabledProjectionEliminatesIntegerWitnessBounds(t *testing.T)
 		t.Fatalf("affine disjunction projection = %v, exact=%t", projected, exact)
 	}
 
-	nonlinear := MustOperExpr(Op("EQ"), Typed(BoolT1),
+	nonunit := MustOperExpr(Op("EQ"), Typed(BoolT1),
 		MustOperExpr(Op("MULT"), Typed(IntT1), i, intLiteral(2)), x)
+	if projected, exact = transitionEnabledProjection(MustOperExpr(Op("EXISTS3"), Typed(BoolT1), i, domain, nonunit)); !exact || projected == nil ||
+		expressionContainsName(projected, "i") || countOperator(projected, "DIV") == 0 || countOperator(projected, "MOD") == 0 {
+		t.Fatalf("non-unit affine binder projection = %v, exact=%t", projected, exact)
+	}
+
+	negative := MustOperExpr(Op("LT"), Typed(BoolT1),
+		MustOperExpr(Op("PLUS"), Typed(IntT1),
+			MustOperExpr(Op("MULT"), Typed(IntT1), intLiteral(-3), i), intLiteral(2)), x)
+	if projected, exact = transitionEnabledProjection(MustOperExpr(Op("EXISTS3"), Typed(BoolT1), i, domain, negative)); !exact || projected == nil ||
+		expressionContainsName(projected, "i") || countOperator(projected, "DIV") == 0 {
+		t.Fatalf("negative affine binder projection = %v, exact=%t", projected, exact)
+	}
+
+	nonlinear := MustOperExpr(Op("EQ"), Typed(BoolT1),
+		MustOperExpr(Op("MULT"), Typed(IntT1), i, i), x)
 	if projected, exact = transitionEnabledProjection(MustOperExpr(Op("EXISTS3"), Typed(BoolT1), i, domain, nonlinear)); exact || projected != nil {
 		t.Fatalf("nonlinear binder projection = %v, exact=%t", projected, exact)
+	}
+}
+
+func TestNonUnitAffineWitnessProjectionExhaustive(t *testing.T) {
+	i := NewNameExpr("i", Typed(IntT1))
+	x := NewNameExpr("x", Typed(IntT1))
+	comparisons := []string{"EQ", "LT", "LE", "GT", "GE"}
+	for _, coefficient := range []int64{-3, -2, -1, 1, 2, 3} {
+		for offset := int64(-2); offset <= 2; offset++ {
+			affine := Expr(MustOperExpr(Op("MULT"), Typed(IntT1), intLiteral(coefficient), i))
+			if offset != 0 {
+				affine = MustOperExpr(Op("PLUS"), Typed(IntT1), affine, intLiteral(offset))
+			}
+			for lower := int64(-2); lower <= 2; lower++ {
+				for upper := int64(-2); upper <= 2; upper++ {
+					domain := MustOperExpr(Op("INT_RANGE"), Typed(mustSet(IntT1)), intLiteral(lower), intLiteral(upper))
+					for _, comparison := range comparisons {
+						for _, reversed := range []bool{false, true} {
+							left, right := affine, Expr(x)
+							if reversed {
+								left, right = right, left
+							}
+							predicate := MustOperExpr(Op(comparison), Typed(BoolT1), left, right)
+							exists := MustOperExpr(Op("EXISTS3"), Typed(BoolT1), i, domain, predicate)
+							projected, exact := transitionEnabledProjection(exists)
+							if !exact {
+								t.Fatalf("projection was inexact: coefficient=%d offset=%d range=%d..%d comparison=%s reversed=%v",
+									coefficient, offset, lower, upper, comparison, reversed)
+							}
+							for stateValue := int64(-6); stateValue <= 6; stateValue++ {
+								want := false
+								for witness := lower; witness <= upper; witness++ {
+									affineValue := coefficient*witness + offset
+									lhs, rhs := affineValue, stateValue
+									if reversed {
+										lhs, rhs = rhs, lhs
+									}
+									if testIntegerComparison(comparison, lhs, rhs) {
+										want = true
+										break
+									}
+								}
+								got, err := evaluateProjectedBoolean(projected, map[string]*big.Int{"x": big.NewInt(stateValue)})
+								if err != nil || got != want {
+									t.Fatalf("coefficient=%d offset=%d range=%d..%d comparison=%s reversed=%v x=%d: got %v, %v; want %v; projection=%v",
+										coefficient, offset, lower, upper, comparison, reversed, stateValue, got, err, want, projected)
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+func testIntegerComparison(name string, left, right int64) bool {
+	switch name {
+	case "EQ":
+		return left == right
+	case "LT":
+		return left < right
+	case "LE":
+		return left <= right
+	case "GT":
+		return left > right
+	case "GE":
+		return left >= right
+	default:
+		panic("unknown comparison " + name)
+	}
+}
+
+func evaluateProjectedBoolean(expression Expr, names map[string]*big.Int) (bool, error) {
+	if value, constant := boolConstant(expression); constant {
+		return value, nil
+	}
+	operation, ok := expression.(*OperExpr)
+	if !ok {
+		return false, fmt.Errorf("unsupported Boolean expression %T", expression)
+	}
+	arguments := operation.Arguments()
+	switch operation.Operator().Name() {
+	case "AND", "OR":
+		result := operation.Operator().Name() == "AND"
+		for _, argument := range arguments {
+			value, err := evaluateProjectedBoolean(argument, names)
+			if err != nil {
+				return false, err
+			}
+			if operation.Operator().Name() == "AND" {
+				result = result && value
+			} else {
+				result = result || value
+			}
+		}
+		return result, nil
+	case "EQ", "LT", "LE", "GT", "GE":
+		left, err := evaluateProjectedInteger(arguments[0], names)
+		if err != nil {
+			return false, err
+		}
+		right, err := evaluateProjectedInteger(arguments[1], names)
+		if err != nil {
+			return false, err
+		}
+		comparison := left.Cmp(right)
+		switch operation.Operator().Name() {
+		case "EQ":
+			return comparison == 0, nil
+		case "LT":
+			return comparison < 0, nil
+		case "LE":
+			return comparison <= 0, nil
+		case "GT":
+			return comparison > 0, nil
+		default:
+			return comparison >= 0, nil
+		}
+	default:
+		return false, fmt.Errorf("unsupported Boolean operator %s", operation.Operator().Name())
+	}
+}
+
+func evaluateProjectedInteger(expression Expr, names map[string]*big.Int) (*big.Int, error) {
+	if value, constant := constantInteger(expression); constant {
+		return new(big.Int).Set(value), nil
+	}
+	if name, ok := expression.(*NameExpr); ok {
+		value, found := names[name.Name()]
+		if !found {
+			return nil, fmt.Errorf("unknown name %s", name.Name())
+		}
+		return new(big.Int).Set(value), nil
+	}
+	operation, ok := expression.(*OperExpr)
+	if !ok || len(operation.Arguments()) != 2 {
+		return nil, fmt.Errorf("unsupported integer expression %T", expression)
+	}
+	left, err := evaluateProjectedInteger(operation.Arguments()[0], names)
+	if err != nil {
+		return nil, err
+	}
+	right, err := evaluateProjectedInteger(operation.Arguments()[1], names)
+	if err != nil {
+		return nil, err
+	}
+	switch operation.Operator().Name() {
+	case "PLUS":
+		return new(big.Int).Add(left, right), nil
+	case "MINUS":
+		return new(big.Int).Sub(left, right), nil
+	case "DIV":
+		return new(big.Int).Div(left, right), nil
+	case "MOD":
+		return new(big.Int).Mod(left, right), nil
+	default:
+		return nil, fmt.Errorf("unsupported integer operator %s", operation.Operator().Name())
 	}
 }

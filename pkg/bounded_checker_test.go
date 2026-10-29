@@ -715,6 +715,72 @@ Next == \E j \in 0..(x - x + 1): x' = j /\ (j + 1 > x + 1 \/ j < 0)
 	}
 }
 
+func TestCheckBoundedSafetyProjectsNonUnitAffineWitnessDeadlock(t *testing.T) {
+	frontend := ParseAndTypeCheckSource(context.Background(), "AffineWitnessDeadlock.tla", `---- MODULE AffineWitnessDeadlock ----
+EXTENDS Integers
+VARIABLE
+\* @type: Int;
+x
+Init == \E i \in {0, 1}: x = i
+Next == \E j \in 0..2: x' = 0 /\ 2 * j = x
+====
+`, FrontendOptions{}, TypeCheckOptions{})
+	if !frontend.OK() {
+		t.Fatalf("frontend diagnostics = %v", frontend.Diagnostics)
+	}
+	prepared, err := PrepareSafetyTransitions(frontend.Native, SafetyPipelineOptions{
+		Specification: SpecificationConfiguration{Behavior: InitNextSpec{Init: "Init", Next: "Next"}},
+		Sources:       frontend.Sources,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Outcome != SafetyDeadlock || result.Depth != 0 || len(result.States) != 1 {
+		t.Fatalf("non-unit affine witness deadlock = %#v", result)
+	}
+	value, formatErr := FormatTLAExpression(result.States[0].Values["x"])
+	if formatErr != nil || value != "1" {
+		t.Fatalf("non-unit affine deadlocked state x = %q, %v", value, formatErr)
+	}
+}
+
+func TestCheckBoundedSafetyProjectsAssignmentsInsideDisjunction(t *testing.T) {
+	frontend := ParseAndTypeCheckSource(context.Background(), "AssignedDisjunctionDeadlock.tla", `---- MODULE AssignedDisjunctionDeadlock ----
+EXTENDS Integers
+VARIABLE
+\* @type: Int;
+x
+Init == \E i \in {0, 1}: x = i
+Next == ((x = 0 /\ x' = 0) \/ (x = 1 /\ x' = 2)) /\ x' < 1
+====
+`, FrontendOptions{}, TypeCheckOptions{})
+	if !frontend.OK() {
+		t.Fatalf("frontend diagnostics = %v", frontend.Diagnostics)
+	}
+	prepared, err := PrepareSafetyTransitions(frontend.Native, SafetyPipelineOptions{
+		Specification: SpecificationConfiguration{Behavior: InitNextSpec{Init: "Init", Next: "Next"}},
+		Sources:       frontend.Sources,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Outcome != SafetyDeadlock || result.Depth != 0 || len(result.States) != 1 {
+		t.Fatalf("assigned disjunction deadlock = %#v", result)
+	}
+	value, formatErr := FormatTLAExpression(result.States[0].Values["x"])
+	if formatErr != nil || value != "1" {
+		t.Fatalf("assigned-disjunction deadlocked state x = %q, %v", value, formatErr)
+	}
+}
+
 func TestCheckBoundedSafetyEnforcesConfiguredConstraints(t *testing.T) {
 	for _, test := range []struct {
 		name              string

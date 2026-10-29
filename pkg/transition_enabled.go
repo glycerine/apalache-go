@@ -69,6 +69,26 @@ func projectEnabled(expression Expr, primed map[string]Expr) (Expr, bool) {
 		}
 		switch name {
 		case "AND":
+			// An assignment inside a disjunction produces a different primed
+			// environment per branch. Distribute the surrounding conjunction so
+			// later guards and target constraints are substituted in that branch.
+			for disjunctionIndex, argument := range arguments {
+				disjunction, ok := argument.(*OperExpr)
+				if !ok || disjunction.Operator().Name() != "OR" || !expressionContainsAssignment(argument) {
+					continue
+				}
+				branches := make([]Expr, len(disjunction.Arguments()))
+				for branchIndex, branch := range disjunction.Arguments() {
+					terms := append([]Expr(nil), arguments...)
+					terms[disjunctionIndex] = branch
+					var exact bool
+					branches[branchIndex], exact = projectEnabled(booleanAnd(terms...), cloneMap(primed))
+					if !exact {
+						return nil, false
+					}
+				}
+				return booleanOr(branches...), true
+			}
 			projected := make([]Expr, 0, len(arguments))
 			for _, argument := range arguments {
 				item, exact := projectEnabled(argument, primed)
@@ -85,9 +105,6 @@ func projectEnabled(expression Expr, primed map[string]Expr) (Expr, bool) {
 			}
 			return booleanAnd(projected...), true
 		case "OR":
-			if expressionContainsAssignment(expression) {
-				return nil, false
-			}
 			projected := make([]Expr, len(arguments))
 			for index, argument := range arguments {
 				var exact bool
@@ -189,8 +206,8 @@ func projectIntegerRangeExistential(binder string, domainLower, domainUpper, pre
 			continue
 		}
 		arguments := operation.Arguments()
-		leftOffset, leftBinder := projectedBinderOffset(arguments[0], binder)
-		rightOffset, rightBinder := projectedBinderOffset(arguments[1], binder)
+		leftCoefficient, leftOffset, leftBinder := projectedBinderAffine(arguments[0], binder)
+		rightCoefficient, rightOffset, rightBinder := projectedBinderAffine(arguments[1], binder)
 		if !leftBinder && !rightBinder {
 			if expressionContainsName(term, binder) {
 				return nil, false
@@ -203,40 +220,49 @@ func projectIntegerRangeExistential(binder string, domainLower, domainUpper, pre
 			return nil, false
 		}
 		other := arguments[1]
+		coefficient := leftCoefficient
 		offset := leftOffset
+		comparisonName := operation.Operator().Name()
 		if rightBinder {
 			other = arguments[0]
+			coefficient = rightCoefficient
 			offset = rightOffset
+			comparisonName = reverseIntegerComparison(comparisonName)
 		}
-		other = shiftIntegerBoundBig(other, new(big.Int).Neg(offset))
-		switch operation.Operator().Name() {
+		rightHandSide := shiftIntegerBoundBig(other, new(big.Int).Neg(offset))
+		if coefficient.Sign() < 0 {
+			coefficient = new(big.Int).Neg(coefficient)
+			comparisonName = reverseIntegerComparison(comparisonName)
+			rightHandSide = negateIntegerBound(rightHandSide)
+		}
+		if coefficient.Sign() == 0 {
+			return nil, false
+		}
+		floor := func(value Expr) Expr { return divideIntegerBound(value, coefficient) }
+		ceil := func(value Expr) Expr {
+			return divideIntegerBound(shiftIntegerBoundBig(value, new(big.Int).Sub(coefficient, big.NewInt(1))), coefficient)
+		}
+		switch comparisonName {
 		case "EQ":
-			lowers = append(lowers, other)
-			uppers = append(uppers, other)
+			quotient := floor(rightHandSide)
+			lowers = append(lowers, quotient)
+			uppers = append(uppers, quotient)
+			if coefficient.Cmp(big.NewInt(1)) != 0 {
+				remainder := MustOperExpr(Op("MOD"), Typed(IntT1), rightHandSide, integerBoundLiteral(coefficient))
+				conditions = append(conditions, MustOperExpr(Op("EQ"), Typed(BoolT1), remainder, intLiteral(0)))
+			}
+			if coefficient.Cmp(big.NewInt(1)) != 0 {
+				conditions = append(conditions, MustOperExpr(Op("EQ"), Typed(BoolT1),
+					MustOperExpr(Op("MOD"), Typed(IntT1), rightHandSide, integerBoundLiteral(coefficient)), intLiteral(0)))
+			}
 		case "GE":
-			if leftBinder {
-				lowers = append(lowers, other)
-			} else {
-				uppers = append(uppers, other)
-			}
+			lowers = append(lowers, ceil(rightHandSide))
 		case "GT":
-			if leftBinder {
-				lowers = append(lowers, shiftIntegerBound(other, 1))
-			} else {
-				uppers = append(uppers, shiftIntegerBound(other, -1))
-			}
+			lowers = append(lowers, ceil(shiftIntegerBound(rightHandSide, 1)))
 		case "LE":
-			if leftBinder {
-				uppers = append(uppers, other)
-			} else {
-				lowers = append(lowers, other)
-			}
+			uppers = append(uppers, floor(rightHandSide))
 		case "LT":
-			if leftBinder {
-				uppers = append(uppers, shiftIntegerBound(other, -1))
-			} else {
-				lowers = append(lowers, shiftIntegerBound(other, 1))
-			}
+			uppers = append(uppers, floor(shiftIntegerBound(rightHandSide, -1)))
 		default:
 			return nil, false
 		}
@@ -249,35 +275,81 @@ func projectIntegerRangeExistential(binder string, domainLower, domainUpper, pre
 	return booleanAnd(conditions...), true
 }
 
-func projectedBinderOffset(expression Expr, binder string) (*big.Int, bool) {
+func projectedBinderAffine(expression Expr, binder string) (*big.Int, *big.Int, bool) {
 	if name, ok := expression.(*NameExpr); ok && name.Name() == binder {
-		return new(big.Int), true
+		return big.NewInt(1), new(big.Int), true
 	}
 	operation, ok := expression.(*OperExpr)
 	if !ok || len(operation.Arguments()) != 2 {
-		return nil, false
+		return nil, nil, false
 	}
 	arguments := operation.Arguments()
 	switch operation.Operator().Name() {
 	case "PLUS":
 		if offset, constant := constantInteger(arguments[1]); constant {
-			if base, binderExpression := projectedBinderOffset(arguments[0], binder); binderExpression {
-				return new(big.Int).Add(base, offset), true
+			if coefficient, base, binderExpression := projectedBinderAffine(arguments[0], binder); binderExpression {
+				return coefficient, new(big.Int).Add(base, offset), true
 			}
 		}
 		if offset, constant := constantInteger(arguments[0]); constant {
-			if base, binderExpression := projectedBinderOffset(arguments[1], binder); binderExpression {
-				return new(big.Int).Add(base, offset), true
+			if coefficient, base, binderExpression := projectedBinderAffine(arguments[1], binder); binderExpression {
+				return coefficient, new(big.Int).Add(base, offset), true
 			}
 		}
 	case "MINUS":
 		if offset, constant := constantInteger(arguments[1]); constant {
-			if base, binderExpression := projectedBinderOffset(arguments[0], binder); binderExpression {
-				return new(big.Int).Sub(base, offset), true
+			if coefficient, base, binderExpression := projectedBinderAffine(arguments[0], binder); binderExpression {
+				return coefficient, new(big.Int).Sub(base, offset), true
+			}
+		}
+		if offset, constant := constantInteger(arguments[0]); constant {
+			if coefficient, base, binderExpression := projectedBinderAffine(arguments[1], binder); binderExpression {
+				return new(big.Int).Neg(coefficient), new(big.Int).Sub(offset, base), true
+			}
+		}
+	case "MULT":
+		if factor, constant := constantInteger(arguments[1]); constant && factor.Sign() != 0 {
+			if coefficient, base, binderExpression := projectedBinderAffine(arguments[0], binder); binderExpression {
+				return new(big.Int).Mul(coefficient, factor), new(big.Int).Mul(base, factor), true
+			}
+		}
+		if factor, constant := constantInteger(arguments[0]); constant && factor.Sign() != 0 {
+			if coefficient, base, binderExpression := projectedBinderAffine(arguments[1], binder); binderExpression {
+				return new(big.Int).Mul(coefficient, factor), new(big.Int).Mul(base, factor), true
 			}
 		}
 	}
-	return nil, false
+	return nil, nil, false
+}
+
+func reverseIntegerComparison(name string) string {
+	switch name {
+	case "LT":
+		return "GT"
+	case "LE":
+		return "GE"
+	case "GT":
+		return "LT"
+	case "GE":
+		return "LE"
+	default:
+		return name
+	}
+}
+
+func integerBoundLiteral(value *big.Int) Expr {
+	return NewValueExpr(NewIntValue(new(big.Int).Set(value)), Typed(IntT1))
+}
+
+func divideIntegerBound(value Expr, divisor *big.Int) Expr {
+	if divisor.Cmp(big.NewInt(1)) == 0 {
+		return value
+	}
+	return MustOperExpr(Op("DIV"), Typed(IntT1), value, integerBoundLiteral(divisor))
+}
+
+func negateIntegerBound(value Expr) Expr {
+	return MustOperExpr(Op("MINUS"), Typed(IntT1), intLiteral(0), value)
 }
 
 func shiftIntegerBound(expression Expr, amount int64) Expr {
