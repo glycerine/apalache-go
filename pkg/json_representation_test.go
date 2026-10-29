@@ -53,6 +53,47 @@ func TestJSONRepresentationAdapters(t *testing.T) {
 	}
 }
 
+func TestJSONRepresentationMatchesScalaJacksonAdapterCases(t *testing.T) {
+	object := JSONObject(
+		JSONField{Name: "name", Value: JSONString("Alice")},
+		JSONField{Name: "age", Value: JSONInt(30)},
+		JSONField{Name: "active", Value: JSONBool(true)},
+	)
+	fields, objectOK := object.Fields()
+	if !objectOK || !reflect.DeepEqual(fields, map[string]struct{}{"name": {}, "age": {}, "active": {}}) {
+		t.Fatalf("object fields = %#v, %v", fields, objectOK)
+	}
+	if _, found := object.Field("name"); !found {
+		t.Fatal("present field was not found")
+	}
+	if _, found := object.Field("missing"); found {
+		t.Fatal("absent field was found")
+	}
+
+	arrayRepresentation := JSONArray(JSONInt(1), JSONInt(2), JSONInt(3))
+	array, err := JSONAsArray(arrayRepresentation)
+	if err != nil || len(array) != 3 {
+		t.Fatalf("array = %#v, %v", array, err)
+	}
+	if integer, err := JSONAsInt(JSONInt(42)); err != nil || integer != 42 {
+		t.Fatalf("integer = %d, %v", integer, err)
+	}
+	if text, err := JSONAsString(JSONString("hello")); err != nil || text != "hello" {
+		t.Fatalf("string = %q, %v", text, err)
+	}
+	if boolean, err := JSONAsBool(JSONBool(true)); err != nil || !boolean {
+		t.Fatalf("boolean = %v, %v", boolean, err)
+	}
+	if _, err := JSONAsInt(JSONString("not an int")); err == nil {
+		t.Fatal("string accepted as integer")
+	} else {
+		var typed *JSONDeserializationError
+		if !errors.As(err, &typed) {
+			t.Fatalf("type mismatch error = %T: %v", err, err)
+		}
+	}
+}
+
 func TestIRJSONNodeEncoderDecoder(t *testing.T) {
 	expression := MustOperExpr(Op("EQ"), Typed(BoolT1),
 		NewNameExpr("x", Typed(IntT1)), NewValueExpr(Int64Value(1), Typed(IntT1)))
