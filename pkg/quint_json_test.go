@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -45,6 +46,55 @@ func TestParseQuintJSONPreservesTypedBigIntegers(t *testing.T) {
 	formatted, err := FormatTLAExpression(init.(*OperDecl).Body())
 	if err != nil || !strings.Contains(formatted, "100000000000") {
 		t.Fatalf("init expression = %s, %v", formatted, err)
+	}
+}
+
+func TestQuintIRMatchesScalaBigIntAndAssumptionCases(t *testing.T) {
+	large := "42" + "9223372036854775807" + "42"
+	values := []string{"0", "1", "-1", large, "-" + large}
+	importer := quintJSONImporter{types: map[string]quintJSONScheme{
+		"1": {Type: quintJSONType{Kind: "int"}},
+		"2": {Type: quintJSONType{Kind: "bool"}},
+	}}
+	for _, expected := range values {
+		for _, raw := range []string{expected, fmt.Sprintf("%q", expected)} {
+			expression := quintJSONExpr{ID: json.Number("1"), Kind: "int", Value: json.RawMessage(raw)}
+			converted, err := importer.expression(expression)
+			if err != nil {
+				t.Fatalf("decode %s: %v", raw, err)
+			}
+			integer := converted.(*ValueExpr).Value().(IntValue).BigInt()
+			want, _ := new(big.Int).SetString(expected, 10)
+			if integer.Cmp(want) != 0 {
+				t.Fatalf("decode %s = %s, want %s", raw, integer, want)
+			}
+			encoded, err := json.Marshal(expression)
+			if err != nil || !strings.Contains(string(encoded), `"value":`+expected) {
+				t.Fatalf("encode %s = %s, %v", raw, encoded, err)
+			}
+		}
+	}
+
+	truth := quintJSONExpr{ID: json.Number("2"), Kind: "bool", Value: json.RawMessage("true")}
+	for _, test := range []struct {
+		name  string
+		named bool
+	}{{"myAssume", true}, {"_", false}} {
+		declaration, include, err := importer.declaration(quintJSONDef{
+			ID: json.Number("3"), Kind: "assume", Name: test.name, Assumption: &truth,
+		})
+		if err != nil || !include {
+			t.Fatalf("assumption %q = %#v, %v", test.name, declaration, err)
+		}
+		_, named := declaration.(*AssumeDecl).DefinedName()
+		if named != test.named {
+			t.Fatalf("assumption %q named = %v", test.name, named)
+		}
+	}
+
+	if _, err := ParseQuintJSON([]byte(`{}`)); err == nil ||
+		err.Error() != "input was not valid Quint JSON IR: missing keys in dictionary: stage, modules, types" {
+		t.Fatalf("missing-key error = %v", err)
 	}
 }
 

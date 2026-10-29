@@ -287,6 +287,9 @@ func MarshalQuintJSONIR(data []byte, pretty bool) ([]byte, error) {
 	if err := validateQuintJSONOutput(output); err != nil {
 		return nil, err
 	}
+	if output.Table == nil {
+		output.Table = json.RawMessage(`{}`)
+	}
 	if pretty {
 		return json.MarshalIndent(output, "", "  ")
 	}
@@ -345,7 +348,7 @@ func ParseQuintJSON(data []byte) (*Module, error) {
 }
 
 func validateQuintJSONOutput(output quintJSONOutput) error {
-	missing := make([]string, 0, 4)
+	missing := make([]string, 0, 3)
 	if output.Stage == "" {
 		missing = append(missing, "stage")
 	}
@@ -354,9 +357,6 @@ func validateQuintJSONOutput(output quintJSONOutput) error {
 	}
 	if output.Types == nil {
 		missing = append(missing, "types")
-	}
-	if output.Table == nil {
-		missing = append(missing, "table")
 	}
 	if len(missing) != 0 {
 		return fmt.Errorf("input was not valid Quint JSON IR: missing keys in dictionary: %s", strings.Join(missing, ", "))
