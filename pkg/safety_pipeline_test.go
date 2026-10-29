@@ -2,7 +2,10 @@ package apalache
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -73,6 +76,59 @@ func TestPrepareSafetyTransitionsEndToEnd(t *testing.T) {
 	}
 	if _, found := OperatorBody(result.Module, NormalizedVCNotInvariantPrefix+"0"); !found {
 		t.Fatal("normalized invariant negation is missing")
+	}
+}
+
+func TestPrepareSafetyTransitionsObservesScalaPassOrder(t *testing.T) {
+	x := NewNameExpr("x", Typed(IntT1))
+	init := boolDefinition("Init", MustOperExpr(Op("EQ"), Typed(BoolT1), x, intLiteral(0)))
+	next := boolDefinition("Next", MustOperExpr(Op("EQ"), Typed(BoolT1),
+		MustOperExpr(Op("PRIME"), Typed(IntT1), NewNameExpr("x", Typed(IntT1))), x))
+	invariant := boolDefinition("Inv", MustOperExpr(Op("GE"), Typed(BoolT1), x, intLiteral(0)))
+	module := configuredTestModule(NewVarDecl("x", Typed(IntT1)), init, next, invariant)
+	var stages []string
+	prepared, err := PrepareSafetyTransitions(module, SafetyPipelineOptions{
+		Specification: SpecificationConfiguration{
+			Behavior: InitNextSpec{Init: "Init", Next: "Next"}, Invariants: []string{"Inv"},
+		},
+		OnStage: func(stage SafetyPipelineStage) error {
+			if stage.Module == nil {
+				t.Fatalf("stage %d %s has nil module", stage.Number, stage.Name)
+			}
+			stages = append(stages, fmt.Sprintf("%02d_Out%s", stage.Number, stage.Name))
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := []string{
+		"02_OutConfigurationPass", "03_OutDesugarerPass", "04_OutInlinePass", "05_OutTemporalPass",
+		"06_OutInlinePass", "07_OutPrimingPass", "08_OutVCGen", "09_OutPreprocessingPass",
+		"10_OutTransitionFinderPass", "11_OutOptimizationPass", "12_OutAnalysisPass",
+	}
+	if !reflect.DeepEqual(stages, expected) {
+		t.Fatalf("pipeline stages = %v, want %v", stages, expected)
+	}
+	if prepared.Module != nil && !prepared.Module.HasProperty(PropertyAnalyzed) {
+		t.Fatal("observed pipeline did not return analyzed module")
+	}
+}
+
+func TestPrepareSafetyTransitionsPropagatesStageObserverFailure(t *testing.T) {
+	module, configuration := counterSafetyModule(1)
+	want := errors.New("snapshot failed")
+	_, err := PrepareSafetyTransitions(module, SafetyPipelineOptions{
+		Specification: configuration,
+		OnStage: func(stage SafetyPipelineStage) error {
+			if stage.Number == 4 {
+				return want
+			}
+			return nil
+		},
+	})
+	if !errors.Is(err, want) || !strings.Contains(err.Error(), "04_OutInlinePass") {
+		t.Fatalf("stage observer error = %v", err)
 	}
 }
 

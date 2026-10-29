@@ -35,6 +35,26 @@ type SafetyPipelineOptions struct {
 	Renamer       *IncrementalRenamer
 	Tracker       TransformationTracker
 	Sources       *SourceStore
+	OnStage       func(SafetyPipelineStage) error
+}
+
+// SafetyPipelineStage is one Scala-compatible checker pass output. Parser and
+// typechecker stages 00 and 01 belong to the frontend; this pipeline emits
+// stages 02 through 12.
+type SafetyPipelineStage struct {
+	Number int
+	Name   string
+	Module *Module
+}
+
+func observeSafetyStage(options SafetyPipelineOptions, number int, name string, module *Module) error {
+	if options.OnStage == nil {
+		return nil
+	}
+	if err := options.OnStage(SafetyPipelineStage{Number: number, Name: name, Module: module}); err != nil {
+		return fmt.Errorf("observe safety pipeline stage %02d_Out%s: %w", number, name, err)
+	}
+	return nil
 }
 
 type SafetyPipelineResult struct {
@@ -63,8 +83,14 @@ func PrepareSafetyTransitions(module *Module, options SafetyPipelineOptions) (Sa
 	if err != nil {
 		return SafetyPipelineResult{}, fmt.Errorf("configuration: %w", err)
 	}
+	if err = observeSafetyStage(options, 2, "ConfigurationPass", configured.Module); err != nil {
+		return SafetyPipelineResult{}, err
+	}
 	desugared, err := DesugarModule(configured.Module, names, tracker)
 	if err != nil {
+		return SafetyPipelineResult{}, err
+	}
+	if err = observeSafetyStage(options, 3, "DesugarerPass", desugared); err != nil {
 		return SafetyPipelineResult{}, err
 	}
 	inlineOptions := InlinePassOptions{
@@ -76,16 +102,25 @@ func PrepareSafetyTransitions(module *Module, options SafetyPipelineOptions) (Sa
 	if err != nil {
 		return SafetyPipelineResult{}, fmt.Errorf("first inline pass: %w", err)
 	}
+	if err = observeSafetyStage(options, 4, "InlinePass", inlined); err != nil {
+		return SafetyPipelineResult{}, err
+	}
 	inlined, configured.Predicates, err = EncodeTemporalProperties(
 		inlined, configured.Predicates, names, renamer, tracker,
 	)
 	if err != nil {
 		return SafetyPipelineResult{}, fmt.Errorf("temporal encoding: %w", err)
 	}
+	if err = observeSafetyStage(options, 5, "TemporalPass", inlined); err != nil {
+		return SafetyPipelineResult{}, err
+	}
 	inlineOptions.Relevant = configured.Predicates.OperatorNames()
 	inlined, err = InlineConfiguredModule(inlined, inlineOptions)
 	if err != nil {
 		return SafetyPipelineResult{}, fmt.Errorf("second inline pass: %w", err)
+	}
+	if err = observeSafetyStage(options, 6, "InlinePass", inlined); err != nil {
+		return SafetyPipelineResult{}, err
 	}
 	primed, err := PrimeInitializers(inlined, PrimingOptions{
 		Init: configured.Predicates.Init, ConstantInit: configured.Predicates.ConstantInit, Tracker: tracker,
@@ -93,15 +128,24 @@ func PrepareSafetyTransitions(module *Module, options SafetyPipelineOptions) (Sa
 	if err != nil {
 		return SafetyPipelineResult{}, err
 	}
+	if err = observeSafetyStage(options, 7, "PrimingPass", primed); err != nil {
+		return SafetyPipelineResult{}, err
+	}
 	withVCs, vcSources, err := generateVerificationConditions(primed, configured.Predicates, tracker)
 	if err != nil {
 		return SafetyPipelineResult{}, fmt.Errorf("verification conditions: %w", err)
+	}
+	if err = observeSafetyStage(options, 8, "VCGen", withVCs); err != nil {
+		return SafetyPipelineResult{}, err
 	}
 	configured.Predicates.vcStateSources = vcSources.state
 	configured.Predicates.vcActionSources = vcSources.action
 	configured.Predicates.vcTraceSources = vcSources.trace
 	preprocessed, err := PreprocessModule(withVCs, PreprocessOptions{Names: names, Renamer: renamer, Tracker: tracker, ConstantInitName: configured.Predicates.ConstantInit})
 	if err != nil {
+		return SafetyPipelineResult{}, err
+	}
+	if err = observeSafetyStage(options, 9, "PreprocessingPass", preprocessed); err != nil {
 		return SafetyPipelineResult{}, err
 	}
 	persistent := make(map[string]struct{}, len(configured.Predicates.Persistent))
@@ -122,12 +166,21 @@ func PrepareSafetyTransitions(module *Module, options SafetyPipelineOptions) (Sa
 	if err != nil {
 		return SafetyPipelineResult{}, err
 	}
+	if err = observeSafetyStage(options, 10, "TransitionFinderPass", transitions); err != nil {
+		return SafetyPipelineResult{}, err
+	}
 	optimized, err := OptimizeModule(transitions, PreprocessOptions{Names: names, Renamer: renamer, Tracker: tracker})
 	if err != nil {
 		return SafetyPipelineResult{}, err
 	}
+	if err = observeSafetyStage(options, 11, "OptimizationPass", optimized); err != nil {
+		return SafetyPipelineResult{}, err
+	}
 	analyzed, err := AnalyzeModule(optimized, NewExprGradeStore(), tracker)
 	if err != nil {
+		return SafetyPipelineResult{}, err
+	}
+	if err = observeSafetyStage(options, 12, "AnalysisPass", analyzed); err != nil {
 		return SafetyPipelineResult{}, err
 	}
 	return SafetyPipelineResult{Module: analyzed, Predicates: configured.Predicates}, nil
