@@ -403,7 +403,7 @@ func TestG3SolverQuantifiers(t *testing.T) {
 		{name: "exists", forall: false, wantStatus: SMTSatisfiable},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			solver := newTestG3SolverWithLogic(t, "AUFNIA")
+			solver := newTestG3Solver(t)
 			bound, err := solver.Bound(0, SMTInt)
 			if err != nil {
 				t.Fatal(err)

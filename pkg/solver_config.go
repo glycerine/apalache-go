@@ -139,5 +139,5 @@ func NewG3SolverContextWithConfig(config SolverConfig) (*G3SolverContext, error)
 			return nil, fmt.Errorf("solver parameter %s has unsupported value type %T", key, value)
 		}
 	}
-	return newG3SolverContextWithTypedOptions("QF_AUFNIA", options)
+	return newG3SolverContextWithTypedOptions(productionG3Logic, options)
 }

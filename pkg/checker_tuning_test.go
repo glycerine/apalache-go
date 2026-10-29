@@ -82,7 +82,7 @@ func TestParseCheckerTuningMatchesFineTuningParserOptions(t *testing.T) {
 	if got := tuning.solverUIntOptions["memory_high_watermark"]; got != 123 {
 		t.Fatalf("memory_high_watermark = %d, want 123", got)
 	}
-	if solver, err := newG3SolverContextWithUIntOptions("QF_AUFNIA", tuning.solverUIntOptions); err != nil {
+	if solver, err := newG3SolverContextWithUIntOptions(productionG3Logic, tuning.solverUIntOptions); err != nil {
 		t.Fatalf("g3 rejected memory watermark: %v", err)
 	} else if err = solver.Close(); err != nil {
 		t.Fatal(err)
@@ -134,7 +134,7 @@ func TestParseCheckerTuningMapsIntegerSolverOptionsToG3(t *testing.T) {
 			t.Fatalf("solver option %s = %d, want %d", key, got, want)
 		}
 	}
-	if solver, err := newG3SolverContextWithUIntOptions("QF_AUFNIA", tuning.solverUIntOptions); err != nil {
+	if solver, err := newG3SolverContextWithUIntOptions(productionG3Logic, tuning.solverUIntOptions); err != nil {
 		t.Fatalf("g3 rejected validated tuning: %v", err)
 	} else if err = solver.Close(); err != nil {
 		t.Fatal(err)

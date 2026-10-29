@@ -161,7 +161,7 @@ func ParseCheckerTuning(values map[string]string) (CheckerTuning, error) {
 		}
 	}
 	if len(result.solverTextOptions) != 0 {
-		solver, err := newG3SolverContextWithOptions("QF_AUFNIA", result.solverUIntOptions, result.solverTextOptions)
+		solver, err := newG3SolverContextWithOptions(productionG3Logic, result.solverUIntOptions, result.solverTextOptions)
 		if err != nil {
 			return CheckerTuning{}, fmt.Errorf("invalid g3 tuning: %w", err)
 		}

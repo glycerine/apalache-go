@@ -22,6 +22,10 @@ import (
 
 var g3ProcessHardeningErr = hardenG3ProcessDiagnostics()
 
+// productionG3Logic includes quantifiers because exact transition-enabledness
+// may retain bounded nonlinear integer witnesses as SMT existentials.
+const productionG3Logic = "AUFNIA"
+
 // hardenG3ProcessDiagnostics selects g3's release-safe assertion profile for
 // the entire process. g3 models Z3's assertion debugger as process-global
 // state; its default interactive profile can read stdin and launch gdb. A
@@ -157,13 +161,14 @@ type G3SolverContext struct {
 }
 
 func NewG3SolverContext() (*G3SolverContext, error) {
-	return NewG3SolverContextWithLogic("QF_AUFNIA")
+	return NewG3SolverContextWithLogic(productionG3Logic)
 }
 
 // NewG3SolverContextWithLogic creates a solver boundary for an explicit
-// SMT-LIB logic. The production ground encoding uses QF_AUFNIA; the explicit
-// constructor keeps array and quantified adapter paths testable without
-// silently broadening that production contract.
+// SMT-LIB logic. The production ground encoding uses AUFNIA so its array,
+// nonlinear-integer, uninterpreted-function, and quantified paths share one
+// honest solver contract; the explicit constructor keeps narrower adapters
+// testable in isolation.
 func NewG3SolverContextWithLogic(logic string) (*G3SolverContext, error) {
 	return newG3SolverContextWithOptions(logic, nil, nil)
 }

@@ -818,7 +818,7 @@ func (executor *TransitionExecutor) decodedTransitionNumber(
 }
 
 func (executor *TransitionExecutor) solve(ctx context.Context, temporary []Expr) (*G3SolverContext, *G3GroundEncoder, SMTStatus, error) {
-	solver, err := newG3SolverContextWithOptions("QF_AUFNIA", executor.solverUIntOptions, executor.solverTextOptions)
+	solver, err := newG3SolverContextWithOptions(productionG3Logic, executor.solverUIntOptions, executor.solverTextOptions)
 	if err != nil {
 		return nil, nil, SMTUnknown, err
 	}
