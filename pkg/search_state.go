@@ -128,6 +128,8 @@ func (result BoundedSafetyResult) AsCheckerResult(module *Module) CheckerResult 
 	switch result.Outcome {
 	case SafetyNoCounterexample:
 		return CheckerResult{Kind: CheckerNoError}
+	case SafetyExecutionsTooShort:
+		return CheckerResult{Kind: CheckerExecutionsTooShort}
 	case SafetyCounterexample:
 		counterexamples := cloneCounterexamples(result.Counterexamples)
 		for index := range counterexamples {
@@ -137,6 +139,9 @@ func (result BoundedSafetyResult) AsCheckerResult(module *Module) CheckerResult 
 		}
 		return CheckerResult{Kind: CheckerError, NErrors: len(counterexamples), Counterexamples: counterexamples}
 	case SafetyDeadlock:
+		if len(result.States) == 0 {
+			return CheckerResult{Kind: CheckerDeadlock}
+		}
 		deadlock := BoundedCounterexample{
 			Module: module, Depth: result.Depth, Deadlock: true, InitTransition: result.InitTransition,
 			NextTransitions: append([]int(nil), result.NextTransitions...), States: cloneDecodedStates(result.States),

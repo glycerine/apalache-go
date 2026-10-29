@@ -379,8 +379,19 @@ func TestCheckBoundedSafetySkipsUnsatisfiablePaths(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Outcome != SafetyNoCounterexample || result.ExploredExecutions != 0 {
+	// The disabled path is skipped without checking Inv, but exhausting Init
+	// is a deadlock, not a successful bounded execution (Scala compatibility).
+	if result.Outcome != SafetyDeadlock || result.ExploredExecutions != 0 ||
+		len(result.Counterexamples) != 0 || len(result.States) != 0 {
 		t.Fatalf("disabled initial path = %#v", result)
+	}
+	ignored, err := CheckBoundedSafetyWithOptions(context.Background(), prepared.Module, prepared.Predicates,
+		BoundedSafetyOptions{MaxSteps: 2, CheckDeadlocks: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ignored.Outcome != SafetyExecutionsTooShort || ignored.ExploredExecutions != 0 {
+		t.Fatalf("disabled initial path with deadlocks ignored = %#v", ignored)
 	}
 }
 

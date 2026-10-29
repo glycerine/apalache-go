@@ -328,7 +328,9 @@ func runRemoteCheck(ctx context.Context, path string, config remoteCommandConfig
 		}
 		counterexamples := make([]any, 0, max(1, len(result.Counterexamples)))
 		if result.Outcome == pal.SafetyDeadlock {
-			counterexamples = append(counterexamples, encodedRemoteCounterexample(prepared.Module, result.Depth, result.States))
+			if len(result.States) != 0 {
+				counterexamples = append(counterexamples, encodedRemoteCounterexample(prepared.Module, result.Depth, result.States))
+			}
 		} else {
 			for _, counterexample := range result.Counterexamples {
 				counterexamples = append(counterexamples,

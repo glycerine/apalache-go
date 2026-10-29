@@ -799,7 +799,7 @@ func runTest(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return exitTool
 	}
 	switch result.Outcome {
-	case pal.SafetyNoCounterexample:
+	case pal.SafetyNoCounterexample, pal.SafetyExecutionsTooShort:
 		fmt.Fprintln(stdout, "No example found.")
 		return exitOK
 	case pal.SafetyCounterexample:
@@ -814,6 +814,10 @@ func runTest(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		}
 		return exitCounterexample
 	case pal.SafetyDeadlock:
+		if len(result.States) == 0 {
+			fmt.Fprintln(stdout, "Deadlock found before Init: no satisfiable initial state.")
+			return exitCounterexample
+		}
 		if err = writeTestViolationTraces(outputPaths, prepared.Module, result.States, ""); err != nil {
 			fmt.Fprintf(stderr, "cannot write test deadlock trace: %v\n", err)
 			return exitTool
@@ -1584,7 +1588,7 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		for _, counterexample := range result.Counterexamples {
 			traceStates = append(traceStates, counterexample.States)
 		}
-	} else if result.Outcome == pal.SafetyDeadlock {
+	} else if result.Outcome == pal.SafetyDeadlock && len(result.States) != 0 {
 		tracePrefix, traceStates = "violation", append(traceStates, result.States)
 	} else if result.Outcome == pal.SafetyNoCounterexample && *outputTraces && len(result.ExampleStates) != 0 {
 		traceStates = append(traceStates, result.ExampleStates)
@@ -1641,12 +1645,19 @@ func runCheck(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		}
 		return exitCounterexample
 	case pal.SafetyDeadlock:
+		if len(result.States) == 0 {
+			fmt.Fprintln(stdout, "Deadlock found before Init: no satisfiable initial state.")
+			return exitCounterexample
+		}
 		fmt.Fprintf(stdout, "Deadlock found at depth %d.\n", result.Depth)
 		if formatErr := printDecodedStates(stdout, prepared.Module, result.States); formatErr != nil {
 			fmt.Fprintf(stderr, "cannot format deadlock state: %v\n", formatErr)
 			return exitTool
 		}
 		return exitCounterexample
+	case pal.SafetyExecutionsTooShort:
+		fmt.Fprintln(stdout, "All executions are shorter than the provided bound: no satisfiable initial state.")
+		return exitOK
 	case pal.SafetyNoCounterexample:
 		fmt.Fprintf(stdout, "No counterexample found through depth %d (%d symbolic executions).\n", *length, result.ExploredExecutions)
 		return exitOK

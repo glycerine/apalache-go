@@ -43,15 +43,16 @@ func SimulateBehavior(
 }
 
 type SimulationOptions struct {
-	MaxSteps     int
-	MaxRuns      int
-	Randomize    bool
-	RandomSeed   int64
-	SMTEncoding  SMTEncoding
-	Tuning       CheckerTuning
-	MaxErrors    int
-	RuleStats    *RuleStatListener
-	RewriteStats SymbolicStateRewriterListener
+	MaxSteps      int
+	MaxRuns       int
+	Randomize     bool
+	RandomSeed    int64
+	SMTEncoding   SMTEncoding
+	Tuning        CheckerTuning
+	MaxErrors     int
+	RuleStats     *RuleStatListener
+	RewriteStats  SymbolicStateRewriterListener
+	excludedViews [][]Expr
 }
 
 // SimulateBehaviorWithOptions finds one behavior while honoring the same
@@ -114,6 +115,18 @@ func SimulateAndCheckWithOptions(
 	predicates DerivedPredicates,
 	options SimulationOptions,
 ) (SimulationReport, error) {
+	return simulateAndCheckWith(ctx, module, predicates, options, CheckBoundedSafetyWithOptions)
+}
+
+// Pass the checker explicitly so inconclusive solver outcomes can be tested
+// deterministically, without global hooks or timing-dependent solver limits.
+func simulateAndCheckWith(
+	ctx context.Context,
+	module *Module,
+	predicates DerivedPredicates,
+	options SimulationOptions,
+	check func(context.Context, *Module, DerivedPredicates, BoundedSafetyOptions) (BoundedSafetyResult, error),
+) (SimulationReport, error) {
 	if options.MaxRuns <= 0 {
 		return SimulationReport{}, fmt.Errorf("maximum simulation run count must be positive")
 	}
@@ -128,24 +141,33 @@ func SimulateAndCheckWithOptions(
 	report := SimulationReport{Runs: make([]SimulationResult, 0, options.MaxRuns)}
 	options.Randomize = true
 	for run := 0; run < options.MaxRuns; run++ {
+		options.excludedViews = safetyExcludedViews(&BoundedSafetyResult{Counterexamples: report.Counterexamples})
 		result, err := simulateBehavior(ctx, module, predicates, options, random)
+		if errors.Is(err, errSimulationViewsExhausted) {
+			break
+		}
 		if err != nil {
 			return SimulationReport{}, fmt.Errorf("simulation run %d: %w", run+1, err)
 		}
 		report.Runs = append(report.Runs, result)
 		if result.Outcome != SimulationUnknown && len(predicates.Invariants) != 0 {
 			remaining := options.MaxErrors - len(report.Counterexamples)
-			checked, checkErr := CheckBoundedSafetyWithOptions(ctx, module, predicates, BoundedSafetyOptions{
+			checked, checkErr := check(ctx, module, predicates, BoundedSafetyOptions{
 				MaxSteps: len(result.NextTransitions), CheckDeadlocks: false, MaxErrors: remaining,
-				SMTEncoding:  options.SMTEncoding,
-				Tuning:       options.Tuning.withExactTransitionPath(result.InitTransition, result.NextTransitions),
-				RuleStats:    options.RuleStats,
-				RewriteStats: options.RewriteStats,
+				SMTEncoding:   options.SMTEncoding,
+				Tuning:        options.Tuning.withExactTransitionPath(result.InitTransition, result.NextTransitions),
+				RuleStats:     options.RuleStats,
+				RewriteStats:  options.RewriteStats,
+				excludedViews: options.excludedViews,
 			})
 			if checkErr != nil {
 				return SimulationReport{}, fmt.Errorf("check simulation run %d: %w", run+1, checkErr)
 			}
 			report.Counterexamples = append(report.Counterexamples, checked.Counterexamples...)
+			if checked.Outcome == SafetyUnknown {
+				report.Runs[len(report.Runs)-1].Outcome = SimulationUnknown
+				break
+			}
 			if len(report.Counterexamples) >= options.MaxErrors {
 				break
 			}
@@ -156,6 +178,8 @@ func SimulateAndCheckWithOptions(
 	}
 	return report, nil
 }
+
+var errSimulationViewsExhausted = errors.New("all initial views have been excluded")
 
 func simulateBehavior(
 	ctx context.Context,
@@ -192,6 +216,10 @@ func simulateBehavior(
 	if err != nil {
 		return SimulationResult{}, err
 	}
+	view, err := checkerStateView(module, predicates)
+	if err != nil {
+		return SimulationResult{}, err
+	}
 	constantInit, hasConstantInit := OperatorBody(module, NormalizedConstInit)
 	inputs := modulePathInputs{
 		constants:    declarationNameSlice(module.ConstDeclarations()),
@@ -201,6 +229,7 @@ func simulateBehavior(
 		initTransitions:  TransitionsFromModule(module, NormalizedInitPrefix),
 		nextTransitions:  TransitionsFromModule(module, NormalizedNextPrefix),
 		stateConstraints: stateConstraints, actionConstraints: actionConstraints,
+		view: view, excludedViews: options.excludedViews,
 		smtEncoding:  smtEncoding,
 		tuning:       options.Tuning,
 		ruleStats:    options.RuleStats,
@@ -236,6 +265,9 @@ func simulateBehavior(
 		}
 	}
 	if path.init < 0 {
+		if len(options.excludedViews) != 0 {
+			return SimulationResult{}, errSimulationViewsExhausted
+		}
 		return SimulationResult{}, fmt.Errorf("no satisfiable initial state")
 	}
 

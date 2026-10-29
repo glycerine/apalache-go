@@ -14,6 +14,7 @@ const (
 	SafetyNoCounterexample
 	SafetyCounterexample
 	SafetyDeadlock
+	SafetyExecutionsTooShort
 )
 
 type BoundedSafetyOptions struct {
@@ -27,6 +28,7 @@ type BoundedSafetyOptions struct {
 	Listeners             []ModelCheckerListener
 	RuleStats             *RuleStatListener
 	RewriteStats          SymbolicStateRewriterListener
+	excludedViews         [][]Expr // exclusions retained by the enclosing simulation search
 }
 
 type BoundedCounterexample struct {
@@ -56,6 +58,7 @@ type BoundedSafetyResult struct {
 	States             []DecodedState
 	Counterexamples    []BoundedCounterexample
 	ExampleStates      []DecodedState
+	initialStateFound  bool
 }
 
 // CheckBoundedSafety checks every normalized transition path through maxSteps
@@ -217,15 +220,9 @@ func CheckBoundedSafetyWithOptions(
 	variableDeclarations := module.VarDeclarations()
 	constantInit, hasConstantInit := OperatorBody(module, NormalizedConstInit)
 	assumptions := module.AssumeDeclarations()
-	var view Expr
-	if normalizedView, found := OperatorBody(module, NormalizedVCView); found {
-		view = normalizedView
-	} else if predicates.View != "" {
-		var found bool
-		view, found = OperatorBody(module, predicates.View)
-		if !found {
-			return BoundedSafetyResult{}, fmt.Errorf("state view %s was not found", predicates.View)
-		}
+	view, err := checkerStateView(module, predicates)
+	if err != nil {
+		return BoundedSafetyResult{}, err
 	}
 
 	result := BoundedSafetyResult{Outcome: SafetyNoCounterexample, Depth: -1, InitTransition: -1}
@@ -243,9 +240,10 @@ func CheckBoundedSafetyWithOptions(
 		stateConstraints:      stateConstraints, actionConstraints: actionConstraints,
 		tuning: options.Tuning,
 		view:   view, maxErrors: options.MaxErrors,
-		listeners:    append([]ModelCheckerListener(nil), options.Listeners...),
-		ruleStats:    options.RuleStats,
-		rewriteStats: options.RewriteStats,
+		excludedViews: options.excludedViews,
+		listeners:     append([]ModelCheckerListener(nil), options.Listeners...),
+		ruleStats:     options.RuleStats,
+		rewriteStats:  options.RewriteStats,
 	}
 	queue := make([]boundedPath, 0, len(initTransitions))
 	for initNumber := range initTransitions {
@@ -266,7 +264,27 @@ func CheckBoundedSafetyWithOptions(
 		}
 		queue = append(queue, children...)
 	}
+	if !result.initialStateFound {
+		// No user state exists to decode or send to trace listeners.
+		result.Outcome = SafetyExecutionsTooShort
+		if options.CheckDeadlocks {
+			result.Outcome = SafetyDeadlock
+		}
+	}
 	return result, nil
+}
+
+func checkerStateView(module *Module, predicates DerivedPredicates) (Expr, error) {
+	if view, found := OperatorBody(module, NormalizedVCView); found {
+		return view, nil
+	}
+	if predicates.View != "" {
+		if view, found := OperatorBody(module, predicates.View); found {
+			return view, nil
+		}
+		return nil, fmt.Errorf("state view %s was not found", predicates.View)
+	}
+	return nil, nil
 }
 
 func normalizedCheckerVCs(module *Module) (
@@ -438,6 +456,7 @@ type modulePathInputs struct {
 	invariantMinimumDepth int
 	tuning                CheckerTuning
 	view                  Expr
+	excludedViews         [][]Expr
 	maxErrors             int
 	listeners             []ModelCheckerListener
 	ruleStats             *RuleStatListener
@@ -469,6 +488,9 @@ func searchSafetyPath(
 	if status == SMTUnsatisfiable {
 		return false, nil
 	}
+	if len(path.next) == 0 {
+		result.initialStateFound = true
+	}
 	if len(path.next) >= inputs.invariantMinimumDepth {
 		for invariantNumber, invariant := range inputs.stateInvariants {
 			if !inputs.tuning.allowsInvariant(len(path.next), "state", invariantNumber) {
@@ -498,10 +520,8 @@ func searchSafetyPath(
 				}
 			}
 		}
-		for invariantNumber, invariant := range inputs.traceInvariants {
-			if !inputs.tuning.allowsInvariant(len(path.next), "state", len(inputs.stateInvariants)+invariantNumber) {
-				continue
-			}
+		// Scala checks trace invariants independently of the state/action filter.
+		for _, invariant := range inputs.traceInvariants {
 			for {
 				status, states, views, checkErr := executor.checkTraceAndDecodeDistinctView(
 					ctx, invariant.parameter, invariant.expression, invariant.historyType,
@@ -578,6 +598,11 @@ func searchSafetyPath(
 			continue
 		}
 		enabledNext = true
+		if len(path.next) == inputs.maxSteps {
+			// The outgoing transition is only an enabledness probe at the
+			// boundary. Its action is outside the requested checking bound.
+			continue
+		}
 		for invariantNumber, invariant := range inputs.actionInvariants {
 			if !inputs.tuning.allowsInvariant(len(child.next), "action", invariantNumber) {
 				continue
@@ -754,6 +779,10 @@ func replayPendingNext(inputs modulePathInputs, path boundedPath, nextNumber int
 			return nil, fmt.Errorf("assert target-state constraint %s: %w", constraint.name, err)
 		}
 	}
+	bindings := append(append([]Binding(nil), executor.states...), executor.scope.Binding.Shift(executor.constants))
+	if err = executor.assertExcludedViews(inputs.view, inputs.excludedViews, bindings); err != nil {
+		return nil, err
+	}
 	return executor, nil
 }
 
@@ -793,6 +822,9 @@ func replaySafetyPath(inputs modulePathInputs, path boundedPath) (*TransitionExe
 		if err := assertNamedExpressions(executor, inputs.stateConstraints); err != nil {
 			return nil, err
 		}
+	}
+	if err := executor.assertExcludedViews(inputs.view, inputs.excludedViews, executor.states); err != nil {
+		return nil, err
 	}
 	return executor, nil
 }

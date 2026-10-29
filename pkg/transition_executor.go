@@ -731,33 +731,15 @@ func (executor *TransitionExecutor) checkAndDecodeDistinctView(
 		return SMTUnknown, nil, nil, fmt.Errorf("rewrite state expression: %w", err)
 	}
 	executor.scope = scope
-	viewCells := make([]ArenaCell, len(bindings))
-	for index, binding := range bindings {
-		viewScope, cell, rewriteErr := executor.rewriter.Rewrite(view,
-			RewriterScope{Arena: executor.scope.Arena, Binding: binding})
-		if rewriteErr != nil {
-			return SMTUnknown, nil, nil, fmt.Errorf("rewrite state view at depth %d: %w", index, rewriteErr)
-		}
-		executor.scope.Arena = viewScope.Arena
-		viewCells[index] = cell
+	viewCells, err := executor.rewritePathViews(view, bindings)
+	if err != nil {
+		return SMTUnknown, nil, nil, err
 	}
-	temporary := []Expr{assertion.NameExpr()}
-	for _, prior := range excluded {
-		limit := len(prior)
-		if limit > len(viewCells) {
-			continue
-		}
-		differences := make([]Expr, limit)
-		for index := 0; index < limit; index++ {
-			equal := MustOperExpr(Op("EQ"), Typed(BoolT1), viewCells[index].NameExpr(), prior[index])
-			differences[index] = MustOperExpr(Op("NOT"), Typed(BoolT1), equal)
-		}
-		if len(differences) == 1 {
-			temporary = append(temporary, differences[0])
-		} else if len(differences) > 1 {
-			temporary = append(temporary, MustOperExpr(Op("OR"), Typed(BoolT1), differences...))
-		}
+	exclusions, err := executor.viewExclusionConstraints(viewCells, excluded)
+	if err != nil {
+		return SMTUnknown, nil, nil, err
 	}
+	temporary := append([]Expr{assertion.NameExpr()}, exclusions...)
 	solver, encoder, status, err := executor.solve(ctx, temporary)
 	if solver != nil {
 		defer solver.Close()
@@ -787,6 +769,59 @@ func (executor *TransitionExecutor) checkAndDecodeDistinctView(
 		}
 	}
 	return status, states, views, nil
+}
+
+func (executor *TransitionExecutor) rewritePathViews(view Expr, bindings []Binding) ([]ArenaCell, error) {
+	cells := make([]ArenaCell, len(bindings))
+	for index, binding := range bindings {
+		scope, cell, err := executor.rewriter.Rewrite(view, RewriterScope{Arena: executor.scope.Arena, Binding: binding})
+		if err != nil {
+			return nil, fmt.Errorf("rewrite state view at depth %d: %w", index, err)
+		}
+		executor.scope.Arena = scope.Arena
+		cells[index] = cell
+	}
+	return cells, nil
+}
+
+func (executor *TransitionExecutor) viewExclusionConstraints(cells []ArenaCell, excluded [][]Expr) ([]Expr, error) {
+	var constraints []Expr
+	for _, prior := range excluded {
+		if len(prior) == 0 || len(prior) > len(cells) {
+			continue
+		}
+		differences := make([]Expr, len(prior))
+		for index, value := range prior {
+			equal := MustOperExpr(Op("EQ"), Typed(BoolT1), cells[index].NameExpr(), value)
+			// Decoded views are TLA values: lower structural equality before SMT.
+			scope, comparison, err := executor.rewriter.Rewrite(equal, executor.scope)
+			if err != nil {
+				return nil, fmt.Errorf("rewrite excluded view at depth %d: %w", index, err)
+			}
+			executor.scope = scope
+			differences[index] = MustOperExpr(Op("NOT"), Typed(BoolT1), comparison.NameExpr())
+		}
+		constraints = append(constraints, booleanOr(differences...))
+	}
+	return constraints, nil
+}
+
+// Assert exclusions on the path itself, so simulation selects only remaining
+// behaviors as well as avoiding duplicate witnesses during invariant checking.
+func (executor *TransitionExecutor) assertExcludedViews(view Expr, excluded [][]Expr, bindings []Binding) error {
+	if view == nil || len(excluded) == 0 {
+		return nil
+	}
+	cells, err := executor.rewritePathViews(view, bindings)
+	if err != nil {
+		return err
+	}
+	constraints, err := executor.viewExclusionConstraints(cells, excluded)
+	if err != nil {
+		return err
+	}
+	executor.asserted = append(executor.asserted, constraints...)
+	return nil
 }
 
 type DecodedState struct {

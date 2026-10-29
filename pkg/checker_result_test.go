@@ -125,6 +125,7 @@ func TestBoundedSafetyResultMapsEveryCheckerOutcome(t *testing.T) {
 		kind   CheckerResultKind
 	}{
 		{BoundedSafetyResult{Outcome: SafetyNoCounterexample}, CheckerNoError},
+		{BoundedSafetyResult{Outcome: SafetyExecutionsTooShort}, CheckerExecutionsTooShort},
 		{BoundedSafetyResult{Outcome: SafetyCounterexample, Counterexamples: []BoundedCounterexample{{States: state}}}, CheckerError},
 		{BoundedSafetyResult{Outcome: SafetyDeadlock, Depth: 2, States: state}, CheckerDeadlock},
 		{BoundedSafetyResult{Outcome: SafetyUnknown}, CheckerSMTTimeout},
