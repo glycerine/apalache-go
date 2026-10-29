@@ -199,6 +199,7 @@ func ParseSource(ctx context.Context, filename, source string, opts FrontendOpti
 		result.Module = spec.Root.Name
 		result.Extends = append([]string(nil), spec.Root.Extends...)
 	}
+	normalizeFrontendDiagnosticFilenames(result.Diagnostics, filename, result.Module)
 	if hasErrors(result.Diagnostics) {
 		return result
 	}
@@ -219,6 +220,7 @@ func ParseSource(ctx context.Context, filename, source string, opts FrontendOpti
 	instantiatedScopes := tlagoInstantiatedOperatorScopes(spec)
 	ir, irDiags := tlago.ApalacheIRJSON(spec, tlago.ApalacheIROptions{IncludeSource: opts.IncludeSource})
 	result.Diagnostics = append(result.Diagnostics, frontendDiagnostics(irDiags)...)
+	normalizeFrontendDiagnosticFilenames(result.Diagnostics, filename, result.Module)
 	if !hasErrors(result.Diagnostics) {
 		result.IR = json.RawMessage(ir)
 		result.Sources = NewSourceStore()
@@ -275,6 +277,7 @@ func ParseAndTypeCheckSource(ctx context.Context, filename, source string, front
 	result.Annotations = annotations.Annotations
 	result.Aliases = annotations.Aliases
 	result.Diagnostics = append(result.Diagnostics, annotations.Diagnostics...)
+	normalizeFrontendDiagnosticFilenames(result.Diagnostics, filename, result.Module)
 	if !annotations.OK() {
 		return result
 	}
@@ -284,6 +287,7 @@ func ParseAndTypeCheckSource(ctx context.Context, filename, source string, front
 	typed := TypeCheckModule(result.Native, typeOptions)
 	result.Types = typed.Types
 	result.Diagnostics = append(result.Diagnostics, typed.Diagnostics...)
+	normalizeFrontendDiagnosticFilenames(result.Diagnostics, filename, result.Module)
 	if typed.Module != nil {
 		result.Annotations = remapDeclarationAnnotations(result.Native, typed.Module, result.Annotations)
 		result.Native = typed.Module

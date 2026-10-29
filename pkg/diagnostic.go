@@ -2,6 +2,7 @@ package apalache
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/glycerine/tlago"
 )
@@ -39,6 +40,9 @@ func (d Diagnostic) Error() string {
 		location = d.Position.Filename
 		if d.Position.Line > 0 {
 			location += fmt.Sprintf(":%d:%d", d.Position.Line, d.Position.Column)
+			if d.Position.EndLine > 0 {
+				location += fmt.Sprintf("-%d:%d", d.Position.EndLine, d.Position.EndColumn)
+			}
 		}
 		location += ": "
 	}
@@ -66,6 +70,30 @@ func frontendDiagnostics(in tlago.Diagnostics) []Diagnostic {
 		})
 	}
 	return out
+}
+
+// normalizeFrontendDiagnosticFilenames removes parser mount paths and restores
+// the root module's .tla basename. tlago parses an in-memory root from a
+// temporary __source__ directory and Apalache IR source locations use the
+// module name without an extension; neither implementation detail should leak
+// into stable diagnostics.
+func normalizeFrontendDiagnosticFilenames(diagnostics []Diagnostic, logicalFilename, rootModule string) {
+	logicalBase := filepath.Base(logicalFilename)
+	logicalStem := logicalBase[:len(logicalBase)-len(filepath.Ext(logicalBase))]
+	for index := range diagnostics {
+		filename := diagnostics[index].Position.Filename
+		if filename == "" {
+			continue
+		}
+		base := filepath.Base(filename)
+		if base == logicalBase || base == logicalStem || filename == rootModule || base == rootModule {
+			diagnostics[index].Position.Filename = logicalBase
+			continue
+		}
+		if filepath.IsAbs(filename) || base != filename {
+			diagnostics[index].Position.Filename = base
+		}
+	}
 }
 
 func hasErrors(diags []Diagnostic) bool {

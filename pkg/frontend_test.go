@@ -38,6 +38,37 @@ func TestParseSourceRejectsBlankInput(t *testing.T) {
 	}
 }
 
+func TestFrontendDiagnosticsUseStableScalaShapedFilenames(t *testing.T) {
+	parsed := ParseSource(context.Background(), "/logical/specs/Broken.tla", `---- MODULE Broken ----
+Bad == [f EXCEPT ![1] =
+====
+`, FrontendOptions{})
+	if parsed.OK() || len(parsed.Diagnostics) == 0 {
+		t.Fatalf("malformed source diagnostics = %+v", parsed.Diagnostics)
+	}
+	for _, diagnostic := range parsed.Diagnostics {
+		if diagnostic.Position.Filename != "" && diagnostic.Position.Filename != "Broken.tla" {
+			t.Fatalf("parser diagnostic leaked physical filename %q", diagnostic.Position.Filename)
+		}
+	}
+
+	typed := ParseAndTypeCheckSource(context.Background(), "/logical/specs/TypeNames.tla", `---- MODULE TypeNames ----
+VARIABLE
+\* @type: Int;
+x
+Init == x = TRUE
+====
+`, FrontendOptions{}, TypeCheckOptions{})
+	if typed.OK() || len(typed.Diagnostics) == 0 {
+		t.Fatalf("ill-typed source diagnostics = %+v", typed.Diagnostics)
+	}
+	for _, diagnostic := range typed.Diagnostics {
+		if diagnostic.Position.Filename != "" && diagnostic.Position.Filename != "TypeNames.tla" {
+			t.Fatalf("type diagnostic filename = %q", diagnostic.Position.Filename)
+		}
+	}
+}
+
 func TestParseFileAcceptsEmptyModuleAndRejectsBlankFile(t *testing.T) {
 	directory := t.TempDir()
 	emptyModule := filepath.Join(directory, "Empty.tla")
