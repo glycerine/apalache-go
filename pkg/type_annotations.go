@@ -187,7 +187,7 @@ func propagateRetainedLocalAnnotations(module *Module, types map[UID]Type, annot
 	}
 }
 
-// propagateExpandedOperatorAnnotations repairs a tlago v0.1.9 compatibility
+// propagateExpandedOperatorAnnotations repairs a tlago v0.1.10 compatibility
 // edge: SANY expands applications of user-defined symbolic operators (for
 // example F1 (+) F2) into the operator body before IR export. The source span
 // still identifies the annotated operator application, so retain that

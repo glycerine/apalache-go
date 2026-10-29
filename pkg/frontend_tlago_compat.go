@@ -584,7 +584,7 @@ func normalizeTlagoInstantiatedLocalDefinitions(
 }
 
 // normalizeTlagoInstanceExtendedDefinitions supplies definitions inherited by
-// a root INSTANCE target. tlago v0.1.9 exports only the target's direct
+// a root INSTANCE target. tlago v0.1.10 exports only the target's direct
 // definitions, although those definitions may refer to operators from EXTENDS.
 func normalizeTlagoInstanceExtendedDefinitions(spec *tlago.Spec) {
 	if spec == nil || spec.Root == nil {
@@ -909,7 +909,7 @@ func tlagoInstanceEnvironment(
 }
 
 // normalizeTlagoNestedInstances promotes nested INSTANCE declarations into
-// equivalent root instances. tlago v0.1.9 otherwise omits their definitions
+// equivalent root instances. tlago v0.1.10 otherwise omits their definitions
 // from Apalache IR. Explicit substitutions make every enclosing wrapper and
 // implicit same-name substitution visible to the exporter.
 func normalizeTlagoNestedInstances(spec *tlago.Spec) {
@@ -981,7 +981,7 @@ func normalizeTlagoNestedInstances(spec *tlago.Spec) {
 	}
 }
 
-// normalizeTlagoLambdas works around tlago v0.1.9's ApalacheIR exporter
+// normalizeTlagoLambdas works around tlago v0.1.10's ApalacheIR exporter
 // treating a domainless LAMBDA like a function constructor. An operator-valued
 // lambda is equivalently represented as a local operator definition whose
 // name is the value of the surrounding LET expression.
@@ -1339,7 +1339,7 @@ func normalizeTlagoLambdaValues(module *Module, sources *SourceStore) *Module {
 }
 
 // normalizeTlagoRecursiveFunctions reconstructs FUN_REC_CTOR/FUN_REC_REF.
-// tlago v0.1.9 exports a recursive function as an ordinary constructor whose
+// tlago v0.1.10 exports a recursive function as an ordinary constructor whose
 // body calls the enclosing nullary declaration by name.
 func normalizeTlagoRecursiveFunctions(module *Module, sources *SourceStore) *Module {
 	if module == nil {
@@ -1397,7 +1397,7 @@ func normalizeTlagoRecursiveFunctions(module *Module, sources *SourceStore) *Mod
 }
 
 // normalizeTlagoOperatorValues repairs a non-nullary operator passed as a
-// higher-order argument. tlago v0.1.9 wraps such a name in a zero-argument
+// higher-order argument. tlago v0.1.10 wraps such a name in a zero-argument
 // OPER_APP, which is never a valid call to a non-nullary definition.
 func normalizeTlagoOperatorValues(module *Module, sources *SourceStore) *Module {
 	if module == nil {
@@ -1461,7 +1461,7 @@ func normalizeTlagoOperatorValues(module *Module, sources *SourceStore) *Module 
 }
 
 // normalizeTlagoRealValues repairs the two predefined values from Reals.tla.
-// tlago v0.1.9 emits them as unresolved names, unlike Nat and Int, which its
+// tlago v0.1.10 emits them as unresolved names, unlike Nat and Int, which its
 // exporter emits as predefined values directly.
 func normalizeTlagoRealValues(module *Module, sources *SourceStore, imported bool) *Module {
 	if module == nil || !imported {
@@ -1703,7 +1703,7 @@ func normalizeTlagoVariantUnit(module *Module, sources *SourceStore, variantsImp
 	return transformTlagoModuleExpressions(module, rewrite, sources)
 }
 
-// normalizeTlagoApalacheAssignments works around tlago v0.1.9's ApalacheIR
+// normalizeTlagoApalacheAssignments works around tlago v0.1.10's ApalacheIR
 // exporter rejecting the imported infix := operator. Replacing it by its
 // standard-library definition is semantics-preserving: x := e is defined as
 // x = e, and the assignment-analysis pass subsequently recovers assignments.
@@ -1845,7 +1845,7 @@ func collectTlagoBinderLayout(position tlago.Position, bounds []tlago.BoundVar, 
 	return result
 }
 
-// normalizeTlagoTupleBinders reconstructs tuple binders that tlago v0.1.9
+// normalizeTlagoTupleBinders reconstructs tuple binders that tlago v0.1.10
 // flattens while exporting FUN_CTOR and SET_MAP. Unlike an IR-only heuristic,
 // the saved AST metadata distinguishes <<x, y>> \in S from x, y \in S.
 func normalizeTlagoTupleBinders(module *Module, sources *SourceStore, layouts []tlagoBinderLayout) *Module {
@@ -1923,7 +1923,7 @@ func transformTlagoModuleExpressions(module *Module, transform ExprTransform, so
 	return result
 }
 
-// normalizeTlagoLocalDeclarationTags removes inferred tags that tlago v0.1.9
+// normalizeTlagoLocalDeclarationTags removes inferred tags that tlago v0.1.10
 // copies from the enclosing operator onto LET definitions. Explicit @type
 // annotations are collected separately and reapplied by the native checker.
 func normalizeTlagoLocalDeclarationTags(module *Module, sources *SourceStore) *Module {
@@ -1958,7 +1958,7 @@ func normalizeTlagoLocalDeclarationTags(module *Module, sources *SourceStore) *M
 }
 
 // normalizeTlagoApalacheBuiltinCalls repairs imported Apalache operators that
-// tlago v0.1.9 exports as unresolved OPER_APP calls instead of builtin IR
+// tlago v0.1.10 exports as unresolved OPER_APP calls instead of builtin IR
 // operators. A declaration in the root module intentionally shadows a builtin.
 func normalizeTlagoApalacheBuiltinCalls(module *Module, sources *SourceStore, instanceModules map[string][]string) *Module {
 	if module == nil {
@@ -2199,7 +2199,7 @@ func wrapTlagoBuiltinOperator(name *NameExpr, arity int) (Expr, bool) {
 }
 
 // normalizeTlagoTupleQuantifiers reconstructs a tuple binder that tlago
-// v0.1.9 exports as nested binders over the same Cartesian product. The
+// v0.1.10 exports as nested binders over the same Cartesian product. The
 // generated quantifiers share one exact source region, which distinguishes
 // them from user-written nested quantifiers.
 func normalizeTlagoTupleQuantifiers(module *Module, sources *SourceStore) *Module {

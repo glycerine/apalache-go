@@ -15,7 +15,7 @@ func vmtBoolDefinition(name string, body Expr) *OperDecl {
 	return NewOperDecl(name, nil, body, Typed(mustOperator(nil, BoolT1)))
 }
 
-// g3 v0.0.7 intentionally diagnoses unknown expression attributes, whereas
+// g3 v0.0.8 intentionally diagnoses unknown expression attributes, whereas
 // VMT communicates its transition-system metadata through such attributes.
 // Remove only the outer VMT annotation wrappers to validate the underlying
 // SMT-LIB declarations and terms with the pinned solver frontend.

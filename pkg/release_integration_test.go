@@ -76,10 +76,10 @@ func TestReleaseArchiveRunsWithoutSourceOrExternalRuntime(t *testing.T) {
 	}
 	wantModules := map[string]string{
 		"github.com/cespare/xxhash/v2":              "v2.3.0",
-		"github.com/glycerine/g3/pkg":               "v0.0.0-20261029004947-6def119f3e25",
+		"github.com/glycerine/g3/pkg":               "v0.0.8",
 		"github.com/glycerine/insdict":              "v0.14.6",
 		"github.com/glycerine/rbtree":               "v0.2.2",
-		"github.com/glycerine/tlago":                "v0.1.9",
+		"github.com/glycerine/tlago":                "v0.1.10",
 		"github.com/klauspost/compress":             "v1.18.5",
 		"golang.org/x/net":                          "v0.28.0",
 		"golang.org/x/sys":                          "v0.24.0",

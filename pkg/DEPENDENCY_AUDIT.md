@@ -7,8 +7,8 @@ explicit review here.
 
 | Module | Pinned version | License evidence | Status |
 | --- | --- | --- | --- |
-| `github.com/glycerine/g3/pkg` | `v0.0.0-20261029004947-6def119f3e25` (repository tag `v0.0.7`) | Tagged repository and module `LICENSE.txt`, Microsoft Z3 MIT license; reproduced in `third_party_licenses/g3-LICENSE.txt` and included in release archives. | Reviewed |
-| `github.com/glycerine/tlago` | `v0.1.9` | `LICENSE`, MIT | Reviewed |
+| `github.com/glycerine/g3/pkg` | `v0.0.8` (module tag `pkg/v0.0.8`) | Tagged repository-root `LICENSE.txt`, Microsoft Z3 MIT license; reproduced in `third_party_licenses/g3-LICENSE.txt` and included in release archives. | Reviewed |
+| `github.com/glycerine/tlago` | `v0.1.10` | `LICENSE`, MIT | Reviewed |
 | `github.com/cespare/xxhash/v2` | `v2.3.0` | `LICENSE.txt`, MIT | Reviewed |
 | `github.com/glycerine/insdict` | `v0.14.6` | `LICENSE`, MIT | Reviewed |
 | `github.com/glycerine/rbtree` | `v0.2.2` | `LICENSE`, MIT | Reviewed |
@@ -38,7 +38,7 @@ An unstripped `CGO_ENABLED=0` production binary was inspected with `nm` and
 GLPK comparison driver is present. The g3 solver assertion machinery retains
 `diagnostic.(*DebugActionContext).InvokeDebugger` and its Linux
 `hostRunCommand` branch in the binary because both action profiles share one
-method. Apalache binds g3 v0.0.7's `DebugNoDebugger` process action and disables
+method. Apalache binds g3 v0.0.8's `DebugNoDebugger` process action and disables
 process assertions before constructing any solver context. Consequently an
 unexpected direct assertion terminates with g3's noninteractive status instead
 of reading stdin or reaching the shell branch. `smt_g3_hardening_test.go`

@@ -2044,7 +2044,7 @@ func validateCheckerBackendOptions(options *checkerBackendOptions) error {
 		return fmt.Errorf("unsupported SMT encoding %q (want oopsla19, arrays, or funArrays)", options.encoding)
 	}
 	if solver := strings.ToLower(options.solver); solver != "z3" {
-		return fmt.Errorf("unsupported SMT solver %q (Go port uses g3 v0.0.7 as its Z3 backend)", options.solver)
+		return fmt.Errorf("unsupported SMT solver %q (Go port uses g3 v0.0.8 as its Z3 backend)", options.solver)
 	}
 	return nil
 }

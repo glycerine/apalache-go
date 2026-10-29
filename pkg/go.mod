@@ -3,8 +3,8 @@ module github.com/glycerine/apalache-go
 go 1.27.3
 
 require (
-	github.com/glycerine/g3/pkg v0.0.0-20261029004947-6def119f3e25 // repository tag v0.0.7
-	github.com/glycerine/tlago v0.1.9
+	github.com/glycerine/g3/pkg v0.0.8
+	github.com/glycerine/tlago v0.1.10
 	github.com/klauspost/compress v1.18.5
 	google.golang.org/grpc v1.67.1
 	google.golang.org/protobuf v1.34.2
