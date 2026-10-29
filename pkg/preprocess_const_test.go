@@ -2,6 +2,7 @@ package apalache
 
 import (
 	"errors"
+	"fmt"
 	"math/big"
 	"strings"
 	"testing"
@@ -240,5 +241,105 @@ func TestSimplifyConstantsRecursesThroughLetAndTracksSources(t *testing.T) {
 	}
 	if !store.Contains(got.ID()) || !store.Contains(let.Body().ID()) {
 		t.Fatal("simplification lost source locations")
+	}
+}
+
+func TestSimplifyConstantsScalaGeneratedLawMatrix(t *testing.T) {
+	i := func(value int64) Expr { return NewValueExpr(Int64Value(value), Typed(IntT1)) }
+	b := func(value bool) Expr { return NewValueExpr(BoolValue(value), Typed(BoolT1)) }
+	simplify := func(t *testing.T, expression Expr) Expr {
+		t.Helper()
+		result, err := SimplifyConstants(expression, nil)
+		if err != nil {
+			t.Fatalf("simplify %v: %v", expression, err)
+		}
+		return result
+	}
+	assertSimplifies := func(t *testing.T, input, want Expr) {
+		t.Helper()
+		got, expected := simplify(t, input), simplify(t, want)
+		if !EqualTypedExpr(got, expected) {
+			t.Fatalf("simplify %v = %v, want %v", input, got, expected)
+		}
+	}
+
+	x := NewNameExpr("x", Typed(IntT1))
+	y := NewNameExpr("y", Typed(IntT1))
+	integers := []Expr{i(-2), i(-1), i(0), i(1), i(2), x, y,
+		MustOperExpr(Op("PLUS"), Typed(IntT1), x, i(2)),
+		MustOperExpr(Op("MINUS"), Typed(IntT1), y, i(3)),
+		MustOperExpr(Op("MULT"), Typed(IntT1), x, y)}
+	for index, expression := range integers {
+		t.Run(fmt.Sprintf("integer_laws_%d", index), func(t *testing.T) {
+			for _, law := range []struct{ input, want Expr }{
+				{MustOperExpr(Op("PLUS"), Typed(IntT1), i(0), expression), expression},
+				{MustOperExpr(Op("PLUS"), Typed(IntT1), expression, i(0)), expression},
+				{MustOperExpr(Op("MINUS"), Typed(IntT1), expression, i(0)), expression},
+				{MustOperExpr(Op("MINUS"), Typed(IntT1), expression, expression), i(0)},
+				{MustOperExpr(Op("MULT"), Typed(IntT1), expression, i(1)), expression},
+				{MustOperExpr(Op("MULT"), Typed(IntT1), i(0), expression), i(0)},
+				{MustOperExpr(Op("DIV"), Typed(IntT1), expression, i(1)), expression},
+				{MustOperExpr(Op("MOD"), Typed(IntT1), expression, i(1)), i(0)},
+				{MustOperExpr(Op("POW"), Typed(IntT1), expression, i(1)), expression},
+			} {
+				assertSimplifies(t, law.input, law.want)
+			}
+		})
+	}
+
+	for left := int64(-24); left <= 24; left++ {
+		for right := int64(-24); right <= 24; right++ {
+			for operator, want := range map[string]*big.Int{
+				"PLUS":  new(big.Int).Add(big.NewInt(left), big.NewInt(right)),
+				"MINUS": new(big.Int).Sub(big.NewInt(left), big.NewInt(right)),
+				"MULT":  new(big.Int).Mul(big.NewInt(left), big.NewInt(right)),
+			} {
+				assertSimplifies(t, MustOperExpr(Op(operator), Typed(IntT1), i(left), i(right)),
+					NewValueExpr(NewIntValue(want), Typed(IntT1)))
+			}
+			for operator, want := range map[string]bool{
+				"LT": left < right, "LE": left <= right, "GT": left > right,
+				"GE": left >= right, "EQ": left == right, "NE": left != right,
+			} {
+				assertSimplifies(t, MustOperExpr(Op(operator), Typed(BoolT1), i(left), i(right)), b(want))
+			}
+			if right != 0 {
+				assertSimplifies(t, MustOperExpr(Op("DIV"), Typed(IntT1), i(left), i(right)), i(left/right))
+				assertSimplifies(t, MustOperExpr(Op("MOD"), Typed(IntT1), i(left), i(right)), i(left%right))
+			}
+		}
+	}
+
+	p := NewNameExpr("p", Typed(BoolT1))
+	q := NewNameExpr("q", Typed(BoolT1))
+	booleans := []Expr{b(false), b(true), p, q,
+		MustOperExpr(Op("AND"), Typed(BoolT1), p, q),
+		MustOperExpr(Op("OR"), Typed(BoolT1), p, q),
+		MustOperExpr(Op("NOT"), Typed(BoolT1), p)}
+	for index, expression := range booleans {
+		t.Run(fmt.Sprintf("Boolean_laws_%d", index), func(t *testing.T) {
+			for _, law := range []struct{ input, want Expr }{
+				{MustOperExpr(Op("EQ"), Typed(BoolT1), expression, expression), b(true)},
+				{MustOperExpr(Op("NE"), Typed(BoolT1), expression, expression), b(false)},
+				{MustOperExpr(Op("AND"), Typed(BoolT1), expression, b(true)), expression},
+				{MustOperExpr(Op("AND"), Typed(BoolT1), expression, b(false)), b(false)},
+				{MustOperExpr(Op("OR"), Typed(BoolT1), expression, b(false)), expression},
+				{MustOperExpr(Op("OR"), Typed(BoolT1), expression, b(true)), b(true)},
+				{MustOperExpr(Op("IMPLIES"), Typed(BoolT1), expression, b(false)), MustOperExpr(Op("NOT"), Typed(BoolT1), expression)},
+				{MustOperExpr(Op("IF_THEN_ELSE"), Typed(BoolT1), expression, b(true), b(false)), expression},
+				{MustOperExpr(Op("NOT"), Typed(BoolT1), MustOperExpr(Op("NOT"), Typed(BoolT1), expression)), expression},
+			} {
+				assertSimplifies(t, law.input, law.want)
+			}
+		})
+	}
+
+	for _, left := range []string{"", "a", "b", "alpha", "β"} {
+		for _, right := range []string{"", "a", "b", "alpha", "β"} {
+			leftExpr := NewValueExpr(StringValue(left), Typed(StrT1))
+			rightExpr := NewValueExpr(StringValue(right), Typed(StrT1))
+			assertSimplifies(t, MustOperExpr(Op("EQ"), Typed(BoolT1), leftExpr, rightExpr), b(left == right))
+			assertSimplifies(t, MustOperExpr(Op("NE"), Typed(BoolT1), leftExpr, rightExpr), b(left != right))
+		}
 	}
 }

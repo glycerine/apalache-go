@@ -234,7 +234,10 @@ func simplifyConstantShallow(expression Expr) (Expr, error) {
 			}
 			baseFloat, _ := new(big.Float).SetInt(left).Float64()
 			estimatedPower := math.Pow(baseFloat, float64(right.Int64()))
-			if estimatedPower < math.SmallestNonzeroFloat64 || estimatedPower > math.MaxFloat64 {
+			// Zero and negative finite results are ordinary integer powers. The
+			// floating estimate is used only as the Scala-compatible upper-size
+			// guard; its sign and underflow threshold must not reject them.
+			if math.IsInf(estimatedPower, 0) || math.IsNaN(estimatedPower) || math.Abs(estimatedPower) > math.MaxFloat64 {
 				limit := strings.Replace(strconv.FormatFloat(math.MaxFloat64, 'E', -1, 64), "E+", "E", 1)
 				return nil, NewTlaInputError(fmt.Sprintf("The result of %s exceedes the limit of %s", expressionText(op), limit))
 			}
