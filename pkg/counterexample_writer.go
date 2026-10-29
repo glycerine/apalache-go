@@ -1,16 +1,23 @@
 package apalache
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // WriteCounterexample writes one Scala-compatible counterexample format to a
 // caller-owned stream. A Trace keeps the constant initializer in state zero;
 // the TLA, TLC, and legacy JSON formats expose subsequent states as State0...
 func WriteCounterexample(output io.Writer, format string, trace Trace[Expr]) error {
+	return writeCounterexampleAt(output, format, trace, time.Now())
+}
+
+func writeCounterexampleAt(output io.Writer, format string, trace Trace[Expr], now time.Time) error {
 	if output == nil {
 		return fmt.Errorf("counterexample writer has no output")
 	}
@@ -26,16 +33,27 @@ func WriteCounterexample(output io.Writer, format string, trace Trace[Expr]) err
 		case "tla":
 			var text string
 			text, err = formatCounterexampleTraceTLA(trace, states)
+			if err == nil {
+				text += "(* Created by Apalache on " + counterexampleTimestamp(now) + " *)\n" +
+					"(* https://github.com/apalache-mc/apalache *)\n"
+			}
 			data = []byte(text)
 		case "tlc":
 			var text string
 			text, err = FormatDecodedTraceTLC(trace.module, states)
+			if err == nil {
+				text = strings.Replace(text, "Created by Apalache\n",
+					"Created by Apalache on "+counterexampleTimestamp(now)+"\n", 1)
+			}
 			data = []byte(text)
 		case "json":
 			data, err = MarshalDecodedTraceApalacheJSON(trace.module, states, trace.data)
+			if err == nil {
+				data, err = indentCounterexampleJSON(data)
+			}
 		}
 	case "itf.json":
-		data, err = MarshalTraceITF(trace, ITFOptions{})
+		data, err = MarshalITFCounterexample(trace, ITFOptions{})
 	default:
 		return fmt.Errorf("unknown counterexample format requested: %s", format)
 	}
@@ -44,6 +62,18 @@ func WriteCounterexample(output io.Writer, format string, trace Trace[Expr]) err
 	}
 	_, err = output.Write(data)
 	return err
+}
+
+func indentCounterexampleJSON(compact []byte) ([]byte, error) {
+	var output bytes.Buffer
+	if err := json.Indent(&output, compact, "", "  "); err != nil {
+		return nil, err
+	}
+	return output.Bytes(), nil
+}
+
+func counterexampleTimestamp(now time.Time) string {
+	return now.Format("Mon Jan 02 15:04:05 MST 2006")
 }
 
 func formatCounterexampleTraceTLA(trace Trace[Expr], states []DecodedState) (string, error) {

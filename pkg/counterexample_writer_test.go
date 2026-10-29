@@ -48,6 +48,9 @@ func TestWriteCounterexampleEveryFormat(t *testing.T) {
 				if !json.Valid(output.Bytes()) {
 					t.Fatalf("invalid %s JSON: %s", format, output.String())
 				}
+				if !strings.Contains(output.String(), "\n  \"") {
+					t.Fatalf("%s counterexample is not indented: %s", format, output.String())
+				}
 			}
 		})
 	}
@@ -56,6 +59,29 @@ func TestWriteCounterexampleEveryFormat(t *testing.T) {
 	}
 	if err := WriteCounterexample(nil, "tla", trace); err == nil {
 		t.Fatal("accepted missing output")
+	}
+}
+
+func TestWriteCounterexampleMatchesScalaTimestampAndProvenance(t *testing.T) {
+	now := time.Date(2026, 1, 2, 3, 4, 5, 0, time.FixedZone("CST", -6*60*60))
+	trace := counterexampleWriterTrace()
+	var tla bytes.Buffer
+	if err := writeCounterexampleAt(&tla, "tla", trace, now); err != nil {
+		t.Fatal(err)
+	}
+	wantSuffix := strings.Repeat("=", 80) + "\n" +
+		"(* Created by Apalache on Fri Jan 02 03:04:05 CST 2026 *)\n" +
+		"(* https://github.com/apalache-mc/apalache *)\n"
+	if !strings.HasSuffix(tla.String(), wantSuffix) {
+		t.Fatalf("TLA footer = %q", tla.String())
+	}
+	var tlc bytes.Buffer
+	if err := writeCounterexampleAt(&tlc, "tlc", trace, now); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(tlc.String(), "@!@!@STARTMSG 2262:0 @!@!@\n"+
+		"Created by Apalache on Fri Jan 02 03:04:05 CST 2026\n") {
+		t.Fatalf("TLC timestamp header = %q", tlc.String())
 	}
 }
 
