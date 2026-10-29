@@ -20,19 +20,44 @@ import (
 )
 
 func TestShaiGRPCRepeatedConcurrentLifecyclesReleaseResources(t *testing.T) {
+	testShaiGRPCLifecyclesReleaseResources(t, 8, func(lifecycle int) (net.Listener, string, []grpc.DialOption, error) {
+		listener := bufconn.Listen(1 << 20)
+		options := []grpc.DialOption{
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }),
+		}
+		return listener, fmt.Sprintf("passthrough:///shai-resource-%d", lifecycle), options, nil
+	})
+}
+
+func TestShaiGRPCRepeatedRealSocketLifecyclesReleaseResources(t *testing.T) {
+	testShaiGRPCLifecyclesReleaseResources(t, 16, func(int) (net.Listener, string, []grpc.DialOption, error) {
+		listener, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			return nil, "", nil, err
+		}
+		return listener, listener.Addr().String(), []grpc.DialOption{
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+		}, nil
+	})
+}
+
+type shaiLifecycleTransport func(int) (net.Listener, string, []grpc.DialOption, error)
+
+func testShaiGRPCLifecyclesReleaseResources(t *testing.T, lifecycles int, transport shaiLifecycleTransport) {
+	t.Helper()
 	baselineFDs := shaiFileDescriptorCount(t)
 	baselineGoroutines := runtime.NumGoroutine()
-	const lifecycles = 8
 	const workers = 8
 	for lifecycle := 0; lifecycle < lifecycles; lifecycle++ {
-		listener := bufconn.Listen(1 << 20)
+		listener, target, options, err := transport(lifecycle)
+		if err != nil {
+			t.Fatalf("lifecycle %d listen: %v", lifecycle, err)
+		}
 		server := NewServer()
 		serveErrors := make(chan error, 1)
 		go func() { serveErrors <- server.Serve(listener) }()
-		connection, err := grpc.NewClient(fmt.Sprintf("passthrough:///shai-resource-%d", lifecycle),
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
-			grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }),
-		)
+		connection, err := grpc.NewClient(target, options...)
 		if err != nil {
 			server.Stop()
 			_ = listener.Close()
