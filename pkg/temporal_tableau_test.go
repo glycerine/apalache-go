@@ -47,6 +47,114 @@ func TestTemporalTableauEncodesGloballySyntaxTree(t *testing.T) {
 	}
 }
 
+func TestTemporalTableauScalaGeneratedSyntaxTreeContracts(t *testing.T) {
+	loopEncoder := NewTemporalLoopEncoder(nil)
+	loop, err := loopEncoder.AddLoopLogic(temporalTestModule(), "Init", "Next")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var generate func(seed, depth int) Expr
+	generate = func(seed, depth int) Expr {
+		if depth == 0 {
+			return temporalBool(seed%2 == 0)
+		}
+		switch seed % 4 {
+		case 0:
+			return MustOperExpr(Op("AND"), Typed(BoolT1), generate(seed+1, depth-1), generate(seed+3, depth-1))
+		case 1:
+			return MustOperExpr(Op("OR"), Typed(BoolT1), generate(seed+2, depth-1), generate(seed+5, depth-1))
+		case 2:
+			return MustOperExpr(Op("GLOBALLY"), Typed(BoolT1), generate(seed+1, depth-1))
+		default:
+			return MustOperExpr(Op("EVENTUALLY"), Typed(BoolT1), generate(seed+1, depth-1))
+		}
+	}
+	type formulaCounts struct {
+		temporal bool
+		nodes    int
+		globally int
+		eventual int
+	}
+	var count func(Expr) formulaCounts
+	count = func(expression Expr) formulaCounts {
+		operation, ok := expression.(*OperExpr)
+		if !ok {
+			return formulaCounts{}
+		}
+		children := make([]formulaCounts, len(operation.Arguments()))
+		for index, argument := range operation.Arguments() {
+			children[index] = count(argument)
+		}
+		result := formulaCounts{}
+		for _, child := range children {
+			result.globally += child.globally
+			result.eventual += child.eventual
+		}
+		switch operation.Operator().Name() {
+		case "GLOBALLY":
+			result.temporal = true
+			result.globally++
+		case "EVENTUALLY":
+			result.temporal = true
+			result.eventual++
+		case "AND", "OR":
+			for _, child := range children {
+				result.temporal = result.temporal || child.temporal
+			}
+		}
+		if result.temporal {
+			result.nodes = 1
+			for _, child := range children {
+				result.nodes += child.nodes
+			}
+		}
+		return result
+	}
+
+	for sample := 0; sample < 500; sample++ {
+		inner := generate(sample, sample%5)
+		rootOperator := "GLOBALLY"
+		if sample%2 != 0 {
+			rootOperator = "EVENTUALLY"
+		}
+		formula := MustOperExpr(Op(rootOperator), Typed(BoolT1), inner)
+		want := count(formula)
+		encoder, encoderErr := NewTemporalTableauEncoder(loop.Module, NewUniqueNameGenerator(), loopEncoder, nil)
+		if encoderErr != nil {
+			t.Fatalf("sample %d: %v", sample, encoderErr)
+		}
+		encoded, encodeErr := encoder.EncodeSyntaxTree(formula)
+		if encodeErr != nil {
+			t.Fatalf("sample %d: %v", sample, encodeErr)
+		}
+
+		var nodes, saved, unrolls, lookbacks int
+		for _, variable := range encoded.Variables {
+			name := variable.Name()
+			switch {
+			case strings.HasSuffix(name, TemporalUnrollSuffix+TemporalLookbackSuffix):
+				lookbacks++
+			case strings.HasSuffix(name, TemporalUnrollSuffix):
+				unrolls++
+			case strings.HasPrefix(name, TemporalSavedPrefix+TemporalTableauPrefix):
+				saved++
+			case strings.HasPrefix(name, TemporalTableauPrefix):
+				nodes++
+			}
+			if !variable.IsInternal() || !variable.Tag().Equal(Typed(BoolT1)) {
+				t.Fatalf("sample %d: tableau variable %s is not internal Boolean", sample, name)
+			}
+		}
+		auxiliaries := want.globally + want.eventual
+		if nodes != want.nodes || saved != want.nodes || unrolls != auxiliaries || lookbacks != auxiliaries ||
+			len(encoded.Variables) != 2*want.nodes+2*auxiliaries {
+			t.Fatalf("sample %d: variables nodes=%d saved=%d unroll=%d lookback=%d total=%d; want nodes=%d temporal-operators=%d",
+				sample, nodes, saved, unrolls, lookbacks, len(encoded.Variables), want.nodes, auxiliaries)
+		}
+	}
+}
+
 func TestTemporalTableauReplacesPropertiesAndPreprocesses(t *testing.T) {
 	module, formula := temporalFormulaModule("EVENTUALLY")
 	loopEncoder := NewTemporalLoopEncoder(nil)
