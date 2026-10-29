@@ -1,6 +1,7 @@
 package apalache
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"regexp"
@@ -118,9 +119,7 @@ func ExtractTypeAnnotations(filename, source string, module *Module, sources *So
 		}
 		typ, parseErr := ParseType(text)
 		if parseErr != nil {
-			result.Diagnostics = append(result.Diagnostics, Diagnostic{
-				Code: "E-TYPE-ANNOTATION", Severity: SeverityError, Message: parseErr.Error(), Position: position,
-			})
+			result.Diagnostics = append(result.Diagnostics, typeAnnotationParseDiagnostics(text, target.Name(), parseErr, position)...)
 			continue
 		}
 		result.Types[target.ID()] = typ
@@ -137,6 +136,30 @@ func ExtractTypeAnnotations(filename, source string, module *Module, sources *So
 		result.Aliases = closed
 	}
 	return result
+}
+
+func typeAnnotationParseDiagnostics(text, target string, parseErr error, position Position) []Diagnostic {
+	detail := parseErr.Error()
+	var typed *TypeParseError
+	if errors.As(parseErr, &typed) && typed.Message == "parenthesized type list must be followed by =>" {
+		trimmed := strings.TrimSpace(text)
+		switch {
+		case typed.Offset < len(text) && strings.HasPrefix(text[typed.Offset:], "->"):
+			detail = "'=>' expected but -> found"
+		case typed.Offset >= len(text) && strings.HasSuffix(trimmed, ")"):
+			detail = "'->' expected but ) found"
+		}
+	}
+	return []Diagnostic{
+		{
+			Code: "E-TYPE-ANNOTATION", Severity: SeverityError,
+			Message: fmt.Sprintf("Parsing error in the type annotation: %s", text), Position: position,
+		},
+		{
+			Code: "E-TYPE-INPUT", Severity: SeverityError,
+			Message: fmt.Sprintf("Parser error in type annotation of %s: %s", target, detail), Position: position,
+		},
+	}
 }
 
 func propagateRetainedLocalAnnotations(module *Module, types map[UID]Type, annotations *AnnotationStore) {

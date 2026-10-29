@@ -182,9 +182,7 @@ func parseTlagoModuleAnnotations(module *tlago.Module) tlagoImportedAnnotations 
 			}
 			typ, parseErr := ParseType(text)
 			if parseErr != nil {
-				result.diagnostics = append(result.diagnostics, Diagnostic{
-					Code: "E-TYPE-ANNOTATION", Severity: SeverityError, Message: parseErr.Error(), Position: position,
-				})
+				result.diagnostics = append(result.diagnostics, typeAnnotationParseDiagnostics(text, target.name, parseErr, position)...)
 				continue
 			}
 			result.types[target.name] = typ

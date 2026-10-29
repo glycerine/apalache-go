@@ -15,6 +15,7 @@ import (
 
 var scalaTypeDiagnostic = regexp.MustCompile(`(?m)^\[([^:]+):(\d+):(\d+)-(\d+):(\d+)\]: (.*?)\s+E@`)
 var scalaTypeInputDiagnostic = regexp.MustCompile(`(?m)^Typing input error: (.*?)\s+E@`)
+var scalaTypeAnnotationDiagnostic = regexp.MustCompile(`(?m)^Parsing error in the type annotation: (.*?)\s+E@`)
 
 func TestFrontendTypeDiagnosticsMatchScalaExactly(t *testing.T) {
 	scalaExecutable := os.Getenv("APALACHE_SCALA")
@@ -92,6 +93,43 @@ func TestFrontendTypeInputDiagnosticsMatchScalaExactly(t *testing.T) {
 			}
 			if result.Diagnostics[0].Message != matches[0][1] {
 				t.Errorf("message = %q, Scala %q", result.Diagnostics[0].Message, matches[0][1])
+			}
+		})
+	}
+}
+
+func TestFrontendTypeAnnotationDiagnosticsMatchScalaExactly(t *testing.T) {
+	scalaExecutable := os.Getenv("APALACHE_SCALA")
+	if scalaExecutable == "" {
+		t.Skip("set APALACHE_SCALA to run the live frontend diagnostic oracle")
+	}
+	for _, fixture := range []string{"Bug832.tla", "Bug860.tla"} {
+		t.Run(fixture, func(t *testing.T) {
+			source, err := filepath.Abs(filepath.Join("..", "test", "tla", fixture))
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+			defer cancel()
+			output, commandErr := exec.CommandContext(ctx, scalaExecutable, "typecheck", source).CombinedOutput()
+			if commandErr == nil {
+				t.Fatalf("Scala unexpectedly accepted the negative %s fixture", fixture)
+			}
+			annotation := scalaTypeAnnotationDiagnostic.FindStringSubmatch(string(output))
+			input := scalaTypeInputDiagnostic.FindStringSubmatch(string(output))
+			if len(annotation) != 2 || len(input) != 2 {
+				t.Fatalf("Scala type annotation diagnostics = %q", output)
+			}
+
+			result := ParseAndTypeCheckFile(ctx, source, FrontendOptions{}, TypeCheckOptions{})
+			if result.OK() || len(result.Diagnostics) != 2 {
+				t.Fatalf("Go type annotation diagnostics = %+v", result.Diagnostics)
+			}
+			want := []string{"Parsing error in the type annotation: " + annotation[1], input[1]}
+			for index := range want {
+				if result.Diagnostics[index].Message != want[index] {
+					t.Errorf("message %d = %q, Scala %q", index, result.Diagnostics[index].Message, want[index])
+				}
 			}
 		})
 	}

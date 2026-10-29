@@ -171,6 +171,43 @@ CONSTANT N
 	}
 }
 
+func TestTypeAnnotationParseDiagnosticsMatchScalaOperatorErrors(t *testing.T) {
+	position := Position{Filename: "Bad.tla", Line: 2, Column: 4}
+	for _, test := range []struct {
+		text, target string
+		want         []string
+	}{
+		{
+			text: "() => (Bool, Bool)", target: "Example",
+			want: []string{
+				"Parsing error in the type annotation: () => (Bool, Bool)",
+				"Parser error in type annotation of Example: '->' expected but ) found",
+			},
+		},
+		{
+			text: "(Int, Int) -> Bool", target: "Op",
+			want: []string{
+				"Parsing error in the type annotation: (Int, Int) -> Bool",
+				"Parser error in type annotation of Op: '=>' expected but -> found",
+			},
+		},
+	} {
+		_, parseErr := ParseType(test.text)
+		if parseErr == nil {
+			t.Fatalf("ParseType(%q) unexpectedly succeeded", test.text)
+		}
+		diagnostics := typeAnnotationParseDiagnostics(test.text, test.target, parseErr, position)
+		if len(diagnostics) != len(test.want) {
+			t.Fatalf("diagnostics = %#v", diagnostics)
+		}
+		for index, want := range test.want {
+			if diagnostics[index].Message != want || diagnostics[index].Position != position {
+				t.Errorf("diagnostic %d = %#v, want message %q at %#v", index, diagnostics[index], want, position)
+			}
+		}
+	}
+}
+
 func TestExtractTypeAnnotationsIgnoresMissingSemicolon(t *testing.T) {
 	source := `---- MODULE MissingSemicolon ----
 \* last action performed

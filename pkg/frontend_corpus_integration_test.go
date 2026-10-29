@@ -14,8 +14,8 @@ import (
 func TestAnnotatedTopLevelScalaFixtureCorpus(t *testing.T) {
 	expectedFailures := map[string]string{
 		"Bug3400.tla":             "undefined identifier IndInv1",
-		"Bug832.tla":              "parenthesized type list must be followed by =>",
-		"Bug860.tla":              "parenthesized type list must be followed by =>",
+		"Bug832.tla":              "Parser error in type annotation of Example: '->' expected but ) found",
+		"Bug860.tla":              "Parser error in type annotation of Op: '=>' expected but -> found",
 		"Bug914.tla":              "Arguments to = should have the same type",
 		"Bug925.tla":              "Error when computing the type of Optional",
 		"FormulaRefs.tla":         "subformula references are not supported: A!1",
