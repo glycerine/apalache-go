@@ -1,122 +1,273 @@
-# Go port static code review
+# Go port differential code review
 
-## Fix follow-up
+Reviewed 2026-10-29 at source revision `9e80e40f9052ee36d5749c8f633f4a601c44cfe0`.
 
-All six findings below have been fixed in review order using a focused failing regression followed by its fix and a passing rerun. The original findings and their original line references are retained below as review history; code movement means those line numbers are not current fix locations.
+This replaces the previous report. Its six findings were already fixed; their regression tests remain in the core, CLI, and Shai packages. The **14 new findings below are not fixed** by this audit. P1 denotes incorrect model-checking results; P2 denotes a functional or compatibility defect.
 
-| Finding | Observed red result | Regression now passing |
+## Executed validation
+
+Go was rebuilt with the repository's pinned dependencies using `go build -mod=readonly -p=8 -o build/apalache ./cmd/apalache`. The initially available Scala distribution was older than the checkout. Consequently, `sbt -batch 'Universal/stage'` rebuilt Scala, and all reported comparisons were repeated against `target/universal/stage/bin/apalache-mc`. Commands were CPU-capped with `taskset -c 1-8`.
+
+| Validation | Result |
+| --- | --- |
+| Live Scala/Go oracle test selection | PASS, 258.054 seconds, no skips |
+| Safety differential manifest | All 50 cases passed, including nine temporal cases |
+| Additional oracle checks | Exact frontend diagnostics, three ReTLA/VMT comparisons, undefined VMT functions, and two documented nonlinear-underapproximation cases passed |
+| Scala fixture corpus through Go frontend | PASS, 12.383 seconds: 267 syntax fixtures and 227 annotated fixtures, with expected negative cases; PolyExp deliberately excluded |
+| Additional CLI probes | 29 cases run against both implementations; failures and divergences retained |
+| JSON-RPC and Shai probes | Real loopback HTTP/gRPC servers for both implementations; results retained |
+| Malformed fully typed JSON | Go incorrectly accepts; rebuilt Scala rejects |
+
+The corpus test is **not** a live Scala differential comparison. The manifest passing does not negate the new findings: its cases miss the triggers below. The full Go regression/race suite was not rerun for this audit; no production implementation was changed.
+
+Reproducible drivers, input, and recorded results: [testdata/code_review](testdata/code_review/README.md). These are diagnostic probes, not passing regression tests. They record both implementations' behavior, including disagreements.
+
+Unless otherwise stated, CLI reproducers replace `Inv` in this complete module and run `check --length=0 --inv=Inv Audit.tla`:
+
+```tla
+---- MODULE Audit ----
+EXTENDS Integers, Sequences, FiniteSets, Apalache
+VARIABLE
+\* @type: Int;
+x
+Init == x = 2
+Next == x' = x
+Inv == TRUE
+====
+```
+
+“Success” below means no counterexample at the requested bound, not an unbounded proof.
+
+## 1. [P1] Parser rewiring changes unrelated user-defined operators
+
+**Go:** [frontend_tlago_compat.go](frontend_tlago_compat.go), `normalizeTlagoTLCCalls` (1604), `removeTlagoNativeVariantDeclarations` (1582), `normalizeTlagoLambdaExpr` (1004).
+
+**Scala:** [ModuleTranslator.scala](../tla-parser/src/main/scala/at/forsyte/apalache/tla/imp/ModuleTranslator.scala), `addAliasesOfBuiltins`; [OpApplTranslator.scala](../tla-parser/src/main/scala/at/forsyte/apalache/tla/imp/OpApplTranslator.scala), library-origin lookup and user-operator translation.
+
+The TLC adapter strips instance prefixes and rewrites calls by their final spelling whenever TLC is imported anywhere in the spec. It also removes declarations by that spelling. Add these definitions before VARIABLE and replace Inv:
+
+```tla
+T == INSTANCE TLC
+Print(a,b) == a
+Inv == Print(FALSE, TRUE)
+```
+
+Scala reports the violation (exit 12); Go reports success (exit 0). The user operator returns FALSE; Go replaces the call with its second argument, TRUE.
+
+Two other confirmed paths have the same resolution problem. With `V == INSTANCE Variants`, root definition `Variant(a,b) == a+b` is removed and `Inv == Variant(1,2)=3` fails typing in Go. A user definition `a @@ b == a-b` is unconditionally lowered as function override, so `(3 @@ 2)=1` also fails typing. Scala accepts both.
+
+**Fix direction:** Identify the resolved declaration and original module before replacing calls or deleting definitions. Cover root, instance-qualified, and local/bound operator names.
+
+## 2. [P1] Compact symbolic ranges are consumed as empty enumerations
+
+**Go:** [integer_range.go](integer_range.go), `rewriteIntegerRange`; [stratified_rewriter.go](stratified_rewriter.go), `rewriteFunctionConstructor` (552) and `rewriteSetUnion` (2582).
+
+**Scala:** [IntDotDotRule.scala](../tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/IntDotDotRule.scala), `getRange`; [FunCtorRule.scala](../tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/FunCtorRule.scala); [SetCupRule.scala](../tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/SetCupRule.scala).
+
+Go represents nonconstant `1..x` using bounds and no enumerated Has edges. Function construction and binary union iterate those edges without rejecting or materializing the compact representation. They silently construct an empty function relation or discard the range from the union.
+
+With `Init == x=2`:
+
+| Invariant | Scala | Go |
 | --- | --- | --- |
-| 1: simulation unknown | An injected inconclusive invariant check produced two completed runs. | `TestReviewSimulationPreservesUnknown`: marks the run unknown and stops. |
-| 2: view exclusions | Tuple, sequence, record, set, and string values failed ground encoding on the second query. | `TestReviewStructuredViewExclusions`: distinct views and exhausted constant views, across all three SMT encodings. |
-| 3: action bound | Bounds 0 and 2 reported action violations at depths 1 and 3. | `TestReviewActionInvariantRespectsBound`: no out-of-bound action checks, while the same violations are found when the bound includes them. |
-| 4: cross-run exclusions | Duplicate initial and action-path views consumed all five error slots. | `TestReviewSimulationExcludesViewsAcrossRuns`: persistent exclusions during both transition selection and invariant checking. |
-| 5: trace filtering | Both state-only and action-only filters suppressed a violated trace invariant. | `TestReviewTraceInvariantsIgnoreStateActionFilter`: trace checking is independent of those filters. |
-| 6: empty Init | Checker, CLI, and remote service reported success for contradictory Init. | `TestReviewInitialStateExhaustion`, `TestReviewCheckUnsatisfiableInit`, and `TestReviewRemoteCheckUnsatisfiableInit`: distinct exhaustion outcomes and no fabricated traces. |
+| `[i \in 1..x \|-> i][1] = 1` | rejects unsupported nonconstant range | false violation, exit 12 |
+| `[i \in 1..x \|-> i][1] = 0` | rejects unsupported nonconstant range | false success, exit 0 |
+| `((1..x) \cup {3}) = {1,2,3}` | rejects unsupported nonconstant range | false violation, exit 12 |
+| `((1..x) \cup {3}) = {3}` | rejects unsupported nonconstant range | false success, exit 0 |
 
-Regressions live in [code_review_regression_test.go](code_review_regression_test.go), [CLI regressions](cmd/apalache/code_review_regression_test.go), and [remote regressions](shai/code_review_regression_test.go).
+The correct mathematical values follow directly from `x=2`; Scala's rejection is not itself the correctness oracle. The bug is accepting the expressions with incorrect meanings.
 
-For finding 6, `SafetyExecutionsTooShort` maps to Scala's `ExecutionsTooShort` when deadlock checking is disabled. With it enabled, an empty initial state space maps to `Deadlock` with no user-state trace. The CLI retains Scala's successful exit classification for `ExecutionsTooShort`, but reports the exhaustion explicitly rather than claiming a completed bounded search. The existing final-state deadlock-probing policy is retained; finding 3 separates that probe from action-invariant checking.
+**Fix direction:** Reject compact operands at unsupported enumeration boundaries, or materialize them soundly. Audit every GetHas consumer by cell representation, not just its TLA Set type. Checks in set-map, filter, and unary-union paths do not protect these paths.
 
-Full-suite validation was deferred until all six focused red/green cycles completed. The first full run found one legacy assertion, `TestCheckBoundedSafetySkipsUnsatisfiablePaths`, that explicitly expected the erroneous empty-Init success from finding 6. That assertion now expects initial deadlock, also checks the deadlock-disabled exhaustion outcome, and passes with all review regressions. The final `taskset -c 1-8 go test -p=8 ./... -count=1` passed in every package (core package: 212.305 seconds). `go vet -p=8 ./...` and `go build -p=8 ./...`, also CPU-capped, passed. No live Scala differential or full race run has been performed in this fixing pass.
+## 3. [P1] Legacy record equality includes fields outside the actual domain
 
-## Scope and evidence
+**Go:** [lazy_equality.go](lazy_equality.go), `recordEqualityCondition` (349); [except.go](except.go), `rewriteRecordExcept`.
 
-This review compares the current Go source with the Scala source in this checkout. It concentrates on bounded checking, simulation, invariant selection, counterexample enumeration, and the transition-executor/SMT boundary. Supporting inspection covered the executor decorators, selected collection/choice rules, trace-evaluation pass, CLI callers, and related test source.
+**Scala:** [LazyEquality.scala](../tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/LazyEquality.scala), `mkRecordEq`.
 
-During the original static review, no builds, tests, solvers, application commands, or other validation programs were run. The findings below originally followed from source-level control-flow and data-flow analysis; subsequent executed regressions and fixes are recorded above. This is a focused review, not a claim that every file in `pkg/` or every Scala behavior has been audited.
+Go compares every field of the static legacy record type unconditionally, then compares domains. Scala guards each field comparison with actual domain membership. Imprecise typing can allocate storage for fields that the value does not contain.
 
-Severity: P1 means a correctness issue that should be prioritized; P2 means an actionable functional bug or compatibility divergence.
+With `--features=no-rows`:
 
-## 1. [P1] Simulation discards an inconclusive invariant-check result
+```tla
+Inv == LET r == IF x = 2 THEN [a |-> 1] ELSE [a |-> 1, b |-> 2]
+       IN [r EXCEPT !.b = 3] = r
+```
 
-**Go:** [simulator.go](simulator.go), lines 135–153; [bounded_checker.go](bounded_checker.go), lines 733–737; [cmd/apalache/main.go](cmd/apalache/main.go), lines 1107–1111 and 1137–1147.
+Scala succeeds; Go reports a violation. Here r has domain `{"a"}`, so EXCEPT on nonexistent field b preserves the record. Both implementations retain that domain, but Go's equality observes the irrelevant changed storage slot.
 
-**Scala:** [SeqModelChecker.scala](../tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/SeqModelChecker.scala), lines 384–388 and 434–438; [SearchState.scala](../tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/search/SearchState.scala), lines 60–67 and 115–118.
+**Fix direction:** Guard field-value equality by actual membership while retaining domain equality. Cover absent fields after EXCEPT, conditionals, widening, and record-set membership.
 
-`SimulateAndCheckWithOptions` first obtains a simulation run and appends it to `report.Runs`. It then calls `CheckBoundedSafetyWithOptions` to check the selected transition path. It handles `checkErr` and copies `checked.Counterexamples`, but never reads `checked.Outcome`.
+## 4. [P2] Imported LET type annotations collide by unqualified name
 
-The bounded checker represents an SMT `unknown` without a Go error: `stopOnUnknown` sets `SafetyUnknown` and returns normally. If path generation succeeded but an invariant query is inconclusive, the run therefore retains `SimulationCompleted`. With no counterexamples, the CLI prints that simulation completed and returns `exitOK`; its unknown check only examines `report.Runs`.
+**Go:** [frontend_tlago_annotations.go](frontend_tlago_annotations.go), `parseTlagoModuleAnnotations` (121), `mergeTlagoImportedAnnotations` (299).
 
-Scala records invariant-query timeouts in `SearchState`, and its final result is `SmtTimeout` when there are no established violations. Continuing after a timeout does not erase incompleteness.
+**Scala:** [OpDefTranslator.scala](../tla-parser/src/main/scala/at/forsyte/apalache/tla/imp/OpDefTranslator.scala), declaration-ID annotation storage.
 
-**Trigger / proposed regression:** A satisfiable simulation path whose invariant query returns `SMTUnknown, nil` (for example, a difficult invariant under a solver resource limit). A deterministic test should inject this result at the checking boundary, assert that no successful completion is reported, and separately verify precedence when a real counterexample has already been found.
+Imported annotation collection keys nested declarations by simple name. Two separate LET scopes may legally use the same name with different types. The second annotation overwrites the first and is applied to both declarations.
 
-**Fix direction:** Propagate the checking outcome into the simulation report and CLI result, retaining incompleteness across runs while preserving established counterexamples.
+Create Helper.tla:
 
-## 2. [P2] Structured or string views fail when excluding the first counterexample
+```tla
+---- MODULE Helper ----
+Foo == LET (* @type: Int; *) Local == 1 IN Local
+Bar == LET (* @type: Str; *) Local == "s" IN Local
+====
+```
 
-**Go:** [transition_executor.go](transition_executor.go), lines 734–761 and 783–786; [smt_ground.go](smt_ground.go), lines 297–324, 407–423, and 473–474; [model_decoder.go](model_decoder.go), lines 230–243 and 246–268.
+Add Helper to Audit's EXTENDS and use `Inv == Foo=1 /\ Bar="s"`. Scala succeeds; Go exits 4, expecting the integer Local to have type `() => Str`.
 
-**Scala:** [SeqModelChecker.scala](../tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/SeqModelChecker.scala), lines 485–510; [ConstrainedTransitionExecutor.scala](../tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/trex/ConstrainedTransitionExecutor.scala), lines 64–85.
+**Fix direction:** Carry declaration identity, source location, and lexical/instance scope through annotation import.
 
-`checkAndDecodeDistinctView` decodes each view to a TLA expression. On the next search iteration it builds `EQ(viewCell.NameExpr(), prior[index])` and passes that expression directly to `executor.solve` as a temporary ground assertion. The prior value is never passed back through the symbolic rewriter.
+## 5. [P2] Fully tagged JSON bypasses type inference and validation
 
-This works for integer and Boolean literals, which the ground encoder accepts directly. A tuple or sequence is decoded as a `TUPLE` constructor, a record as `RECORD`, and a set as `SET_ENUM`; the ground encoder does not support these constructors. Strings also fall through its unsupported ground-value branch. Consequently a valid non-scalar view can produce the first witness and then fail with an encoding error when searching for another. The public bounded-checking function returns an error rather than returning the collected result.
+**Go:** [frontend.go](frontend.go), `ParseAndTypeCheckFile` (385), early return after TypedLanguagePredicate.
 
-Scala constructs a TLA inequality against the decoded view, substitutes the path bindings, and sends it through `trex.assertState`, so ordinary rewriting handles the composite value and its equality before SMT encoding.
+**Scala:** [EtcTypeCheckerPassImpl.scala](../passes/src/main/scala/at/forsyte/apalache/tla/passes/typecheck/EtcTypeCheckerPassImpl.scala), `execute`; [TypeCheckerTool.scala](../passes/src/main/scala/at/forsyte/apalache/tla/typecheck/TypeCheckerTool.scala), `check`.
 
-**Trigger / proposed regression:** Adapt `TestCheckBoundedSafetyEnumeratesDistinctViewsWithinOneSymbolicPath` in [bounded_checker_test.go](bounded_checker_test.go): keep `Init == x \in {1, 2, 3}`, `Inv == x = 0`, and change `View == x` to `View == <<x, x>>`, requesting two errors. Repeat with record, set, and string views. Failure occurs on the second query even if only one distinct witness exists.
+For non-TLA input, Go treats the presence of type tags on every node as proof of consistency, marks the module TypeChecked, and skips inference. The predicate checks coverage, not correctness.
 
-**Fix direction:** Rewrite decoded view values and their equality/disequality in the current arena, using the same structural equality machinery as other TLA expressions, before constructing ground assertions.
+Run `typecheck testdata/code_review/BadTypedIR.json` from pkg. It encodes `Bad == 1 + TRUE`, with Int/Bool operand tags and Int on PLUS. Scala rejects the arguments (exit 120). Go prints `type-checked module BadTypedIR` and exits 0.
 
-## 3. [P2] Deadlock checking causes action-invariant checks beyond the requested bound
+**Fix direction:** Validate typed input through inference, using existing tags as constraints where appropriate. Check JSON and typed Quint entry points; keep type coverage separate from successful inference.
 
-**Go:** [bounded_checker.go](bounded_checker.go), lines 548–557, 580–611.
+## 6. [P2] Nested function defaults reject valid sequence operations
 
-**Scala:** [SeqModelChecker.scala](../tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/SeqModelChecker.scala), lines 61–68 and 236–247; [TransitionExecutorImpl.scala](../tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/trex/TransitionExecutorImpl.scala), lines 322–334.
+**Go:** [default_value.go](default_value.go), `DefaultValueCache.GetOrCreate`, `defaultValueExpression` (101).
 
-At `len(path.next) == inputs.maxSteps`, Go returns early only when deadlock checking is disabled. Otherwise it prepares outgoing transitions to test enabledness, but also runs the action-invariant loop on those transitions. The child has depth `maxSteps + 1`, which can be returned as the counterexample depth even though it lies outside the requested bounded search. The child-enqueue guard occurs after the invariant check and cannot prevent this.
+**Scala:** [DefaultValueFactory.scala](../tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/support/DefaultValueFactory.scala), recursive `makeUpValue`; [SeqOpsRule.scala](../tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/SeqOpsRule.scala).
 
-Scala applies `Init`, increments the executor step, and applies `Next` only while `stepNo <= stepsBound`. It does not check an extra action after the final bounded state. In particular, bound zero does not execute a Next action.
+The cache supports a function type directly, but tuple/row-record/variant defaults recurse through defaultValueExpression, which has no function case. Valid operations needing internal padding/default values fail on nested functions:
 
-**Trigger / proposed regression:** `Init == x = 0`, `Next == x' = x + 1`, action invariant `Inv == x' = x`, with `MaxSteps: 0, CheckDeadlocks: true`. Go reaches the violating action and reports depth 1. With deadlock checking disabled it stops at depth 0. Also test a nonzero bound with the first violation exactly one transition beyond it.
+```tla
+Inv == SubSeq(<< <<[i \in {1} |-> i], 2>> >>, 1, x)[1][2] = 2
+```
 
-**Fix direction:** Separate final-state enabledness probing from invariant checking and bound action checks independently. Review final-state deadlock reporting as a separate compatibility policy: Go also probes deadlock at the last bounded state, whereas Scala stops after generating it.
+Scala succeeds; Go exits 1 with `default values are not yet implemented for (Int -> Int)`. Concatenating this SubSeq with another singleton of the same tuple type also fails. The examples access only in-range elements.
 
-## 4. [P2] Simulation resets view exclusions between runs and counts duplicate errors
+**Fix direction:** Use a recursive, arena-aware default factory for nested types. Cover tuples, row records, variants, and sequences containing functions.
 
-**Go:** [simulator.go](simulator.go), lines 128–150; [bounded_checker.go](bounded_checker.go), lines 231–248 and 673–683; [transition_executor.go](transition_executor.go), lines 745–759.
+## 7. [P2] Gen creates legacy records without domain edges
 
-**Scala:** [SeqModelChecker.scala](../tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/SeqModelChecker.scala), lines 34–35, 74–79, and 485–510; [ConstrainedTransitionExecutor.scala](../tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/trex/ConstrainedTransitionExecutor.scala), lines 25–38 and 53–61.
+**Go:** [value_generator.go](value_generator.go), RecordType branch and `generateProduct` (137).
 
-Each simulated run invokes a fresh `CheckBoundedSafetyWithOptions`. It receives only the remaining error budget, not the previously reported views. That invocation initializes an empty `BoundedSafetyResult`, so its exclusion list contains only witnesses found during that invocation. Appending its counterexamples to the outer report does not deduplicate them.
+**Scala:** [ValueGenerator.scala](../tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/rules/support/ValueGenerator.scala), `genRecord` (71).
 
-Scala keeps one `ConstrainedTransitionExecutor` across runs. Its path-constraint map survives recovery of the underlying executor to the constants snapshot, and the constraints are asserted again when transitions are selected. Previously excluded path views therefore remain excluded across runs.
+Go routes legacy records through a generic product constructor that only appends field edges. It omits the domain needed by legacy-record EXCEPT, equality, and decoding. Scala attaches the domain from the type's keys.
 
-**Trigger / proposed regression:** `Init == x = 0`, `Next == x' = x`, `Inv == x = 1`, `View == x`, with `MaxSteps: 0, MaxRuns: 2, MaxErrors: 2`. The first Go checking call finds the only distinct view and exhausts it. The second call starts with no exclusions, reports the same view again, and consumes the second error slot. No random branching is needed. The existing simulation budget test finds all requested errors in its first run and does not cover this case.
+With `--features=no-rows`:
 
-**Fix direction:** Retain view exclusions for the whole simulation search and apply them while selecting and checking subsequent runs. Deduplicating only the output would still let repeated witnesses waste runs or prematurely consume the error budget.
+```tla
+Inv == LET (* @type: [a: Int]; *) R == Gen(1)
+       IN [R EXCEPT !.a = 0] = [a |-> 0]
+```
 
-## 5. [P2] A state-invariant filter silently suppresses trace invariants
+Scala succeeds; Go exits 1 with `cell ... has no domain edge`. Testing DOMAIN alone misses this because it can be optimized from the type.
 
-**Go:** [bounded_checker.go](bounded_checker.go), lines 501–508; [filtered_transition_executor.go](filtered_transition_executor.go), lines 67–82.
+**Fix direction:** Attach a legacy record domain in Gen, including records nested inside larger generated values.
 
-**Scala:** [SeqModelChecker.scala](../tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/SeqModelChecker.scala), lines 177–178 and 398–419; [FilteredTransitionExecutor.scala](../tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/trex/FilteredTransitionExecutor.scala), `mayChangeAssertion`.
+## 8. [P2] JSON-RPC query and compact lose a pending destination after an assertion
 
-Go runs trace invariants through `allowsInvariant`, assigning them synthetic state-invariant numbers starting at `len(inputs.stateInvariants)`. Scala's trace-invariant loop directly iterates over every trace invariant; it does not call the executor's filtered `mayChangeAssertion` method. That filter applies to state/action invariants only.
+**Go:** [exploration_service.go](exploration_service.go), `query` (465), `compact` (604), and operation logging.
 
-Consequently the same tuning string can silently remove a trace property from the Go search even though Scala still checks it. The standalone Go decorator resembles Scala, but the production bounded checker adds this different filtering behavior outside the decorator.
+**Scala:** [JsonRpcServer.scala](../json-rpc/src/main/scala/com/github/apalachemc/apalache/jsonrpc/JsonRpcServer.scala), query/compact decoding of the executor's current execution.
 
-**Trigger / proposed regression:** Configure one ordinary state invariant `x >= 0` and a trace invariant `HistInv(h) == Len(h) = 0`, with a correctly annotated history parameter. Use `Init == x = 0`, stuttering Next, and `search.invariantFilter = ".*->state0"`. Scala still detects the trace violation on the singleton initial history. Go labels it `state1` and skips it. A filter accepting only action invariants likewise suppresses all Go trace invariants.
+Go calls CheckPendingAndDecode only when the last logged operation is a transition. A state assertion changes that last entry without clearing the executor's pending transition; decoding then drops the destination.
 
-**Fix direction:** Match Scala by checking trace invariants independently of the state/action filter, or explicitly introduce and document a separate trace-filter contract rather than silently reusing state indices.
+Live sequence for `Init == x=0`, `Next == x'=x+1`:
 
-## 6. [P2] No satisfiable initial state is reported as successful bounded checking
+1. Load; assume Init with enabledness checking; nextStep.
+2. Assume Next; query STATE/TRACE: both return `[0,1]`, state 1.
+3. `assumeState(equalities={"x":0}, checkEnabled=true)`: both return ENABLED.
+4. Query: Scala returns `[0,1]`, state 1; Go returns `[0]`, state 0.
+5. `compact(snapshotId=0)` and query: Scala keeps singleton state 1; Go keeps singleton state 0.
 
-**Go:** [bounded_checker.go](bounded_checker.go), lines 231, 250–269, and 453–470.
+This is persistent state loss through compaction, not just trace formatting.
 
-**Scala:** [SeqModelChecker.scala](../tla-bmcmt/src/main/scala/at/forsyte/apalache/tla/bmcmt/SeqModelChecker.scala), lines 61–63, 224–280, and 295–312.
+**Fix direction:** Derive pending-state presence from executor state. Cover assertions, model exclusions, recovery, and batched calls before query/compact.
 
-The Go result starts as `SafetyNoCounterexample`. An unsatisfiable replayed initial transition simply returns `false, nil`; a disabled one is similarly skipped. If all initial transitions are unsatisfiable, the queue empties and the unchanged success outcome is returned, even when `CheckDeadlocks` is true. No branch records that the search never reached an initial state.
+## 9. [P2] Remote type checking defaults to the wrong record mode
 
-Scala uses `makeStep` for Init as well as Next. With disabled-transition checking enabled, an empty set of prepared initial transitions takes the explicit `Deadlock` branch when deadlock checking is enabled, or `ExecutionsTooShort` otherwise. It does not return an ordinary successful bounded run in this situation.
+**Go:** [shai/cmd_executor_service.go](shai/cmd_executor_service.go), `remoteTypecheckOptions` (361); [exploration_service.go](exploration_service.go), type options in `loadExplorationSource`.
 
-**Trigger / proposed regression:** Use a normalized initial transition equivalent to `Init == (x = 0) /\ (x > 0)`, with a complete assignment and a contradictory guard, plus `Next == x' = x`. Enable deadlock checking. Verify the zero-initial-state outcome separately from normal termination after an actual reachable state, and from a transition filter intentionally removing all initial transitions.
+**Scala:** [EtcTypeCheckerPassImpl.scala](../passes/src/main/scala/at/forsyte/apalache/tla/passes/typecheck/EtcTypeCheckerPassImpl.scala), rows enabled unless no-rows is selected.
 
-**Fix direction:** Track whether any initial transition is satisfiable and map initial-state exhaustion to the Scala-compatible outcome. If vacuous success is an intentional port policy, document it as a compatibility difference and expose it distinctly to callers.
+Shai initializes zero-value TypeCheckOptions and enables rows only for explicit `features:["rows"]`; it also never populates NoRows. JSON-RPC source loading likewise supplies zero-value options.
 
-## Coverage notes for follow-up
+Live Shai TYPECHECK of `R == {[a |-> 1], [b |-> 2]}` without features: Scala fails TypeCheckerSnowcat; Go succeeds with legacy unification. Explicit rows makes both reject it. The JSON-RPC mismatch is established from source; the live rows probe exercised Shai.
 
-The existing multi-error tests inspected use integer views; the simulation error-budget test stops within one run. Those cases do not exercise findings 2 and 4. Ordinary bounded-counter tests predominantly use state invariants and do not establish the action-invariant boundary in finding 3. A future fixing pass should add the targeted regressions above and run them against both implementations where practical.
+**Fix direction:** Share CLI defaults and feature validation, including explicit no-rows annotation checks.
 
-The selected finite CHOOSE/Guess and default OOPSLA19 SetAsFun paths inspected did not establish an additional independent bug. In particular, nondeterministic CHOOSE is explicitly shared with Scala and is not reported here as a port divergence. Parsing, full type inference, all rewriting rules, temporal checking, and server transports have not been exhaustively reviewed by this pass.
+## 10. [P2] gRPC frontend failures have incompatible shapes and incorrect stages
+
+**Go:** [shai/trans_explorer_service.go](shai/trans_explorer_service.go), LoadModel (69); [shai/cmd_executor_service.go](shai/cmd_executor_service.go), failure handling (240–280).
+
+**Scala:** [TransExplorerService.scala](../shai/src/main/scala/at/forsyte/apalache/shai/v1/TransExplorerService.scala), [CmdExecutorService.scala](../shai/src/main/scala/at/forsyte/apalache/shai/v1/CmdExecutorService.scala), PassFailure serialization.
+
+For malformed source `---- MODULE Bad ----\nO == (\n====\n`:
+
+| RPC | Scala | Go |
+| --- | --- | --- |
+| LoadModel error Data | object with pass_name/error_data/exit_code | bare Diagnostic array |
+| CmdExecutor PARSE | SanyParser, exit 255 | SanyParser, exit 150 |
+| CmdExecutor TYPECHECK/CHECK | SanyParser, exit 255 | TypeCheckerSnowcat, exit 120 |
+
+For actual typing errors, Scala's error_data is an array of `[location,message]` pairs; Go supplies Diagnostic objects. Clients following the Scala protocol cannot decode the results consistently, and syntax errors are misclassified as type errors.
+
+**Fix direction:** Preserve the originating stage and its structured protocol shape at both boundaries. This is separate from exact exception text.
+
+## 11. [P2] CmdExecutor rejects supported JSON input
+
+**Go:** [shai/cmd_executor_service.go](shai/cmd_executor_service.go), TLA-only format guard (102).
+
+**Scala:** [CmdExecutorService.scala](../shai/src/main/scala/at/forsyte/apalache/shai/v1/CmdExecutorService.scala), normal input resolution/pass-chain dispatch.
+
+Feed a successful PARSE response back into PARSE with `source.format:"json"`. Scala succeeds; Go returns UNEXPECTED, `Go command executor does not support json source format`. The shared Go frontend already implements JSON and typed Quint, but the service blocks those readers.
+
+**Fix direction:** Dispatch through the shared InputSource/frontend pipeline and add remote round-trip coverage.
+
+## 12. [P2] CmdExecutor rejects implemented SMT encodings
+
+**Go:** [shai/cmd_executor_service.go](shai/cmd_executor_service.go), `validateRemoteCheckerConfig` (128) and checker construction.
+
+**Scala:** [CmdExecutorService.scala](../shai/src/main/scala/at/forsyte/apalache/shai/v1/CmdExecutorService.scala), checker configuration resolution.
+
+A CHECK of the trivial integer/stuttering spec with `checker:{"length":0,"smt-encoding":"arrays"}` succeeds in Scala and fails as UNEXPECTED in Go. funArrays fails identically. The rejection incorrectly says the port supports only oopsla19.
+
+**Fix direction:** Accept and propagate the implemented encodings to the solver/rewriter. Removing the guard alone does not wire the option through.
+
+## 13. [P2] JSON-RPC returns successful null operator values on evaluation failure
+
+**Go:** [exploration_service.go](exploration_service.go), OPERATOR branch of query.
+
+**Scala:** [JsonRpcServer.scala](../json-rpc/src/main/scala/com/github/apalachemc/apalache/jsonrpc/JsonRpcServer.scala), getViewInJson/query.
+
+Export `View == x`, exhaust the unique current view with `nextModel(operator="View")` (hasNext FALSE), then query `kinds:["OPERATOR"], operator:"View"`. Scala returns error -32603, `Failed to evaluate View within 0 seconds`. Go returns success with operatorValue null. Its branch assigns a value only for sat and silently leaves it nil for unsat/unknown.
+
+Missing exported operators also get a different category: -32602 in Go versus -32603 in Scala.
+
+**Fix direction:** Propagate failed/inconclusive evaluation as the Scala-compatible RPC error.
+
+## 14. [P2] gRPC rejects equivalent uppercase connection UUIDs
+
+**Go:** [shai/trans_explorer_service.go](shai/trans_explorer_service.go), UUID validation and string-keyed connection lookup (57).
+
+**Scala:** [TransExplorerService.scala](../shai/src/main/scala/at/forsyte/apalache/shai/v1/TransExplorerService.scala), UUID.fromString and UUID-keyed connections.
+
+Open a connection, uppercase its UUID, and call LoadModel. Scala accepts it; Go returns FailedPrecondition. Go's regex accepts uppercase hexadecimal, but lookup compares the original lowercase string literally.
+
+**Fix direction:** Parse/canonicalize UUIDs consistently before connection lookup.
+
+## Coverage ledger and limits
+
+| Area | Review coverage and result |
+| --- | --- |
+| Parsing | tlago compatibility normalization, native export boundary, imports/instances, builtin replacement, local annotations, type annotations/aliases, bundled-library resolution, JSON/Quint entry points. Findings 1, 4, 5, 11. |
+| Full type inference | ETC translation and operator signatures, context lookup, overloaded constraints, LET polymorphism, occurs checks, row/legacy/sparse-tuple unification, substitutions, annotation parsing, inferred-type rewriting, and caller defaults. Findings 4, 5, 9; no additional confirmed defect in the core ETC solver. |
+| Symbolic rewriting | All main Scala rule families: constants/substitution; Boolean/ITE/LET/assignment/prime; arithmetic/comparison/ranges; finite sets, membership, inclusion, map/filter/union, cardinality, powersets; function constructor/application/domain/EXCEPT/function sets/SetAsFun; tuples/records/sequences; quantification/CHOOSE/Guess; Gen/MkSeq/folds/Repeat/variants. Also array/funArrays variants, structural equality, choice/default helpers, preprocessing, and ReTLA/VMT lowering. Findings 2, 3, 6, 7. |
+| Temporal checking | Loop/saved-state encoding, tableau recurrences for always/eventually and propositional structure, lookback/unroll/loop closure, initial-state properties, action atoms, multiple/nested formulas, unsupported temporal constructs, level classification, and pipeline integration. Nine live temporal manifest cases passed; no new confirmed temporal finding. |
+| Server transports | JSON-RPC dispatch/parameters, loading, transitions/assertions, snapshots/recovery/compaction, queries/model enumeration, batching, errors, HTTP compression; Shai protobuf services, connection lifecycle, source/config dispatch and error serialization. Live HTTP, gzip/zstd request and response round trips, and gRPC probes. Findings 8–14. |
+
+This is a broad source audit with differential evidence, not a proof of equivalence for every input or combination of rules. Live tests do not exhaust infinite domains, all SMT outcomes, concurrent schedules, or malformed transport payloads. No independent audit of the entire tlago/g3/SANY/gRPC dependencies or race stress was performed. Findings are confirmed examples, not a claim that no other bugs remain.
+
+Shared Scala behavior is not automatically reported as a Go regression. For example, the tested negative constant division/modulo behavior and empty Tail behavior agree; Scala's nonlinear underapproximation cases remain explicitly documented by their existing tests. CVC5 support, unavailable global Z3 parameters, and exact Scala exception stacks remain the port's declared exclusions.
