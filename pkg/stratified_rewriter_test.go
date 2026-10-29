@@ -2773,35 +2773,83 @@ func TestStratifiedLegacyRecordRuntimeDomainAndErrors(t *testing.T) {
 	}
 }
 
-func TestStratifiedClosedRowRecordEqualityThroughG3(t *testing.T) {
-	row, err := NewRowType(map[string]Type{"x": BoolT1}, nil)
+func TestStratifiedRowRecordScalaOracleCases(t *testing.T) {
+	row, err := NewRowType(map[string]Type{"a": IntT1, "b": BoolT1, "c": StrT1}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	recordType := NewRecordRowType(row)
 	tag := Typed(recordType)
-	record := func(value bool) Expr {
+	key := func(name string) Expr { return NewValueExpr(StringValue(name), Typed(StrT1)) }
+	record := func(integer int64, reverse bool) Expr {
+		fields := []Expr{
+			key("a"), intLiteral(integer),
+			key("b"), boolExpr(false),
+			key("c"), NewValueExpr(StringValue("d"), Typed(StrT1)),
+		}
+		if reverse {
+			fields = []Expr{
+				key("c"), NewValueExpr(StringValue("d"), Typed(StrT1)),
+				key("b"), boolExpr(false),
+				key("a"), intLiteral(integer),
+			}
+		}
 		return MustOperExpr(Op("RECORD"), tag,
-			NewValueExpr(StringValue("x"), Typed(StrT1)),
-			NewValueExpr(BoolValue(value), Typed(BoolT1)),
-		)
+			fields...)
 	}
-	equal := MustOperExpr(Op("EQ"), Typed(BoolT1), record(true), record(true))
-	rewriter := NewStratifiedRewriter()
-	scope, result, err := rewriter.Rewrite(equal, InitialRewriterScope())
+	apply := func(target Expr, name string, resultType Type) Expr {
+		return MustOperExpr(Op("FUN_APP"), Typed(resultType), target, key(name))
+	}
+	equal := func(left, right Expr) Expr {
+		return MustOperExpr(Op("EQ"), Typed(BoolT1), left, right)
+	}
+	original := record(22, false)
+	accessorType, err := NewTupleType(StrT1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	solver := newTestG3Solver(t)
-	encoder, err := EncodeRewriterScope(solver, scope, rewriter.Constraints())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := encoder.Assert(MustOperExpr(Op("NOT"), Typed(BoolT1), result.NameExpr())); err != nil {
-		t.Fatal(err)
-	}
-	if status, err := solver.Check(context.Background()); err != nil || status != SMTUnsatisfiable {
-		t.Fatalf("closed row-record equality negated = %v, %v", status, err)
+	updated := MustOperExpr(Op("EXCEPT"), tag, original,
+		MustOperExpr(Op("TUPLE"), Typed(accessorType), key("a")), intLiteral(10))
+	domain := MustOperExpr(Op("DOMAIN"), Typed(mustSet(StrT1)), original)
+	wantDomain := MustOperExpr(Op("SET_ENUM"), Typed(mustSet(StrT1)), key("a"), key("b"), key("c"))
+
+	for _, test := range []struct {
+		name  string
+		claim Expr
+	}{
+		{
+			name: "constructor preserves all typed fields",
+			claim: MustOperExpr(Op("AND"), Typed(BoolT1),
+				equal(apply(original, "a", IntT1), intLiteral(22)),
+				equal(apply(original, "b", BoolT1), boolExpr(false)),
+				equal(apply(original, "c", StrT1), NewValueExpr(StringValue("d"), Typed(StrT1)))),
+		},
+		{name: "field projection", claim: equal(apply(original, "a", IntT1), intLiteral(22))},
+		{
+			name: "EXCEPT changes only selected field",
+			claim: MustOperExpr(Op("AND"), Typed(BoolT1),
+				equal(apply(updated, "a", IntT1), intLiteral(10)),
+				equal(apply(updated, "b", BoolT1), boolExpr(false)),
+				equal(apply(updated, "c", StrT1), NewValueExpr(StringValue("d"), Typed(StrT1)))),
+		},
+		{name: "domain is static field set", claim: equal(domain, wantDomain)},
+		{name: "field order does not affect equality", claim: equal(record(1, false), record(1, true))},
+		{
+			name:  "different field values are unequal",
+			claim: MustOperExpr(Op("NOT"), Typed(BoolT1), equal(record(3, false), record(1, true))),
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			rewriter := NewStratifiedRewriter()
+			scope, result, rewriteErr := rewriter.Rewrite(test.claim, InitialRewriterScope())
+			if rewriteErr != nil {
+				t.Fatal(rewriteErr)
+			}
+			if !EqualTypes(result.Type.TLAType(), BoolT1) {
+				t.Fatalf("row-record oracle result type = %s", result.Type.TLAType())
+			}
+			checkRewrittenTruth(t, rewriter, scope, result, true)
+		})
 	}
 }
 
