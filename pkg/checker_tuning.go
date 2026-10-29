@@ -144,7 +144,7 @@ func ParseCheckerTuning(values map[string]string) (CheckerTuning, error) {
 		case "z3.sat.cardinality.encoding":
 			switch value {
 			case "grouped", "bimander", "ordered", "unate", "circuit":
-				// g3 v0.0.8 exposes generic typed symbol parameters, but its
+				// g3 v0.0.9 exposes generic typed symbol parameters, but its
 				// retained SAT catalog does not expose this Z3 encoding selector.
 				// Validate and retain the Scala option without forwarding a
 				// solver setting that g3 would reject or silently ignore.

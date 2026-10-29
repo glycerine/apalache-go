@@ -1162,7 +1162,7 @@ func TestRunCheckerCommandsRejectUnsupportedBackends(t *testing.T) {
 	}{
 		{"check", "--algo=offline", "supports incremental"},
 		{"check", "--smt-encoding=unknown", "want oopsla19, arrays, or funArrays"},
-		{"check", "--smt-solver=cvc5", "g3 v0.0.8"},
+		{"check", "--smt-solver=cvc5", "g3 v0.0.9"},
 		{"simulate", "--algo=remote", "supports incremental"},
 	} {
 		t.Run(test.command+" "+test.option, func(t *testing.T) {
