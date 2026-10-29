@@ -2,7 +2,9 @@ package apalache
 
 import (
 	"encoding/json"
+	"os"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -39,9 +41,19 @@ func TestParseApalacheConfigJSONStrictSchemaAndEnums(t *testing.T) {
 		{`{"checker":{"discardDisabled":false}}`, "$.checker.discardDisabled: Unknown configuration key."},
 		{`{"checker":{"smt-solver":{"type":"z3"}}}`, "$.checker.smt-solver: Expected a JSON string."},
 		{`{"checker":{"smt-encoding":"fun-arrays"}}`, "Unexpected SMT encoding: fun-arrays"},
+		{`{"checker":{"smt-encoding":"oopsla-19"}}`, "Unexpected SMT encoding: oopsla-19"},
 		{`{"server":{"server-type":"checker-server"}}`, "Unexpected server type: checker-server"},
+		{`{"server":{"server-type":"explorer-server"}}`, "Unexpected server type: explorer-server"},
 		{`{"source":{"type":"string","content":"x"}}`, "$.source.type: Unknown configuration key."},
+		{`{"source":{"kind":"file","file":"Spec.tla"}}`, "$.source.file: Unknown configuration key."},
 		{`{"source":{"kind":"filesource","path":"Spec.tla"}}`, `Expected "file" or "string", but got "filesource"`},
+		{`{"source":{"kind":"stringsource","content":"x"}}`, `Expected "file" or "string", but got "stringsource"`},
+		{`{"input":{"source":"Spec.tla"}}`, "$.input: Unknown configuration key."},
+		{`{"output":{"output":"output.tla"}}`, "$.output: Expected a JSON string."},
+		{`{"checker":{"timeout-smt-sec":12}}`, "$.checker.timeout-smt-sec: Unknown configuration key."},
+		{`{"checker":{"no-deadlocks":true}}`, "$.checker.no-deadlocks: Unknown configuration key."},
+		{`{"checker":{"temporal-props":["P"]}}`, "$.checker.temporal-props: Unknown configuration key."},
+		{`{"typechecker":{"inferpoly":true}}`, "$.typechecker.inferpoly: Unknown configuration key."},
 		{`{"run-dir":"\u0000"}`, "$.run-dir: Invalid path"},
 	}
 	for _, test := range cases {
@@ -58,6 +70,61 @@ func TestParseApalacheConfigJSONStrictSchemaAndEnums(t *testing.T) {
 	if *config.Checker.SMTSolver != SMTSolverCVC5 || *config.Checker.SMTEncoding != SMTEncodingFunArrays ||
 		*config.Checker.Algorithm != AlgorithmRemote || *config.Server.ServerType != ServerTypeExplorer {
 		t.Fatalf("enums = %#v, %#v", config.Checker, config.Server)
+	}
+}
+
+func TestApalacheConfigJSONWritesCanonicalTopLevelAndScalarForms(t *testing.T) {
+	output := "output.tla"
+	config := ApalacheConfig{
+		Common:  CommonPatch{Debug: pointer(true)},
+		Source:  NewFileInputSourceWithFormat("Spec.tla", InputFormatTLA),
+		Output:  &output,
+		Checker: CheckerPatch{SMTSolver: pointer(SMTSolverCVC5)},
+	}
+	encoded, err := MarshalApalacheConfigJSON(config, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, fragment := range []string{`"source":"Spec.tla"`, `"output":"output.tla"`, `"debug":true`, `"smt-solver":"cvc5"`} {
+		if !strings.Contains(encoded, fragment) {
+			t.Errorf("canonical JSON %s lacks %s", encoded, fragment)
+		}
+	}
+	for _, obsolete := range []string{`"input"`, `"common"`} {
+		if strings.Contains(encoded, obsolete) {
+			t.Errorf("canonical JSON %s contains obsolete section %s", encoded, obsolete)
+		}
+	}
+}
+
+func TestApalacheConfigJSONMergeTuningPerKey(t *testing.T) {
+	lower := ParseApalacheConfigJSON(
+		`{"source":"Lower.tla","output":"lower.json","checker":{"tuning":{"a":"1","shared":"low"},"smt-solver":"z3"}}`).RequireValue()
+	higher := ParseApalacheConfigJSON(
+		`{"source":"Higher.tla","checker":{"tuning":{"b":"2","shared":"high"},"smt-solver":"cvc5"}}`).RequireValue()
+	merged := higher.MergeWithLower(lower)
+	wantTuning := map[string]string{"a": "1", "b": "2", "shared": "high"}
+	if merged.Source.String() != "Higher.tla" || merged.Output == nil || *merged.Output != "lower.json" ||
+		merged.Checker.Tuning == nil || !reflect.DeepEqual(*merged.Checker.Tuning, wantTuning) ||
+		merged.Checker.SMTSolver == nil || *merged.Checker.SMTSolver != SMTSolverCVC5 {
+		t.Fatalf("merged configuration = %#v", merged)
+	}
+}
+
+func TestApalacheConfigJSONManualExamples(t *testing.T) {
+	data, err := os.ReadFile("../docs/src/apalache/config.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	examples := regexp.MustCompile("(?s)```json\\s*(.*?)\\s*```").FindAllSubmatch(data, -1)
+	if len(examples) == 0 {
+		t.Fatal("configuration manual contains no JSON examples")
+	}
+	for index, example := range examples {
+		result := ParseApalacheConfigJSON(string(example[1]))
+		if !result.IsSuccess() {
+			t.Errorf("manual JSON example %d: %#v", index, result.Errors())
+		}
 	}
 }
 
