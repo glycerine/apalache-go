@@ -198,6 +198,13 @@
       "go_args": ["check", "-rows", "-length", "1", "-deadlock=false", "-inv", "Inv", "pkg/testdata/oracle/NondeterministicStructuredTrace.tla"]
     },
     {
+      "name": "deeply-nested-structured-trace",
+      "dir": "..",
+      "compare_trace": true,
+      "scala_args": ["check", "--features=rows", "--length=1", "--no-deadlock", "--inv=Inv", "pkg/testdata/oracle/DeeplyNestedStructuredTrace.tla"],
+      "go_args": ["check", "-rows", "-length", "1", "-deadlock=false", "-inv", "Inv", "pkg/testdata/oracle/DeeplyNestedStructuredTrace.tla"]
+    },
+    {
       "name": "variants",
       "dir": "..",
       "scala_args": ["check", "--features=rows", "--length=0", "--no-deadlock", "--inv=AllTests", "test/tla/TestVariants.tla"],
