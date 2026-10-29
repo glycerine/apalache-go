@@ -160,6 +160,17 @@ func formatTLAExpressionAt(parent Precedence, expression Expr) (string, error) {
 	case *ValueExpr:
 		return formatTLAValue(typed.Value(), parent)
 	case *LetInExpr:
+		if lambda, ok := tlaLambdaDeclaration(typed); ok {
+			body, err := formatTLAExpressionAt(Precedence{}, lambda.Body())
+			if err != nil {
+				return "", err
+			}
+			parameters := make([]string, len(lambda.FormalParams()))
+			for index, parameter := range lambda.FormalParams() {
+				parameters[index] = ParseableTLAName(parameter.Name)
+			}
+			return "LAMBDA " + strings.Join(parameters, ", ") + ": " + body, nil
+		}
 		parts := make([]string, len(typed.Declarations()))
 		for i, declaration := range typed.Declarations() {
 			formatted, err := FormatTLADeclaration(declaration, nil)
@@ -281,6 +292,20 @@ func formatTLAOperator(parent Precedence, expression *OperExpr) (string, error) 
 	case "OPER_APP":
 		if len(arguments) == 0 {
 			return "", fmt.Errorf("operator application has no operator")
+		}
+		if callee, ok := arguments[0].(*NameExpr); ok && (callee.Name() == ":>" || callee.Name() == "@@") {
+			if len(arguments) != 3 {
+				return "", fmt.Errorf("TLC operator %s expects two arguments", callee.Name())
+			}
+			left, err := formatTLAExpressionAt(Precedence{}, arguments[1])
+			if err != nil {
+				return "", err
+			}
+			right, err := formatTLAExpressionAt(Precedence{}, arguments[2])
+			if err != nil {
+				return "", err
+			}
+			return wrapTLA(parent, Precedence{}, left+" "+callee.Name()+" "+right), nil
 		}
 		callee, err := formatTLAExpressionAt(operator.Precedence(), arguments[0])
 		if err != nil {
@@ -451,6 +476,18 @@ func formatTLAOperator(parent Precedence, expression *OperExpr) (string, error) 
 	}
 	unqualified = ParseableTLAName(unqualified)
 	return formatTLAApplication(parent, operator.Precedence(), unqualified, arguments)
+}
+
+func tlaLambdaDeclaration(expression *LetInExpr) (*OperDecl, bool) {
+	declarations := expression.Declarations()
+	if len(declarations) != 1 || declarations[0].Name() != "LAMBDA" {
+		return nil, false
+	}
+	body, ok := expression.Body().(*NameExpr)
+	if !ok || body.Name() != "LAMBDA" {
+		return nil, false
+	}
+	return declarations[0], true
 }
 
 func formatTLAApplication(parent, precedence Precedence, callee string, arguments []Expr) (string, error) {

@@ -67,6 +67,45 @@ func TestFormatTLAExpressionScalaOracleCases(t *testing.T) {
 	}
 }
 
+func TestFormatTLATLCFunctionAndLambdaScalaOracleCases(t *testing.T) {
+	smiley := func(key, value Expr) Expr {
+		return tlaOper("OPER_APP", tlaName(":>"), key, value)
+	}
+	override := func(left, right Expr) Expr {
+		return tlaOper("OPER_APP", tlaName("@@"), left, right)
+	}
+	function := override(smiley(tlaString("a"), tlaInt(1)),
+		override(smiley(tlaString("b"), tlaInt(2)), smiley(tlaString("c"), tlaInt(3))))
+	formatted, err := FormatTLAExpression(function)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if formatted != `"a" :> 1 @@ "b" :> 2 @@ "c" :> 3` {
+		t.Fatalf("TLC function = %q", formatted)
+	}
+
+	innerDeclaration := NewOperDecl("LAMBDA", []OperatorParam{ValueParam("y")}, tlaName("y"), Untyped())
+	innerLambda := NewLetInExpr(tlaName("LAMBDA"), Untyped(), innerDeclaration)
+	innerApplication := tlaOper("OPER_APP", tlaName("A"), innerLambda, tlaName("x"))
+	outerDeclaration := NewOperDecl("LAMBDA", []OperatorParam{ValueParam("x")}, innerApplication, Untyped())
+	outerLambda := NewLetInExpr(tlaName("LAMBDA"), Untyped(), outerDeclaration)
+	nested := tlaOper("OPER_APP", tlaName("A"), outerLambda, tlaName("z"))
+	formatted, err = FormatTLAExpression(nested)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if formatted != "A(LAMBDA x: A(LAMBDA y: y, x), z)" {
+		t.Fatalf("nested lambdas = %q", formatted)
+	}
+
+	module := "---- MODULE PrettyTLCAndLambda ----\nEXTENDS TLC\nCONSTANT z\n" +
+		"A(Op(_), v) == v\nF == " + formatted + "\nG == " + `"a" :> 1 @@ "b" :> 2 @@ "c" :> 3` + "\n====\n"
+	parsed := ParseSource(context.Background(), "PrettyTLCAndLambda.tla", module, FrontendOptions{})
+	if !parsed.OK() {
+		t.Fatalf("formatted Scala oracle cases did not parse: %+v\n%s", parsed.Diagnostics, module)
+	}
+}
+
 func TestFormatTLAPrecedenceAndBinderOracleCases(t *testing.T) {
 	cases := []struct {
 		name string
