@@ -35,11 +35,15 @@ production command surface against accidental solver delegation.
 An unstripped `CGO_ENABLED=0` production binary was inspected with `nm` and
 `objdump`. Link-time dead-code elimination removes `tlago.ValidateSanyXML` and
 `g3/pkg/util/lp.RunDriverGLPK`, so neither the XML validator nor the optional
-GLPK comparison driver is present. The g3 solver assertion machinery does,
-however, retain `diagnostic.(*DebugActionContext).InvokeDebugger` and its Linux
-`hostRunCommand` branch, which executes `/bin/sh` if an interactive assertion
-failure receives the `G` debugger command. This is not a solver delegation
-path, but it is an external-process capability in the production call graph.
+GLPK comparison driver is present. The g3 solver assertion machinery retains
+`diagnostic.(*DebugActionContext).InvokeDebugger` and its Linux
+`hostRunCommand` branch in the binary because both action profiles share one
+method. Apalache binds g3 v0.0.7's `DebugNoDebugger` process action and disables
+process assertions before constructing any solver context. Consequently an
+unexpected direct assertion terminates with g3's noninteractive status instead
+of reading stdin or reaching the shell branch. `smt_g3_hardening_test.go`
+verifies both settings in an isolated subprocess, including input that would
+make g3's default interactive action continue.
 
 Reproduce the check from `pkg/` with an unstripped build and inspect these
 symbols:
@@ -49,7 +53,6 @@ CGO_ENABLED=0 go build -trimpath -o /tmp/apalache-callgraph ./cmd/apalache
 nm -an /tmp/apalache-callgraph | grep -E 'ValidateSanyXML|RunDriverGLPK|hostRunCommand|os/exec\.(Command|LookPath)'
 ```
 
-Final hardening requires a tagged g3 API/profile that disables the interactive
-debugger path, followed by updating the pinned dependency and rerunning this
-audit. A local replacement is intentionally not used because release builds
-must stay pinned to tagged g3 code.
+The generic shell symbol is therefore presence-only rather than a reachable
+Apalache runtime capability. The release remains pinned to tagged g3 code; a
+local replacement is intentionally not used.

@@ -15,9 +15,38 @@ import (
 	"github.com/glycerine/g3/pkg/ast"
 	"github.com/glycerine/g3/pkg/cmd_context"
 	_ "github.com/glycerine/g3/pkg/engine"
+	"github.com/glycerine/g3/pkg/util/diagnostic"
 	"github.com/glycerine/g3/pkg/util/lbool"
 	usymbol "github.com/glycerine/g3/pkg/util/symbol"
 )
+
+var g3ProcessHardeningErr = hardenG3ProcessDiagnostics()
+
+// hardenG3ProcessDiagnostics selects g3's release-safe assertion profile for
+// the entire process. g3 models Z3's assertion debugger as process-global
+// state; its default interactive profile can read stdin and launch gdb. A
+// standalone model checker must never turn a solver failure into an
+// interactive shell, even when built with g3debug.
+func hardenG3ProcessDiagnostics() error {
+	debug := diagnostic.BorrowProcessDebugContext()
+	if err := debug.EnableAssertions(false); err != nil {
+		return fmt.Errorf("disable g3 process assertions: %w", err)
+	}
+	actions, err := diagnostic.NewDebugActionContext(diagnostic.DebugActionConfig{
+		Budget:  debug.Budget(),
+		Profile: diagnostic.DebugNoDebugger,
+	})
+	if err != nil {
+		return fmt.Errorf("create g3 noninteractive assertion profile: %w", err)
+	}
+	if err = debug.BindAssertionActions(actions); err != nil {
+		_ = actions.Close()
+		return fmt.Errorf("bind g3 noninteractive assertion profile: %w", err)
+	}
+	// actions is intentionally process-lived: DebugContext borrows it and g3's
+	// process debug owner itself lives until process exit.
+	return nil
+}
 
 type SMTStatus uint8
 
@@ -183,6 +212,9 @@ func newG3SolverContextWithOptions(logic string, uintOptions map[string]uint32, 
 }
 
 func newG3SolverContextWithTypedOptions(logic string, options g3SolverOptions) (*G3SolverContext, error) {
+	if g3ProcessHardeningErr != nil {
+		return nil, g3ProcessHardeningErr
+	}
 	if logic == "" {
 		return nil, fmt.Errorf("SMT logic cannot be empty")
 	}
