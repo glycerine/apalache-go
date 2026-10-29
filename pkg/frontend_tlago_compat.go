@@ -990,97 +990,106 @@ func normalizeTlagoLambdas(spec *tlago.Spec) {
 		return
 	}
 	next := 0
+	origins := tlagoDefinitionOrigins(spec)
 	for index := range spec.Root.Definitions {
-		spec.Root.Definitions[index].Expr = normalizeTlagoLambdaExpr(spec.Root.Definitions[index].Expr, &next)
+		spec.Root.Definitions[index].Expr = normalizeTlagoLambdaExpr(spec.Root.Definitions[index].Expr, &next, tlagoWithoutNames(origins, spec.Root.Definitions[index].Params))
 	}
 	for index := range spec.Root.Assumptions {
-		spec.Root.Assumptions[index].Expr = normalizeTlagoLambdaExpr(spec.Root.Assumptions[index].Expr, &next)
+		spec.Root.Assumptions[index].Expr = normalizeTlagoLambdaExpr(spec.Root.Assumptions[index].Expr, &next, origins)
 	}
 	for index := range spec.Root.Theorems {
-		spec.Root.Theorems[index].Expr = normalizeTlagoLambdaExpr(spec.Root.Theorems[index].Expr, &next)
+		spec.Root.Theorems[index].Expr = normalizeTlagoLambdaExpr(spec.Root.Theorems[index].Expr, &next, origins)
 	}
 }
 
-func normalizeTlagoLambdaExpr(expression tlago.Expr, next *int) tlago.Expr {
+func normalizeTlagoLambdaExpr(expression tlago.Expr, next *int, origins map[string]string) tlago.Expr {
 	if expression == nil {
 		return nil
 	}
 	transformAll := func(expressions []tlago.Expr) {
 		for index := range expressions {
-			expressions[index] = normalizeTlagoLambdaExpr(expressions[index], next)
+			expressions[index] = normalizeTlagoLambdaExpr(expressions[index], next, origins)
 		}
 	}
 	switch typed := expression.(type) {
 	case *tlago.IdentExpr, *tlago.LiteralExpr:
 	case *tlago.UnaryExpr:
-		typed.Expr = normalizeTlagoLambdaExpr(typed.Expr, next)
+		typed.Expr = normalizeTlagoLambdaExpr(typed.Expr, next, origins)
 	case *tlago.BinaryExpr:
-		typed.Left = normalizeTlagoLambdaExpr(typed.Left, next)
-		typed.Right = normalizeTlagoLambdaExpr(typed.Right, next)
-		if typed.Op == "@@" {
+		typed.Left = normalizeTlagoLambdaExpr(typed.Left, next, origins)
+		typed.Right = normalizeTlagoLambdaExpr(typed.Right, next, origins)
+		loweredOperator := typed.Op == "@@" || typed.Op == ":>" || typed.Op == "\\oplus" || typed.Op == "\\ominus" || typed.Op == "\\sqsubseteq"
+		if owner, known := origins[typed.Op]; loweredOperator && known && owner != "TLC" && owner != "Bags" {
+			return &tlago.CallExpr{Callee: &tlago.IdentExpr{Name: typed.Op, Pos: typed.Pos}, Args: []tlago.Expr{typed.Left, typed.Right}, Pos: typed.Pos}
+		}
+		if typed.Op == "@@" && origins[typed.Op] == "TLC" {
 			return lowerTlagoFunctionOverride(typed, next)
 		}
-		if typed.Op == ":>" {
+		if typed.Op == ":>" && origins[typed.Op] == "TLC" {
 			return lowerTlagoSingletonFunction(typed, next)
 		}
-		if typed.Op == "\\oplus" {
+		if typed.Op == "\\oplus" && origins[typed.Op] == "Bags" {
 			return lowerTlagoBagUnion(typed, next)
 		}
-		if typed.Op == "\\ominus" {
+		if typed.Op == "\\ominus" && origins[typed.Op] == "Bags" {
 			return lowerTlagoBagDifference(typed, next)
 		}
-		if typed.Op == "\\sqsubseteq" {
+		if typed.Op == "\\sqsubseteq" && origins[typed.Op] == "Bags" {
 			return lowerTlagoSubBag(typed, next)
 		}
 	case *tlago.CallExpr:
-		typed.Callee = normalizeTlagoLambdaExpr(typed.Callee, next)
+		typed.Callee = normalizeTlagoLambdaExpr(typed.Callee, next, origins)
 		transformAll(typed.Args)
 	case *tlago.IfExpr:
-		typed.Cond = normalizeTlagoLambdaExpr(typed.Cond, next)
-		typed.Then = normalizeTlagoLambdaExpr(typed.Then, next)
-		typed.Else = normalizeTlagoLambdaExpr(typed.Else, next)
+		typed.Cond = normalizeTlagoLambdaExpr(typed.Cond, next, origins)
+		typed.Then = normalizeTlagoLambdaExpr(typed.Then, next, origins)
+		typed.Else = normalizeTlagoLambdaExpr(typed.Else, next, origins)
 	case *tlago.LetExpr:
+		origins = cloneMap(origins)
+		for _, definition := range typed.Definitions {
+			origins[definition.Name] = "local"
+		}
 		for index := range typed.Definitions {
-			typed.Definitions[index].Expr = normalizeTlagoLambdaExpr(typed.Definitions[index].Expr, next)
+			typed.Definitions[index].Expr = normalizeTlagoLambdaExpr(typed.Definitions[index].Expr, next, tlagoWithoutNames(origins, typed.Definitions[index].Params))
 		}
 		for index := range typed.Instances {
 			for substitutionIndex := range typed.Instances[index].SubstitutionList {
 				substitution := &typed.Instances[index].SubstitutionList[substitutionIndex]
-				substitution.Expr = normalizeTlagoLambdaExpr(substitution.Expr, next)
+				substitution.Expr = normalizeTlagoLambdaExpr(substitution.Expr, next, origins)
 			}
 		}
-		typed.Body = normalizeTlagoLambdaExpr(typed.Body, next)
+		typed.Body = normalizeTlagoLambdaExpr(typed.Body, next, origins)
 	case *tlago.QuantifierExpr:
-		typed.Set = normalizeTlagoLambdaExpr(typed.Set, next)
-		typed.Body = normalizeTlagoLambdaExpr(typed.Body, next)
+		typed.Set = normalizeTlagoLambdaExpr(typed.Set, next, origins)
+		typed.Body = normalizeTlagoLambdaExpr(typed.Body, next, origins)
 	case *tlago.CaseExpr:
 		for index := range typed.Arms {
-			typed.Arms[index].Test = normalizeTlagoLambdaExpr(typed.Arms[index].Test, next)
-			typed.Arms[index].Value = normalizeTlagoLambdaExpr(typed.Arms[index].Value, next)
+			typed.Arms[index].Test = normalizeTlagoLambdaExpr(typed.Arms[index].Test, next, origins)
+			typed.Arms[index].Value = normalizeTlagoLambdaExpr(typed.Arms[index].Value, next, origins)
 		}
-		typed.Other = normalizeTlagoLambdaExpr(typed.Other, next)
+		typed.Other = normalizeTlagoLambdaExpr(typed.Other, next, origins)
 	case *tlago.ChooseExpr:
-		typed.Set = normalizeTlagoLambdaExpr(typed.Set, next)
-		typed.Body = normalizeTlagoLambdaExpr(typed.Body, next)
+		typed.Set = normalizeTlagoLambdaExpr(typed.Set, next, origins)
+		typed.Body = normalizeTlagoLambdaExpr(typed.Body, next, origins)
 	case *tlago.TupleExpr:
 		transformAll(typed.Elems)
 	case *tlago.SetExpr:
 		transformAll(typed.Elems)
 	case *tlago.RecordExpr:
 		for index := range typed.Fields {
-			typed.Fields[index].Value = normalizeTlagoLambdaExpr(typed.Fields[index].Value, next)
+			typed.Fields[index].Value = normalizeTlagoLambdaExpr(typed.Fields[index].Value, next, origins)
 		}
 	case *tlago.RecordComponentExpr:
-		typed.Record = normalizeTlagoLambdaExpr(typed.Record, next)
+		typed.Record = normalizeTlagoLambdaExpr(typed.Record, next, origins)
 	case *tlago.RecordSetExpr:
 		for index := range typed.Fields {
-			typed.Fields[index].Set = normalizeTlagoLambdaExpr(typed.Fields[index].Set, next)
+			typed.Fields[index].Set = normalizeTlagoLambdaExpr(typed.Fields[index].Set, next, origins)
 		}
 	case *tlago.FunctionExpr:
 		for index := range typed.Bounds {
-			typed.Bounds[index].Set = normalizeTlagoLambdaExpr(typed.Bounds[index].Set, next)
+			typed.Bounds[index].Set = normalizeTlagoLambdaExpr(typed.Bounds[index].Set, next, origins)
 		}
-		typed.Body = normalizeTlagoLambdaExpr(typed.Body, next)
+		typed.Body = normalizeTlagoLambdaExpr(typed.Body, next, origins)
 		if typed.IsLambda {
 			*next++
 			name := fmt.Sprintf("__tlago_lambda_%d", *next)
@@ -1102,10 +1111,10 @@ func normalizeTlagoLambdaExpr(expression tlago.Expr, next *int) tlago.Expr {
 			}
 		}
 	case *tlago.FunctionAppExpr:
-		typed.Function = normalizeTlagoLambdaExpr(typed.Function, next)
+		typed.Function = normalizeTlagoLambdaExpr(typed.Function, next, origins)
 		transformAll(typed.Args)
 	case *tlago.ExceptExpr:
-		typed.Base = normalizeTlagoLambdaExpr(typed.Base, next)
+		typed.Base = normalizeTlagoLambdaExpr(typed.Base, next, origins)
 		for specIndex := range typed.Specs {
 			for componentIndex := range typed.Specs[specIndex].Components {
 				transformAll(typed.Specs[specIndex].Components[componentIndex].Indices)
@@ -1115,25 +1124,25 @@ func normalizeTlagoLambdaExpr(expression tlago.Expr, next *int) tlago.Expr {
 					nested.Base = tlagoExceptOldValue(typed.Base, typed.Specs[specIndex])
 				}
 			}
-			typed.Specs[specIndex].Value = normalizeTlagoLambdaExpr(typed.Specs[specIndex].Value, next)
+			typed.Specs[specIndex].Value = normalizeTlagoLambdaExpr(typed.Specs[specIndex].Value, next, origins)
 		}
 	case *tlago.LabelExpr:
-		typed.Body = normalizeTlagoLambdaExpr(typed.Body, next)
+		typed.Body = normalizeTlagoLambdaExpr(typed.Body, next, origins)
 	case *tlago.ActionExpr:
-		typed.Action = normalizeTlagoLambdaExpr(typed.Action, next)
-		typed.Subscript = normalizeTlagoLambdaExpr(typed.Subscript, next)
+		typed.Action = normalizeTlagoLambdaExpr(typed.Action, next, origins)
+		typed.Subscript = normalizeTlagoLambdaExpr(typed.Subscript, next, origins)
 	case *tlago.FairnessExpr:
-		typed.Subscript = normalizeTlagoLambdaExpr(typed.Subscript, next)
-		typed.Action = normalizeTlagoLambdaExpr(typed.Action, next)
+		typed.Subscript = normalizeTlagoLambdaExpr(typed.Subscript, next, origins)
+		typed.Action = normalizeTlagoLambdaExpr(typed.Action, next, origins)
 	case *tlago.FunctionSetExpr:
-		typed.Domain = normalizeTlagoLambdaExpr(typed.Domain, next)
-		typed.Range = normalizeTlagoLambdaExpr(typed.Range, next)
+		typed.Domain = normalizeTlagoLambdaExpr(typed.Domain, next, origins)
+		typed.Range = normalizeTlagoLambdaExpr(typed.Range, next, origins)
 	case *tlago.SetComprehensionExpr:
-		typed.Element = normalizeTlagoLambdaExpr(typed.Element, next)
+		typed.Element = normalizeTlagoLambdaExpr(typed.Element, next, origins)
 		for index := range typed.Bounds {
-			typed.Bounds[index].Set = normalizeTlagoLambdaExpr(typed.Bounds[index].Set, next)
+			typed.Bounds[index].Set = normalizeTlagoLambdaExpr(typed.Bounds[index].Set, next, origins)
 		}
-		typed.Predicate = normalizeTlagoLambdaExpr(typed.Predicate, next)
+		typed.Predicate = normalizeTlagoLambdaExpr(typed.Predicate, next, origins)
 		if lowered, ok := lowerTlagoTupleSetFilter(typed, next); ok {
 			return lowered
 		}
@@ -1579,15 +1588,19 @@ func normalizeTlagoNamedAssumptionReferences(module *Module, sources *SourceStor
 	return transformTlagoModuleExpressions(module, rewrite, sources)
 }
 
-func removeTlagoNativeVariantDeclarations(module *Module, sources *SourceStore, variantsImported bool) *Module {
-	if module == nil || !variantsImported {
+func removeTlagoNativeVariantDeclarations(module *Module, sources *SourceStore, origins map[string]string) *Module {
+	if module == nil {
 		return module
 	}
 	declarations := module.Declarations()
 	kept := make([]Decl, 0, len(declarations))
 	for _, declaration := range declarations {
-		_, native := tlagoNativeVariantDeclarations[declaration.Name()]
-		if native {
+		name := declaration.Name()
+		if separator := strings.LastIndex(name, "!"); separator >= 0 {
+			name = name[separator+1:]
+		}
+		_, native := tlagoNativeVariantDeclarations[name]
+		if native && origins[declaration.Name()] == "Variants" {
 			continue
 		}
 		kept = append(kept, declaration)
@@ -1601,8 +1614,8 @@ func removeTlagoNativeVariantDeclarations(module *Module, sources *SourceStore, 
 // removes its executable stubs before native type checking. Print-like
 // operators are pure erasures in Apalache; stateful register reads remain an
 // explicit unsupported native operator instead of acquiring CHOOSE semantics.
-func normalizeTlagoTLCCalls(module *Module, sources *SourceStore, tlcImported bool) *Module {
-	if module == nil || !tlcImported {
+func normalizeTlagoTLCCalls(module *Module, sources *SourceStore, origins map[string]string) *Module {
+	if module == nil {
 		return module
 	}
 	var tracker TransformationTracker = IdleTracker{}
@@ -1615,8 +1628,8 @@ func normalizeTlagoTLCCalls(module *Module, sources *SourceStore, tlcImported bo
 		}
 		return name
 	}
-	rewrite := RewriteExpressions(tracker, func(expression Expr) (Expr, bool) {
-		if name, ok := expression.(*NameExpr); ok && baseName(name.Name()) == "JavaTime" {
+	rewrite := func(expression Expr, scope map[string]string) (Expr, bool) {
+		if name, ok := expression.(*NameExpr); ok && scope[name.Name()] == "TLC" && baseName(name.Name()) == "JavaTime" {
 			return NewValueExpr(Int64Value(123), Typed(IntT1)), true
 		}
 		operation, ok := expression.(*OperExpr)
@@ -1633,7 +1646,7 @@ func normalizeTlagoTLCCalls(module *Module, sources *SourceStore, tlcImported bo
 			}
 		}
 		callee, ok := arguments[0].(*NameExpr)
-		if !ok {
+		if !ok || scope[callee.Name()] != "TLC" {
 			return nil, false
 		}
 		switch baseName(callee.Name()) {
@@ -1665,12 +1678,12 @@ func normalizeTlagoTLCCalls(module *Module, sources *SourceStore, tlcImported bo
 			}
 		}
 		return nil, false
-	})
-	transformed := transformTlagoModuleExpressions(module, rewrite, sources)
+	}
+	transformed := rewriteTlagoResolvedExpressions(module, sources, origins, tracker, rewrite)
 	declarations := transformed.Declarations()
 	kept := make([]Decl, 0, len(declarations))
 	for _, declaration := range declarations {
-		if _, native := tlagoNativeTLCDeclarations[baseName(declaration.Name())]; native {
+		if _, native := tlagoNativeTLCDeclarations[baseName(declaration.Name())]; native && origins[declaration.Name()] == "TLC" {
 			continue
 		}
 		kept = append(kept, declaration)
@@ -1980,10 +1993,10 @@ func normalizeTlagoApalacheBuiltinCalls(module *Module, sources *SourceStore, in
 	if len(kept) != len(declarations) {
 		module = NewModule(module.Name(), kept)
 	}
-	declared := make(map[string]struct{}, len(module.Declarations()))
+	declared := make(map[string]string, len(module.Declarations()))
 	parameters := make(map[string][]OperatorParam, len(module.Declarations()))
 	for _, declaration := range module.Declarations() {
-		declared[declaration.Name()] = struct{}{}
+		declared[declaration.Name()] = "user"
 		if operator, ok := declaration.(*OperDecl); ok {
 			parameters[operator.Name()] = operator.FormalParams()
 		}
@@ -1992,7 +2005,7 @@ func normalizeTlagoApalacheBuiltinCalls(module *Module, sources *SourceStore, in
 	if sources != nil {
 		tracker = NewListenerTracker(sources)
 	}
-	rewrite := RewriteExpressions(tracker, func(expression Expr) (Expr, bool) {
+	rewrite := func(expression Expr, declared map[string]string) (Expr, bool) {
 		operation, ok := expression.(*OperExpr)
 		if !ok || operation.Operator().Name() != "OPER_APP" {
 			return nil, false
@@ -2104,8 +2117,8 @@ func normalizeTlagoApalacheBuiltinCalls(module *Module, sources *SourceStore, in
 			}
 		}
 		return MustOperExpr(Op(builtin), operation.Tag(), builtinArguments...), true
-	})
-	return transformTlagoModuleExpressions(module, rewrite, sources)
+	}
+	return rewriteTlagoResolvedExpressions(module, sources, declared, tracker, rewrite)
 }
 
 func expandTlagoFunAsSeq(operation *OperExpr, arguments []Expr) (Expr, bool) {

@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func TestReviewCheckUnsatisfiableInit(t *testing.T) {
+func TestCheckUnsatisfiableInit(t *testing.T) {
 	dir := t.TempDir()
 	source := filepath.Join(dir, "Review.tla")
 	if err := os.WriteFile(source, []byte(`---- MODULE Review ----

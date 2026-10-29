@@ -2,9 +2,62 @@
 
 Reviewed 2026-10-29 at source revision `9e80e40f9052ee36d5749c8f633f4a601c44cfe0`.
 
-This replaces the previous report. Its six findings were already fixed; their regression tests remain in the core, CLI, and Shai packages. The **14 new findings below are not fixed** by this audit. P1 denotes incorrect model-checking results; P2 denotes a functional or compatibility defect.
+This replaces the previous report. Its six findings were already fixed; their regression tests remain in the core, CLI, and Shai packages. The **14 findings below have now been fixed**, each after a targeted test demonstrated the failure. The descriptions below preserve the original audit evidence; see the remediation ledger for the current status. P1 denotes incorrect model-checking results; P2 denotes a functional or compatibility defect.
 
-## Executed validation
+## Remediation ledger
+
+Each issue was handled in order: establish a failing regression, implement the fix,
+then verify the targeted tests before proceeding. Additional scope/entry-point
+checks strengthened findings 1 and 5 before the full regression run.
+
+| Finding | Fix and regression coverage | Red → green |
+| --- | --- | --- |
+| 1 | Module-origin and lexical-scope-aware builtin resolution; root/local/bound/qualified operators. [frontend_operator_identity_test.go](frontend_operator_identity_test.go) | Confirmed |
+| 2 | Reject compact operands where function construction/union or powerset/function choice require enumeration. [symbolic_range_enumeration_test.go](symbolic_range_enumeration_test.go) | Confirmed |
+| 3 | Guard legacy field equality with actual domain membership; all three encodings. [legacy_record_equality_test.go](legacy_record_equality_test.go) | Confirmed |
+| 4 | Match imported LET annotations by source declaration location, including inner-module file identity; EXTENDS/INSTANCE and invalid-annotation control. [frontend_imported_let_annotations_test.go](frontend_imported_let_annotations_test.go) | Confirmed |
+| 5 | Infer tagged JSON/Quint, including explorer input; infer operator-valued Quint lambda applications. [frontend_typed_input_validation_test.go](frontend_typed_input_validation_test.go) | Confirmed |
+| 6 | Recursively obtain structural defaults through the arena-aware cache. [nested_function_defaults_test.go](nested_function_defaults_test.go) | Confirmed |
+| 7 | Attach generated legacy record domains, including nested records. [generated_record_domains_test.go](generated_record_domains_test.go) | Confirmed |
+| 8 | Query/compact use executor control state after direct/batched assertions. [exploration_pending_state_test.go](exploration_pending_state_test.go) | Confirmed |
+| 9 | Default remote inference to rows; enforce explicit no-rows and validate features. [remote_record_mode_test.go](shai/remote_record_mode_test.go), [exploration_record_mode_test.go](exploration_record_mode_test.go) | Confirmed |
+| 10 | Preserve frontend pass, exit code and Scala-shaped error data across both services. [frontend_failure_protocol_test.go](shai/frontend_failure_protocol_test.go) | Confirmed |
+| 11 | Dispatch JSON/Quint through the shared frontend. [remote_input_formats_test.go](shai/remote_input_formats_test.go) | Confirmed |
+| 12 | Validate and propagate all three SMT encodings. [remote_smt_encodings_test.go](shai/remote_smt_encodings_test.go) | Confirmed |
+| 13 | Return internal errors for failed operator evaluation and missing operators. [exploration_operator_failure_test.go](exploration_operator_failure_test.go) | Confirmed |
+| 14 | Canonicalize UUIDs before connection lookup/update. [connection_uuid_normalization_test.go](shai/connection_uuid_normalization_test.go) | Confirmed |
+
+The three older `code_review_regression_test.go` files were replaced with tests
+named for their behaviors: view enumeration, simulation unknown results, action
+bounds, trace-invariant filtering, and initial-state exhaustion.
+
+The full regression suite was started after the 14 fixes and targeted checks
+passed. Its first run exposed one inner-module annotation regression; its
+existing failing test drove the correction. Enumeration-boundary review also
+added two compact-choice guards and regressions before the successful full run.
+
+Final validation (2026-10-29):
+
+| Check | Result |
+| --- | --- |
+| Full `go test -mod=readonly -p=8 -count=1 -timeout=30m ./...` | PASS; core package 234.380 seconds, all other packages passed |
+| Complete Shai suite after JSON-error protocol follow-up | PASS, 0.409 seconds |
+| CGO-free CLI build and `go vet ./...` | PASS |
+| Complete tagged frontend corpus (`-tags=corpus -run 'Test.*Corpus'`) | PASS, 15.314 seconds |
+| Live Scala oracle gate | PASS, 281.909 seconds; all 50 manifest cases including nine temporal cases, exact frontend diagnostics, VMT comparisons and documented nonlinear cases; no skips |
+| Focused frontend/server race checks, including concurrent Shai loading | PASS; core 3.739 seconds, Shai 2.632 seconds |
+| Live Scala/Go HTTP and gRPC reproducers | Repaired behavior confirmed for findings 8–14; gzip and zstd request/response round trips passed |
+
+The final Shai follow-up also distinguishes malformed JSON/Quint reader errors
+(exit 150, string error data) from SANY errors (exit 255, list error data).
+Parser wording remains tlago-specific; error stages and protocol shapes match.
+Unsupported compact-set enumeration now fails explicitly instead of returning
+an incorrect mathematical result. The complete long-running race suite was not
+rerun; race validation was focused on the changed frontend/server paths.
+
+
+## Original audit validation
+
 
 Go was rebuilt with the repository's pinned dependencies using `go build -mod=readonly -p=8 -o build/apalache ./cmd/apalache`. The initially available Scala distribution was older than the checkout. Consequently, `sbt -batch 'Universal/stage'` rebuilt Scala, and all reported comparisons were repeated against `target/universal/stage/bin/apalache-mc`. Commands were CPU-capped with `taskset -c 1-8`.
 

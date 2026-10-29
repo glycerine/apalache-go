@@ -8,7 +8,7 @@ import (
 	cmd "github.com/glycerine/apalache-go/shai/cmdexecutor"
 )
 
-func TestReviewRemoteCheckUnsatisfiableInit(t *testing.T) {
+func TestRemoteCheckUnsatisfiableInit(t *testing.T) {
 	const source = `---- MODULE M ----
 EXTENDS Integers
 \* @type: Int;

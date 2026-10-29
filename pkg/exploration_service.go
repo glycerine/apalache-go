@@ -490,11 +490,11 @@ func (service *ExplorationService) query(ctx context.Context, raw json.RawMessag
 				return nil, invalidParams(fmt.Errorf("operator must be provided for an OPERATOR query"))
 			}
 			if _, exported := session.exports[params.Operator]; !exported {
-				return nil, invalidParams(fmt.Errorf("Operator not found: %s", params.Operator))
+				return nil, &jsonRPCError{Code: JSONRPCInternalError, Message: fmt.Sprintf("Operator not found: %s", params.Operator)}
 			}
 			body, found := OperatorBody(session.prepared.Module, params.Operator)
 			if !found {
-				return nil, invalidParams(fmt.Errorf("Operator not found: %s", params.Operator))
+				return nil, &jsonRPCError{Code: JSONRPCInternalError, Message: fmt.Sprintf("Operator not found: %s", params.Operator)}
 			}
 			checkContext, cancel := explorationTimeout(ctx, params.TimeoutSec)
 			value, status, evaluateErr := session.executor.Evaluate(checkContext, body)
@@ -502,11 +502,12 @@ func (service *ExplorationService) query(ctx context.Context, raw json.RawMessag
 			if evaluateErr != nil {
 				return nil, &jsonRPCError{Code: JSONRPCInternalError, Message: evaluateErr.Error()}
 			}
-			if status == SMTSatisfiable {
-				result.OperatorValue, evaluateErr = EncodeITFValue(value)
-				if evaluateErr != nil {
-					return nil, &jsonRPCError{Code: JSONRPCInternalError, Message: evaluateErr.Error()}
-				}
+			if status != SMTSatisfiable {
+				return nil, &jsonRPCError{Code: JSONRPCInternalError, Message: fmt.Sprintf("Failed to evaluate %s within %d seconds", params.Operator, params.TimeoutSec)}
+			}
+			result.OperatorValue, evaluateErr = EncodeITFValue(value)
+			if evaluateErr != nil {
+				return nil, &jsonRPCError{Code: JSONRPCInternalError, Message: evaluateErr.Error()}
 			}
 		}
 		if !wantTrace && !wantState {
@@ -518,7 +519,7 @@ func (service *ExplorationService) query(ctx context.Context, raw json.RawMessag
 		var status SMTStatus
 		var states []DecodedState
 		var err error
-		if len(session.operations) > 0 && session.operations[len(session.operations)-1].transition != nil {
+		if session.executor.ControlState() == ExecutorPicked {
 			status, states, err = session.executor.CheckPendingAndDecode(checkContext, truth)
 		} else {
 			status, states, err = session.executor.CheckAndDecode(checkContext, truth)
@@ -618,7 +619,7 @@ func (service *ExplorationService) compact(ctx context.Context, raw json.RawMess
 		var status SMTStatus
 		var states []DecodedState
 		var err error
-		if len(session.operations) > 0 && session.operations[len(session.operations)-1].transition != nil {
+		if session.executor.ControlState() == ExecutorPicked {
 			status, states, err = session.executor.CheckPendingAndDecode(checkContext, truth)
 		} else {
 			status, states, err = session.executor.CheckAndDecode(checkContext, truth)
@@ -748,31 +749,19 @@ func loadExplorationSource(ctx context.Context, params loadSpecParams) (Frontend
 		return FrontendResult{}, func() {}, err
 	}
 	cleanup := func() { _ = os.RemoveAll(directory) }
-	if params.Format == "json" {
-		path := filepath.Join(directory, "spec.json")
-		if err = os.WriteFile(path, []byte(params.Sources[0]), 0o600); err != nil {
+	if params.Format == "json" || params.Format == "qnt" {
+		filename := "spec.json"
+		if params.Format == "qnt" {
+			filename = "spec.qnt.json"
+		}
+		path := filepath.Join(directory, filename)
+		if err = os.WriteFile(path, []byte(params.Sources[0]), 0600); err != nil {
 			cleanup()
 			return FrontendResult{}, func() {}, err
 		}
-		return ParseAndTypeCheckFile(ctx, path, FrontendOptions{}, TypeCheckOptions{}), cleanup, nil
+		return ParseAndTypeCheckFile(ctx, path, FrontendOptions{}, DefaultTypeCheckOptions()), cleanup, nil
 	}
-	if params.Format == "qnt" {
-		module, parseErr := ParseQuintJSON([]byte(params.Sources[0]))
-		if parseErr != nil {
-			return FrontendResult{Diagnostics: []Diagnostic{{
-				Code: "QUINT_JSON", Severity: SeverityError, Message: parseErr.Error(),
-			}}}, cleanup, nil
-		}
-		encoded, encodeErr := MarshalSingleModuleIRJSON(module, IRJSONOptions{})
-		if encodeErr != nil {
-			cleanup()
-			return FrontendResult{}, func() {}, encodeErr
-		}
-		return FrontendResult{
-			Module: module.Name(), IR: encoded, Native: module, Sources: NewSourceStore(),
-			Annotations: NewAnnotationStore(), Diagnostics: []Diagnostic{},
-		}, cleanup, nil
-	}
+
 	rootPath := ""
 	for index, source := range params.Sources {
 		match := moduleHeaderPattern.FindStringSubmatch(source)
@@ -789,7 +778,7 @@ func loadExplorationSource(ctx context.Context, params loadSpecParams) (Frontend
 			rootPath = path
 		}
 	}
-	return ParseAndTypeCheckFile(ctx, rootPath, FrontendOptions{}, TypeCheckOptions{}), cleanup, nil
+	return ParseAndTypeCheckFile(ctx, rootPath, FrontendOptions{}, DefaultTypeCheckOptions()), cleanup, nil
 }
 
 func explorationSpecParameters(prepared SafetyPipelineResult) (specParameters, error) {

@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -99,10 +101,7 @@ func (*CmdExecutorService) Run(ctx context.Context, request *cmd.CmdRequest) (*c
 	if config.parsedSource == nil {
 		return unexpectedCommandResponse(fmt.Errorf("Missing value for required option source")), nil
 	}
-	if format := strings.ToLower(config.parsedSource.Format); format != "" && format != "tla" {
-		return unexpectedCommandResponse(fmt.Errorf("Go command executor does not support %s source format", format)), nil
-	}
-	path, cleanup, err := materializeShaiSources(config.parsedSource.content(), config.parsedSource.Aux)
+	path, cleanup, err := materializeRemoteSource(*config.parsedSource)
 	if err != nil {
 		return unexpectedCommandResponse(err), nil
 	}
@@ -125,6 +124,39 @@ func (*CmdExecutorService) Run(ctx context.Context, request *cmd.CmdRequest) (*c
 	}
 }
 
+// Use the same extension-based InputSource dispatch as the CLI frontend.
+func materializeRemoteSource(source remoteSource) (string, func(), error) {
+	format := strings.ToLower(source.Format)
+	if format == "" || format == "tla" {
+		return materializeShaiSources(source.content(), source.Aux)
+	}
+	parsed, err := pal.ParseInputFormat(format)
+	if err != nil {
+		return "", func() {}, err
+	}
+	if len(source.Aux) != 0 {
+		return "", func() {}, fmt.Errorf("auxiliary sources require TLA input")
+	}
+	extension := ".json"
+	switch parsed {
+	case pal.InputFormatQuint:
+		extension = ".qnt.json"
+	case pal.InputFormatITF:
+		extension = ".itf.json"
+	}
+	directory, err := os.MkdirTemp("", "apalache-shai-")
+	if err != nil {
+		return "", func() {}, err
+	}
+	cleanup := func() { _ = os.RemoveAll(directory) }
+	path := filepath.Join(directory, "source"+extension)
+	if err := os.WriteFile(path, []byte(source.content()), 0600); err != nil {
+		cleanup()
+		return "", func() {}, err
+	}
+	return path, cleanup, nil
+}
+
 func validateRemoteCheckerConfig(checker remoteCheckerConfig) error {
 	if _, err := pal.ParseCheckerTuning(checker.Tuning); err != nil {
 		return fmt.Errorf("invalid checker tuning: %w", err)
@@ -132,8 +164,10 @@ func validateRemoteCheckerConfig(checker remoteCheckerConfig) error {
 	if checker.Algorithm != nil && !strings.EqualFold(*checker.Algorithm, "incremental") {
 		return fmt.Errorf("unsupported checker algorithm %q (Go port currently supports incremental)", *checker.Algorithm)
 	}
-	if checker.SMTEncoding != nil && !strings.EqualFold(*checker.SMTEncoding, "oopsla19") {
-		return fmt.Errorf("unsupported SMT encoding %q (Go port currently supports oopsla19)", *checker.SMTEncoding)
+	if checker.SMTEncoding != nil {
+		if _, err := pal.ParseSMTEncoding(*checker.SMTEncoding); err != nil {
+			return err
+		}
 	}
 	if checker.SMTSolver != nil && !strings.EqualFold(*checker.SMTSolver, "z3") {
 		return fmt.Errorf("unsupported SMT solver %q (Go port uses g3 v0.0.9 as its Z3 backend)", *checker.SMTSolver)
@@ -170,6 +204,11 @@ func parseRemoteCommandConfig(document string) (remoteCommandConfig, error) {
 	var config remoteCommandConfig
 	if err := decodeStrictJSON([]byte(document), &config); err != nil {
 		return config, fmt.Errorf("invalid remote configuration: %w", err)
+	}
+	for _, name := range config.Features {
+		if _, known := pal.FeatureFromString(name); !known {
+			return config, fmt.Errorf("$.features: Unexpected feature: %s", name)
+		}
 	}
 	paths := []struct {
 		present bool
@@ -237,7 +276,7 @@ func decodeStrictJSON(data []byte, target any) error {
 func runRemoteParse(ctx context.Context, path string) (*cmd.CmdResponse, error) {
 	result := pal.ParseFile(ctx, path, pal.FrontendOptions{})
 	if !result.OK() {
-		return passFailureCommandResponse("SanyParser", result.Diagnostics, 150), nil
+		return frontendFailureCommandResponse(result), nil
 	}
 	return successfulCommandResponse(string(result.IR)), nil
 }
@@ -245,7 +284,7 @@ func runRemoteParse(ctx context.Context, path string) (*cmd.CmdResponse, error) 
 func runRemoteTypecheck(ctx context.Context, path string, config remoteCommandConfig) (*cmd.CmdResponse, error) {
 	result := pal.ParseAndTypeCheckFile(ctx, path, pal.FrontendOptions{}, remoteTypecheckOptions(config))
 	if !result.OK() {
-		return passFailureCommandResponse("TypeCheckerSnowcat", result.Diagnostics, 120), nil
+		return frontendFailureCommandResponse(result), nil
 	}
 	encoded, err := pal.MarshalSingleModuleIRJSON(result.Native, pal.IRJSONOptions{})
 	if err != nil {
@@ -257,7 +296,7 @@ func runRemoteTypecheck(ctx context.Context, path string, config remoteCommandCo
 func runRemoteTLA(ctx context.Context, path, source string) (*cmd.CmdResponse, error) {
 	result := pal.ParseFile(ctx, path, pal.FrontendOptions{IncludeSource: true})
 	if !result.OK() {
-		return passFailureCommandResponse("SanyParser", result.Diagnostics, 150), nil
+		return frontendFailureCommandResponse(result), nil
 	}
 	annotations := pal.ExtractTypeAnnotations(path, source, result.Native, result.Sources)
 	formatted, err := pal.FormatTLAModule(result.Native, pal.TLAFormatOptions{
@@ -277,7 +316,7 @@ func runRemoteCheck(ctx context.Context, path string, config remoteCommandConfig
 	}
 	frontend := pal.ParseAndTypeCheckFile(ctx, path, pal.FrontendOptions{}, remoteTypecheckOptions(config))
 	if !frontend.OK() {
-		return passFailureCommandResponse("TypeCheckerSnowcat", frontend.Diagnostics, 120), nil
+		return frontendFailureCommandResponse(frontend), nil
 	}
 	checker := config.Checker
 	init, next := "Init", "Next"
@@ -314,9 +353,16 @@ func runRemoteCheck(ctx context.Context, path string, config remoteCommandConfig
 	if checker.DiscardDisabled != nil {
 		discardDisabled = *checker.DiscardDisabled
 	}
+	encoding := pal.SMTEncodingOOPSLA19
+	if checker.SMTEncoding != nil {
+		encoding, err = pal.ParseSMTEncoding(*checker.SMTEncoding)
+		if err != nil {
+			return unexpectedCommandResponse(err), nil
+		}
+	}
 	result, err := pal.CheckBoundedSafetyWithOptions(ctx, prepared.Module, prepared.Predicates, pal.BoundedSafetyOptions{
 		MaxSteps: length, CheckDeadlocks: checkDeadlocks, Tuning: tuning, MaxErrors: maxErrors,
-		DiscardDisabled: &discardDisabled,
+		DiscardDisabled: &discardDisabled, SMTEncoding: encoding,
 	})
 	if err != nil {
 		return unexpectedCommandResponse(err), nil
@@ -359,12 +405,15 @@ func encodedRemoteCounterexample(module *pal.Module, depth int, states []pal.Dec
 }
 
 func remoteTypecheckOptions(config remoteCommandConfig) pal.TypeCheckOptions {
-	options := pal.TypeCheckOptions{}
+	options := pal.DefaultTypeCheckOptions()
 	if config.Typechecker.InferPoly != nil {
 		options.DisablePolytypes = !*config.Typechecker.InferPoly
 	}
 	for _, feature := range config.Features {
-		options.UseRows = options.UseRows || feature == "rows"
+		if feature == "no-rows" {
+			options.UseRows = false
+			options.NoRows = true
+		}
 	}
 	return options
 }

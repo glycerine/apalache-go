@@ -242,6 +242,9 @@ func (rewriter *StratifiedRewriter) pickFromCompactCollection(scope RewriterScop
 		if err != nil {
 			return scope, ArenaCell{}, err
 		}
+		if !isFiniteSetCellType(domain.Type) {
+			return scope, ArenaCell{}, fmt.Errorf("powerset choice requires an enumerated base set, found %s", domain.Type)
+		}
 		pointers := make([]ElementPointer, len(scope.Arena.GetHas(domain)))
 		for index, pointer := range scope.Arena.GetHas(domain) {
 			newArena, choice := scope.Arena.AppendCellType(BasicCellType{Type: BoolT1})
@@ -312,6 +315,9 @@ func (rewriter *StratifiedRewriter) pickFunctionFromSet(scope RewriterScope, fun
 	domain, err := scope.Arena.Domain(functionSet)
 	if err != nil {
 		return scope, ArenaCell{}, err
+	}
+	if !isFiniteSetCellType(domain.Type) {
+		return scope, ArenaCell{}, fmt.Errorf("function choice requires an enumerated domain, found %s", domain.Type)
 	}
 	codomain, err := scope.Arena.Codomain(functionSet)
 	if err != nil {

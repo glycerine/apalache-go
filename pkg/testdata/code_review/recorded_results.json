@@ -1,0 +1,1141 @@
+{
+  "revision": "9e80e40f9052ee36d5749c8f633f4a601c44cfe0",
+  "sha256": {
+    "pkg/build/apalache": "97a2f9e4ceb565cb36d2d4c5ebacaa791e7e818d70564e808e83a4278a557129",
+    "target/universal/stage/lib/apalache.jar": "aa36801f9ee550ff2c5b94418d55b7459d762c13463c28526f60340982630a39"
+  },
+  "oracle": {
+    "result": "PASS",
+    "seconds": 258.054,
+    "safety_manifest_cases": 50,
+    "temporal_cases": 9
+  },
+  "cli": {
+    "legacy_gen_equality": {
+      "source": "---- MODULE Audit ----\nEXTENDS Integers, Sequences, FiniteSets, Apalache\nVARIABLE\n\\* @type: Int;\nx\nInit == x = 2\nNext == x' = x\nInv == LET (* @type: [a: Int]; *) R == Gen(1) IN [R EXCEPT !.a = 0] = [a |-> 0]\n====\n",
+      "scala": {
+        "exit": 0,
+        "output_excerpt": "  > Introduced expression grades                                  I@11:17:37.765\nPASS #13: BoundedChecker                                          I@11:17:37.765\nState 0: Checking 1 state invariants                              I@11:17:38.068\nState 0: state invariant 0 holds.                                 I@11:17:38.126\nStep 0: picking a transition out of 1 transition(s)               I@11:17:38.130\nThe outcome is: NoError                                           I@11:17:38.136\nChecker reports no error up to computation length 0               I@11:17:38.136\nIt took me 0 days  0 hours  0 min  1 sec                          I@11:17:38.137\nTotal time: 1.473 sec                                             I@11:17:38.137\nEXITCODE: OK"
+      },
+      "go": {
+        "exit": 1,
+        "output_excerpt": "bounded safety check failed: check invariant Inv at depth 0: rewrite state expression: cell $C$7 has no domain edge"
+      }
+    },
+    "legacy_gen_domain": {
+      "source": "---- MODULE Audit ----\nEXTENDS Integers, Sequences, FiniteSets, Apalache\nVARIABLE\n\\* @type: Int;\nx\nInit == x = 2\nNext == x' = x\nInv == LET (* @type: [a: Int]; *) R == Gen(1) IN DOMAIN R = {\"a\"}\n====\n",
+      "scala": {
+        "exit": 0,
+        "output_excerpt": "  > Introduced expression grades                                  I@11:17:39.984\nPASS #13: BoundedChecker                                          I@11:17:39.985\nState 0: Checking 1 state invariants                              I@11:17:40.281\nState 0: state invariant 0 holds.                                 I@11:17:40.304\nStep 0: picking a transition out of 1 transition(s)               I@11:17:40.307\nThe outcome is: NoError                                           I@11:17:40.314\nChecker reports no error up to computation length 0               I@11:17:40.314\nIt took me 0 days  0 hours  0 min  1 sec                          I@11:17:40.315\nTotal time: 1.420 sec                                             I@11:17:40.315\nEXITCODE: OK"
+      },
+      "go": {
+        "exit": 0,
+        "output_excerpt": "No counterexample found through depth 0 (1 symbolic executions)."
+      }
+    },
+    "nested_default_subseq": {
+      "source": "---- MODULE Audit ----\nEXTENDS Integers, Sequences, FiniteSets, Apalache\nVARIABLE\n\\* @type: Int;\nx\nInit == x = 2\nNext == x' = x\nInv == SubSeq(<< <<[i \\in {1} |-> i], 2>> >>, 1, x)[1][2] = 2\n====\n",
+      "scala": {
+        "exit": 0,
+        "output_excerpt": "  > Introduced expression grades                                  I@11:17:41.884\nPASS #13: BoundedChecker                                          I@11:17:41.885\nState 0: Checking 1 state invariants                              I@11:17:42.217\nState 0: state invariant 0 holds.                                 I@11:17:42.236\nStep 0: picking a transition out of 1 transition(s)               I@11:17:42.239\nThe outcome is: NoError                                           I@11:17:42.247\nChecker reports no error up to computation length 0               I@11:17:42.248\nIt took me 0 days  0 hours  0 min  1 sec                          I@11:17:42.249\nTotal time: 1.306 sec                                             I@11:17:42.249\nEXITCODE: OK"
+      },
+      "go": {
+        "exit": 1,
+        "output_excerpt": "bounded safety check failed: check invariant Inv at depth 0: rewrite state expression: default values are not yet implemented for (Int -> Int)"
+      }
+    },
+    "nested_default_concat": {
+      "source": "---- MODULE Audit ----\nEXTENDS Integers, Sequences, FiniteSets, Apalache\nVARIABLE\n\\* @type: Int;\nx\nInit == x = 2\nNext == x' = x\nInv == (SubSeq(<< <<[i \\in {1} |-> i], 2>> >>, 1, x) \\o << <<[i \\in {1} |-> i], 2>> >>)[2][2] = 2\n====\n",
+      "scala": {
+        "exit": 0,
+        "output_excerpt": "  > Introduced expression grades                                  I@11:17:43.865\nPASS #13: BoundedChecker                                          I@11:17:43.865\nState 0: Checking 1 state invariants                              I@11:17:44.180\nState 0: state invariant 0 holds.                                 I@11:17:44.236\nStep 0: picking a transition out of 1 transition(s)               I@11:17:44.239\nThe outcome is: NoError                                           I@11:17:44.243\nChecker reports no error up to computation length 0               I@11:17:44.243\nIt took me 0 days  0 hours  0 min  1 sec                          I@11:17:44.244\nTotal time: 1.374 sec                                             I@11:17:44.244\nEXITCODE: OK"
+      },
+      "go": {
+        "exit": 1,
+        "output_excerpt": "bounded safety check failed: check invariant Inv at depth 0: rewrite state expression: default values are not yet implemented for (Int -> Int)"
+      }
+    },
+    "import_local_annotations": {
+      "source": "---- MODULE Audit ----\nEXTENDS Helper, Integers, Sequences, FiniteSets, Apalache\nVARIABLE\n\\* @type: Int;\nx\nInit == x = 2\nNext == x' = x\nInv == Foo = 1 /\\ Bar = \"s\"\n====\n",
+      "scala": {
+        "exit": 0,
+        "output_excerpt": "PASS #13: BoundedChecker                                          I@11:17:45.860\nState 0: Checking 2 state invariants                              I@11:17:46.154\nState 0: state invariant 0 holds.                                 I@11:17:46.160\nState 0: state invariant 1 holds.                                 I@11:17:46.165\nStep 0: picking a transition out of 1 transition(s)               I@11:17:46.166\nThe outcome is: NoError                                           I@11:17:46.174\nChecker reports no error up to computation length 0               I@11:17:46.175\nIt took me 0 days  0 hours  0 min  1 sec                          I@11:17:46.175\nTotal time: 1.294 sec                                             I@11:17:46.175\nEXITCODE: OK"
+      },
+      "go": {
+        "exit": 4,
+        "output_excerpt": "Helper:2:30-2:39: error E-TYPE: Expected (() => Str) in Local. Found: (() => Int)\nHelper:2:30-2:39: error E-TYPE: Error when computing the type of Local"
+      }
+    },
+    "nested_default_function": {
+      "source": "---- MODULE Audit ----\nEXTENDS Integers, Sequences, FiniteSets, Apalache\nVARIABLE\n\\* @type: Int;\nx\nInit == x = 2\nNext == x' = x\nInv == Head(<< <<[i \\in {1} |-> i], 2>> >>)[2] = 2\n====\n",
+      "scala": {
+        "exit": 0,
+        "output_excerpt": "  > Introduced expression grades                                  I@11:17:47.763\nPASS #13: BoundedChecker                                          I@11:17:47.763\nState 0: Checking 1 state invariants                              I@11:17:48.067\nState 0: state invariant 0 holds.                                 I@11:17:48.078\nStep 0: picking a transition out of 1 transition(s)               I@11:17:48.082\nThe outcome is: NoError                                           I@11:17:48.095\nChecker reports no error up to computation length 0               I@11:17:48.095\nIt took me 0 days  0 hours  0 min  1 sec                          I@11:17:48.096\nTotal time: 1.342 sec                                             I@11:17:48.096\nEXITCODE: OK"
+      },
+      "go": {
+        "exit": 0,
+        "output_excerpt": "No counterexample found through depth 0 (1 symbolic executions)."
+      }
+    },
+    "parser_user_print": {
+      "source": "---- MODULE Audit ----\nEXTENDS Integers, Sequences, FiniteSets, Apalache\nT == INSTANCE TLC\nPrint(a,b) == a\nVARIABLE\n\\* @type: Int;\nx\nInit == x = 2\nNext == x' = x\nInv == Print(FALSE, TRUE)\n====\n",
+      "scala": {
+        "exit": 12,
+        "output_excerpt": "PASS #13: BoundedChecker                                          I@11:17:50.006\nState 0: Checking 1 state invariants                              I@11:17:50.317\nCheck the trace in: /mnt/oldrog/home/jaten/go/src/github.com/apalache-mc/apalache/pkg/build/code_review_cli/_apalache-out/Audit.tla/2026-10-29T11-17-48_9023391463362552937/violation1.tla, /mnt/oldrog/home/jaten/go/src/github.com/apalache-mc/apalache/pkg/build/code_review_cli/_apalache-out/Audit.tla/2026-10-29T11-17-48_9023391463362552937/MCviolation1.out, /mnt/oldrog/home/jaten/go/src/github.com/apalache-mc/apalache/pkg/build/code_review_cli/_apalache-out/Audit.tla/2026-10-29T11-17-48_9023391463362552937/violation1.json, /mnt/oldrog/home/jaten/go/src/github.com/apalache-mc/apalache/pkg/build/code_review_cli/_apalache-out/Audit.tla/2026-10-29T11-17-48_9023391463362552937/violation1.itf.json I@11:17:50.429\nState 0: state invariant 0 violated.                              I@11:17:50.435\nFound 1 error(s)                                                  I@11:17:50.438\nThe outcome is: Error                                             I@11:17:50.441\nChecker has found an error                                        I@11:17:50.462\nIt took me 0 days  0 hours  0 min  1 sec                          I@11:17:50.462\nTotal time: 1.763 sec                                             I@11:17:50.462\nEXITCODE: ERROR (12)"
+      },
+      "go": {
+        "exit": 0,
+        "output_excerpt": "No counterexample found through depth 0 (1 symbolic executions)."
+      }
+    },
+    "parser_user_variant": {
+      "source": "---- MODULE Audit ----\nEXTENDS Integers, Sequences, FiniteSets, Apalache\nV == INSTANCE Variants\nVariant(a,b) == a+b\nVARIABLE\n\\* @type: Int;\nx\nInit == x = 2\nNext == x' = x\nInv == Variant(1,2) = 3\n====\n",
+      "scala": {
+        "exit": 0,
+        "output_excerpt": "  > Introduced expression grades                                  I@11:17:52.148\nPASS #13: BoundedChecker                                          I@11:17:52.148\nState 0: Checking 1 state invariants                              I@11:17:52.439\nState 0: state invariant 0 holds.                                 I@11:17:52.446\nStep 0: picking a transition out of 1 transition(s)               I@11:17:52.449\nThe outcome is: NoError                                           I@11:17:52.458\nChecker reports no error up to computation length 0               I@11:17:52.458\nIt took me 0 days  0 hours  0 min  1 sec                          I@11:17:52.459\nTotal time: 1.326 sec                                             I@11:17:52.459\nEXITCODE: OK"
+      },
+      "go": {
+        "exit": 4,
+        "output_excerpt": "Audit.tla:10:1-10:23: error E-TYPE-INPUT: The first argument of a variant operation must be a string, found: 1"
+      }
+    },
+    "parser_user_override": {
+      "source": "---- MODULE Audit ----\nEXTENDS Integers, Sequences, FiniteSets, Apalache\na @@ b == a-b\nVARIABLE\n\\* @type: Int;\nx\nInit == x = 2\nNext == x' = x\nInv == (3 @@ 2) = 1\n====\n",
+      "scala": {
+        "exit": 0,
+        "output_excerpt": "  > Introduced expression grades                                  I@11:17:54.083\nPASS #13: BoundedChecker                                          I@11:17:54.084\nState 0: Checking 1 state invariants                              I@11:17:54.373\nState 0: state invariant 0 holds.                                 I@11:17:54.376\nStep 0: picking a transition out of 1 transition(s)               I@11:17:54.379\nThe outcome is: NoError                                           I@11:17:54.388\nChecker reports no error up to computation length 0               I@11:17:54.388\nIt took me 0 days  0 hours  0 min  1 sec                          I@11:17:54.389\nTotal time: 1.279 sec                                             I@11:17:54.389\nEXITCODE: OK"
+      },
+      "go": {
+        "exit": 4,
+        "output_excerpt": "Audit.tla:9:8-9:19: error E-TYPE: Arguments to = should have the same type. For arguments [__tlago_override_arg_1 \u2208 (DOMAIN 3 \u222a DOMAIN 2) \u21a6 IF __tlago_override_arg_1 \u2208 DOMAIN 3 THEN 3[__tlago_override_arg_1] ELSE 2[__tlago_override_arg_1]], 1 with types (e -> o), Int, in expression ([__tlago_override_arg_1 \u2208 (DOMAIN 3 \u222a DOMAIN 2) \u21a6 IF __tlago_override_arg_1 \u2208 DOMAIN 3 THEN 3[__tlago_override_arg_1] ELSE 2[__tlago_override_arg_1]]) = 1\nAudit.tla:9:1-9:19: error E-TYPE: Error when computing the type of Inv"
+      }
+    },
+    "legacy_record_except": {
+      "source": "---- MODULE Audit ----\nEXTENDS Integers, Sequences, FiniteSets, Apalache\nVARIABLE\n\\* @type: Int;\nx\nInit == x = 2\nNext == x' = x\nInv == LET r == IF x = 2 THEN [a |-> 1] ELSE [a |-> 1, b |-> 2] IN [r EXCEPT !.b = 3] = r\n====\n",
+      "scala": {
+        "exit": 0,
+        "output_excerpt": "  > Introduced expression grades                                  I@11:17:55.973\nPASS #13: BoundedChecker                                          I@11:17:55.973\nState 0: Checking 1 state invariants                              I@11:17:56.266\nState 0: state invariant 0 holds.                                 I@11:17:56.310\nStep 0: picking a transition out of 1 transition(s)               I@11:17:56.312\nThe outcome is: NoError                                           I@11:17:56.317\nChecker reports no error up to computation length 0               I@11:17:56.317\nIt took me 0 days  0 hours  0 min  1 sec                          I@11:17:56.317\nTotal time: 1.304 sec                                             I@11:17:56.317\nEXITCODE: OK"
+      },
+      "go": {
+        "exit": 12,
+        "output_excerpt": "Invariant Inv violated at depth 0 (Init$0000).\nState 0: x = 2"
+      }
+    },
+    "range_function_false_proof": {
+      "source": "---- MODULE Audit ----\nEXTENDS Integers, Sequences, FiniteSets, Apalache\nVARIABLE\n\\* @type: Int;\nx\nInit == x = 2\nNext == x' = x\nInv == [i \\in 1..x |-> i][1] = 0\n====\n",
+      "scala": {
+        "exit": 255,
+        "output_excerpt": "  > Expansion                                                     I@11:17:57.943\n  > Remove unused let-in defs                                     I@11:17:57.944\n > Running analyzers...                                           I@11:17:57.945\n  > Introduced expression grades                                  I@11:17:57.947\nPASS #13: BoundedChecker                                          I@11:17:57.947\nState 0: Checking 1 state invariants                              I@11:17:58.244\nAudit.tla:8:15-8:18: Input error (see the manual): Expected a constant integer range in [ .. ], found 1..x. This is a known issue: [https://apalache-mc.org/docs/apalache/known-issues.html] E@11:17:58.251\nIt took me 0 days  0 hours  0 min  1 sec                          I@11:17:58.251\nTotal time: 1.250 sec                                             I@11:17:58.251\nEXITCODE: ERROR (255)"
+      },
+      "go": {
+        "exit": 0,
+        "output_excerpt": "No counterexample found through depth 0 (1 symbolic executions)."
+      }
+    },
+    "range_cup": {
+      "source": "---- MODULE Audit ----\nEXTENDS Integers, Sequences, FiniteSets, Apalache\nVARIABLE\n\\* @type: Int;\nx\nInit == x = 2\nNext == x' = x\nInv == ((1..x) \\cup {3}) = {1,2,3}\n====\n",
+      "scala": {
+        "exit": 255,
+        "output_excerpt": "  > Expansion                                                     I@11:17:59.809\n  > Remove unused let-in defs                                     I@11:17:59.810\n > Running analyzers...                                           I@11:17:59.813\n  > Introduced expression grades                                  I@11:17:59.815\nPASS #13: BoundedChecker                                          I@11:17:59.815\nState 0: Checking 1 state invariants                              I@11:18:00.111\nAudit.tla:8:10-8:13: Input error (see the manual): Expected a constant integer range in [ .. ], found 1..x. This is a known issue: [https://apalache-mc.org/docs/apalache/known-issues.html] E@11:18:00.119\nIt took me 0 days  0 hours  0 min  1 sec                          I@11:18:00.119\nTotal time: 1.252 sec                                             I@11:18:00.119\nEXITCODE: ERROR (255)"
+      },
+      "go": {
+        "exit": 12,
+        "output_excerpt": "Invariant Inv violated at depth 0 (Init$0000).\nState 0: x = 2"
+      }
+    },
+    "range_cup_false_proof": {
+      "source": "---- MODULE Audit ----\nEXTENDS Integers, Sequences, FiniteSets, Apalache\nVARIABLE\n\\* @type: Int;\nx\nInit == x = 2\nNext == x' = x\nInv == ((1..x) \\cup {3}) = {3}\n====\n",
+      "scala": {
+        "exit": 255,
+        "output_excerpt": "  > Expansion                                                     I@11:18:01.684\n  > Remove unused let-in defs                                     I@11:18:01.684\n > Running analyzers...                                           I@11:18:01.685\n  > Introduced expression grades                                  I@11:18:01.687\nPASS #13: BoundedChecker                                          I@11:18:01.688\nState 0: Checking 1 state invariants                              I@11:18:01.979\nAudit.tla:8:10-8:13: Input error (see the manual): Expected a constant integer range in [ .. ], found 1..x. This is a known issue: [https://apalache-mc.org/docs/apalache/known-issues.html] E@11:18:01.987\nIt took me 0 days  0 hours  0 min  1 sec                          I@11:18:01.987\nTotal time: 1.241 sec                                             I@11:18:01.987\nEXITCODE: ERROR (255)"
+      },
+      "go": {
+        "exit": 0,
+        "output_excerpt": "No counterexample found through depth 0 (1 symbolic executions)."
+      }
+    },
+    "range_function": {
+      "source": "---- MODULE Audit ----\nEXTENDS Integers, Sequences, FiniteSets, Apalache\nVARIABLE\n\\* @type: Int;\nx\nInit == x = 2\nNext == x' = x\nInv == [i \\in 1..x |-> i][1] = 1\n====\n",
+      "scala": {
+        "exit": 255,
+        "output_excerpt": "  > Expansion                                                     I@11:18:03.775\n  > Remove unused let-in defs                                     I@11:18:03.776\n > Running analyzers...                                           I@11:18:03.777\n  > Introduced expression grades                                  I@11:18:03.778\nPASS #13: BoundedChecker                                          I@11:18:03.779\nState 0: Checking 1 state invariants                              I@11:18:04.078\nAudit.tla:8:15-8:18: Input error (see the manual): Expected a constant integer range in [ .. ], found 1..x. This is a known issue: [https://apalache-mc.org/docs/apalache/known-issues.html] E@11:18:04.086\nIt took me 0 days  0 hours  0 min  1 sec                          I@11:18:04.086\nTotal time: 1.417 sec                                             I@11:18:04.087\nEXITCODE: ERROR (255)"
+      },
+      "go": {
+        "exit": 12,
+        "output_excerpt": "Invariant Inv violated at depth 0 (Init$0000).\nState 0: x = 2"
+      }
+    },
+    "range_function_domain": {
+      "source": "---- MODULE Audit ----\nEXTENDS Integers, Sequences, FiniteSets, Apalache\nVARIABLE\n\\* @type: Int;\nx\nInit == x = 2\nNext == x' = x\nInv == DOMAIN [i \\in 1..x |-> i] = {1,2}\n====\n",
+      "scala": {
+        "exit": 255,
+        "output_excerpt": "  > Expansion                                                     I@11:18:05.737\n  > Remove unused let-in defs                                     I@11:18:05.738\n > Running analyzers...                                           I@11:18:05.740\n  > Introduced expression grades                                  I@11:18:05.742\nPASS #13: BoundedChecker                                          I@11:18:05.743\nState 0: Checking 1 state invariants                              I@11:18:06.031\nAudit.tla:8:22-8:25: Input error (see the manual): Expected a constant integer range in [ .. ], found 1..x. This is a known issue: [https://apalache-mc.org/docs/apalache/known-issues.html] E@11:18:06.038\nIt took me 0 days  0 hours  0 min  1 sec                          I@11:18:06.039\nTotal time: 1.297 sec                                             I@11:18:06.039\nEXITCODE: ERROR (255)"
+      },
+      "go": {
+        "exit": 1,
+        "output_excerpt": "bounded safety check failed: check invariant Inv at depth 0: rewrite state expression: cannot compare cells of types IntRange and Set(Int)"
+      }
+    },
+    "range_map": {
+      "source": "---- MODULE Audit ----\nEXTENDS Integers, Sequences, FiniteSets, Apalache\nVARIABLE\n\\* @type: Int;\nx\nInit == x = 2\nNext == x' = x\nInv == {i : i \\in 1..x} = {1,2}\n====\n",
+      "scala": {
+        "exit": 255,
+        "output_excerpt": "  > Expansion                                                     I@11:18:07.522\n  > Remove unused let-in defs                                     I@11:18:07.522\n > Running analyzers...                                           I@11:18:07.523\n  > Introduced expression grades                                  I@11:18:07.525\nPASS #13: BoundedChecker                                          I@11:18:07.525\nState 0: Checking 1 state invariants                              I@11:18:07.804\nAudit.tla:8:19-8:22: Input error (see the manual): Expected a constant integer range in [ .. ], found 1..x. This is a known issue: [https://apalache-mc.org/docs/apalache/known-issues.html] E@11:18:07.811\nIt took me 0 days  0 hours  0 min  1 sec                          I@11:18:07.812\nTotal time: 1.187 sec                                             I@11:18:07.812\nEXITCODE: ERROR (255)"
+      },
+      "go": {
+        "exit": 1,
+        "output_excerpt": "bounded safety check failed: check invariant Inv at depth 0: rewrite state expression: set map domain 1 must be finite, found IntRange"
+      }
+    },
+    "range_powerset": {
+      "source": "---- MODULE Audit ----\nEXTENDS Integers, Sequences, FiniteSets, Apalache\nVARIABLE\n\\* @type: Int;\nx\nInit == x = 2\nNext == x' = x\nInv == {} \\in SUBSET (1..x)\n====\n",
+      "scala": {
+        "exit": 0,
+        "output_excerpt": "  > Introduced expression grades                                  I@11:18:09.432\nPASS #13: BoundedChecker                                          I@11:18:09.433\nState 0: Checking 1 state invariants                              I@11:18:09.727\nState 0: state invariant 0 holds.                                 I@11:18:09.730\nStep 0: picking a transition out of 1 transition(s)               I@11:18:09.732\nThe outcome is: NoError                                           I@11:18:09.740\nChecker reports no error up to computation length 0               I@11:18:09.741\nIt took me 0 days  0 hours  0 min  1 sec                          I@11:18:09.741\nTotal time: 1.332 sec                                             I@11:18:09.741\nEXITCODE: OK"
+      },
+      "go": {
+        "exit": 0,
+        "output_excerpt": "No counterexample found through depth 0 (1 symbolic executions)."
+      }
+    },
+    "range_cardinality": {
+      "source": "---- MODULE Audit ----\nEXTENDS Integers, Sequences, FiniteSets, Apalache\nVARIABLE\n\\* @type: Int;\nx\nInit == x = 2\nNext == x' = x\nInv == Cardinality(1..x) = 2\n====\n",
+      "scala": {
+        "exit": 0,
+        "output_excerpt": "  > Introduced expression grades                                  I@11:18:11.352\nPASS #13: BoundedChecker                                          I@11:18:11.353\nState 0: Checking 1 state invariants                              I@11:18:11.639\nState 0: state invariant 0 holds.                                 I@11:18:11.649\nStep 0: picking a transition out of 1 transition(s)               I@11:18:11.652\nThe outcome is: NoError                                           I@11:18:11.662\nChecker reports no error up to computation length 0               I@11:18:11.663\nIt took me 0 days  0 hours  0 min  1 sec                          I@11:18:11.663\nTotal time: 1.300 sec                                             I@11:18:11.663\nEXITCODE: OK"
+      },
+      "go": {
+        "exit": 0,
+        "output_excerpt": "No counterexample found through depth 0 (1 symbolic executions)."
+      }
+    },
+    "range_union": {
+      "source": "---- MODULE Audit ----\nEXTENDS Integers, Sequences, FiniteSets, Apalache\nVARIABLE\n\\* @type: Int;\nx\nInit == x = 2\nNext == x' = x\nInv == UNION {1..x} = {1,2}\n====\n",
+      "scala": {
+        "exit": 255,
+        "output_excerpt": "  > Expansion                                                     I@11:18:13.271\n  > Remove unused let-in defs                                     I@11:18:13.271\n > Running analyzers...                                           I@11:18:13.272\n  > Introduced expression grades                                  I@11:18:13.274\nPASS #13: BoundedChecker                                          I@11:18:13.274\nState 0: Checking 1 state invariants                              I@11:18:13.564\nAudit.tla:8:15-8:18: Input error (see the manual): Expected a constant integer range in [ .. ], found 1..x. This is a known issue: [https://apalache-mc.org/docs/apalache/known-issues.html] E@11:18:13.571\nIt took me 0 days  0 hours  0 min  1 sec                          I@11:18:13.571\nTotal time: 1.292 sec                                             I@11:18:13.571\nEXITCODE: ERROR (255)"
+      },
+      "go": {
+        "exit": 1,
+        "output_excerpt": "bounded safety check failed: check invariant Inv at depth 0: rewrite state expression: unary union inner value $C$7 is not a finite set"
+      }
+    },
+    "range_eq": {
+      "source": "---- MODULE Audit ----\nEXTENDS Integers, Sequences, FiniteSets, Apalache\nVARIABLE\n\\* @type: Int;\nx\nInit == x = 2\nNext == x' = x\nInv == (1..x) = {1,2}\n====\n",
+      "scala": {
+        "exit": 255,
+        "output_excerpt": "  > Expansion                                                     I@11:18:15.087\n  > Remove unused let-in defs                                     I@11:18:15.088\n > Running analyzers...                                           I@11:18:15.090\n  > Introduced expression grades                                  I@11:18:15.093\nPASS #13: BoundedChecker                                          I@11:18:15.093\nState 0: Checking 1 state invariants                              I@11:18:15.369\nAudit.tla:8:9-8:12: Input error (see the manual): Expected a constant integer range in [ .. ], found 1..x. This is a known issue: [https://apalache-mc.org/docs/apalache/known-issues.html] E@11:18:15.377\nIt took me 0 days  0 hours  0 min  1 sec                          I@11:18:15.378\nTotal time: 1.192 sec                                             I@11:18:15.378\nEXITCODE: ERROR (255)"
+      },
+      "go": {
+        "exit": 1,
+        "output_excerpt": "bounded safety check failed: check invariant Inv at depth 0: rewrite state expression: cannot compare cells of types IntRange and Set(Int)"
+      }
+    },
+    "function_duplicate_keys": {
+      "source": "---- MODULE Audit ----\nEXTENDS Integers, Sequences, FiniteSets, Apalache\nVARIABLE\n\\* @type: Int;\nx\nInit == x = 2\nNext == x' = x\nInv == [i \\in {1,1} |-> i+1][1] = 2\n====\n",
+      "scala": {
+        "exit": 0,
+        "output_excerpt": "  > Introduced expression grades                                  I@11:18:16.885\nPASS #13: BoundedChecker                                          I@11:18:16.886\nState 0: Checking 1 state invariants                              I@11:18:17.176\nState 0: state invariant 0 holds.                                 I@11:18:17.202\nStep 0: picking a transition out of 1 transition(s)               I@11:18:17.205\nThe outcome is: NoError                                           I@11:18:17.209\nChecker reports no error up to computation length 0               I@11:18:17.209\nIt took me 0 days  0 hours  0 min  1 sec                          I@11:18:17.210\nTotal time: 1.262 sec                                             I@11:18:17.210\nEXITCODE: OK"
+      },
+      "go": {
+        "exit": 0,
+        "output_excerpt": "No counterexample found through depth 0 (1 symbolic executions)."
+      }
+    },
+    "powerset_duplicate": {
+      "source": "---- MODULE Audit ----\nEXTENDS Integers, Sequences, FiniteSets, Apalache\nVARIABLE\n\\* @type: Int;\nx\nInit == x = 2\nNext == x' = x\nInv == Cardinality(Expand(SUBSET {1,1})) = 2\n====\n",
+      "scala": {
+        "exit": 0,
+        "output_excerpt": "  > Introduced expression grades                                  I@11:18:18.755\nPASS #13: BoundedChecker                                          I@11:18:18.755\nState 0: Checking 1 state invariants                              I@11:18:19.035\nState 0: state invariant 0 holds.                                 I@11:18:19.057\nStep 0: picking a transition out of 1 transition(s)               I@11:18:19.062\nThe outcome is: NoError                                           I@11:18:19.077\nChecker reports no error up to computation length 0               I@11:18:19.077\nIt took me 0 days  0 hours  0 min  1 sec                          I@11:18:19.077\nTotal time: 1.259 sec                                             I@11:18:19.078\nEXITCODE: OK"
+      },
+      "go": {
+        "exit": 0,
+        "output_excerpt": "No counterexample found through depth 0 (1 symbolic executions)."
+      }
+    },
+    "function_empty_codomain": {
+      "source": "---- MODULE Audit ----\nEXTENDS Integers, Sequences, FiniteSets, Apalache\nVARIABLE\n\\* @type: Int;\nx\nInit == x = 2\nNext == x' = x\nInv == [{} -> {}] = {[i \\in {} |-> 1]}\n====\n",
+      "scala": {
+        "exit": 255,
+        "output_excerpt": "Audit.tla:8:22-8:37: unexpected expression: Expected a non-polymorphic type, found: (e -> Int)\nYou may need to annotate an empty collection. E@11:18:20.727\nAudit.tla:8:22-8:37: unexpected expression: Expected a non-polymorphic type, found: e\nYou may need to annotate an empty collection. E@11:18:20.727\nAudit.tla:8:29-8:30: unexpected expression: Expected a non-polymorphic type, found: Set(e)\nYou may need to annotate an empty collection. E@11:18:20.728\nUnexpected expressions in the specification (see the error messages) E@11:18:20.728\nIt took me 0 days  0 hours  0 min  1 sec                          I@11:18:20.729\nTotal time: 1.8 sec                                               I@11:18:20.729\nEXITCODE: ERROR (255)"
+      },
+      "go": {
+        "exit": 0,
+        "output_excerpt": "No counterexample found through depth 0 (1 symbolic executions)."
+      }
+    },
+    "seq_tail_empty": {
+      "source": "---- MODULE Audit ----\nEXTENDS Integers, Sequences, FiniteSets, Apalache\nVARIABLE\n\\* @type: Int;\nx\nInit == x = 2\nNext == x' = x\nInv == Len(Tail(SubSeq(<<1>>,2,1))) = 0\n====\n",
+      "scala": {
+        "exit": 12,
+        "output_excerpt": "PASS #13: BoundedChecker                                          I@11:18:22.257\nState 0: Checking 1 state invariants                              I@11:18:22.564\nCheck the trace in: /mnt/oldrog/home/jaten/go/src/github.com/apalache-mc/apalache/pkg/build/code_review_cli/_apalache-out/Audit.tla/2026-10-29T11-18-21_431547758670702407/violation1.tla, /mnt/oldrog/home/jaten/go/src/github.com/apalache-mc/apalache/pkg/build/code_review_cli/_apalache-out/Audit.tla/2026-10-29T11-18-21_431547758670702407/MCviolation1.out, /mnt/oldrog/home/jaten/go/src/github.com/apalache-mc/apalache/pkg/build/code_review_cli/_apalache-out/Audit.tla/2026-10-29T11-18-21_431547758670702407/violation1.json, /mnt/oldrog/home/jaten/go/src/github.com/apalache-mc/apalache/pkg/build/code_review_cli/_apalache-out/Audit.tla/2026-10-29T11-18-21_431547758670702407/violation1.itf.json I@11:18:22.717\nState 0: state invariant 0 violated.                              I@11:18:22.721\nFound 1 error(s)                                                  I@11:18:22.724\nThe outcome is: Error                                             I@11:18:22.727\nChecker has found an error                                        I@11:18:22.748\nIt took me 0 days  0 hours  0 min  1 sec                          I@11:18:22.748\nTotal time: 1.436 sec                                             I@11:18:22.748\nEXITCODE: ERROR (12)"
+      },
+      "go": {
+        "exit": 12,
+        "output_excerpt": "Invariant Inv violated at depth 0 (Init$0000).\nState 0: x = 2"
+      }
+    },
+    "seq_subseq_clip": {
+      "source": "---- MODULE Audit ----\nEXTENDS Integers, Sequences, FiniteSets, Apalache\nVARIABLE\n\\* @type: Int;\nx\nInit == x = 2\nNext == x' = x\nInv == SubSeq(<<1,2>>,0,9) = <<1,2>>\n====\n",
+      "scala": {
+        "exit": 0,
+        "output_excerpt": "  > Introduced expression grades                                  I@11:18:24.379\nPASS #13: BoundedChecker                                          I@11:18:24.379\nState 0: Checking 1 state invariants                              I@11:18:24.670\nState 0: state invariant 0 holds.                                 I@11:18:24.699\nStep 0: picking a transition out of 1 transition(s)               I@11:18:24.702\nThe outcome is: NoError                                           I@11:18:24.719\nChecker reports no error up to computation length 0               I@11:18:24.719\nIt took me 0 days  0 hours  0 min  1 sec                          I@11:18:24.720\nTotal time: 1.303 sec                                             I@11:18:24.720\nEXITCODE: OK"
+      },
+      "go": {
+        "exit": 0,
+        "output_excerpt": "No counterexample found through depth 0 (1 symbolic executions)."
+      }
+    },
+    "negative_mod": {
+      "source": "---- MODULE Audit ----\nEXTENDS Integers, Sequences, FiniteSets, Apalache\nVARIABLE\n\\* @type: Int;\nx\nInit == x = 2\nNext == x' = x\nInv == (-5) % 3 = 1\n====\n",
+      "scala": {
+        "exit": 12,
+        "output_excerpt": "PASS #13: BoundedChecker                                          I@11:18:26.287\nState 0: Checking 1 state invariants                              I@11:18:26.574\nCheck the trace in: /mnt/oldrog/home/jaten/go/src/github.com/apalache-mc/apalache/pkg/build/code_review_cli/_apalache-out/Audit.tla/2026-10-29T11-18-25_2373498995840661499/violation1.tla, /mnt/oldrog/home/jaten/go/src/github.com/apalache-mc/apalache/pkg/build/code_review_cli/_apalache-out/Audit.tla/2026-10-29T11-18-25_2373498995840661499/MCviolation1.out, /mnt/oldrog/home/jaten/go/src/github.com/apalache-mc/apalache/pkg/build/code_review_cli/_apalache-out/Audit.tla/2026-10-29T11-18-25_2373498995840661499/violation1.json, /mnt/oldrog/home/jaten/go/src/github.com/apalache-mc/apalache/pkg/build/code_review_cli/_apalache-out/Audit.tla/2026-10-29T11-18-25_2373498995840661499/violation1.itf.json I@11:18:26.691\nState 0: state invariant 0 violated.                              I@11:18:26.696\nFound 1 error(s)                                                  I@11:18:26.699\nThe outcome is: Error                                             I@11:18:26.703\nChecker has found an error                                        I@11:18:26.724\nIt took me 0 days  0 hours  0 min  1 sec                          I@11:18:26.724\nTotal time: 1.438 sec                                             I@11:18:26.724\nEXITCODE: ERROR (12)"
+      },
+      "go": {
+        "exit": 12,
+        "output_excerpt": "Invariant Inv violated at depth 0 (Init$0000).\nState 0: x = 2"
+      }
+    },
+    "negative_div": {
+      "source": "---- MODULE Audit ----\nEXTENDS Integers, Sequences, FiniteSets, Apalache\nVARIABLE\n\\* @type: Int;\nx\nInit == x = 2\nNext == x' = x\nInv == (-5) \\div 3 = -2\n====\n",
+      "scala": {
+        "exit": 12,
+        "output_excerpt": "PASS #13: BoundedChecker                                          I@11:18:28.322\nState 0: Checking 1 state invariants                              I@11:18:28.613\nCheck the trace in: /mnt/oldrog/home/jaten/go/src/github.com/apalache-mc/apalache/pkg/build/code_review_cli/_apalache-out/Audit.tla/2026-10-29T11-18-27_15873157543589644976/violation1.tla, /mnt/oldrog/home/jaten/go/src/github.com/apalache-mc/apalache/pkg/build/code_review_cli/_apalache-out/Audit.tla/2026-10-29T11-18-27_15873157543589644976/MCviolation1.out, /mnt/oldrog/home/jaten/go/src/github.com/apalache-mc/apalache/pkg/build/code_review_cli/_apalache-out/Audit.tla/2026-10-29T11-18-27_15873157543589644976/violation1.json, /mnt/oldrog/home/jaten/go/src/github.com/apalache-mc/apalache/pkg/build/code_review_cli/_apalache-out/Audit.tla/2026-10-29T11-18-27_15873157543589644976/violation1.itf.json I@11:18:28.736\nState 0: state invariant 0 violated.                              I@11:18:28.741\nFound 1 error(s)                                                  I@11:18:28.744\nThe outcome is: Error                                             I@11:18:28.748\nChecker has found an error                                        I@11:18:28.768\nIt took me 0 days  0 hours  0 min  1 sec                          I@11:18:28.768\nTotal time: 1.432 sec                                             I@11:18:28.768\nEXITCODE: ERROR (12)"
+      },
+      "go": {
+        "exit": 12,
+        "output_excerpt": "Invariant Inv violated at depth 0 (Init$0000).\nState 0: x = 2"
+      }
+    },
+    "negative_power": {
+      "source": "---- MODULE Audit ----\nEXTENDS Integers, Sequences, FiniteSets, Apalache\nVARIABLE\n\\* @type: Int;\nx\nInit == x = 2\nNext == x' = x\nInv == 2^(-1) = 0\n====\n",
+      "scala": {
+        "exit": 255,
+        "output_excerpt": "  > Found 1 transitions                                           I@11:18:30.427\n  > No constant initializer                                       I@11:18:30.428\n  > Applying unique renaming                                      I@11:18:30.428\nPASS #11: OptimizationPass                                        I@11:18:30.429\n > Applying optimizations:                                        I@11:18:30.433\n  > ConstSimplifier                                               I@11:18:30.433\nInput error (see the manual): Negative power at 2 ^ -1            E@11:18:30.437\nIt took me 0 days  0 hours  0 min  1 sec                          I@11:18:30.437\nTotal time: 1.43 sec                                              I@11:18:30.438\nEXITCODE: ERROR (255)"
+      },
+      "go": {
+        "exit": 1,
+        "output_excerpt": "cannot prepare safety transitions: constant simplification in declaration VCInv$0: Negative power at 2 ^ (-1)"
+      }
+    },
+    "zero_power": {
+      "source": "---- MODULE Audit ----\nEXTENDS Integers, Sequences, FiniteSets, Apalache\nVARIABLE\n\\* @type: Int;\nx\nInit == x = 2\nNext == x' = x\nInv == 0^0 = 1\n====\n",
+      "scala": {
+        "exit": 255,
+        "output_excerpt": "  > Found 1 transitions                                           I@11:18:31.938\n  > No constant initializer                                       I@11:18:31.938\n  > Applying unique renaming                                      I@11:18:31.939\nPASS #11: OptimizationPass                                        I@11:18:31.940\n > Applying optimizations:                                        I@11:18:31.944\n  > ConstSimplifier                                               I@11:18:31.944\nInput error (see the manual): 0 ^ 0 is undefined                  E@11:18:31.947\nIt took me 0 days  0 hours  0 min  0 sec                          I@11:18:31.947\nTotal time: 0.902 sec                                             I@11:18:31.947\nEXITCODE: ERROR (255)"
+      },
+      "go": {
+        "exit": 1,
+        "output_excerpt": "cannot prepare safety transitions: constant simplification in declaration VCInv$0: 0 ^ 0 is undefined"
+      }
+    }
+  },
+  "jsonrpc": {
+    "scala": {
+      "gzipHealth": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "status": "OK"
+        }
+      },
+      "compression": {
+        "gzip": {
+          "error": null,
+          "http_status": 200,
+          "id_round_trip": true,
+          "response_encoding": "gzip",
+          "result": {
+            "status": "OK"
+          }
+        },
+        "zstd": {
+          "error": null,
+          "http_status": 200,
+          "id_round_trip": true,
+          "response_encoding": "zstd",
+          "result": {
+            "status": "OK"
+          }
+        }
+      },
+      "load": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "snapshotId": 0,
+          "specParameters": {
+            "initTransitions": [
+              {
+                "index": 0,
+                "labels": []
+              }
+            ],
+            "nextTransitions": [
+              {
+                "index": 0,
+                "labels": []
+              }
+            ],
+            "stateInvariants": [
+              {
+                "index": 0,
+                "labels": []
+              }
+            ],
+            "actionInvariants": []
+          }
+        }
+      },
+      "assumeInit": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "snapshotId": 2,
+          "transitionId": 0,
+          "status": "ENABLED"
+        }
+      },
+      "pendingInit": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "trace": {
+            "#meta": {
+              "format": "ITF",
+              "format-description": "https://apalache-mc.org/docs/adr/015adr-trace.html",
+              "description": "Created by Apalache on Thu Oct 29 11:32:32 CDT 2026",
+              "varTypes": {
+                "x": "Int"
+              }
+            },
+            "vars": [
+              "x"
+            ],
+            "states": [
+              {
+                "#meta": {
+                  "index": 0
+                },
+                "x": {
+                  "#bigint": "0"
+                }
+              }
+            ]
+          },
+          "state": {
+            "#meta": {
+              "index": 0
+            },
+            "x": {
+              "#bigint": "0"
+            }
+          },
+          "operatorValue": null
+        }
+      },
+      "advanceInit": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "snapshotId": 3,
+          "newStepNo": 1
+        }
+      },
+      "assumeNext": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "snapshotId": 5,
+          "transitionId": 0,
+          "status": "ENABLED"
+        }
+      },
+      "pendingNext": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "trace": {
+            "#meta": {
+              "format": "ITF",
+              "format-description": "https://apalache-mc.org/docs/adr/015adr-trace.html",
+              "description": "Created by Apalache on Thu Oct 29 11:32:32 CDT 2026",
+              "varTypes": {
+                "x": "Int"
+              }
+            },
+            "vars": [
+              "x"
+            ],
+            "states": [
+              {
+                "#meta": {
+                  "index": 0
+                },
+                "x": {
+                  "#bigint": "0"
+                }
+              },
+              {
+                "#meta": {
+                  "index": 1
+                },
+                "x": {
+                  "#bigint": "1"
+                }
+              }
+            ]
+          },
+          "state": {
+            "#meta": {
+              "index": 1
+            },
+            "x": {
+              "#bigint": "1"
+            }
+          },
+          "operatorValue": null
+        }
+      },
+      "constrainCurrent": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "snapshotId": 7,
+          "status": "ENABLED"
+        }
+      },
+      "pendingAfterAssertion": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "trace": {
+            "#meta": {
+              "format": "ITF",
+              "format-description": "https://apalache-mc.org/docs/adr/015adr-trace.html",
+              "description": "Created by Apalache on Thu Oct 29 11:32:32 CDT 2026",
+              "varTypes": {
+                "x": "Int"
+              }
+            },
+            "vars": [
+              "x"
+            ],
+            "states": [
+              {
+                "#meta": {
+                  "index": 0
+                },
+                "x": {
+                  "#bigint": "0"
+                }
+              },
+              {
+                "#meta": {
+                  "index": 1
+                },
+                "x": {
+                  "#bigint": "1"
+                }
+              }
+            ]
+          },
+          "state": {
+            "#meta": {
+              "index": 1
+            },
+            "x": {
+              "#bigint": "1"
+            }
+          },
+          "operatorValue": null
+        }
+      },
+      "compactPending": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "snapshotId": 1
+        }
+      },
+      "afterCompact": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "trace": {
+            "#meta": {
+              "format": "ITF",
+              "format-description": "https://apalache-mc.org/docs/adr/015adr-trace.html",
+              "description": "Created by Apalache on Thu Oct 29 11:32:32 CDT 2026",
+              "varTypes": {
+                "x": "Int"
+              }
+            },
+            "vars": [
+              "x"
+            ],
+            "states": [
+              {
+                "#meta": {
+                  "index": 0
+                },
+                "x": {
+                  "#bigint": "1"
+                }
+              }
+            ]
+          },
+          "state": {
+            "#meta": {
+              "index": 0
+            },
+            "x": {
+              "#bigint": "1"
+            }
+          },
+          "operatorValue": null
+        }
+      },
+      "assumeNextAgain": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "snapshotId": 3,
+          "transitionId": 0,
+          "status": "ENABLED"
+        }
+      },
+      "advanceNext": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "snapshotId": 4,
+          "newStepNo": 2
+        }
+      },
+      "afterAdvance": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "trace": {
+            "#meta": {
+              "format": "ITF",
+              "format-description": "https://apalache-mc.org/docs/adr/015adr-trace.html",
+              "description": "Created by Apalache on Thu Oct 29 11:32:32 CDT 2026",
+              "varTypes": {
+                "x": "Int"
+              }
+            },
+            "vars": [
+              "x"
+            ],
+            "states": [
+              {
+                "#meta": {
+                  "index": 0
+                },
+                "x": {
+                  "#bigint": "1"
+                }
+              },
+              {
+                "#meta": {
+                  "index": 1
+                },
+                "x": {
+                  "#bigint": "2"
+                }
+              }
+            ]
+          },
+          "state": {
+            "#meta": {
+              "index": 1
+            },
+            "x": {
+              "#bigint": "2"
+            }
+          },
+          "operatorValue": null
+        }
+      },
+      "excludeOne": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "oldValue": {
+            "#bigint": "2"
+          },
+          "hasOld": "TRUE",
+          "hasNext": "FALSE"
+        }
+      },
+      "queryUnsatOperator": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "error": {
+          "code": -32603,
+          "message": "Failed to evaluate View within 0 seconds"
+        }
+      },
+      "unknownOperator": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "error": {
+          "code": -32603,
+          "message": "Operator not found: Missing"
+        }
+      }
+    },
+    "go": {
+      "gzipHealth": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "status": "OK"
+        }
+      },
+      "compression": {
+        "gzip": {
+          "error": null,
+          "http_status": 200,
+          "id_round_trip": true,
+          "response_encoding": "gzip",
+          "result": {
+            "status": "OK"
+          }
+        },
+        "zstd": {
+          "error": null,
+          "http_status": 200,
+          "id_round_trip": true,
+          "response_encoding": "zstd",
+          "result": {
+            "status": "OK"
+          }
+        }
+      },
+      "load": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "snapshotId": 0,
+          "specParameters": {
+            "initTransitions": [
+              {
+                "index": 0,
+                "labels": []
+              }
+            ],
+            "nextTransitions": [
+              {
+                "index": 0,
+                "labels": []
+              }
+            ],
+            "stateInvariants": [
+              {
+                "index": 0,
+                "labels": []
+              }
+            ],
+            "actionInvariants": []
+          }
+        }
+      },
+      "assumeInit": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "snapshotId": 2,
+          "transitionId": 0,
+          "status": "ENABLED"
+        }
+      },
+      "pendingInit": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "trace": {
+            "#meta": {
+              "description": "Created by Apalache",
+              "format": "ITF",
+              "format-description": "https://apalache-mc.org/docs/adr/015adr-trace.html",
+              "varTypes": {
+                "x": "Int"
+              }
+            },
+            "states": [
+              {
+                "#meta": {
+                  "index": 0
+                },
+                "x": {
+                  "#bigint": "0"
+                }
+              }
+            ],
+            "vars": [
+              "x"
+            ]
+          },
+          "state": {
+            "#meta": {
+              "index": 0
+            },
+            "x": {
+              "#bigint": "0"
+            }
+          },
+          "operatorValue": null
+        }
+      },
+      "advanceInit": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "snapshotId": 3,
+          "newStepNo": 1
+        }
+      },
+      "assumeNext": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "snapshotId": 5,
+          "transitionId": 0,
+          "status": "ENABLED"
+        }
+      },
+      "pendingNext": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "trace": {
+            "#meta": {
+              "description": "Created by Apalache",
+              "format": "ITF",
+              "format-description": "https://apalache-mc.org/docs/adr/015adr-trace.html",
+              "varTypes": {
+                "x": "Int"
+              }
+            },
+            "states": [
+              {
+                "#meta": {
+                  "index": 0
+                },
+                "x": {
+                  "#bigint": "0"
+                }
+              },
+              {
+                "#meta": {
+                  "index": 1
+                },
+                "x": {
+                  "#bigint": "1"
+                }
+              }
+            ],
+            "vars": [
+              "x"
+            ]
+          },
+          "state": {
+            "#meta": {
+              "index": 1
+            },
+            "x": {
+              "#bigint": "1"
+            }
+          },
+          "operatorValue": null
+        }
+      },
+      "constrainCurrent": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "snapshotId": 7,
+          "status": "ENABLED"
+        }
+      },
+      "pendingAfterAssertion": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "trace": {
+            "#meta": {
+              "description": "Created by Apalache",
+              "format": "ITF",
+              "format-description": "https://apalache-mc.org/docs/adr/015adr-trace.html",
+              "varTypes": {
+                "x": "Int"
+              }
+            },
+            "states": [
+              {
+                "#meta": {
+                  "index": 0
+                },
+                "x": {
+                  "#bigint": "0"
+                }
+              }
+            ],
+            "vars": [
+              "x"
+            ]
+          },
+          "state": {
+            "#meta": {
+              "index": 0
+            },
+            "x": {
+              "#bigint": "0"
+            }
+          },
+          "operatorValue": null
+        }
+      },
+      "compactPending": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "snapshotId": 8
+        }
+      },
+      "afterCompact": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "trace": {
+            "#meta": {
+              "description": "Created by Apalache",
+              "format": "ITF",
+              "format-description": "https://apalache-mc.org/docs/adr/015adr-trace.html",
+              "varTypes": {
+                "x": "Int"
+              }
+            },
+            "states": [
+              {
+                "#meta": {
+                  "index": 0
+                },
+                "x": {
+                  "#bigint": "0"
+                }
+              }
+            ],
+            "vars": [
+              "x"
+            ]
+          },
+          "state": {
+            "#meta": {
+              "index": 0
+            },
+            "x": {
+              "#bigint": "0"
+            }
+          },
+          "operatorValue": null
+        }
+      },
+      "assumeNextAgain": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "snapshotId": 10,
+          "transitionId": 0,
+          "status": "ENABLED"
+        }
+      },
+      "advanceNext": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "snapshotId": 11,
+          "newStepNo": 2
+        }
+      },
+      "afterAdvance": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "trace": {
+            "#meta": {
+              "description": "Created by Apalache",
+              "format": "ITF",
+              "format-description": "https://apalache-mc.org/docs/adr/015adr-trace.html",
+              "varTypes": {
+                "x": "Int"
+              }
+            },
+            "states": [
+              {
+                "#meta": {
+                  "index": 0
+                },
+                "x": {
+                  "#bigint": "0"
+                }
+              },
+              {
+                "#meta": {
+                  "index": 1
+                },
+                "x": {
+                  "#bigint": "1"
+                }
+              }
+            ],
+            "vars": [
+              "x"
+            ]
+          },
+          "state": {
+            "#meta": {
+              "index": 1
+            },
+            "x": {
+              "#bigint": "1"
+            }
+          },
+          "operatorValue": null
+        }
+      },
+      "excludeOne": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "oldValue": {
+            "#bigint": "1"
+          },
+          "hasOld": "TRUE",
+          "hasNext": "FALSE"
+        }
+      },
+      "queryUnsatOperator": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "trace": null,
+          "state": null,
+          "operatorValue": null
+        }
+      },
+      "unknownOperator": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "error": {
+          "code": -32602,
+          "message": "Operator not found: Missing"
+        }
+      }
+    }
+  },
+  "shai": {
+    "scala": {
+      "arrays": "success",
+      "funArrays": "success",
+      "json_parse": "success",
+      "load_bad": {
+        "Result": {
+          "Err": {
+            "data": "{\"pass_name\":\"SanyParser\",\"error_data\":[\"Syntax errors:\\n\\n*** Errors: 1\\n\\nIn module Bad\\n\\nCould not parse module Bad from file /tmp/SANYpzffuQKLJd/sanyimp17385147511243791147/Bad.tla\"],\"exit_code\":255}"
+          }
+        }
+      },
+      "parse": "success",
+      "rows_default": {
+        "data": "{\"pass_name\":\"TypeCheckerSnowcat\",\"error_data\":[[\"RowDefault.tla:2:6-2:27\",\"An operator with the signature ((a, a) => Set(a)) cannot be applied to the provided arguments of type { a: Int } and { b: Int }\"],[\"RowDefault.tla:2:1-2:27\",\"Error when computing the type of R\"]],\"exit_code\":120}"
+      },
+      "rows_explicit": {
+        "data": "{\"pass_name\":\"TypeCheckerSnowcat\",\"error_data\":[[\"RowDefault.tla:2:6-2:27\",\"An operator with the signature ((a, a) => Set(a)) cannot be applied to the provided arguments of type { a: Int } and { b: Int }\"],[\"RowDefault.tla:2:1-2:27\",\"Error when computing the type of R\"]],\"exit_code\":120}"
+      },
+      "syntax_CHECK": {
+        "data": "{\"pass_name\":\"SanyParser\",\"error_data\":[\"Syntax errors:\\n\\n*** Errors: 1\\n\\nIn module Bad\\n\\nCould not parse module Bad from file /tmp/SANYpzffuQKLJd/sanyimp15824835966006704819/Bad.tla\"],\"exit_code\":255}"
+      },
+      "syntax_PARSE": {
+        "data": "{\"pass_name\":\"SanyParser\",\"error_data\":[\"Syntax errors:\\n\\n*** Errors: 1\\n\\nIn module Bad\\n\\nCould not parse module Bad from file /tmp/SANYpzffuQKLJd/sanyimp13761942019120949189/Bad.tla\"],\"exit_code\":255}"
+      },
+      "syntax_TYPECHECK": {
+        "data": "{\"pass_name\":\"SanyParser\",\"error_data\":[\"Syntax errors:\\n\\n*** Errors: 1\\n\\nIn module Bad\\n\\nCould not parse module Bad from file /tmp/SANYpzffuQKLJd/sanyimp775564963292874628/Bad.tla\"],\"exit_code\":255}"
+      },
+      "uuid_upper": "success"
+    },
+    "go": {
+      "arrays": {
+        "errorType": 1,
+        "data": "{\"msg\":\"unsupported SMT encoding \\\"arrays\\\" (Go port currently supports oopsla19)\",\"stack_trace\":[]}"
+      },
+      "funArrays": {
+        "errorType": 1,
+        "data": "{\"msg\":\"unsupported SMT encoding \\\"funArrays\\\" (Go port currently supports oopsla19)\",\"stack_trace\":[]}"
+      },
+      "json_parse": {
+        "errorType": 1,
+        "data": "{\"msg\":\"Go command executor does not support json source format\",\"stack_trace\":[]}"
+      },
+      "load_bad": {
+        "Result": {
+          "Err": {
+            "data": "[{\"code\":\"E1300\",\"severity\":\"error\",\"message\":\"expected expression\",\"position\":{\"filename\":\"Bad.tla\",\"line\":3,\"column\":1}}]"
+          }
+        }
+      },
+      "parse": "success",
+      "rows_default": "success",
+      "rows_explicit": {
+        "data": "{\"error_data\":[{\"code\":\"E-TYPE\",\"severity\":\"error\",\"message\":\"An operator with the signature ((a, a) =\\u003e Set(a)) cannot be applied to the provided arguments of type { a: Int } and { b: Int }\",\"position\":{\"filename\":\"RowDefault.tla\",\"line\":2,\"column\":6,\"endLine\":2,\"endColumn\":27}},{\"code\":\"E-TYPE\",\"severity\":\"error\",\"message\":\"Error when computing the type of R\",\"position\":{\"filename\":\"RowDefault.tla\",\"line\":2,\"column\":1,\"endLine\":2,\"endColumn\":27}}],\"exit_code\":120,\"pass_name\":\"TypeCheckerSnowcat\"}"
+      },
+      "syntax_CHECK": {
+        "data": "{\"error_data\":[{\"code\":\"E1300\",\"severity\":\"error\",\"message\":\"expected expression\",\"position\":{\"filename\":\"Bad.tla\",\"line\":3,\"column\":1}}],\"exit_code\":120,\"pass_name\":\"TypeCheckerSnowcat\"}"
+      },
+      "syntax_PARSE": {
+        "data": "{\"error_data\":[{\"code\":\"E1300\",\"severity\":\"error\",\"message\":\"expected expression\",\"position\":{\"filename\":\"Bad.tla\",\"line\":3,\"column\":1}}],\"exit_code\":150,\"pass_name\":\"SanyParser\"}"
+      },
+      "syntax_TYPECHECK": {
+        "data": "{\"error_data\":[{\"code\":\"E1300\",\"severity\":\"error\",\"message\":\"expected expression\",\"position\":{\"filename\":\"Bad.tla\",\"line\":3,\"column\":1}}],\"exit_code\":120,\"pass_name\":\"TypeCheckerSnowcat\"}"
+      },
+      "uuid_upper": "rpc error: code = FailedPrecondition desc = Invalid Connection: no connection is registered for id 1BBE509D-51EF-4D16-83AA-A0200B713523"
+    }
+  },
+  "bad_typed_ir": {
+    "scala": "# Usage statistics is OFF. We care about your privacy.\n# If you want to help our project, consider enabling statistics with config --enable-stats=true.\n\nOutput directory: /mnt/oldrog/home/jaten/go/src/github.com/apalache-mc/apalache/_apalache-out/BadTypedIR.json/2026-10-29T11-17-50_1864318971407342179\n# APALACHE version: pkg/v0.62.4-go-001-1-g9e80e40f9 | build: pkg/v0.62.4-go-001-1-g9e80e40f9 I@11:17:50.334\nType checking pkg/testdata/code_review/BadTypedIR.json            I@11:17:50.337\nPASS #0: SanyParser                                               I@11:17:50.506\nPASS #1: TypeCheckerSnowcat                                       I@11:17:50.645\n > Running Snowcat .::.                                           I@11:17:50.646\n[unknown location]: An operator with the signature ((Int, Int) => Int) cannot be applied to the provided arguments of type Int and Bool E@11:17:50.706\n[unknown location]: Error when computing the type of Bad          E@11:17:50.706\n > Snowcat asks you to fix the types. Meow.                       I@11:17:50.706\nType checker [FAILED]                                             I@11:17:50.738\nIt took me 0 days  0 hours  0 min  0 sec                          I@11:17:50.738\nTotal time: 0.401 sec                                             I@11:17:50.738\nEXITCODE: ERROR (120)\n",
+    "go": "type-checked module BadTypedIR\n"
+  }
+}

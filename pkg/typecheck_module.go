@@ -68,6 +68,12 @@ type TypeCheckResult struct {
 	Diagnostics []Diagnostic
 }
 
+// DefaultTypeCheckOptions matches Scala's current default record type system.
+// The zero value remains available to callers of the legacy programmatic API.
+func DefaultTypeCheckOptions() TypeCheckOptions {
+	return TypeCheckOptions{UseRows: true}
+}
+
 func (result TypeCheckResult) OK() bool {
 	return result.Module != nil && !hasErrors(result.Diagnostics)
 }

@@ -98,7 +98,7 @@ func TestCmdExecutorReportsFrontendAndConfigurationFailures(t *testing.T) {
 	}
 	var parseFailure map[string]any
 	if err = json.Unmarshal([]byte(response.GetFailure().GetData()), &parseFailure); err != nil ||
-		parseFailure["pass_name"] != "SanyParser" || parseFailure["exit_code"] != float64(150) {
+		parseFailure["pass_name"] != "SanyParser" || parseFailure["exit_code"] != float64(255) {
 		t.Fatalf("invalid parse shape = %#v, %v", parseFailure, err)
 	}
 	response, err = service.Run(ctx, &cmd.CmdRequest{Cmd: cmd.Cmd_PARSE, Config: `{}`})

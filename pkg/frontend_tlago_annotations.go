@@ -2,6 +2,7 @@ package apalache
 
 import (
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -10,18 +11,21 @@ import (
 
 type tlagoImportedAnnotations struct {
 	types       map[string]Type
+	locals      map[string]Type
 	aliases     map[string]Type
 	diagnostics []Diagnostic
 }
 
 type tlagoAnnotationTarget struct {
-	name       string
-	position   tlago.Position
-	definition bool
+	name         string
+	position     tlago.Position
+	bodyPosition tlago.Position
+	definition   bool
+	local        bool
 }
 
 func collectTlagoImportedAnnotations(spec *tlago.Spec) tlagoImportedAnnotations {
-	result := tlagoImportedAnnotations{types: make(map[string]Type), aliases: make(map[string]Type)}
+	result := tlagoImportedAnnotations{types: make(map[string]Type), locals: make(map[string]Type), aliases: make(map[string]Type)}
 	if spec == nil || spec.Root == nil {
 		return result
 	}
@@ -35,6 +39,9 @@ func collectTlagoImportedAnnotations(spec *tlago.Spec) tlagoImportedAnnotations 
 		}
 		annotations := parseTlagoModuleAnnotations(module)
 		parsed[module.Name] = annotations
+		for key, typ := range annotations.locals {
+			result.locals[key] = typ
+		}
 		result.diagnostics = append(result.diagnostics, annotations.diagnostics...)
 		for name, typ := range annotations.aliases {
 			if previous, duplicate := result.aliases[name]; duplicate && !EqualTypes(previous, typ) {
@@ -119,7 +126,7 @@ func collectTlagoImportedAnnotations(spec *tlago.Spec) tlagoImportedAnnotations 
 }
 
 func parseTlagoModuleAnnotations(module *tlago.Module) tlagoImportedAnnotations {
-	result := tlagoImportedAnnotations{types: make(map[string]Type), aliases: make(map[string]Type)}
+	result := tlagoImportedAnnotations{types: make(map[string]Type), locals: make(map[string]Type), aliases: make(map[string]Type)}
 	if module == nil || module.Source == "" {
 		return result
 	}
@@ -185,7 +192,24 @@ func parseTlagoModuleAnnotations(module *tlago.Module) tlagoImportedAnnotations 
 				result.diagnostics = append(result.diagnostics, typeAnnotationParseDiagnostics(text, target.name, parseErr, position)...)
 				continue
 			}
-			result.types[target.name] = typ
+			if target.local {
+				// An inner module shares its enclosing module's physical source
+				// file and line numbers; its module name is not the source identity.
+				file := target.position.File
+				if file == "" {
+					file = filename
+				}
+				result.locals[tlagoAnnotationLocation(file, target.position.Line, target.position.Column)] = typ
+				// tlago may erase an instantiated LET declaration's location
+				// while preserving its body location. Keep that source identity
+				// too, rather than falling back to an ambiguous simple name.
+				body := target.bodyPosition
+				if body.Line > 0 {
+					result.locals["body:"+tlagoAnnotationLocation(body.File, body.Line, body.Column)] = typ
+				}
+			} else {
+				result.types[target.name] = typ
+			}
 		}
 	}
 	return result
@@ -214,7 +238,7 @@ func collectTlagoLocalAnnotationTargets(expression tlago.Expr, targets *[]tlagoA
 	case *tlago.LetExpr:
 		for _, definition := range typed.Definitions {
 			*targets = append(*targets, tlagoAnnotationTarget{
-				name: definition.Name, position: definition.DeclarationPosition(), definition: true,
+				name: definition.Name, position: definition.SourcePosition(), bodyPosition: definition.Expr.Position(), definition: true, local: true,
 			})
 			visit(definition.Expr)
 		}
@@ -296,7 +320,7 @@ func compareTlagoPosition(left, right tlago.Position) int {
 		SourcePosition{Line: right.Line, Column: right.Column})
 }
 
-func mergeTlagoImportedAnnotations(result *TypeAnnotationResult, module *Module, imported tlagoImportedAnnotations) {
+func mergeTlagoImportedAnnotations(result *TypeAnnotationResult, module *Module, imported tlagoImportedAnnotations, sources *SourceStore) {
 	if result == nil {
 		return
 	}
@@ -347,6 +371,19 @@ func mergeTlagoImportedAnnotations(result *TypeAnnotationResult, module *Module,
 					annotationName = strings.TrimPrefix(local.Name(), "LOCAL$")
 				}
 				localType, annotated := imported.types[annotationName]
+				if !strings.HasPrefix(local.Name(), "LOCAL$") {
+					annotated = false
+					if sources != nil {
+						if location, found := sources.Find(local.ID()); found {
+							localType, annotated = imported.locals[tlagoAnnotationLocation(location.Filename, location.Region.Start.Line, location.Region.Start.Column)]
+						}
+						if !annotated {
+							if location, found := sources.Find(local.Body().ID()); found {
+								localType, annotated = imported.locals["body:"+tlagoAnnotationLocation(location.Filename, location.Region.Start.Line, location.Region.Start.Column)]
+							}
+						}
+					}
+				}
 				if !annotated {
 					continue
 				}
@@ -357,4 +394,8 @@ func mergeTlagoImportedAnnotations(result *TypeAnnotationResult, module *Module,
 			return nil, false
 		})(operator.Body())
 	}
+}
+
+func tlagoAnnotationLocation(filename string, line, column int) string {
+	return fmt.Sprintf("%s:%d:%d", strings.TrimSuffix(filepath.Base(filename), ".tla"), line, column)
 }

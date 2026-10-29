@@ -76,7 +76,15 @@ func (cache *DefaultValueCache) GetOrCreate(scope RewriterScope, typ Type) (Rewr
 		cache.values[typ.String()] = record
 		return scope, record, nil
 	}
-	expression, err := defaultValueExpression(typ)
+	expression, err := defaultValueExpression(typ, func(child Type) (Expr, error) {
+		var cell ArenaCell
+		var err error
+		scope, cell, err = cache.GetOrCreate(scope, child)
+		if err != nil {
+			return nil, err
+		}
+		return cell.NameExpr(), nil
+	})
 	if err != nil {
 		return scope, ArenaCell{}, err
 	}
@@ -98,7 +106,7 @@ func (cache *DefaultValueCache) Recover(snapshot DefaultValueCacheSnapshot) {
 	cache.values = cloneMap(snapshot.values)
 }
 
-func defaultValueExpression(typ Type) (Expr, error) {
+func defaultValueExpression(typ Type, childDefault func(Type) (Expr, error)) (Expr, error) {
 	switch typed := typ.(type) {
 	case primitiveType:
 		switch typed {
@@ -117,7 +125,7 @@ func defaultValueExpression(typ Type) (Expr, error) {
 		elementTypes := typed.Elements()
 		elements := make([]Expr, len(elementTypes))
 		for index, elementType := range elementTypes {
-			value, err := defaultValueExpression(elementType)
+			value, err := childDefault(elementType)
 			if err != nil {
 				return nil, err
 			}
@@ -127,12 +135,12 @@ func defaultValueExpression(typ Type) (Expr, error) {
 	case SeqType:
 		return MustOperExpr(Op("TUPLE"), Typed(typed)), nil
 	case RecordType:
-		return defaultRecordExpression(typed, typed.Fields())
+		return defaultRecordExpression(typed, typed.Fields(), childDefault)
 	case RecordRowType:
 		if _, open := typed.Row().Other(); open {
 			return nil, fmt.Errorf("cannot construct a default for open record type %s", typed)
 		}
-		return defaultRecordExpression(typed, typed.Row().Fields())
+		return defaultRecordExpression(typed, typed.Row().Fields(), childDefault)
 	case VariantType:
 		if _, open := typed.Row().Other(); open {
 			return nil, fmt.Errorf("cannot construct a default for open variant type %s", typed)
@@ -142,7 +150,7 @@ func defaultValueExpression(typ Type) (Expr, error) {
 		if len(keys) == 0 {
 			return nil, fmt.Errorf("cannot construct a default for empty variant type %s", typed)
 		}
-		value, err := defaultValueExpression(options[keys[0]])
+		value, err := childDefault(options[keys[0]])
 		if err != nil {
 			return nil, err
 		}
@@ -152,11 +160,11 @@ func defaultValueExpression(typ Type) (Expr, error) {
 	return nil, fmt.Errorf("default values are not yet implemented for %s", typ)
 }
 
-func defaultRecordExpression(typ Type, fields map[string]Type) (Expr, error) {
+func defaultRecordExpression(typ Type, fields map[string]Type, childDefault func(Type) (Expr, error)) (Expr, error) {
 	keys := sortedStringKeys(fields)
 	arguments := make([]Expr, 0, len(keys)*2)
 	for _, key := range keys {
-		value, err := defaultValueExpression(fields[key])
+		value, err := childDefault(fields[key])
 		if err != nil {
 			return nil, err
 		}

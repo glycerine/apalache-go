@@ -230,10 +230,10 @@ func ParseSource(ctx context.Context, filename, source string, opts FrontendOpti
 		result.Native = normalizeTlagoOperatorValues(result.Native, result.Sources)
 		result.Native = normalizeTlagoNamedAssumptionReferences(result.Native, result.Sources)
 		variantsImported := spec.Modules["Variants"] != nil
-		tlcImported := spec.Modules["TLC"] != nil
+		origins := tlagoDefinitionOrigins(spec)
 		realsImported := spec.Modules["Reals"] != nil
-		result.Native = removeTlagoNativeVariantDeclarations(result.Native, result.Sources, variantsImported)
-		result.Native = normalizeTlagoTLCCalls(result.Native, result.Sources, tlcImported)
+		result.Native = removeTlagoNativeVariantDeclarations(result.Native, result.Sources, origins)
+		result.Native = normalizeTlagoTLCCalls(result.Native, result.Sources, origins)
 		result.Native = normalizeTlagoRealValues(result.Native, result.Sources, realsImported)
 		result.Native = normalizeTlagoApalacheBuiltinCalls(result.Native, result.Sources, builtinInstanceModules)
 		result.Native = normalizeTlagoInstantiatedOperatorCalls(result.Native, result.Sources, instantiatedScopes)
@@ -273,7 +273,7 @@ func ParseAndTypeCheckSource(ctx context.Context, filename, source string, front
 	}
 	result.Parsed = result.Native
 	annotations := ExtractTypeAnnotations(filename, source, result.Native, result.Sources)
-	mergeTlagoImportedAnnotations(&annotations, result.Native, result.imported)
+	mergeTlagoImportedAnnotations(&annotations, result.Native, result.imported, result.Sources)
 	result.Annotations = annotations.Annotations
 	result.Aliases = annotations.Aliases
 	result.Diagnostics = append(result.Diagnostics, annotations.Diagnostics...)
@@ -404,10 +404,8 @@ func ParseAndTypeCheckFile(ctx context.Context, filename string, frontendOptions
 			return result
 		}
 		result.Parsed = result.Native
-		if (TypedLanguagePredicate{}).CheckModule(result.Native).OK() {
-			result.Native.AddProperty(PropertyTypeChecked)
-			return result
-		}
+		// Type tags assert intended types; their presence does not establish
+		// consistency. The ETC translator uses them as inference constraints.
 		typeOptions.Sources = result.Sources
 		typed := TypeCheckModule(result.Native, typeOptions)
 		result.Types = typed.Types

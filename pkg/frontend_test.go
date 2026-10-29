@@ -1464,7 +1464,7 @@ Test == TRUE
 				t.Fatalf("nextLen body retained frontend tag %s in %#v", typ, local.Body())
 			}
 			annotations := ExtractTypeAnnotations("ImportedSequencesExt.tla", source, result.Native, result.Sources)
-			mergeTlagoImportedAnnotations(&annotations, result.Native, result.imported)
+			mergeTlagoImportedAnnotations(&annotations, result.Native, result.imported, result.Sources)
 			if typ, annotated := annotations.Types[local.ID()]; annotated {
 				t.Fatalf("nextLen inherited imported annotation %s", typ)
 			}

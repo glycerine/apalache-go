@@ -78,7 +78,20 @@ func (rewriter *StratifiedRewriter) generateBoundedValue(scope RewriterScope, ty
 		for index, key := range keys {
 			types[index] = fields[key]
 		}
-		return rewriter.generateProduct(scope, cellType, types, bound)
+		scope, record, err := rewriter.generateProduct(scope, cellType, types, bound)
+		if err != nil {
+			return scope, ArenaCell{}, err
+		}
+		keyExpressions := make([]Expr, len(keys))
+		for index, key := range keys {
+			keyExpressions[index] = NewValueExpr(StringValue(key), Typed(StrT1))
+		}
+		scope, domain, err := rewriter.Rewrite(MustOperExpr(Op("SET_ENUM"), Typed(mustSet(StrT1)), keyExpressions...), scope)
+		if err != nil {
+			return scope, ArenaCell{}, fmt.Errorf("generate record domain: %w", err)
+		}
+		scope.Arena = scope.Arena.SetDomain(record, domain)
+		return scope, record, nil
 	case RecordRowType:
 		if _, open := typed.Row().Other(); open {
 			return scope, ArenaCell{}, fmt.Errorf("Gen does not support open record type %s", typed)

@@ -585,6 +585,9 @@ func (rewriter *StratifiedRewriter) rewriteFunctionConstructor(expression *OperE
 	if err != nil {
 		return scope, ArenaCell{}, err
 	}
+	if !isFiniteSetCellType(domain.Type) {
+		return scope, ArenaCell{}, fmt.Errorf("function construction requires an enumerated domain, found %s", domain.Type)
+	}
 	scope, domain, err = rewriter.coerceCell(scope, domain, mustSet(functionType.Argument()))
 	if err != nil {
 		return scope, ArenaCell{}, fmt.Errorf("function domain cannot be widened to Set(%s): %w", functionType.Argument(), err)
@@ -2591,6 +2594,9 @@ func (rewriter *StratifiedRewriter) rewriteSetUnion(expression *OperExpr, scope 
 	rightScope, right, err := rewriter.Rewrite(arguments[1], leftScope)
 	if err != nil {
 		return scope, ArenaCell{}, err
+	}
+	if !isFiniteSetCellType(left.Type) || !isFiniteSetCellType(right.Type) {
+		return scope, ArenaCell{}, fmt.Errorf("set union requires enumerated operands, found %s and %s", left.Type, right.Type)
 	}
 	resultType, typed := expression.Tag().Type()
 	if !typed {

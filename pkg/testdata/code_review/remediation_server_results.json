@@ -1,0 +1,805 @@
+{
+  "description": "Post-fix live Scala/Go server observations; parser wording and trace timestamps are intentionally not normalized.",
+  "jsonrpc": {
+    "scala": {
+      "gzipHealth": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "status": "OK"
+        }
+      },
+      "compression": {
+        "gzip": {
+          "error": null,
+          "http_status": 200,
+          "id_round_trip": true,
+          "response_encoding": "gzip",
+          "result": {
+            "status": "OK"
+          }
+        },
+        "zstd": {
+          "error": null,
+          "http_status": 200,
+          "id_round_trip": true,
+          "response_encoding": "zstd",
+          "result": {
+            "status": "OK"
+          }
+        }
+      },
+      "load": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "snapshotId": 0,
+          "specParameters": {
+            "initTransitions": [
+              {
+                "index": 0,
+                "labels": []
+              }
+            ],
+            "nextTransitions": [
+              {
+                "index": 0,
+                "labels": []
+              }
+            ],
+            "stateInvariants": [
+              {
+                "index": 0,
+                "labels": []
+              }
+            ],
+            "actionInvariants": []
+          }
+        }
+      },
+      "assumeInit": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "snapshotId": 2,
+          "transitionId": 0,
+          "status": "ENABLED"
+        }
+      },
+      "pendingInit": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "trace": {
+            "#meta": {
+              "format": "ITF",
+              "format-description": "https://apalache-mc.org/docs/adr/015adr-trace.html",
+              "description": "Created by Apalache on Thu Oct 29 12:09:13 CDT 2026",
+              "varTypes": {
+                "x": "Int"
+              }
+            },
+            "vars": [
+              "x"
+            ],
+            "states": [
+              {
+                "#meta": {
+                  "index": 0
+                },
+                "x": {
+                  "#bigint": "0"
+                }
+              }
+            ]
+          },
+          "state": {
+            "#meta": {
+              "index": 0
+            },
+            "x": {
+              "#bigint": "0"
+            }
+          },
+          "operatorValue": null
+        }
+      },
+      "advanceInit": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "snapshotId": 3,
+          "newStepNo": 1
+        }
+      },
+      "assumeNext": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "snapshotId": 5,
+          "transitionId": 0,
+          "status": "ENABLED"
+        }
+      },
+      "pendingNext": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "trace": {
+            "#meta": {
+              "format": "ITF",
+              "format-description": "https://apalache-mc.org/docs/adr/015adr-trace.html",
+              "description": "Created by Apalache on Thu Oct 29 12:09:13 CDT 2026",
+              "varTypes": {
+                "x": "Int"
+              }
+            },
+            "vars": [
+              "x"
+            ],
+            "states": [
+              {
+                "#meta": {
+                  "index": 0
+                },
+                "x": {
+                  "#bigint": "0"
+                }
+              },
+              {
+                "#meta": {
+                  "index": 1
+                },
+                "x": {
+                  "#bigint": "1"
+                }
+              }
+            ]
+          },
+          "state": {
+            "#meta": {
+              "index": 1
+            },
+            "x": {
+              "#bigint": "1"
+            }
+          },
+          "operatorValue": null
+        }
+      },
+      "constrainCurrent": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "snapshotId": 7,
+          "status": "ENABLED"
+        }
+      },
+      "pendingAfterAssertion": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "trace": {
+            "#meta": {
+              "format": "ITF",
+              "format-description": "https://apalache-mc.org/docs/adr/015adr-trace.html",
+              "description": "Created by Apalache on Thu Oct 29 12:09:13 CDT 2026",
+              "varTypes": {
+                "x": "Int"
+              }
+            },
+            "vars": [
+              "x"
+            ],
+            "states": [
+              {
+                "#meta": {
+                  "index": 0
+                },
+                "x": {
+                  "#bigint": "0"
+                }
+              },
+              {
+                "#meta": {
+                  "index": 1
+                },
+                "x": {
+                  "#bigint": "1"
+                }
+              }
+            ]
+          },
+          "state": {
+            "#meta": {
+              "index": 1
+            },
+            "x": {
+              "#bigint": "1"
+            }
+          },
+          "operatorValue": null
+        }
+      },
+      "compactPending": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "snapshotId": 1
+        }
+      },
+      "afterCompact": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "trace": {
+            "#meta": {
+              "format": "ITF",
+              "format-description": "https://apalache-mc.org/docs/adr/015adr-trace.html",
+              "description": "Created by Apalache on Thu Oct 29 12:09:13 CDT 2026",
+              "varTypes": {
+                "x": "Int"
+              }
+            },
+            "vars": [
+              "x"
+            ],
+            "states": [
+              {
+                "#meta": {
+                  "index": 0
+                },
+                "x": {
+                  "#bigint": "1"
+                }
+              }
+            ]
+          },
+          "state": {
+            "#meta": {
+              "index": 0
+            },
+            "x": {
+              "#bigint": "1"
+            }
+          },
+          "operatorValue": null
+        }
+      },
+      "assumeNextAgain": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "snapshotId": 3,
+          "transitionId": 0,
+          "status": "ENABLED"
+        }
+      },
+      "advanceNext": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "snapshotId": 4,
+          "newStepNo": 2
+        }
+      },
+      "afterAdvance": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "trace": {
+            "#meta": {
+              "format": "ITF",
+              "format-description": "https://apalache-mc.org/docs/adr/015adr-trace.html",
+              "description": "Created by Apalache on Thu Oct 29 12:09:13 CDT 2026",
+              "varTypes": {
+                "x": "Int"
+              }
+            },
+            "vars": [
+              "x"
+            ],
+            "states": [
+              {
+                "#meta": {
+                  "index": 0
+                },
+                "x": {
+                  "#bigint": "1"
+                }
+              },
+              {
+                "#meta": {
+                  "index": 1
+                },
+                "x": {
+                  "#bigint": "2"
+                }
+              }
+            ]
+          },
+          "state": {
+            "#meta": {
+              "index": 1
+            },
+            "x": {
+              "#bigint": "2"
+            }
+          },
+          "operatorValue": null
+        }
+      },
+      "excludeOne": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "oldValue": {
+            "#bigint": "2"
+          },
+          "hasOld": "TRUE",
+          "hasNext": "FALSE"
+        }
+      },
+      "queryUnsatOperator": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "error": {
+          "code": -32603,
+          "message": "Failed to evaluate View within 0 seconds"
+        }
+      },
+      "unknownOperator": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "error": {
+          "code": -32603,
+          "message": "Operator not found: Missing"
+        }
+      }
+    },
+    "go": {
+      "gzipHealth": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "status": "OK"
+        }
+      },
+      "compression": {
+        "gzip": {
+          "error": null,
+          "http_status": 200,
+          "id_round_trip": true,
+          "response_encoding": "gzip",
+          "result": {
+            "status": "OK"
+          }
+        },
+        "zstd": {
+          "error": null,
+          "http_status": 200,
+          "id_round_trip": true,
+          "response_encoding": "zstd",
+          "result": {
+            "status": "OK"
+          }
+        }
+      },
+      "load": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "snapshotId": 0,
+          "specParameters": {
+            "initTransitions": [
+              {
+                "index": 0,
+                "labels": []
+              }
+            ],
+            "nextTransitions": [
+              {
+                "index": 0,
+                "labels": []
+              }
+            ],
+            "stateInvariants": [
+              {
+                "index": 0,
+                "labels": []
+              }
+            ],
+            "actionInvariants": []
+          }
+        }
+      },
+      "assumeInit": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "snapshotId": 2,
+          "transitionId": 0,
+          "status": "ENABLED"
+        }
+      },
+      "pendingInit": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "trace": {
+            "#meta": {
+              "description": "Created by Apalache",
+              "format": "ITF",
+              "format-description": "https://apalache-mc.org/docs/adr/015adr-trace.html",
+              "varTypes": {
+                "x": "Int"
+              }
+            },
+            "states": [
+              {
+                "#meta": {
+                  "index": 0
+                },
+                "x": {
+                  "#bigint": "0"
+                }
+              }
+            ],
+            "vars": [
+              "x"
+            ]
+          },
+          "state": {
+            "#meta": {
+              "index": 0
+            },
+            "x": {
+              "#bigint": "0"
+            }
+          },
+          "operatorValue": null
+        }
+      },
+      "advanceInit": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "snapshotId": 3,
+          "newStepNo": 1
+        }
+      },
+      "assumeNext": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "snapshotId": 5,
+          "transitionId": 0,
+          "status": "ENABLED"
+        }
+      },
+      "pendingNext": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "trace": {
+            "#meta": {
+              "description": "Created by Apalache",
+              "format": "ITF",
+              "format-description": "https://apalache-mc.org/docs/adr/015adr-trace.html",
+              "varTypes": {
+                "x": "Int"
+              }
+            },
+            "states": [
+              {
+                "#meta": {
+                  "index": 0
+                },
+                "x": {
+                  "#bigint": "0"
+                }
+              },
+              {
+                "#meta": {
+                  "index": 1
+                },
+                "x": {
+                  "#bigint": "1"
+                }
+              }
+            ],
+            "vars": [
+              "x"
+            ]
+          },
+          "state": {
+            "#meta": {
+              "index": 1
+            },
+            "x": {
+              "#bigint": "1"
+            }
+          },
+          "operatorValue": null
+        }
+      },
+      "constrainCurrent": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "snapshotId": 7,
+          "status": "ENABLED"
+        }
+      },
+      "pendingAfterAssertion": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "trace": {
+            "#meta": {
+              "description": "Created by Apalache",
+              "format": "ITF",
+              "format-description": "https://apalache-mc.org/docs/adr/015adr-trace.html",
+              "varTypes": {
+                "x": "Int"
+              }
+            },
+            "states": [
+              {
+                "#meta": {
+                  "index": 0
+                },
+                "x": {
+                  "#bigint": "0"
+                }
+              },
+              {
+                "#meta": {
+                  "index": 1
+                },
+                "x": {
+                  "#bigint": "1"
+                }
+              }
+            ],
+            "vars": [
+              "x"
+            ]
+          },
+          "state": {
+            "#meta": {
+              "index": 1
+            },
+            "x": {
+              "#bigint": "1"
+            }
+          },
+          "operatorValue": null
+        }
+      },
+      "compactPending": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "snapshotId": 8
+        }
+      },
+      "afterCompact": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "trace": {
+            "#meta": {
+              "description": "Created by Apalache",
+              "format": "ITF",
+              "format-description": "https://apalache-mc.org/docs/adr/015adr-trace.html",
+              "varTypes": {
+                "x": "Int"
+              }
+            },
+            "states": [
+              {
+                "#meta": {
+                  "index": 0
+                },
+                "x": {
+                  "#bigint": "1"
+                }
+              }
+            ],
+            "vars": [
+              "x"
+            ]
+          },
+          "state": {
+            "#meta": {
+              "index": 0
+            },
+            "x": {
+              "#bigint": "1"
+            }
+          },
+          "operatorValue": null
+        }
+      },
+      "assumeNextAgain": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "snapshotId": 10,
+          "transitionId": 0,
+          "status": "ENABLED"
+        }
+      },
+      "advanceNext": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "snapshotId": 11,
+          "newStepNo": 2
+        }
+      },
+      "afterAdvance": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "trace": {
+            "#meta": {
+              "description": "Created by Apalache",
+              "format": "ITF",
+              "format-description": "https://apalache-mc.org/docs/adr/015adr-trace.html",
+              "varTypes": {
+                "x": "Int"
+              }
+            },
+            "states": [
+              {
+                "#meta": {
+                  "index": 0
+                },
+                "x": {
+                  "#bigint": "1"
+                }
+              },
+              {
+                "#meta": {
+                  "index": 1
+                },
+                "x": {
+                  "#bigint": "2"
+                }
+              }
+            ],
+            "vars": [
+              "x"
+            ]
+          },
+          "state": {
+            "#meta": {
+              "index": 1
+            },
+            "x": {
+              "#bigint": "2"
+            }
+          },
+          "operatorValue": null
+        }
+      },
+      "excludeOne": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "sessionId": "1",
+          "oldValue": {
+            "#bigint": "2"
+          },
+          "hasOld": "TRUE",
+          "hasNext": "FALSE"
+        }
+      },
+      "queryUnsatOperator": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "error": {
+          "code": -32603,
+          "message": "Failed to evaluate View within 0 seconds"
+        }
+      },
+      "unknownOperator": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "error": {
+          "code": -32603,
+          "message": "Operator not found: Missing"
+        }
+      }
+    }
+  },
+  "shai": {
+    "scala": {
+      "arrays": "success",
+      "funArrays": "success",
+      "json_parse": "success",
+      "load_bad": {
+        "Result": {
+          "Err": {
+            "data": "{\"pass_name\":\"SanyParser\",\"error_data\":[\"Syntax errors:\\n\\n*** Errors: 1\\n\\nIn module Bad\\n\\nCould not parse module Bad from file /tmp/SANY8SRDZOwVPq/sanyimp17291678707150080785/Bad.tla\"],\"exit_code\":255}"
+          }
+        }
+      },
+      "parse": "success",
+      "rows_default": {
+        "data": "{\"pass_name\":\"TypeCheckerSnowcat\",\"error_data\":[[\"RowDefault.tla:2:6-2:27\",\"An operator with the signature ((a, a) => Set(a)) cannot be applied to the provided arguments of type { a: Int } and { b: Int }\"],[\"RowDefault.tla:2:1-2:27\",\"Error when computing the type of R\"]],\"exit_code\":120}"
+      },
+      "rows_explicit": {
+        "data": "{\"pass_name\":\"TypeCheckerSnowcat\",\"error_data\":[[\"RowDefault.tla:2:6-2:27\",\"An operator with the signature ((a, a) => Set(a)) cannot be applied to the provided arguments of type { a: Int } and { b: Int }\"],[\"RowDefault.tla:2:1-2:27\",\"Error when computing the type of R\"]],\"exit_code\":120}"
+      },
+      "syntax_CHECK": {
+        "data": "{\"pass_name\":\"SanyParser\",\"error_data\":[\"Syntax errors:\\n\\n*** Errors: 1\\n\\nIn module Bad\\n\\nCould not parse module Bad from file /tmp/SANY8SRDZOwVPq/sanyimp7122853313557077064/Bad.tla\"],\"exit_code\":255}"
+      },
+      "syntax_PARSE": {
+        "data": "{\"pass_name\":\"SanyParser\",\"error_data\":[\"Syntax errors:\\n\\n*** Errors: 1\\n\\nIn module Bad\\n\\nCould not parse module Bad from file /tmp/SANY8SRDZOwVPq/sanyimp15765346191784118626/Bad.tla\"],\"exit_code\":255}"
+      },
+      "syntax_TYPECHECK": {
+        "data": "{\"pass_name\":\"SanyParser\",\"error_data\":[\"Syntax errors:\\n\\n*** Errors: 1\\n\\nIn module Bad\\n\\nCould not parse module Bad from file /tmp/SANY8SRDZOwVPq/sanyimp10871469221569583696/Bad.tla\"],\"exit_code\":255}"
+      },
+      "uuid_upper": "success"
+    },
+    "go": {
+      "arrays": "success",
+      "funArrays": "success",
+      "json_parse": "success",
+      "load_bad": {
+        "Result": {
+          "Err": {
+            "data": "{\"pass_name\":\"SanyParser\",\"error_data\":[\"Bad.tla:3:1: error E1300: expected expression\"],\"exit_code\":255}"
+          }
+        }
+      },
+      "parse": "success",
+      "rows_default": {
+        "data": "{\"pass_name\":\"TypeCheckerSnowcat\",\"error_data\":[[\"RowDefault.tla:2:6-2:27\",\"An operator with the signature ((a, a) =\\u003e Set(a)) cannot be applied to the provided arguments of type { a: Int } and { b: Int }\"],[\"RowDefault.tla:2:1-2:27\",\"Error when computing the type of R\"]],\"exit_code\":120}"
+      },
+      "rows_explicit": {
+        "data": "{\"pass_name\":\"TypeCheckerSnowcat\",\"error_data\":[[\"RowDefault.tla:2:6-2:27\",\"An operator with the signature ((a, a) =\\u003e Set(a)) cannot be applied to the provided arguments of type { a: Int } and { b: Int }\"],[\"RowDefault.tla:2:1-2:27\",\"Error when computing the type of R\"]],\"exit_code\":120}"
+      },
+      "syntax_CHECK": {
+        "data": "{\"pass_name\":\"SanyParser\",\"error_data\":[\"Bad.tla:3:1: error E1300: expected expression\"],\"exit_code\":255}"
+      },
+      "syntax_PARSE": {
+        "data": "{\"pass_name\":\"SanyParser\",\"error_data\":[\"Bad.tla:3:1: error E1300: expected expression\"],\"exit_code\":255}"
+      },
+      "syntax_TYPECHECK": {
+        "data": "{\"pass_name\":\"SanyParser\",\"error_data\":[\"Bad.tla:3:1: error E1300: expected expression\"],\"exit_code\":255}"
+      },
+      "uuid_upper": "success"
+    }
+  }
+}

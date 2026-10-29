@@ -1,0 +1,42 @@
+{
+  "name": "ApalacheIR",
+  "version": "1.0",
+  "modules": [
+    {
+      "kind": "TlaModule",
+      "name": "BadTypedIR",
+      "declarations": [
+        {
+          "kind": "TlaOperDecl",
+          "name": "Bad",
+          "type": "(() => Int)",
+          "formalParams": [],
+          "isRecursive": false,
+          "body": {
+            "kind": "OperEx",
+            "oper": "PLUS",
+            "type": "Int",
+            "args": [
+              {
+                "kind": "ValEx",
+                "type": "Int",
+                "value": {
+                  "kind": "TlaInt",
+                  "value": 1
+                }
+              },
+              {
+                "kind": "ValEx",
+                "type": "Bool",
+                "value": {
+                  "kind": "TlaBool",
+                  "value": true
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

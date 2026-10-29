@@ -207,7 +207,16 @@ func (translator *ToEtcExpr) translateOperator(expression *OperExpr) (EtcExpr, e
 	case "OPER_APP":
 		callee, ok := args[0].(*NameExpr)
 		if !ok {
-			return nil, fmt.Errorf("expected operator name in application, found %T", args[0])
+			// Typed Quint represents lambdas as LET expressions returning an
+			// operator. Infer the callee as well as its operands, rather than
+			// trusting the imported result tag or requiring a bare name.
+			parameters := make([]Type, len(args)-1)
+			for index := range parameters {
+				parameters[index] = fresh()
+			}
+			result := fresh()
+			signature := append([]Type{mustOperator(parameters, result)}, parameters...)
+			return appAll(mustOperator(signature, result))
 		}
 		translated, err := translator.translateExpressions(args[1:])
 		if err != nil {

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 
 	pal "github.com/glycerine/apalache-go"
@@ -53,6 +54,7 @@ func (service *TransExplorerService) LoadModel(ctx context.Context, request *tra
 	if !shaiUUID.MatchString(id) {
 		return nil, status.Errorf(codes.InvalidArgument, "Invalid RPC request: Connection id %s is not a valid UUID", id)
 	}
+	id = strings.ToLower(id)
 	service.mu.RLock()
 	_, found := service.connections[id]
 	service.mu.RUnlock()
@@ -66,7 +68,7 @@ func (service *TransExplorerService) LoadModel(ctx context.Context, request *tra
 		}}}, nil
 	}
 	if !frontend.OK() {
-		data, _ := json.Marshal(frontend.Diagnostics)
+		data, _ := json.Marshal(frontendFailure(frontend))
 		return &trans.LoadModelResponse{Result: &trans.LoadModelResponse_Err{Err: &trans.TransExplorerError{
 			ErrorType: trans.TransExplorerErrorType_PASS_FAILURE, Data: string(data),
 		}}}, nil

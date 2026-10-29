@@ -377,6 +377,24 @@ func (equality *LazyEquality) recordEqualityCondition(arena *PureArena, left, ri
 		if err != nil {
 			return nil, fmt.Errorf("compare record domains: %w", err)
 		}
+		if equality.stringTag == nil {
+			return nil, fmt.Errorf("legacy record equality has no field-name resolver")
+		}
+		for index, name := range sortedStringKeys(fields) {
+			var memberships []Expr
+			if key, found := equality.stringTag(name); found {
+				for _, pointer := range arena.GetHas(leftDomain) {
+					equal, err := equality.Equal(arena, key, pointer.Element())
+					if err != nil {
+						return nil, err
+					}
+					memberships = append(memberships, booleanAnd(pointer.ToSMT(), equal))
+				}
+			}
+			// A widened static type may reserve storage for a missing key.
+			// Only values whose keys are in the actual domain are observable.
+			conditions[index] = booleanOr(MustOperExpr(Op("NOT"), Typed(BoolT1), booleanOr(memberships...)), conditions[index])
+		}
 		conditions = append([]Expr{domainsEqual}, conditions...)
 	}
 	return booleanAnd(conditions...), nil
