@@ -561,6 +561,125 @@ func TestStratifiedSkolemizedExistentialSupportsAssignments(t *testing.T) {
 	}
 }
 
+func TestStratifiedBooleanScalaSkolemOracleCases(t *testing.T) {
+	setType := mustSet(IntT1)
+	setTag := Typed(setType)
+	binder := NewNameExpr("i", Typed(IntT1))
+	prime := MustOperExpr(Op("PRIME"), Typed(IntT1), NewNameExpr("x", Typed(IntT1)))
+	assignment := func(value Expr) Expr {
+		return MustOperExpr(Op("Apalache!:="), Typed(BoolT1), prime, value)
+	}
+	skolem := func(domain, predicate Expr) Expr {
+		exists := MustOperExpr(Op("EXISTS3"), Typed(BoolT1), binder, domain, predicate)
+		return MustOperExpr(Op("Apalache!Skolem"), Typed(BoolT1), exists)
+	}
+	checkAssignedWitness := func(t *testing.T, expression Expr, expected int64) {
+		t.Helper()
+		rewriter := NewStratifiedRewriter()
+		scope, result, err := rewriter.Rewrite(expression, InitialRewriterScope())
+		if err != nil {
+			t.Fatal(err)
+		}
+		assigned, found := scope.Binding.Get("x'")
+		if !found {
+			t.Fatal("Skolem assignment did not bind x'")
+		}
+		solver := newTestG3Solver(t)
+		encoder, err := EncodeRewriterScope(solver, scope, rewriter.Constraints())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = encoder.Assert(result.NameExpr()); err != nil {
+			t.Fatal(err)
+		}
+		if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTSatisfiable {
+			t.Fatalf("Skolem predicate = %v, %v", status, checkErr)
+		}
+		if err = encoder.Assert(MustOperExpr(Op("NE"), Typed(BoolT1),
+			assigned.NameExpr(), intLiteral(expected))); err != nil {
+			t.Fatal(err)
+		}
+		if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTUnsatisfiable {
+			t.Fatalf("Skolem witness differs from %d = %v, %v", expected, status, checkErr)
+		}
+	}
+
+	t.Run("natural witness assignment", func(t *testing.T) {
+		predicate := MustOperExpr(Op("AND"), Typed(BoolT1),
+			MustOperExpr(Op("EQ"), Typed(BoolT1), binder, intLiteral(10)), assignment(binder))
+		checkAssignedWitness(t, skolem(NewValueExpr(NatSet, setTag), predicate), 10)
+	})
+
+	t.Run("integer range witness assignment", func(t *testing.T) {
+		domain := MustOperExpr(Op("INT_RANGE"), setTag, intLiteral(5), intLiteral(9))
+		predicate := MustOperExpr(Op("AND"), Typed(BoolT1),
+			MustOperExpr(Op("EQ"), Typed(BoolT1),
+				MustOperExpr(Op("MOD"), Typed(IntT1), binder, intLiteral(3)), intLiteral(1)),
+			assignment(binder))
+		checkAssignedWitness(t, skolem(domain, predicate), 7)
+	})
+
+	t.Run("empty assignment condition selects else branch", func(t *testing.T) {
+		empty := MustOperExpr(Op("SET_ENUM"), setTag)
+		condition := skolem(empty, assignment(binder))
+		conditional := MustOperExpr(Op("IF_THEN_ELSE"), Typed(IntT1), condition,
+			prime, intLiteral(0))
+		claim := MustOperExpr(Op("EQ"), Typed(BoolT1), conditional, intLiteral(0))
+		rewriter := NewStratifiedRewriter()
+		scope, result, err := rewriter.Rewrite(claim, InitialRewriterScope())
+		if err != nil {
+			t.Fatal(err)
+		}
+		checkRewrittenTruth(t, rewriter, scope, result, true)
+	})
+
+	t.Run("expanded existential assignments preserve both witnesses", func(t *testing.T) {
+		domain := MustOperExpr(Op("SET_ENUM"), setTag, intLiteral(1), intLiteral(2))
+		exists := MustOperExpr(Op("EXISTS3"), Typed(BoolT1), binder, domain, assignment(binder))
+		rewriter := NewStratifiedRewriter()
+		scope, result, err := rewriter.Rewrite(exists, InitialRewriterScope())
+		if err != nil {
+			t.Fatal(err)
+		}
+		assigned, found := scope.Binding.Get("x'")
+		if !found {
+			t.Fatal("expanded existential did not bind x'")
+		}
+		solver := newTestG3Solver(t)
+		encoder, err := EncodeRewriterScope(solver, scope, rewriter.Constraints())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = encoder.Assert(result.NameExpr()); err != nil {
+			t.Fatal(err)
+		}
+		for _, witness := range []int64{1, 2} {
+			if err = solver.Push(); err != nil {
+				t.Fatal(err)
+			}
+			if err = encoder.Assert(MustOperExpr(Op("EQ"), Typed(BoolT1),
+				assigned.NameExpr(), intLiteral(witness))); err != nil {
+				t.Fatal(err)
+			}
+			if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTSatisfiable {
+				t.Fatalf("existential assignment witness %d = %v, %v", witness, status, checkErr)
+			}
+			if err = solver.Pop(); err != nil {
+				t.Fatal(err)
+			}
+		}
+		allowed := booleanOr(
+			MustOperExpr(Op("EQ"), Typed(BoolT1), assigned.NameExpr(), intLiteral(1)),
+			MustOperExpr(Op("EQ"), Typed(BoolT1), assigned.NameExpr(), intLiteral(2)))
+		if err = encoder.Assert(MustOperExpr(Op("NOT"), Typed(BoolT1), allowed)); err != nil {
+			t.Fatal(err)
+		}
+		if status, checkErr := solver.Check(context.Background()); checkErr != nil || status != SMTUnsatisfiable {
+			t.Fatalf("existential assignment escaped witnesses = %v, %v", status, checkErr)
+		}
+	})
+}
+
 func TestStratifiedSetNonMembership(t *testing.T) {
 	setType := mustSet(IntT1)
 	set := MustOperExpr(Op("SET_ENUM"), Typed(setType), intLiteral(1), intLiteral(2))

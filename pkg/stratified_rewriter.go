@@ -669,6 +669,7 @@ func (rewriter *StratifiedRewriter) rewriteFiniteQuantifier(expression *OperExpr
 	baseBinding := scope.Binding
 	pointers := scope.Arena.GetHas(setCell)
 	terms := make([]Expr, len(pointers))
+	branchBindings := make([]Binding, len(pointers))
 	for index, pointer := range pointers {
 		predicateScope := RewriterScope{Arena: scope.Arena, Binding: baseBinding.With(binder.Name(), pointer.Element())}
 		predicateScope, predicate, rewriteErr := rewriter.Rewrite(arguments[2], predicateScope)
@@ -679,6 +680,7 @@ func (rewriter *StratifiedRewriter) rewriteFiniteQuantifier(expression *OperExpr
 			return scope, ArenaCell{}, fmt.Errorf("bounded quantifier predicate has type %s", predicate.Type)
 		}
 		scope.Arena = predicateScope.Arena
+		branchBindings[index] = predicateScope.Binding
 		if expression.Operator().Name() == "EXISTS3" {
 			terms[index] = booleanAnd(pointer.ToSMT(), predicate.NameExpr())
 		} else {
@@ -691,6 +693,40 @@ func (rewriter *StratifiedRewriter) rewriteFiniteQuantifier(expression *OperExpr
 		condition = booleanOr(terms...)
 	}
 	scope, result := rewriter.bindBoolean(scope, condition)
+	// An assignment in an expanded existential belongs to the selected
+	// witness. Preserve it as a nondeterministic choice among precisely the
+	// satisfying branches. Scala used to reject this case before reaching the
+	// assertions below; retaining the branch relation gives the intended
+	// action semantics without imposing an arbitrary first-witness policy.
+	if expression.Operator().Name() == "EXISTS3" && len(branchBindings) != 0 {
+		for name, first := range branchBindings[0].Map() {
+			if _, existed := baseBinding.Get(name); existed || name == binder.Name() {
+				continue
+			}
+			allBranches := true
+			for _, binding := range branchBindings {
+				candidate, found := binding.Get(name)
+				if !found || !EqualCellTypes(candidate.Type, first.Type) {
+					allBranches = false
+					break
+				}
+			}
+			if !allBranches || !isDirectSMTCellType(first.Type) {
+				continue
+			}
+			newArena, selected := scope.Arena.AppendCellType(first.Type)
+			scope.Arena = newArena
+			choices := make([]Expr, len(branchBindings))
+			for index, binding := range branchBindings {
+				candidate, _ := binding.Get(name)
+				choices[index] = booleanAnd(terms[index], MustOperExpr(Op("EQ"), Typed(BoolT1),
+					selected.NameExpr(), candidate.NameExpr()))
+			}
+			rewriter.assert(MustOperExpr(Op("IMPLIES"), Typed(BoolT1),
+				result.NameExpr(), booleanOr(choices...)))
+			scope.Binding = scope.Binding.With(name, selected)
+		}
+	}
 	return scope, result, nil
 }
 
