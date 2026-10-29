@@ -1,5 +1,40 @@
 package apalache
 
+func projectedTransitionEnabledness(
+	transitions []Expr,
+	actionConstraints, stateConstraints []namedExpression,
+	variables []*VarDecl,
+) []Expr {
+	variableNames := make(map[string]struct{}, len(variables))
+	for _, variable := range variables {
+		variableNames[variable.Name()] = struct{}{}
+	}
+	constraints := make([]Expr, 0, len(actionConstraints)+len(stateConstraints))
+	for _, constraint := range actionConstraints {
+		constraints = append(constraints, constraint.expression)
+	}
+	for _, constraint := range stateConstraints {
+		primed := MustOperExpr(Op("PRIME"), constraint.expression.Tag(), constraint.expression)
+		constraints = append(constraints, PropagatePrimes(nil, variableNames)(primed))
+	}
+	projected := make([]Expr, len(transitions))
+	for index, transition := range transitions {
+		combined := transition
+		if len(constraints) != 0 {
+			arguments := make([]Expr, 0, len(constraints)+1)
+			arguments = append(arguments, transition)
+			arguments = append(arguments, constraints...)
+			combined = booleanAnd(arguments...)
+		}
+		var exact bool
+		projected[index], exact = transitionEnabledProjection(combined)
+		if !exact {
+			return nil
+		}
+	}
+	return projected
+}
+
 // transitionEnabledProjection removes deterministic assignments from a
 // normalized transition while retaining the state predicate under which the
 // assignment can fire. The Boolean result is exact only for the deliberately

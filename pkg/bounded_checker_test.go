@@ -633,6 +633,55 @@ Next == \E j \in x..0: x' = j
 	}
 }
 
+func TestCheckBoundedSafetyProjectsConstrainedDeadlocks(t *testing.T) {
+	for _, test := range []struct {
+		name, next, constraint, constraintName string
+		field                                  func(*SpecificationConfiguration) *[]string
+	}{
+		{name: "action", next: "x' = x", constraint: "ActionOK == x' = 0", constraintName: "ActionOK",
+			field: func(configuration *SpecificationConfiguration) *[]string { return &configuration.ActionConstraints }},
+		{name: "target-state", next: "x' = x + 1", constraint: "StateOK == x <= 1", constraintName: "StateOK",
+			field: func(configuration *SpecificationConfiguration) *[]string { return &configuration.StateConstraints }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			source := `---- MODULE ConstrainedProjection ----
+EXTENDS Integers
+VARIABLE
+\* @type: Int;
+x
+Init == \E i \in {0, 1}: x = i
+Next == ` + test.next + `
+` + test.constraint + `
+====
+`
+			frontend := ParseAndTypeCheckSource(context.Background(), "ConstrainedProjection.tla", source,
+				FrontendOptions{}, TypeCheckOptions{})
+			if !frontend.OK() {
+				t.Fatalf("frontend diagnostics = %v", frontend.Diagnostics)
+			}
+			configuration := SpecificationConfiguration{Behavior: InitNextSpec{Init: "Init", Next: "Next"}}
+			*test.field(&configuration) = []string{test.constraintName}
+			prepared, err := PrepareSafetyTransitions(frontend.Native, SafetyPipelineOptions{
+				Specification: configuration, Sources: frontend.Sources,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Outcome != SafetyDeadlock || len(result.States) != 1 {
+				t.Fatalf("constrained deadlock = %#v", result)
+			}
+			value, formatErr := FormatTLAExpression(result.States[0].Values["x"])
+			if formatErr != nil || value != "1" {
+				t.Fatalf("constrained deadlocked state x = %q, %v", value, formatErr)
+			}
+		})
+	}
+}
+
 func TestCheckBoundedSafetyEnforcesConfiguredConstraints(t *testing.T) {
 	for _, test := range []struct {
 		name              string

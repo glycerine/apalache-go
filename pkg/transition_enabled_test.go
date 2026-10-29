@@ -41,3 +41,17 @@ func TestTransitionEnabledProjectionRefusesUneliminatedWitnessPredicate(t *testi
 		t.Fatalf("nontrivial witness projection = %v, exact=%t", projected, exact)
 	}
 }
+
+func TestProjectedTransitionEnablednessIncludesActionAndTargetConstraints(t *testing.T) {
+	x := NewNameExpr("x", Typed(IntT1))
+	prime := MustOperExpr(Op("PRIME"), Typed(IntT1), NewNameExpr("x", Typed(IntT1)))
+	transition := MustOperExpr(Op("Apalache!:="), Typed(BoolT1), prime, x)
+	action := namedExpression{expression: MustOperExpr(Op("LE"), Typed(BoolT1), x, intLiteral(1))}
+	target := namedExpression{expression: MustOperExpr(Op("EQ"), Typed(BoolT1), x, intLiteral(0))}
+	projected := projectedTransitionEnabledness([]Expr{transition}, []namedExpression{action}, []namedExpression{target},
+		[]*VarDecl{NewVarDecl("x", Typed(IntT1))})
+	if len(projected) != 1 || expressionContainsPrime(projected[0]) ||
+		countOperator(projected[0], "LE") != 1 || countOperator(projected[0], "EQ") != 1 {
+		t.Fatalf("constrained enabledness = %v", projected)
+	}
+}

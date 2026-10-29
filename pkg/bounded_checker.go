@@ -113,15 +113,6 @@ func CheckBoundedSafetyWithOptions(
 		return BoundedSafetyResult{}, fmt.Errorf("module has no normalized initial transitions")
 	}
 	nextTransitions := TransitionsFromModule(module, NormalizedNextPrefix)
-	nextEnabled := make([]Expr, len(nextTransitions))
-	for index, transition := range nextTransitions {
-		var exact bool
-		nextEnabled[index], exact = transitionEnabledProjection(transition)
-		if !exact {
-			nextEnabled = nil
-			break
-		}
-	}
 	var stateInvariants []namedExpression
 	var actionInvariants []namedExpression
 	var traceInvariants []namedTraceInvariant
@@ -220,6 +211,7 @@ func CheckBoundedSafetyWithOptions(
 	if err != nil {
 		return BoundedSafetyResult{}, err
 	}
+	nextEnabled := projectedTransitionEnabledness(nextTransitions, actionConstraints, stateConstraints, module.VarDeclarations())
 	constants := declarationNameSlice(module.ConstDeclarations())
 	variables := declarationNameSlice(module.VarDeclarations())
 	variableDeclarations := module.VarDeclarations()
@@ -619,7 +611,7 @@ func searchSafetyPath(
 			*children = append(*children, child)
 		}
 	}
-	if inputs.checkDeadlocks && inputs.nextEnabled != nil && len(inputs.stateConstraints) == 0 && len(inputs.actionConstraints) == 0 {
+	if inputs.checkDeadlocks && inputs.nextEnabled != nil {
 		enabled := make([]Expr, 0, len(inputs.nextEnabled))
 		for number, expression := range inputs.nextEnabled {
 			if inputs.tuning.allowsTransition(len(path.next)+1, number) {
