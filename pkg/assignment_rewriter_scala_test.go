@@ -138,4 +138,155 @@ func TestStratifiedAssignmentScalaScalarAndSetOracleCases(t *testing.T) {
 		checkCandidates(t, skolem(binder, domain, assignment("x", setInt, binder)),
 			[]Expr{set12, set23, set13}, []bool{true, true, false})
 	})
+
+	t.Run("filtered set assignment respects structural equality", func(t *testing.T) {
+		setInt := mustSet(IntT1)
+		set12 := set(IntT1, intLiteral(1), intLiteral(2))
+		set23WithDuplicate := set(IntT1,
+			MustOperExpr(Op("PLUS"), Typed(IntT1), intLiteral(1), intLiteral(1)),
+			intLiteral(2), intLiteral(3))
+		set23 := set(IntT1, intLiteral(2), intLiteral(3))
+		set13 := set(IntT1, intLiteral(1), intLiteral(3))
+		filterBinder := NewNameExpr("u", Typed(setInt))
+		domain := MustOperExpr(Op("SET_FILTER"), Typed(mustSet(setInt)), filterBinder,
+			set(setInt, set12, set23WithDuplicate),
+			MustOperExpr(Op("NE"), Typed(BoolT1), filterBinder, set23))
+		binder := NewNameExpr("t", Typed(setInt))
+		checkCandidates(t, skolem(binder, domain, assignment("x", setInt, binder)),
+			[]Expr{set12, set13, set23}, []bool{true, false, false})
+	})
+
+	t.Run("powerset assignment admits exactly the four subsets", func(t *testing.T) {
+		setInt := mustSet(IntT1)
+		binder := NewNameExpr("t", Typed(setInt))
+		set12 := set(IntT1, intLiteral(1), intLiteral(2))
+		domain := MustOperExpr(Op("SET_POWERSET"), Typed(mustSet(setInt)), set12)
+		checkCandidates(t, skolem(binder, domain, assignment("x", setInt, binder)), []Expr{
+			set(IntT1), set(IntT1, intLiteral(1)), set(IntT1, intLiteral(2)), set12,
+			set(IntT1, intLiteral(1), intLiteral(2), intLiteral(3)),
+		}, []bool{true, true, true, true, false})
+	})
+
+	t.Run("enumerated function assignment chooses exactly the domain", func(t *testing.T) {
+		functionType := mustFun(BoolT1, IntT1)
+		constructor := func(value int64, binderName string) Expr {
+			binder := NewNameExpr(binderName, Typed(BoolT1))
+			return MustOperExpr(Op("FUN_CTOR"), Typed(functionType), intLiteral(value), binder,
+				NewValueExpr(BoolSet, Typed(mustSet(BoolT1))))
+		}
+		fun0, fun1, fun2 := constructor(0, "b0"), constructor(1, "b1"), constructor(2, "b2")
+		binder := NewNameExpr("t", Typed(functionType))
+		domain := set(functionType, fun0, fun1)
+		checkCandidates(t, skolem(binder, domain, assignment("x", functionType, binder)),
+			[]Expr{fun0, fun1, fun2}, []bool{true, true, false})
+	})
+
+	t.Run("tuple assignment preserves correlated fields", func(t *testing.T) {
+		setInt := mustSet(IntT1)
+		tupleType, err := NewTupleType(IntT1, BoolT1, setInt)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tuple := func(integer int64, boolean bool, elements ...int64) Expr {
+			setElements := make([]Expr, len(elements))
+			for index, element := range elements {
+				setElements[index] = intLiteral(element)
+			}
+			return MustOperExpr(Op("TUPLE"), Typed(tupleType), intLiteral(integer), boolExpr(boolean),
+				set(IntT1, setElements...))
+		}
+		first := tuple(1, false, 1, 3)
+		second := tuple(2, true, 4)
+		outside := tuple(1, true, 4)
+		binder := NewNameExpr("t", Typed(tupleType))
+		checkCandidates(t, skolem(binder, set(tupleType, first, second), assignment("x", tupleType, binder)),
+			[]Expr{first, second, outside}, []bool{true, true, false})
+	})
+
+	t.Run("finite function-set assignment preserves result alternatives", func(t *testing.T) {
+		functionType := mustFun(BoolT1, IntT1)
+		constructor := func(value int64, name string) Expr {
+			binder := NewNameExpr(name, Typed(BoolT1))
+			return MustOperExpr(Op("FUN_CTOR"), Typed(functionType), intLiteral(value), binder,
+				NewValueExpr(BoolSet, Typed(mustSet(BoolT1))))
+		}
+		functionSet := MustOperExpr(Op("FUN_SET"), Typed(mustSet(functionType)),
+			NewValueExpr(BoolSet, Typed(mustSet(BoolT1))), set(IntT1, intLiteral(0), intLiteral(1)))
+		binder := NewNameExpr("t", Typed(functionType))
+		checkCandidates(t, skolem(binder, functionSet, assignment("x", functionType, binder)),
+			[]Expr{constructor(0, "b0"), constructor(1, "b1"), constructor(2, "b2")},
+			[]bool{true, true, false})
+	})
+
+	t.Run("empty-domain function set still supplies its unique function", func(t *testing.T) {
+		functionType := mustFun(IntT1, IntT1)
+		functionSet := MustOperExpr(Op("FUN_SET"), Typed(mustSet(functionType)),
+			set(IntT1), set(IntT1, intLiteral(0), intLiteral(1)))
+		binder := NewNameExpr("t", Typed(functionType))
+		rewriter := NewStratifiedRewriter()
+		scope, result, err := rewriter.Rewrite(
+			skolem(binder, functionSet, assignment("x", functionType, binder)), InitialRewriterScope())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !scope.Binding.Contains("x'") {
+			t.Fatal("empty-domain function assignment dropped x'")
+		}
+		checkRewrittenTruth(t, rewriter, scope, result, true)
+	})
+
+	t.Run("finite Boolean-valued function set supplies a witness", func(t *testing.T) {
+		functionType := mustFun(IntT1, BoolT1)
+		domain := MustOperExpr(Op("INT_RANGE"), Typed(mustSet(IntT1)), intLiteral(0),
+			MustOperExpr(Op("MINUS"), Typed(IntT1), intLiteral(5), intLiteral(1)))
+		functionSet := MustOperExpr(Op("FUN_SET"), Typed(mustSet(functionType)), domain,
+			NewValueExpr(BoolSet, Typed(mustSet(BoolT1))))
+		binder := NewNameExpr("t", Typed(functionType))
+		rewriter := NewStratifiedRewriter()
+		scope, result, err := rewriter.Rewrite(
+			skolem(binder, functionSet, assignment("x", functionType, binder)), InitialRewriterScope())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !scope.Binding.Contains("x'") {
+			t.Fatal("finite function assignment dropped x'")
+		}
+		checkRewrittenTruth(t, rewriter, scope, result, true)
+	})
+
+	for _, codomain := range []struct {
+		name string
+		set  Expr
+	}{
+		{name: "Nat", set: NewValueExpr(NatSet, Typed(mustSet(IntT1)))},
+		{name: "Int", set: NewValueExpr(IntSet, Typed(mustSet(IntT1)))},
+	} {
+		t.Run("integer-valued function assignment over "+codomain.name, func(t *testing.T) {
+			functionType := mustFun(IntT1, IntT1)
+			domain := MustOperExpr(Op("INT_RANGE"), Typed(mustSet(IntT1)), intLiteral(0), intLiteral(4))
+			functionSet := MustOperExpr(Op("FUN_SET"), Typed(mustSet(functionType)), domain, codomain.set)
+			binder := NewNameExpr("t", Typed(functionType))
+			rewriter := NewStratifiedRewriter()
+			scope, result, err := rewriter.Rewrite(
+				skolem(binder, functionSet, assignment("x", functionType, binder)), InitialRewriterScope())
+			if err != nil {
+				t.Fatal(err)
+			}
+			assigned, found := scope.Binding.Get("x'")
+			if !found {
+				t.Fatal("integer function assignment dropped x'")
+			}
+			var claim Expr = result.NameExpr()
+			if codomain.name == "Nat" {
+				application := MustOperExpr(Op("FUN_APP"), Typed(IntT1), assigned.NameExpr(), intLiteral(1))
+				claim = booleanAnd(claim,
+					MustOperExpr(Op("GE"), Typed(BoolT1), application, intLiteral(0)))
+			}
+			scope, checked, err := rewriter.Rewrite(claim, scope)
+			if err != nil {
+				t.Fatal(err)
+			}
+			checkRewrittenTruth(t, rewriter, scope, checked, true)
+		})
+	}
 }
