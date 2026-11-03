@@ -4,6 +4,8 @@ github.com/glycerine/g3/pkg v0.0.9 h1:KYi9z+BLpFZwUSBll951PzBwlthi58qNxETtSHTx52
 github.com/glycerine/g3/pkg v0.0.9/go.mod h1:XHZ8onQk90qifubbr11sA/3BnEDqL9hxQP1wrAyxbIQ=
 github.com/glycerine/g3/pkg v0.0.10 h1:emODLBE7Y8EQcdfEYtmuMoPfFb3T+L4okpkLd1+6Crc=
 github.com/glycerine/g3/pkg v0.0.10/go.mod h1:XHZ8onQk90qifubbr11sA/3BnEDqL9hxQP1wrAyxbIQ=
+github.com/glycerine/g3/pkg v0.0.12 h1:nSMKllPzE+YEiKBAL514FsZZ8CsrSMcVNwVPv5rBvzY=
+github.com/glycerine/g3/pkg v0.0.12/go.mod h1:XHZ8onQk90qifubbr11sA/3BnEDqL9hxQP1wrAyxbIQ=
 github.com/glycerine/insdict v0.14.6 h1:WK6fjhNICdcYBUtu25I/shHn0zPMl2kGjK9N/6MR/cs=
 github.com/glycerine/insdict v0.14.6/go.mod h1:TqTjrFgLW84SYT7b865Zs4hGPwMExvVekNC6nUGNLI0=
 github.com/glycerine/rbtree v0.2.2 h1:Xp8mUtk2+7Tzcp+as08yFS1/MBm/MeZqE5cFvEUT27k=
