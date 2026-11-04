@@ -14,6 +14,7 @@ const (
 	ITFMetaField                   = "#meta"
 	ITFVarTypesField               = "varTypes"
 	ITFVarsField                   = "vars"
+	ITFLoopField                   = "loop"
 	ITFParamsField                 = "params"
 	ITFStatesField                 = "states"
 	ITFDescriptionField            = "description"
@@ -70,10 +71,52 @@ func MarshalDecodedTraceITF(module *Module, states []DecodedState, options ITFOp
 		}
 		trace = append(trace, values)
 	}
-	return MarshalITFTrace(module, trace, options)
+	loop, err := lassoLoopIndex(states)
+	if err != nil {
+		return nil, err
+	}
+	return marshalITFTraceWithLoop(module, trace, options, loop)
+}
+
+// lassoLoopIndex returns the decoded index of the state the lasso returns to.
+// The temporal loop encoding sets __InLoop from the loop-entry state onward, so
+// the loop index is the first state where __InLoop holds. A trace whose
+// __InLoop values are absent, never true, or not true through the last state is
+// not a lasso, and reports no index.
+func lassoLoopIndex(states []DecodedState) (*int, error) {
+	first := -1
+	for index, state := range states {
+		value, present := state.Values[TemporalInLoopName]
+		if !present {
+			return nil, nil
+		}
+		constant, ok := value.(*ValueExpr)
+		if !ok {
+			return nil, fmt.Errorf("state %d: %s is not a literal", index, TemporalInLoopName)
+		}
+		boolean, ok := constant.Value().(BoolValue)
+		if !ok {
+			return nil, fmt.Errorf("state %d: %s is not a boolean", index, TemporalInLoopName)
+		}
+		if boolean.Bool() {
+			if first < 0 {
+				first = index
+			}
+		} else if first >= 0 {
+			return nil, nil
+		}
+	}
+	if first < 0 {
+		return nil, nil
+	}
+	return &first, nil
 }
 
 func MarshalITFTrace(module *Module, states []TraceState, options ITFOptions) ([]byte, error) {
+	return marshalITFTraceWithLoop(module, states, options, nil)
+}
+
+func marshalITFTraceWithLoop(module *Module, states []TraceState, options ITFOptions, loop *int) ([]byte, error) {
 	if module == nil {
 		return nil, fmt.Errorf("cannot encode trace for nil module")
 	}
@@ -135,6 +178,9 @@ func MarshalITFTrace(module *Module, states []TraceState, options ITFOptions) ([
 		encodedStates[index] = encoded
 	}
 	root[ITFStatesField] = encodedStates
+	if loop != nil {
+		root[ITFLoopField] = *loop
+	}
 	return json.Marshal(root)
 }
 

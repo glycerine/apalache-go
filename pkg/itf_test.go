@@ -495,3 +495,35 @@ func mustConstType(t *testing.T, name string) ConstType {
 	}
 	return typ
 }
+
+func TestLassoLoopIndexFromTemporalLoopFlag(t *testing.T) {
+	flag := func(value bool) Expr { return NewValueExpr(BoolValue(value), Typed(BoolT1)) }
+	state := func(inLoop ...bool) DecodedState {
+		values := map[string]Expr{}
+		if len(inLoop) > 0 {
+			values[TemporalInLoopName] = flag(inLoop[0])
+		}
+		return DecodedState{Values: values}
+	}
+	cases := []struct {
+		name   string
+		states []DecodedState
+		want   *int
+	}{
+		{"no loop encoding", []DecodedState{state(), state()}, nil},
+		{"never entered", []DecodedState{state(false), state(false)}, nil},
+		{"entered at state two", []DecodedState{state(false), state(false), state(true), state(true)}, intPtr(2)},
+		{"exits loop", []DecodedState{state(false), state(true), state(false)}, nil},
+	}
+	for _, tc := range cases {
+		got, err := lassoLoopIndex(tc.states)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if (got == nil) != (tc.want == nil) || (got != nil && *got != *tc.want) {
+			t.Fatalf("%s: loop = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+func intPtr(value int) *int { return &value }
