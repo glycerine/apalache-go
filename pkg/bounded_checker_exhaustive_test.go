@@ -74,15 +74,11 @@ func exhaustiveGraphViolationDepth(init, edges, invariant uint64, stateCount, bo
 	return -1
 }
 
+// exhaustiveGraphDeadlockDepth follows the Scala checker's deadlock rule: a
+// deadlock is reported at bound n iff no execution of exactly n transitions
+// exists from init. The reported depth is the shallowest reachable stuck state.
 func exhaustiveGraphDeadlockDepth(init, edges uint64, stateCount, bound int) int {
-	reachable := init
-	rowMask := uint64(1<<stateCount) - 1
-	for depth := 0; depth <= bound; depth++ {
-		for state := 0; state < stateCount; state++ {
-			if reachable&(1<<state) != 0 && edges&(rowMask<<(state*stateCount)) == 0 {
-				return depth
-			}
-		}
+	successors := func(reachable uint64) uint64 {
 		next := uint64(0)
 		for from := 0; from < stateCount; from++ {
 			if reachable&(1<<from) == 0 {
@@ -94,7 +90,24 @@ func exhaustiveGraphDeadlockDepth(init, edges uint64, stateCount, bound int) int
 				}
 			}
 		}
-		reachable = next
+		return next
+	}
+	rowMask := uint64(1<<stateCount) - 1
+	// reachableAt[d] holds the states reached by executions of exactly d transitions.
+	reachableAt := make([]uint64, bound+1)
+	reachableAt[0] = init
+	for depth := 1; depth <= bound; depth++ {
+		reachableAt[depth] = successors(reachableAt[depth-1])
+	}
+	if reachableAt[bound] != 0 {
+		return -1
+	}
+	for depth := 0; depth <= bound; depth++ {
+		for state := 0; state < stateCount; state++ {
+			if reachableAt[depth]&(1<<state) != 0 && edges&(rowMask<<(state*stateCount)) == 0 {
+				return depth
+			}
+		}
 	}
 	return -1
 }

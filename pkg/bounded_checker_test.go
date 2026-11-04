@@ -438,10 +438,10 @@ func TestCheckBoundedSafetyDetectsAndCanIgnoreDeadlocks(t *testing.T) {
 	}
 }
 
-// Regression for apalache-mc/apalache#712. The legacy Scala checker can miss
-// the x = 1 deadlock because another branch has an infinite continuation.
-// The bounded search must check each reachable branch independently.
-func TestCheckBoundedSafetyDetectsDeadlockAlongOneOfSeveralBranches(t *testing.T) {
+// Regression for apalache-mc/apalache#712. From x=0 one branch always reaches
+// another even state, so an execution of every length exists. Scala reports no
+// deadlock at any bound (verified at lengths 0-4), and Go must agree.
+func TestCheckBoundedSafetyContinuingBranchSuppressesDeadlock(t *testing.T) {
 	frontend := ParseAndTypeCheckSource(context.Background(), "Deadlock712.tla", `---- MODULE Deadlock712 ----
 EXTENDS Integers
 \* @type: Int;
@@ -466,12 +466,8 @@ Next == A \/ B
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Outcome != SafetyDeadlock || result.Depth != 1 || len(result.States) != 2 {
-		t.Fatalf("branch-local deadlock result = %#v", result)
-	}
-	value, err := FormatTLAExpression(result.States[1].Values["x"])
-	if err != nil || value != "1" {
-		t.Fatalf("deadlocked state x = %q, %v", value, err)
+	if result.Outcome != SafetyNoCounterexample {
+		t.Fatalf("branch-local result = %#v; Scala reports no deadlock at any length", result)
 	}
 }
 
@@ -497,14 +493,15 @@ Next == \E i \in {0, 1, 2, 3}: i > x /\ x' = i
 	if transitions := TransitionsFromModule(prepared.Module, NormalizedNextPrefix); len(transitions) != 4 {
 		t.Fatalf("normalized existential transitions = %d, want 4", len(transitions))
 	}
-	result, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, 1)
+	// Scala: OK at lengths 0-3, deadlock at length 4 (the chain 0->1->2->3 stops).
+	result, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, 4)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Outcome != SafetyDeadlock || result.Depth != 1 || len(result.States) != 2 {
+	if result.Outcome != SafetyDeadlock || result.Depth+1 != len(result.States) {
 		t.Fatalf("existential deadlock result = %#v", result)
 	}
-	value, err := FormatTLAExpression(result.States[1].Values["x"])
+	value, err := FormatTLAExpression(result.States[len(result.States)-1].Values["x"])
 	if err != nil || value != "3" {
 		t.Fatalf("existential deadlocked state x = %q, %v", value, err)
 	}
@@ -532,14 +529,15 @@ Next == \E i \in 0..3: i > x /\ x' = i
 	if transitions := TransitionsFromModule(prepared.Module, NormalizedNextPrefix); len(transitions) != 4 {
 		t.Fatalf("normalized integer-range existential transitions = %d, want 4", len(transitions))
 	}
-	result, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, 1)
+	// Scala: OK at lengths 0-3, deadlock at length 4.
+	result, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, 4)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Outcome != SafetyDeadlock || result.Depth != 1 || len(result.States) != 2 {
+	if result.Outcome != SafetyDeadlock || result.Depth+1 != len(result.States) {
 		t.Fatalf("symbolic existential deadlock result = %#v", result)
 	}
-	value, err := FormatTLAExpression(result.States[1].Values["x"])
+	value, err := FormatTLAExpression(result.States[len(result.States)-1].Values["x"])
 	if err != nil || value != "3" {
 		t.Fatalf("symbolic existential deadlocked state x = %q, %v", value, err)
 	}
@@ -582,7 +580,7 @@ VARIABLE
 \* @type: Int;
 x
 Init == x = 0
-Next == x < 2 /\ \E i \in x..(x + 2): x' = i
+Next == x < 2 /\ \E i \in (x + 1)..(x + 2): x' = i
 ====
 `, FrontendOptions{}, TypeCheckOptions{})
 	if !frontend.OK() {
@@ -595,18 +593,19 @@ Next == x < 2 /\ \E i \in x..(x + 2): x' = i
 	if err != nil {
 		t.Fatal(err)
 	}
-	if transitions := TransitionsFromModule(prepared.Module, NormalizedNextPrefix); len(transitions) != 3 {
-		t.Fatalf("fixed-width symbolic-range transitions = %d, want 3", len(transitions))
+	if transitions := TransitionsFromModule(prepared.Module, NormalizedNextPrefix); len(transitions) != 2 {
+		t.Fatalf("fixed-width symbolic-range transitions = %d, want 2", len(transitions))
 	}
-	result, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, 1)
+	result, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, 3)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Outcome != SafetyDeadlock || result.Depth != 1 || len(result.States) != 2 {
+	if result.Outcome != SafetyDeadlock {
 		t.Fatalf("fixed-width symbolic-range deadlock = %#v", result)
 	}
-	value, err := FormatTLAExpression(result.States[1].Values["x"])
-	if err != nil || value != "2" {
+	last := result.States[len(result.States)-1]
+	value, err := FormatTLAExpression(last.Values["x"])
+	if err != nil || (value != "2" && value != "3") {
 		t.Fatalf("deadlocked state x = %q, %v", value, err)
 	}
 }
@@ -617,7 +616,7 @@ EXTENDS Integers
 VARIABLE
 \* @type: Int;
 x
-Init == \E i \in {0, 1}: x = i
+Init == x = 1
 Next == \E j \in x..0: x' = j
 ====
 `, FrontendOptions{}, TypeCheckOptions{})
@@ -631,7 +630,7 @@ Next == \E j \in x..0: x' = j
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, 0)
+	result, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -648,10 +647,17 @@ func TestCheckBoundedSafetyProjectsConstrainedDeadlocks(t *testing.T) {
 	for _, test := range []struct {
 		name, next, constraint, constraintName string
 		field                                  func(*SpecificationConfiguration) *[]string
+		bound                                  int
+		deadlock                               bool
 	}{
-		{name: "action", next: "x' = x", constraint: "ActionOK == x' = 0", constraintName: "ActionOK",
+		// From x=0 the constrained self-step x'=0 repeats forever, so Scala
+		// reports no deadlock at length 1.
+		{name: "action", next: "x' = x", constraint: "ActionOK == x' = 0", constraintName: "ActionOK", bound: 1,
 			field: func(configuration *SpecificationConfiguration) *[]string { return &configuration.ActionConstraints }},
+		// From x=0 the only execution reaches x=1; no two-step execution exists,
+		// so Scala reports a deadlock at length 2.
 		{name: "target-state", next: "x' = x + 1", constraint: "StateOK == x <= 1", constraintName: "StateOK",
+			bound: 2, deadlock: true,
 			field: func(configuration *SpecificationConfiguration) *[]string { return &configuration.StateConstraints }},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -678,14 +684,20 @@ Next == ` + test.next + `
 			if err != nil {
 				t.Fatal(err)
 			}
-			result, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, 0)
+			result, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, test.bound)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if result.Outcome != SafetyDeadlock || len(result.States) != 1 {
+			if !test.deadlock {
+				if result.Outcome != SafetyNoCounterexample {
+					t.Fatalf("constrained bound %d outcome = %#v, want no counterexample", test.bound, result)
+				}
+				return
+			}
+			if result.Outcome != SafetyDeadlock {
 				t.Fatalf("constrained deadlock = %#v", result)
 			}
-			value, formatErr := FormatTLAExpression(result.States[0].Values["x"])
+			value, formatErr := FormatTLAExpression(result.States[len(result.States)-1].Values["x"])
 			if formatErr != nil || value != "1" {
 				t.Fatalf("constrained deadlocked state x = %q, %v", value, formatErr)
 			}
@@ -713,14 +725,14 @@ Next == \E j \in 0..(x - x + 1): x' = j /\ (j + 1 > x + 1 \/ j < 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, 0)
+	result, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Outcome != SafetyDeadlock || len(result.States) != 1 {
+	if result.Outcome != SafetyDeadlock {
 		t.Fatalf("integer-witness deadlock = %#v", result)
 	}
-	value, formatErr := FormatTLAExpression(result.States[0].Values["x"])
+	value, formatErr := FormatTLAExpression(result.States[len(result.States)-1].Values["x"])
 	if formatErr != nil || value != "1" {
 		t.Fatalf("integer-witness deadlocked state x = %q, %v", value, formatErr)
 	}
@@ -732,7 +744,7 @@ EXTENDS Integers
 VARIABLE
 \* @type: Int;
 x
-Init == \E i \in {0, 1}: x = i
+Init == x = 1
 Next == \E j \in 0..2: x' = 0 /\ 2 * j = x
 ====
 `, FrontendOptions{}, TypeCheckOptions{})
@@ -746,7 +758,7 @@ Next == \E j \in 0..2: x' = 0 /\ 2 * j = x
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, 0)
+	result, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -765,7 +777,7 @@ EXTENDS Integers
 VARIABLE
 \* @type: Int;
 x
-Init == \E i \in {2, 4}: x = i
+Init == x = 2
 Next == x' = 0 /\ \E j \in 0..2: j * j = x
 ====
 `, FrontendOptions{}, TypeCheckOptions{})
@@ -779,7 +791,7 @@ Next == x' = 0 /\ \E j \in 0..2: j * j = x
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, 0)
+	result, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -798,7 +810,7 @@ EXTENDS Integers
 VARIABLE
 \* @type: Int;
 x
-Init == \E i \in {2, 4}: x = i
+Init == x = 2
 Next == x' = 0 /\ \E j \in 0..x: j * j = x
 ====
 `, FrontendOptions{}, TypeCheckOptions{})
@@ -812,7 +824,7 @@ Next == x' = 0 /\ \E j \in 0..x: j * j = x
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, 0)
+	result, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -834,7 +846,7 @@ x
 VARIABLE
 \* @type: Bool;
 flag
-Init == flag = TRUE /\ \E i \in {2, 4}: x = i
+Init == flag = TRUE /\ x = 2
 Next == x' = 0 /\ flag' = flag /\ \E j \in 0..x: (j * j = x) <=> flag
 ====
 `, FrontendOptions{}, TypeCheckOptions{})
@@ -848,7 +860,7 @@ Next == x' = 0 /\ flag' = flag /\ \E j \in 0..x: (j * j = x) <=> flag
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, 0)
+	result, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -867,7 +879,7 @@ EXTENDS Integers
 VARIABLE
 \* @type: Int;
 x
-Init == \E n \in {2, 4}: x = n
+Init == x = 2
 Next == x' = 0 /\ \E i \in 0..x: \E j \in 0..i: j * j = x
 ====
 `, FrontendOptions{}, TypeCheckOptions{})
@@ -881,7 +893,7 @@ Next == x' = 0 /\ \E i \in 0..x: \E j \in 0..i: j * j = x
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, 0)
+	result, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -900,7 +912,7 @@ EXTENDS Integers
 VARIABLE
 \* @type: Int;
 x
-Init == \E i \in {0, 1}: x = i
+Init == x = 1
 Next == ((x = 0 /\ x' = 0) \/ (x = 1 /\ x' = 2)) /\ x' < 1
 ====
 `, FrontendOptions{}, TypeCheckOptions{})
@@ -914,7 +926,7 @@ Next == ((x = 0 /\ x' = 0) \/ (x = 1 /\ x' = 2)) /\ x' < 1
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, 0)
+	result, err := CheckBoundedSafety(context.Background(), prepared.Module, prepared.Predicates, 1)
 	if err != nil {
 		t.Fatal(err)
 	}

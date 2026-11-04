@@ -59,6 +59,17 @@ type BoundedSafetyResult struct {
 	Counterexamples    []BoundedCounterexample
 	ExampleStates      []DecodedState
 	initialStateFound  bool
+	// fullLengthFound records that some execution of exactly maxSteps
+	// transitions exists. Deadlocks below the bound are only reported when
+	// this stays false.
+	fullLengthFound bool
+	pendingDeadlock *pendingDeadlock
+}
+
+// pendingDeadlock is the first stuck state below the bound.
+type pendingDeadlock struct {
+	path   boundedPath
+	states []DecodedState
 }
 
 // CheckBoundedSafety checks every normalized transition path through maxSteps
@@ -263,6 +274,13 @@ func CheckBoundedSafetyWithOptions(
 			return result, nil
 		}
 		queue = append(queue, children...)
+	}
+	if options.CheckDeadlocks && !result.fullLengthFound && result.pendingDeadlock != nil {
+		pending := result.pendingDeadlock
+		if _, err := recordDeadlock(inputs, pending.path, &result, pending.states); err != nil {
+			return BoundedSafetyResult{}, err
+		}
+		return result, nil
 	}
 	if !result.initialStateFound {
 		// No user state exists to decode or send to trace listeners.
@@ -491,6 +509,9 @@ func searchSafetyPath(
 	if len(path.next) == 0 {
 		result.initialStateFound = true
 	}
+	if len(path.next) == inputs.maxSteps {
+		result.fullLengthFound = true
+	}
 	if len(path.next) >= inputs.invariantMinimumDepth {
 		for invariantNumber, invariant := range inputs.stateInvariants {
 			if !inputs.tuning.allowsInvariant(len(path.next), "state", invariantNumber) {
@@ -565,7 +586,7 @@ func searchSafetyPath(
 			}
 		}
 	}
-	if len(path.next) == inputs.maxSteps && !inputs.checkDeadlocks {
+	if len(path.next) == inputs.maxSteps {
 		return false, nil
 	}
 	enabledNext := false
@@ -656,7 +677,8 @@ func searchSafetyPath(
 			if len(result.Counterexamples) != 0 {
 				return false, nil
 			}
-			return recordDeadlock(inputs, path, result, states)
+			stashDeadlock(path, result, states)
+			return false, nil
 		}
 		return false, nil
 	}
@@ -673,9 +695,23 @@ func searchSafetyPath(
 			result.Outcome = SafetyUnknown
 			return true, nil
 		}
-		return recordDeadlock(inputs, path, result, states)
+		stashDeadlock(path, result, states)
+		return false, nil
 	}
 	return false, nil
+}
+
+// stashDeadlock keeps the first stuck state. Scala reports a deadlock at bound
+// n only when no execution of exactly n transitions exists, so the verdict is
+// decided after the search finishes.
+func stashDeadlock(path boundedPath, result *BoundedSafetyResult, states []DecodedState) {
+	if result.pendingDeadlock != nil {
+		return
+	}
+	result.pendingDeadlock = &pendingDeadlock{
+		path:   boundedPath{init: path.init, next: append([]int(nil), path.next...)},
+		states: states,
+	}
 }
 
 func recordDeadlock(inputs modulePathInputs, path boundedPath, result *BoundedSafetyResult, states []DecodedState) (bool, error) {
