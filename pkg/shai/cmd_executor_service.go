@@ -360,6 +360,30 @@ func runRemoteCheck(ctx context.Context, path string, config remoteCommandConfig
 			return unexpectedCommandResponse(err), nil
 		}
 	}
+	if tuning.Simulation() {
+		// Random simulation samples runs; a clean result is not an exhaustive bounded proof.
+		report, err := pal.SimulateAndCheckWithOptions(ctx, prepared.Module, prepared.Predicates, pal.SimulationOptions{
+			MaxSteps: length, MaxRuns: tuning.SimulationRuns(), Randomize: true, SMTEncoding: encoding,
+			Tuning: tuning, MaxErrors: maxErrors,
+		})
+		if err != nil {
+			return unexpectedCommandResponse(err), nil
+		}
+		if len(report.Counterexamples) == 0 {
+			encoded, err := pal.MarshalSingleModuleIRJSON(prepared.Module, pal.IRJSONOptions{})
+			if err != nil {
+				return unexpectedCommandResponse(err), nil
+			}
+			return successfulCommandResponse(string(encoded)), nil
+		}
+		counterexamples := make([]any, 0, len(report.Counterexamples))
+		for _, counterexample := range report.Counterexamples {
+			counterexamples = append(counterexamples,
+				encodedRemoteCounterexample(prepared.Module, counterexample.Depth, counterexample.States))
+		}
+		errorData := map[string]any{"checking_result": "Error", "counterexamples": counterexamples, "nerrors": len(counterexamples)}
+		return passFailureCommandResponse("BoundedChecker", errorData, 12), nil
+	}
 	result, err := pal.CheckBoundedSafetyWithOptions(ctx, prepared.Module, prepared.Predicates, pal.BoundedSafetyOptions{
 		MaxSteps: length, CheckDeadlocks: checkDeadlocks, Tuning: tuning, MaxErrors: maxErrors,
 		DiscardDisabled: &discardDisabled, SMTEncoding: encoding,

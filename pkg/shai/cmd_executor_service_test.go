@@ -278,3 +278,37 @@ func TestRemoteConfigValidatorAcceptsMemorySourceAndRejectsLegacyShape(t *testin
 		}
 	}
 }
+
+// Random simulation reports violations found in its sampled runs as counterexamples.
+func TestCmdExecutorSimulationReportsSampledCounterexample(t *testing.T) {
+	service := NewCmdExecutorService()
+	response, err := service.Run(context.Background(), remoteRequest(t, cmd.Cmd_CHECK, remoteCheckableSpec, map[string]any{
+		"inv": []string{"Inv"}, "length": 1, "tuning": map[string]string{"search.simulation": "true", "search.simulation.maxRun": "2"},
+	}))
+	if err != nil || response.GetFailure() == nil {
+		t.Fatalf("simulation response = %#v, %v", response, err)
+	}
+	var failure struct {
+		ExitCode  int `json:"exit_code"`
+		ErrorData struct {
+			CheckingResult string `json:"checking_result"`
+			NErrors        int    `json:"nerrors"`
+		} `json:"error_data"`
+	}
+	if err = json.Unmarshal([]byte(response.GetFailure().GetData()), &failure); err != nil || failure.ExitCode != 12 ||
+		failure.ErrorData.CheckingResult != "Error" || failure.ErrorData.NErrors < 1 {
+		t.Fatalf("simulation data = %+v, %v", failure, err)
+	}
+}
+
+// A clean simulation returns the module, not a claim of exhaustive safety.
+func TestCmdExecutorSimulationCleanRunReturnsModule(t *testing.T) {
+	const safeSpec = "---- MODULE M ----\nInit == TRUE\nNext == TRUE\nInv == TRUE\n====\n"
+	service := NewCmdExecutorService()
+	response, err := service.Run(context.Background(), remoteRequest(t, cmd.Cmd_CHECK, safeSpec, map[string]any{
+		"inv": []string{"Inv"}, "length": 2, "tuning": map[string]string{"search.simulation": "true", "search.simulation.maxRun": "2"},
+	}))
+	if err != nil || response.GetSuccess() == "" {
+		t.Fatalf("clean simulation response = %#v, %v", response, err)
+	}
+}

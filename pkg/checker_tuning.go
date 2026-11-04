@@ -199,6 +199,9 @@ func (tuning CheckerTuning) SimulationRuns() int {
 
 func (tuning CheckerTuning) HasSimulationControls() bool { return tuning.hasSimulation }
 
+// Simulation reports whether search.simulation selects randomized symbolic runs.
+func (tuning CheckerTuning) Simulation() bool { return tuning.simulation }
+
 func (tuning CheckerTuning) OutputTraces() bool { return tuning.outputTraces }
 
 func (tuning CheckerTuning) HasOutputTraces() bool { return tuning.hasOutputTraces }
