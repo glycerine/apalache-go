@@ -363,7 +363,7 @@ func runRemoteCheck(ctx context.Context, path string, config remoteCommandConfig
 	if tuning.Simulation() {
 		// Random simulation samples runs; a clean result is not an exhaustive bounded proof.
 		report, err := pal.SimulateAndCheckWithOptions(ctx, prepared.Module, prepared.Predicates, pal.SimulationOptions{
-			MaxSteps: length, MaxRuns: tuning.SimulationRuns(), Randomize: true, SMTEncoding: encoding,
+			MaxSteps: length, MaxRuns: tuning.SimulationRuns(), Randomize: true, RandomSeed: tuning.SimulationSeed(), SMTEncoding: encoding,
 			Tuning: tuning, MaxErrors: maxErrors,
 		})
 		if err != nil {

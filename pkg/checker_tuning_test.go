@@ -176,6 +176,24 @@ func TestParseCheckerTuningSimulationControls(t *testing.T) {
 	}
 }
 
+func TestParseCheckerTuningSimulationSeed(t *testing.T) {
+	tuning, err := ParseCheckerTuning(map[string]string{"search.simulation.seed": "9223372036854775807"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tuning.SimulationSeed() != 9223372036854775807 || tuning.HasSimulationControls() {
+		t.Fatalf("seed tuning = %#v", tuning)
+	}
+	if zero, err := ParseCheckerTuning(map[string]string{"search.simulation.seed": "0"}); err != nil || zero.SimulationSeed() != 0 {
+		t.Fatalf("zero seed = %d, err = %v", zero.SimulationSeed(), err)
+	}
+	for _, value := range []string{"-1", "1.5", "x", "9223372036854775808"} {
+		if _, err = ParseCheckerTuning(map[string]string{"search.simulation.seed": value}); err == nil {
+			t.Fatalf("invalid seed %q accepted", value)
+		}
+	}
+}
+
 func TestBoundedSafetyHonorsInvariantFilter(t *testing.T) {
 	module, configuration := counterSafetyModule(0)
 	prepared, err := PrepareSafetyTransitions(module, SafetyPipelineOptions{Specification: configuration})

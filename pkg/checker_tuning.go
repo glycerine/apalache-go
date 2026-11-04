@@ -32,6 +32,7 @@ type CheckerTuning struct {
 	hasOutputTraces            bool
 	simulation                 bool
 	simulationRuns             int
+	simulationSeed             int64
 	hasSimulation              bool
 	jailTimeoutMinSec          int64
 	jailTimeoutFactor          int64
@@ -97,6 +98,13 @@ func ParseCheckerTuning(values map[string]string) (CheckerTuning, error) {
 			}
 			result.simulationRuns = parsed
 			result.hasSimulation = true
+		case "search.simulation.seed":
+			// Zero keeps the checker's time-based seed, so repeat runs need a nonzero seed.
+			parsed, err := parseTuningInt64(key, value)
+			if err != nil || parsed < 0 {
+				return CheckerTuning{}, fmt.Errorf("expected a non-negative 64-bit integer for %s, but got %s", key, value)
+			}
+			result.simulationSeed = parsed
 		case "search.outputTraces":
 			parsed, err := parseTuningBool(key, value)
 			if err != nil {
@@ -196,6 +204,9 @@ func (tuning CheckerTuning) SimulationRuns() int {
 	}
 	return 100
 }
+
+// SimulationSeed returns search.simulation.seed; zero means the simulator picks a time-based seed.
+func (tuning CheckerTuning) SimulationSeed() int64 { return tuning.simulationSeed }
 
 func (tuning CheckerTuning) HasSimulationControls() bool { return tuning.hasSimulation }
 

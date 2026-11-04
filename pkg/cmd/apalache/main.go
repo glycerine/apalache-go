@@ -1065,7 +1065,7 @@ func runSimulate(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	}
 	ruleStats := newRuleProfiler(commonOptions.profiling)
 	report, err := pal.SimulateAndCheckWithOptions(ctx, prepared.Module, prepared.Predicates,
-		pal.SimulationOptions{MaxSteps: *length, MaxRuns: *maxRun, MaxErrors: *maxErrors, Tuning: checkerTuning,
+		pal.SimulationOptions{MaxSteps: *length, MaxRuns: *maxRun, MaxErrors: *maxErrors, Tuning: checkerTuning, RandomSeed: checkerTuning.SimulationSeed(),
 			SMTEncoding: pal.SMTEncoding(backend.encoding), RuleStats: ruleStats, RewriteStats: metricStats})
 	if profileErr := writeRuleProfile(outputPaths, ruleStats); profileErr != nil {
 		fmt.Fprintf(stderr, "cannot write simulation rule profile: %v\n", profileErr)
