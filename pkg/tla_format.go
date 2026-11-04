@@ -30,6 +30,14 @@ func FormatTLAModule(module *Module, options TLAFormatOptions) (string, error) {
 	})
 }
 
+// FormatTLAModuleWithTypes formats like FormatTLAModule, but also synthesizes
+// the @type annotation Scala Apalache prints for every typed declaration.
+// Stored annotations are retained after the synthesized type.
+func FormatTLAModuleWithTypes(module *Module, options TLAFormatOptions) (string, error) {
+	writer := NewPrettyTLAWriterWithAnnotations(nil, options.Annotations)
+	return formatTLAModuleWith(module, options, writer.formatDeclaration)
+}
+
 func formatTLAModuleWith(
 	module *Module,
 	options TLAFormatOptions,

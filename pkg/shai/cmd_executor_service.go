@@ -299,7 +299,7 @@ func runRemoteTLA(ctx context.Context, path, source string) (*cmd.CmdResponse, e
 		return frontendFailureCommandResponse(result), nil
 	}
 	annotations := pal.ExtractTypeAnnotations(path, source, result.Native, result.Sources)
-	formatted, err := pal.FormatTLAModule(result.Native, pal.TLAFormatOptions{
+	formatted, err := pal.FormatTLAModuleWithTypes(result.Native, pal.TLAFormatOptions{
 		ExtendedModules: []string{"Integers", "Sequences", "FiniteSets", "TLC", "Apalache", "Variants"},
 		Annotations:     annotations.Annotations,
 	})
