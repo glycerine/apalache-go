@@ -55,6 +55,11 @@ func TestParseApalacheConfigJSONStrictSchemaAndEnums(t *testing.T) {
 		{`{"checker":{"temporal-props":["P"]}}`, "$.checker.temporal-props: Unknown configuration key."},
 		{`{"typechecker":{"inferpoly":true}}`, "$.typechecker.inferpoly: Unknown configuration key."},
 		{`{"run-dir":"\u0000"}`, "$.run-dir: Invalid path"},
+		{`{"checker":{"init":null}}`, "$.checker.init: Expected a JSON string."},
+		{`{"checker":{"inv":null}}`, "$.checker.inv: Expected an array of strings."},
+		{`{"output":{"output":null}}`, "$.output: Expected a JSON string."},
+		{`{"source":null}`, "$.source: Expected a path string or source object."},
+		{`{"checker":{"smt-solver":null}}`, "$.checker.smt-solver: Expected a JSON string."},
 	}
 	for _, test := range cases {
 		result := ParseApalacheConfigJSON(test.input)

@@ -198,6 +198,10 @@ func (decoder *configJSONDecoder) source(object map[string]json.RawMessage, fiel
 		return nil
 	}
 	path := parent + "." + field
+	if isJSONNull(raw) {
+		decoder.errors = append(decoder.errors, path+": Expected a path string or source object.")
+		return nil
+	}
 	var filename string
 	if err := json.Unmarshal(raw, &filename); err == nil {
 		expanded, ok := decoder.expandPath(filename, path)
@@ -278,7 +282,7 @@ func (decoder *configJSONDecoder) text(object map[string]json.RawMessage, field,
 		return nil
 	}
 	var value string
-	if err := json.Unmarshal(raw, &value); err != nil {
+	if err := json.Unmarshal(raw, &value); err != nil || isJSONNull(raw) {
 		decoder.errors = append(decoder.errors, parent+"."+field+": Expected a JSON string.")
 		return nil
 	}
@@ -316,13 +320,19 @@ func (decoder *configJSONDecoder) expandPath(value, path string) (string, bool) 
 	return filepath.Join(home, value[2:]), true
 }
 
+// isJSONNull reports whether raw is the JSON literal null. Scala's decoder treats
+// null as present-but-wrong for every typed field, so the typed helpers reject it.
+func isJSONNull(raw json.RawMessage) bool {
+	return string(bytes.TrimSpace(raw)) == "null"
+}
+
 func (decoder *configJSONDecoder) boolean(object map[string]json.RawMessage, field, parent string) *bool {
 	raw, found := object[field]
 	if !found {
 		return nil
 	}
 	var value bool
-	if err := json.Unmarshal(raw, &value); err != nil {
+	if err := json.Unmarshal(raw, &value); err != nil || isJSONNull(raw) {
 		decoder.errors = append(decoder.errors, parent+"."+field+": Expected a JSON boolean.")
 		return nil
 	}
@@ -361,14 +371,14 @@ func (decoder *configJSONDecoder) stringList(object map[string]json.RawMessage, 
 		return nil
 	}
 	var values []json.RawMessage
-	if err := json.Unmarshal(raw, &values); err != nil {
+	if err := json.Unmarshal(raw, &values); err != nil || isJSONNull(raw) {
 		decoder.errors = append(decoder.errors, parent+"."+field+": Expected an array of strings.")
 		return nil
 	}
 	result := make([]string, 0, len(values))
 	for index, rawValue := range values {
 		var value string
-		if err := json.Unmarshal(rawValue, &value); err != nil {
+		if err := json.Unmarshal(rawValue, &value); err != nil || isJSONNull(rawValue) {
 			decoder.errors = append(decoder.errors, fmt.Sprintf("%s.%s[%d]: Expected a JSON string.", parent, field, index))
 		} else {
 			result = append(result, value)
@@ -383,7 +393,7 @@ func (decoder *configJSONDecoder) stringMap(object map[string]json.RawMessage, f
 		return nil
 	}
 	var values map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &values); err != nil {
+	if err := json.Unmarshal(raw, &values); err != nil || isJSONNull(raw) {
 		decoder.errors = append(decoder.errors, parent+"."+field+": Expected a JSON object with string values.")
 		return nil
 	}
@@ -391,7 +401,7 @@ func (decoder *configJSONDecoder) stringMap(object map[string]json.RawMessage, f
 	keys := sortedRawKeys(values)
 	for _, key := range keys {
 		var value string
-		if err := json.Unmarshal(values[key], &value); err != nil {
+		if err := json.Unmarshal(values[key], &value); err != nil || isJSONNull(values[key]) {
 			decoder.errors = append(decoder.errors, parent+"."+field+"."+key+": Expected a JSON string.")
 		} else {
 			result[key] = value
@@ -406,7 +416,7 @@ func (decoder *configJSONDecoder) object(object map[string]json.RawMessage, fiel
 		return nil, false
 	}
 	var result map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &result); err != nil {
+	if err := json.Unmarshal(raw, &result); err != nil || isJSONNull(raw) {
 		decoder.errors = append(decoder.errors, parent+"."+field+": Expected a JSON object.")
 		return nil, false
 	}
