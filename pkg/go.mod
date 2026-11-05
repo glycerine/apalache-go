@@ -1,4 +1,4 @@
-module github.com/glycerine/apalache-go
+module github.com/glycerine/apalache-go/pkg
 
 go 1.27.3
 

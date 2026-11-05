@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	trans "github.com/glycerine/apalache-go/shai/transexplorer"
+	trans "github.com/glycerine/apalache-go/pkg/shai/transexplorer"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

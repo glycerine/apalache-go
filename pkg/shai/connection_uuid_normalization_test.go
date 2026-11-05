@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	trans "github.com/glycerine/apalache-go/shai/transexplorer"
+	trans "github.com/glycerine/apalache-go/pkg/shai/transexplorer"
 )
 
 func TestConnectionUUIDLookupIsCaseInsensitive(t *testing.T) {

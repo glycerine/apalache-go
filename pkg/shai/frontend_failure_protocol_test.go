@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	cmd "github.com/glycerine/apalache-go/shai/cmdexecutor"
-	trans "github.com/glycerine/apalache-go/shai/transexplorer"
+	cmd "github.com/glycerine/apalache-go/pkg/shai/cmdexecutor"
+	trans "github.com/glycerine/apalache-go/pkg/shai/transexplorer"
 )
 
 func assertFrontendFailure(t *testing.T, data string, typing bool) {

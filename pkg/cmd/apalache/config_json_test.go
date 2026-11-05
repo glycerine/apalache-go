@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	pal "github.com/glycerine/apalache-go"
+	pal "github.com/glycerine/apalache-go/pkg"
 )
 
 func TestLoadCommandConfigIsStrict(t *testing.T) {

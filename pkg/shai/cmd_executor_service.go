@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	pal "github.com/glycerine/apalache-go"
-	cmd "github.com/glycerine/apalache-go/shai/cmdexecutor"
+	pal "github.com/glycerine/apalache-go/pkg"
+	cmd "github.com/glycerine/apalache-go/pkg/shai/cmdexecutor"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	cmd "github.com/glycerine/apalache-go/shai/cmdexecutor"
+	cmd "github.com/glycerine/apalache-go/pkg/shai/cmdexecutor"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

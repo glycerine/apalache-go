@@ -12,8 +12,8 @@ import (
 	"strings"
 	"sync"
 
-	pal "github.com/glycerine/apalache-go"
-	trans "github.com/glycerine/apalache-go/shai/transexplorer"
+	pal "github.com/glycerine/apalache-go/pkg"
+	trans "github.com/glycerine/apalache-go/pkg/shai/transexplorer"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

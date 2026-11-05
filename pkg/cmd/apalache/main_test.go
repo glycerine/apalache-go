@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	pal "github.com/glycerine/apalache-go"
-	cmd "github.com/glycerine/apalache-go/shai/cmdexecutor"
+	pal "github.com/glycerine/apalache-go/pkg"
+	cmd "github.com/glycerine/apalache-go/pkg/shai/cmdexecutor"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"

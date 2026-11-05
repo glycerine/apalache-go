@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
-	pal "github.com/glycerine/apalache-go"
+	pal "github.com/glycerine/apalache-go/pkg"
 )
 
 type commonOutputFlags struct {

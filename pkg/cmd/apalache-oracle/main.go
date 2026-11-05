@@ -8,7 +8,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/glycerine/apalache-go/internal/oraclectl"
+	"github.com/glycerine/apalache-go/pkg/internal/oraclectl"
 )
 
 func main() {

@@ -20,8 +20,8 @@ import (
 	"strings"
 	"time"
 
-	pal "github.com/glycerine/apalache-go"
-	"github.com/glycerine/apalache-go/shai"
+	pal "github.com/glycerine/apalache-go/pkg"
+	"github.com/glycerine/apalache-go/pkg/shai"
 	"google.golang.org/grpc"
 )
 

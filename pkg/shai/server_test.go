@@ -5,8 +5,8 @@ import (
 	"net"
 	"testing"
 
-	cmd "github.com/glycerine/apalache-go/shai/cmdexecutor"
-	trans "github.com/glycerine/apalache-go/shai/transexplorer"
+	cmd "github.com/glycerine/apalache-go/pkg/shai/cmdexecutor"
+	trans "github.com/glycerine/apalache-go/pkg/shai/transexplorer"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
