@@ -170,11 +170,14 @@ func TestTemporalTableauReplacesPropertiesAndPreprocesses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	formatted, err := FormatTLAExpression(formula.Body())
+	formatted, err := FormatUTFExpression(formula.Body())
 	if err != nil {
 		t.Fatal(err)
 	}
 	replacements := encoded.NameReplacements()
+	if formatted != "◇(x = x)" {
+		t.Fatalf("tableau expression text = %q, want Scala UTF form %q", formatted, "◇(x = x)")
+	}
 	if replacements["__temporal_t_1"] != formatted ||
 		replacements["__saved___temporal_t_1"] != TemporalSavedPrefix+formatted {
 		t.Fatalf("tableau name replacements = %#v, want expression %q", replacements, formatted)

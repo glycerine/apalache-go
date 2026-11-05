@@ -153,7 +153,7 @@ func (encoder *TemporalTableauEncoder) EncodeSyntaxTree(expression Expr) (Tempor
 	node := NewVarDecl(TemporalTableauPrefix+encoder.names.NewName(), Typed(BoolT1))
 	node.MarkInternal()
 	saved := encoder.loop.SavedVariable(node)
-	formatted, err := FormatTLAExpression(expression)
+	formatted, err := FormatUTFExpression(expression)
 	if err != nil {
 		return TemporalSyntaxEncoding{}, fmt.Errorf("format temporal expression for trace metadata: %w", err)
 	}
