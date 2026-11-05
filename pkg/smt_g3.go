@@ -185,13 +185,22 @@ type g3SolverOptions struct {
 }
 
 func newG3SolverContextWithOptions(logic string, uintOptions map[string]uint32, textOptions map[string]string) (*G3SolverContext, error) {
+	options := routeG3TextOptions(uintOptions, textOptions)
+	return newG3SolverContextWithTypedOptions(logic, options)
+}
+
+// routeG3TextOptions routes untyped text options by value form. Only the
+// literals true and false are Booleans, so a value such as "0" or "1" stays an
+// unsigned integer, as Scala's UnsignedInt fields accept it. Other integers,
+// then floats, then symbols follow.
+func routeG3TextOptions(uintOptions map[string]uint32, textOptions map[string]string) g3SolverOptions {
 	options := g3SolverOptions{uints: cloneMap(uintOptions)}
 	for key, value := range textOptions {
-		if parsed, err := strconv.ParseBool(value); err == nil {
+		if value == "true" || value == "false" {
 			if options.bools == nil {
 				options.bools = make(map[string]bool)
 			}
-			options.bools[key] = parsed
+			options.bools[key] = value == "true"
 			continue
 		}
 		if parsed, err := strconv.ParseUint(value, 10, 32); err == nil {
@@ -213,7 +222,7 @@ func newG3SolverContextWithOptions(logic string, uintOptions map[string]uint32, 
 		}
 		options.symbols[key] = value
 	}
-	return newG3SolverContextWithTypedOptions(logic, options)
+	return options
 }
 
 func newG3SolverContextWithTypedOptions(logic string, options g3SolverOptions) (*G3SolverContext, error) {
