@@ -1,0 +1,19 @@
+package rel
+
+func (p *FiniteSparseProduct) fetchInnerKey(key Fact) (bool, error) {
+	if err := p.open(); err != nil || len(key) == 0 {
+		if err != nil {
+			return false, err
+		}
+		return false, ErrTableRelation
+	}
+	suffix, found, err := p.table.FetchFunctionalKey(key[:len(key)-1])
+	if err != nil || !found {
+		return found, err
+	}
+	if len(suffix) != 1 {
+		return false, ErrTableRelation
+	}
+	key[len(key)-1] = suffix[0]
+	return true, nil
+}

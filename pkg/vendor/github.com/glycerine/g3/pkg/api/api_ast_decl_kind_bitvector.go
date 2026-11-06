@@ -1,0 +1,83 @@
+package api
+
+// Source: src/api/api_ast.cpp Z3_get_decl_kind bit-vector family switch.
+
+import "github.com/glycerine/g3/pkg/ast"
+
+const (
+	APIDeclarationBitVectorNumeral APIDeclarationKind = 300 + iota
+	APIDeclarationBitOne
+	APIDeclarationBitZero
+	APIDeclarationBitVectorNegate
+	APIDeclarationBitVectorAdd
+	APIDeclarationBitVectorSubtract
+	APIDeclarationBitVectorMultiply
+	APIDeclarationBitVectorSignedDivide
+	APIDeclarationBitVectorUnsignedDivide
+	APIDeclarationBitVectorSignedRemainder
+	APIDeclarationBitVectorUnsignedRemainder
+	APIDeclarationBitVectorSignedModulo
+	APIDeclarationBitVectorSignedDivideByZero
+	APIDeclarationBitVectorUnsignedDivideByZero
+	APIDeclarationBitVectorUnsignedRemainderByZero
+	APIDeclarationBitVectorSignedModuloByZero
+	APIDeclarationBitVectorSignedDivideInternal
+	APIDeclarationBitVectorUnsignedDivideInternal
+	APIDeclarationBitVectorSignedRemainderInternal
+	APIDeclarationBitVectorUnsignedRemainderInternal
+	APIDeclarationBitVectorSignedModuloInternal
+	APIDeclarationBitVectorUnsignedLE
+	APIDeclarationBitVectorSignedLE
+	APIDeclarationBitVectorUnsignedGE
+	APIDeclarationBitVectorSignedGE
+	APIDeclarationBitVectorUnsignedLT
+	APIDeclarationBitVectorSignedLT
+	APIDeclarationBitVectorUnsignedGT
+	APIDeclarationBitVectorSignedGT
+	APIDeclarationBitVectorAnd
+	APIDeclarationBitVectorOr
+	APIDeclarationBitVectorNot
+	APIDeclarationBitVectorXor
+	APIDeclarationBitVectorNand
+	APIDeclarationBitVectorNor
+	APIDeclarationBitVectorXnor
+	APIDeclarationBitVectorConcat
+	APIDeclarationBitVectorSignExtend
+	APIDeclarationBitVectorZeroExtend
+	APIDeclarationBitVectorExtract
+	APIDeclarationBitVectorRepeat
+	APIDeclarationBitVectorReduceOr
+	APIDeclarationBitVectorReduceAnd
+	APIDeclarationBitVectorCompare
+	APIDeclarationBitVectorShiftLeft
+	APIDeclarationBitVectorLogicalShiftRight
+	APIDeclarationBitVectorArithmeticShiftRight
+	APIDeclarationBitVectorRotateLeft
+	APIDeclarationBitVectorRotateRight
+	APIDeclarationBitVectorExtendedRotateLeft
+	APIDeclarationBitVectorExtendedRotateRight
+	APIDeclarationBitVectorUnsignedMultiplyNoOverflow
+	APIDeclarationBitVectorSignedMultiplyNoOverflow
+	APIDeclarationBitVectorSignedMultiplyNoUnderflow
+	APIDeclarationBitToBoolean
+	APIDeclarationIntegerToBitVector
+	APIDeclarationBitVectorToInteger
+	APIDeclarationBitVectorCarry
+	APIDeclarationBitVectorXor3
+)
+
+// BitVectorDeclarationKind classifies a bit-vector declaration or app.
+func (c *SMTContext) BitVectorDeclarationKind(value ast.ASTHandle) (APIDeclarationKind, error) {
+	manager, family, operation, err := c.apiDeclarationFamilyOperation(value)
+	if err != nil {
+		return APIDeclarationInternal, err
+	}
+	bitVector, err := manager.BitVectorUtilityFamilyID()
+	if err != nil {
+		return APIDeclarationInternal, err
+	}
+	if family != bitVector {
+		return APIDeclarationInternal, ast.ErrASTDomain
+	}
+	return apiBitVectorDeclarationKind(operation), nil
+}
